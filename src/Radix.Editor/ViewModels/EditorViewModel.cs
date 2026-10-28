@@ -102,6 +102,12 @@ public sealed class EditorViewModel : ObservableObject
     private bool _testScriptPassed;
     private string _testScriptSummary = string.Empty;
     private string _testScriptPath = string.Empty;
+    private bool _isTestScriptSuiteRunning;
+    private string _testScriptSuiteProgressText = string.Empty;
+    private double _testScriptSuiteProgressValue;
+    private int _testScriptSuiteGeneration;
+    private CancellationTokenSource? _testScriptSuiteCancellation;
+    private readonly RelayCommand _cancelTestScriptSuiteCommand;
     private string _sweepSettleTicksText = "10";
     private string _sweepMaxRowsText = "4096";
     private string _sweepResultText = string.Empty;
@@ -192,6 +198,8 @@ public sealed class EditorViewModel : ObservableObject
         SettleCommand = new RelayCommand(Settle);
         ClearDrivesCommand = new RelayCommand(ClearDrives);
         ClearTestScriptResultCommand = new RelayCommand(ClearTestScriptResult);
+        _cancelTestScriptSuiteCommand = new RelayCommand(CancelTestScriptSuite, () => IsTestScriptSuiteRunning);
+        CancelTestScriptSuiteCommand = _cancelTestScriptSuiteCommand;
         _runSweepCommand = new RelayCommand(
             () => _ = RunSweepAsync(),
             () => !IsSweepRunning);
@@ -415,6 +423,11 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ClearTestScriptResultCommand { get; }
 
+    public ICommand CancelTestScriptSuiteCommand { get; }
+
+    /// <summary>False while a folder suite is running; script pickers are disabled.</summary>
+    public bool CanRunTestScripts => !IsTestScriptSuiteRunning;
+
     public ICommand RunSweepCommand { get; }
 
     public ICommand ClearSweepResultCommand { get; }
@@ -508,6 +521,34 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasTestScriptResult;
         private set => SetField(ref _hasTestScriptResult, value);
+    }
+
+    /// <summary>True while a folder suite runs against a project snapshot.</summary>
+    public bool IsTestScriptSuiteRunning
+    {
+        get => _isTestScriptSuiteRunning;
+        private set
+        {
+            if (!SetField(ref _isTestScriptSuiteRunning, value))
+            {
+                return;
+            }
+
+            RaisePropertyChanged(nameof(CanRunTestScripts));
+            _cancelTestScriptSuiteCommand?.RaiseCanExecuteChanged();
+        }
+    }
+
+    public string TestScriptSuiteProgressText
+    {
+        get => _testScriptSuiteProgressText;
+        private set => SetField(ref _testScriptSuiteProgressText, value);
+    }
+
+    public double TestScriptSuiteProgressValue
+    {
+        get => _testScriptSuiteProgressValue;
+        private set => SetField(ref _testScriptSuiteProgressValue, value);
     }
 
     public bool TestScriptPassed
@@ -1418,65 +1459,213 @@ public sealed class EditorViewModel : ObservableObject
             IReadOnlyList<string> paths = SimulationScriptSuiteRunner.Discover(directory);
             if (paths.Count == 0)
             {
-                TestScriptPassed = false;
-                TestScriptSummary = "SUITE ERROR · no .radixtest scripts found";
-                HasTestScriptResult = true;
-                StatusText = "No .radixtest scripts found in " + directory;
-                return false;
+                return FailTestScriptSuite("no .radixtest scripts found", suiteError: true);
             }
 
-            SimulationScriptSuiteResult suite = SimulationScriptSuiteRunner.RunFiles(_project, paths);
-            TestScriptPassed = suite.Passed;
-            TestScriptSummary = suite.HasErrors
-                ? string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"SUITE ERROR · {suite.Entries.Count} script(s) · {suite.PassedCount} passed · " +
-                    $"{suite.FailedCount} failed · {suite.ErrorCount} error(s) · {suite.StepsExecuted} step(s)")
-                : suite.Passed
-                    ? string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"PASS · {suite.Entries.Count} script(s) · {suite.StepsExecuted} step(s) · " +
-                        $"{suite.EventsProcessed} events")
-                    : string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"FAIL · {suite.Entries.Count} script(s) · {suite.FailedCount} failed · " +
-                        $"{suite.PassedCount} passed · {suite.StepsExecuted} step(s)");
-
-            foreach (SimulationScriptSuiteEntry entry in suite.Entries)
-            {
-                if (entry.Error is not null)
-                {
-                    TestScriptFailures.Add(new TestScriptFailureItem(entry.Path, entry.Error));
-                    continue;
-                }
-
-                string source = Path.GetFileName(entry.Path);
-                foreach (ScriptFailure failure in entry.Result!.Failures)
-                {
-                    TestScriptFailures.Add(new TestScriptFailureItem(failure, source));
-                }
-            }
-
-            HasTestScriptResult = true;
-            RaisePropertyChanged(nameof(HasTestScriptFailures));
-            StatusText = suite.Passed
-                ? $"Test script suite passed: {suite.Entries.Count} script(s)"
-                : $"Test script suite failed: {suite.FailedCount} failed, {suite.ErrorCount} error(s)";
-            return suite.Passed;
+            return ApplyTestScriptSuiteResult(SimulationScriptSuiteRunner.RunFiles(_project, paths));
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            TestScriptPassed = false;
-            TestScriptSummary = "Test script suite error: " + exception.Message;
-            HasTestScriptResult = true;
-            StatusText = "Test script suite error: " + exception.Message;
+            return FailTestScriptSuite(exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs a folder suite on a background thread against a serialized project
+    /// snapshot, so the canvas stays responsive and edits cannot race the run.
+    /// Progress is reported once per completed script; cancellation is checked
+    /// between scripts. The live simulation is never touched.
+    /// </summary>
+    public async Task<bool> RunTestScriptSuiteAsync(
+        string directory,
+        IProgress<SimulationScriptSuiteProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsTestScriptSuiteRunning)
+        {
             return false;
         }
+
+        ClearTestScriptResult();
+        TestScriptPath = directory;
+
+        IReadOnlyList<string> paths;
+        try
+        {
+            paths = SimulationScriptSuiteRunner.Discover(directory);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return FailTestScriptSuite(exception.Message);
+        }
+
+        if (paths.Count == 0)
+        {
+            return FailTestScriptSuite("no .radixtest scripts found", suiteError: true);
+        }
+
+        int generation = _testScriptSuiteGeneration;
+        SynchronizationContext? progressContext = SynchronizationContext.Current;
+        var sink = new InlineProgress<SimulationScriptSuiteProgress>(report =>
+        {
+            progress?.Report(report);
+            if (progressContext is null)
+            {
+                UpdateTestScriptSuiteProgress(generation, report);
+            }
+            else
+            {
+                progressContext.Post(_ => UpdateTestScriptSuiteProgress(generation, report), null);
+            }
+        });
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _testScriptSuiteCancellation = linked;
+        IsTestScriptSuiteRunning = true;
+        TestScriptSuiteProgressText = "Preparing suite…";
+        TestScriptSuiteProgressValue = 0;
+        try
+        {
+            // Snapshot on the UI thread before yielding, so every script in the suite
+            // sees the same project even if the user keeps editing the live one.
+            string snapshotJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            SimulationScriptSuiteResult suite = await Task.Run(
+                () =>
+                {
+                    CircuitProject snapshot = ProjectSerializer.LoadFromString(snapshotJson, validate: false);
+                    return SimulationScriptSuiteRunner.RunFiles(
+                        snapshot,
+                        paths,
+                        progress: sink,
+                        cancellationToken: linked.Token);
+                },
+                linked.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            if (generation != _testScriptSuiteGeneration)
+            {
+                return false;
+            }
+
+            return ApplyTestScriptSuiteResult(suite);
+        }
+        catch (OperationCanceledException)
+        {
+            if (generation == _testScriptSuiteGeneration && IsTestScriptSuiteRunning)
+            {
+                TestScriptPassed = false;
+                TestScriptSummary = "Test script suite cancelled.";
+                HasTestScriptResult = true;
+                StatusText = "Test script suite cancelled.";
+            }
+
+            return false;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException or
+            ProjectFormatException or CircuitValidationException or SimulationScriptException)
+        {
+            return generation == _testScriptSuiteGeneration && FailTestScriptSuite(exception.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_testScriptSuiteCancellation, linked))
+            {
+                _testScriptSuiteCancellation = null;
+            }
+
+            if (generation == _testScriptSuiteGeneration)
+            {
+                IsTestScriptSuiteRunning = false;
+                TestScriptSuiteProgressText = string.Empty;
+                TestScriptSuiteProgressValue = 0;
+            }
+        }
+    }
+
+    private bool ApplyTestScriptSuiteResult(SimulationScriptSuiteResult suite)
+    {
+        TestScriptPassed = suite.Passed;
+        TestScriptSummary = suite.HasErrors
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"SUITE ERROR · {suite.Entries.Count} script(s) · {suite.PassedCount} passed · " +
+                $"{suite.FailedCount} failed · {suite.ErrorCount} error(s) · {suite.StepsExecuted} step(s)")
+            : suite.Passed
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"PASS · {suite.Entries.Count} script(s) · {suite.StepsExecuted} step(s) · " +
+                    $"{suite.EventsProcessed} events")
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"FAIL · {suite.Entries.Count} script(s) · {suite.FailedCount} failed · " +
+                    $"{suite.PassedCount} passed · {suite.StepsExecuted} step(s)");
+
+        foreach (SimulationScriptSuiteEntry entry in suite.Entries)
+        {
+            if (entry.Error is not null)
+            {
+                TestScriptFailures.Add(new TestScriptFailureItem(entry.Path, entry.Error));
+                continue;
+            }
+
+            string source = Path.GetFileName(entry.Path);
+            foreach (ScriptFailure failure in entry.Result!.Failures)
+            {
+                TestScriptFailures.Add(new TestScriptFailureItem(failure, source));
+            }
+        }
+
+        HasTestScriptResult = true;
+        RaisePropertyChanged(nameof(HasTestScriptFailures));
+        StatusText = suite.Passed
+            ? $"Test script suite passed: {suite.Entries.Count} script(s)"
+            : $"Test script suite failed: {suite.FailedCount} failed, {suite.ErrorCount} error(s)";
+        return suite.Passed;
+    }
+
+    private bool FailTestScriptSuite(string message, bool suiteError = false)
+    {
+        TestScriptPassed = false;
+        TestScriptSummary = suiteError ? "SUITE ERROR · " + message : "Test script suite error: " + message;
+        HasTestScriptResult = true;
+        StatusText = "Test script suite error: " + message;
+        return false;
+    }
+
+    private void UpdateTestScriptSuiteProgress(int generation, SimulationScriptSuiteProgress report)
+    {
+        if (generation != _testScriptSuiteGeneration || !IsTestScriptSuiteRunning)
+        {
+            return;
+        }
+
+        TestScriptSuiteProgressText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.Completed} / {report.Total} scripts · {Path.GetFileName(report.CurrentPath)}");
+        TestScriptSuiteProgressValue = report.Fraction * 100;
+    }
+
+    public void CancelTestScriptSuite()
+    {
+        if (!IsTestScriptSuiteRunning)
+        {
+            return;
+        }
+
+        _testScriptSuiteCancellation?.Cancel();
+        StatusText = "Cancelling test script suite…";
     }
 
     public void ClearTestScriptResult()
     {
+        _testScriptSuiteGeneration++;
+        _testScriptSuiteCancellation?.Cancel();
+        _testScriptSuiteCancellation = null;
+        IsTestScriptSuiteRunning = false;
+        TestScriptSuiteProgressText = string.Empty;
+        TestScriptSuiteProgressValue = 0;
         TestScriptFailures.Clear();
         TestScriptPath = string.Empty;
         TestScriptSummary = string.Empty;

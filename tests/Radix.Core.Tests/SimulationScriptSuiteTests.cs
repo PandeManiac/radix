@@ -151,6 +151,51 @@ public sealed class SimulationScriptSuiteTests
         }
     }
 
+    [Fact]
+    public void SuiteReportsPerScriptProgressAndHonorsCancellation()
+    {
+        string directory = TemporaryDirectory();
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "one.radixtest"), PassingScript);
+            File.WriteAllText(Path.Combine(directory, "two.radixtest"), PassingScript);
+            CircuitProject project = ExampleProjects.CreateDFlipFlopDemo();
+            IReadOnlyList<string> paths = SimulationScriptSuiteRunner.Discover(directory);
+            var progress = new RecordingProgress();
+
+            SimulationScriptSuiteResult suite = SimulationScriptSuiteRunner.RunFiles(
+                project,
+                paths,
+                progress: progress);
+
+            Assert.True(suite.Passed);
+            Assert.Equal(2, progress.Reports.Count);
+            Assert.Equal(1, progress.Reports[0].Completed);
+            Assert.Equal(2, progress.Reports[0].Total);
+            Assert.EndsWith("one.radixtest", progress.Reports[0].CurrentPath, StringComparison.Ordinal);
+            Assert.Equal(1d, progress.Reports[1].Fraction);
+
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            Assert.Throws<OperationCanceledException>(() => SimulationScriptSuiteRunner.RunFiles(
+                project,
+                paths,
+                cancellationToken: cancellation.Token));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private sealed class RecordingProgress : IProgress<SimulationScriptSuiteProgress>
+    {
+        public List<SimulationScriptSuiteProgress> Reports { get; } = [];
+
+        public void Report(SimulationScriptSuiteProgress value) => Reports.Add(value);
+    }
+
     private static string TemporaryDirectory() =>
         Path.Combine(Path.GetTempPath(), "radix-suite-" + Guid.NewGuid().ToString("N"));
 }

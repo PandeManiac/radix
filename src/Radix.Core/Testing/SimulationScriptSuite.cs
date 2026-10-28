@@ -2,6 +2,12 @@ using Radix.Core.Model;
 
 namespace Radix.Core.Testing;
 
+/// <summary>Progress through a suite: scripts finished and the entry just completed.</summary>
+public readonly record struct SimulationScriptSuiteProgress(int Completed, int Total, string CurrentPath)
+{
+    public double Fraction => Total <= 0 ? 0 : (double)Completed / Total;
+}
+
 /// <summary>One script in a suite run, including load or compile errors.</summary>
 public sealed record SimulationScriptSuiteEntry(
     string Path,
@@ -73,33 +79,39 @@ public static class SimulationScriptSuiteRunner
     public static SimulationScriptSuiteResult RunFiles(
         CircuitProject project,
         IEnumerable<string> paths,
-        string? definitionOverride = null)
+        string? definitionOverride = null,
+        IProgress<SimulationScriptSuiteProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(paths);
+        IReadOnlyList<string> scriptPaths = paths as IReadOnlyList<string> ?? paths.ToArray();
 
-        var entries = new List<SimulationScriptSuiteEntry>();
-        foreach (string path in paths)
+        var entries = new List<SimulationScriptSuiteEntry>(scriptPaths.Count);
+        for (int i = 0; i < scriptPaths.Count; i++)
         {
-            string displayPath = path;
+            cancellationToken.ThrowIfCancellationRequested();
+            string path = scriptPaths[i];
             try
             {
                 SimulationScript script = SimulationScript.Load(path);
                 SimulationScriptResult result = SimulationScriptRunner.Run(project, script, definitionOverride);
-                entries.Add(new SimulationScriptSuiteEntry(displayPath, script.Name, result, null));
+                entries.Add(new SimulationScriptSuiteEntry(path, script.Name, result, null));
             }
             catch (SimulationScriptException exception)
             {
-                entries.Add(new SimulationScriptSuiteEntry(displayPath, null, null, exception.Message));
+                entries.Add(new SimulationScriptSuiteEntry(path, null, null, exception.Message));
             }
             catch (CircuitValidationException exception)
             {
-                entries.Add(new SimulationScriptSuiteEntry(displayPath, null, null, exception.Message));
+                entries.Add(new SimulationScriptSuiteEntry(path, null, null, exception.Message));
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                entries.Add(new SimulationScriptSuiteEntry(displayPath, null, null, exception.Message));
+                entries.Add(new SimulationScriptSuiteEntry(path, null, null, exception.Message));
             }
+
+            progress?.Report(new SimulationScriptSuiteProgress(i + 1, scriptPaths.Count, path));
         }
 
         return new SimulationScriptSuiteResult(entries);

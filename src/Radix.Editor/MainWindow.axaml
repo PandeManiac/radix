@@ -584,7 +584,7 @@
           </TabItem>
 
           <TabItem Header="Diagnostics">
-            <Grid RowDefinitions="Auto,Auto,*" Margin="10,8,12,10">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="10,8,12,10">
               <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                 <StackPanel>
                   <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
@@ -595,6 +595,7 @@
                   Classes="tool"
                   Content="Run script…"
                   Click="RunTestScript_Click"
+                  IsEnabled="{Binding CanRunTestScripts}"
                   VerticalAlignment="Top"
                   ToolTip.Tip="Run a .radixtest script against the current in-memory project; the live simulation is not changed" />
                 <Button
@@ -602,12 +603,44 @@
                   Classes="tool"
                   Content="Run folder…"
                   Click="RunTestScriptSuite_Click"
+                  IsEnabled="{Binding CanRunTestScripts}"
                   VerticalAlignment="Top"
                   ToolTip.Tip="Run every .radixtest script below a folder against the current in-memory project" />
               </Grid>
 
               <Border
                 Grid.Row="1"
+                IsVisible="{Binding IsTestScriptSuiteRunning}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                Padding="7,5"
+                Margin="0,0,0,6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Running script suite…" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
+                    <ProgressBar
+                      Minimum="0"
+                      Maximum="100"
+                      Value="{Binding TestScriptSuiteProgressValue}"
+                      Height="6"
+                      Foreground="{DynamicResource App.Accent}"
+                      Background="{DynamicResource App.SubtleBackground}" />
+                    <TextBlock Text="{Binding TestScriptSuiteProgressText}" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+                  </StackPanel>
+                  <Button
+                    Grid.Column="1"
+                    Classes="tool"
+                    Content="Cancel"
+                    Command="{Binding CancelTestScriptSuiteCommand}"
+                    VerticalAlignment="Center"
+                    Padding="6,1" />
+                </Grid>
+              </Border>
+
+              <Border
+                Grid.Row="2"
                 IsVisible="{Binding HasTestScriptResult}"
                 Background="{DynamicResource App.PanelAltBackground}"
                 BorderBrush="{DynamicResource App.Border}"
@@ -650,7 +683,7 @@
                 </Grid>
               </Border>
 
-              <ListBox Grid.Row="2" ItemsSource="{Binding Diagnostics}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1">
+              <ListBox Grid.Row="3" ItemsSource="{Binding Diagnostics}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:DiagnosticItem">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">

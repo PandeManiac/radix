@@ -329,7 +329,7 @@ public partial class MainWindow : Window
 
         if (folders.Count > 0)
         {
-            viewModel.RunTestScriptSuite(folders[0].Path.LocalPath);
+            await viewModel.RunTestScriptSuiteAsync(folders[0].Path.LocalPath);
         }
     }
 

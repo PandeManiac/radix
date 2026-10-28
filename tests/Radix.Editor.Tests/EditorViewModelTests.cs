@@ -5,6 +5,7 @@ using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
+using Radix.Core.Testing;
 using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
@@ -1860,6 +1861,81 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public async Task TestScriptSuiteAsyncRunsOnASnapshotAndReportsProgress()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string directory = Path.Combine(Path.GetTempPath(), "radix-editor-suite-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            const string passing =
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 1 }, "expect": { "q": 0 } } ]
+                }
+                """;
+            File.WriteAllText(Path.Combine(directory, "one.radixtest"), passing);
+            File.WriteAllText(Path.Combine(directory, "two.radixtest"), passing);
+            var progress = new RecordingSuiteProgress();
+
+            Assert.True(await viewModel.RunTestScriptSuiteAsync(directory, progress));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.True(viewModel.TestScriptPassed);
+            Assert.False(viewModel.HasTestScriptFailures);
+            Assert.False(viewModel.IsTestScriptSuiteRunning);
+            Assert.StartsWith("PASS", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("2 script(s)", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Equal(2, progress.Reports.Count);
+            Assert.Equal(1, progress.Reports[0].Completed);
+            Assert.Equal(2, progress.Reports[0].Total);
+            Assert.Equal(1d, progress.Reports[1].Fraction);
+            Assert.False(viewModel.IsDirty);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TestScriptSuiteAsyncReportsCancellationBetweenScripts()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string directory = Path.Combine(Path.GetTempPath(), "radix-editor-suite-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(directory, "one.radixtest"),
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 1 } } ]
+                }
+                """);
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            Assert.False(await viewModel.RunTestScriptSuiteAsync(
+                directory,
+                cancellationToken: cancellation.Token));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            Assert.Contains("cancelled", viewModel.TestScriptSummary, StringComparison.OrdinalIgnoreCase);
+            Assert.False(viewModel.IsTestScriptSuiteRunning);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void TestScriptSuiteReportsAMalformedScriptAndRunsTheRest()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
@@ -2128,6 +2204,13 @@ public sealed class EditorViewModelTests
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
     {
         public void Report(T value) => report(value);
+    }
+
+    private sealed class RecordingSuiteProgress : IProgress<SimulationScriptSuiteProgress>
+    {
+        public List<SimulationScriptSuiteProgress> Reports { get; } = [];
+
+        public void Report(SimulationScriptSuiteProgress value) => Reports.Add(value);
     }
 
     private static string AddInputPin(
