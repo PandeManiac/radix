@@ -22,7 +22,8 @@ The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git
 - `workbench-diagnostics-locate.png` (Diagnostics tab with a Locate action);
 - `workbench-net-navigator.png` (filtered net list with live values);
 - `workbench-interface-reorder.png` (interface rows with move controls);
-- `workbench-search-palette.png` (project-wide find over the counter, with cross-hierarchy net rows).
+- `workbench-search-palette.png` (project-wide find over the counter, with cross-hierarchy net rows);
+- `workbench-overview.png` (the tiny CPU at fit zoom with the canvas overview and its viewport marker).
 
 Launch the editor only when you are ready to use it:
 
@@ -91,6 +92,15 @@ If counter values differ, record the values and diagnostics; this is a correctne
 9. Scroll to **NETS** in the Inspect tab. Expected: every net in the current definition appears with its domain, pin count, and a live value once the simulation has advanced. Type `q` in the filter. Expected: only matching nets remain and the summary reports the match count. Click `q0_net`. Expected: its wire is selected and the net inspector opens, without changing connectivity or simulation state. The inspector lists **CONNECTED PINS** with each part and pin name; click one and its part becomes selected. If the net is bound to the interface, **Ports** names the pin and direction.
 10. Open `examples/tiny-cpu.radix`, zoom to roughly 70%, and drag a large component such as the RAM or ROM. Expected: unchanged wires keep their paths and the drag stays responsive; on release, the moved component's connections have already rerouted into obstacle-free paths, unaffected wires stay put, and there is no long pause. Undo restores the position and the previous routes.
 11. Place a new part in empty space. Expected: existing wires keep their paths, because placement no longer reroutes the whole definition. Place several more without moving the pointer: expected each lands beside the existing bodies rather than on top of one, and no wire cuts through a body. Move a new part over the middle of an existing wire. Expected: that wire reroutes around the body and no segment cuts through it; unrelated wires stay put.
+
+### Canvas overview
+
+1. Open `examples/tiny-cpu.radix` and fit the view. Expected: an **OVERVIEW** panel sits at the canvas's upper right, below the zoom controls, showing the part/port layout and a blue rectangle around the whole map because the fit view sees all content. It must not cover the bottom-right connection hint or the lower-left lane legend.
+2. Click near the lower-right area inside the overview. Expected: the canvas centers on that part of the circuit, the blue viewport rectangle moves to that area, and the status bar, selection, and simulation state do not change. No wire starts, no bendpoint is added, and no context menu opens.
+3. Drag across the overview. Expected: the viewport follows continuously until release; the pointer stays captured even if it leaves the panel. Resize or fit the canvas and confirm the map scales the circuit without distortion.
+4. Zoom in to about 100% and pan with middle-drag. Expected: the blue rectangle shrinks to the visible fraction of the circuit and follows the pan; the grey part/port map itself stays fixed. Double-click the canvas to fit again; the rectangle encloses the content once more.
+5. Shrink the window toward its minimum size while `tiny-cpu` has its seven lanes visible. Expected: the overview hides rather than overlapping the lane legend; widen the window and it returns. Scroll to hide or remove lanes and verify the map can return at the narrower width once there is room.
+6. Switch to Dark and repeat steps 1–3. Expected: the panel, plot, part/port blocks, and viewport marker remain legible against the dark canvas. The overview is a transient navigation aid: it is not saved in the project, and clicking it must not dirty the project.
 
 ## 4. Editing, selection, and clipboard
 
@@ -494,6 +504,7 @@ Do not file these as new failures until they change in the README:
 - the balanced accumulator is also 2 trits wide and drops the adder carry, so it wraps in −4..4 instead of overflowing; its third trit is not stored;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
 - layout is not fully incremental: drag frames, committed drags, and structural edits keep every route still proven valid and reroute only affected nets, but every edit still rebuilds all component boxes and ports, so opening or undoing a very large definition may pause briefly;
+- the canvas overview is a transient screen-space aid: it samples at most 500 parts and 100 ports, omits wires, labels, and values, hides below 480×300 pixels or when the lane legend overlaps it, and is not saved with the project;
 - waveform tail is bounded and may omit old transitions;
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
 - a workbench sweep runs on a background thread and checks cancellation between rows and inside long settle advances; a single primitive evaluation cannot be interrupted, and very large permitted sweeps still consume CPU until stopped. Drag and presentation edits leave a run alone; structural edits cancel it because its snapshot is then obsolete;

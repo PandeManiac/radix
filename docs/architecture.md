@@ -482,6 +482,8 @@ Encoding follows the same boundary. An `INumericFormat` can encode a value into 
 
 The canvas renders a definition's lanes as a fixed-size, screen-space legend at the lower-left. It deliberately does not use world coordinates: at the initial fit zoom, a world-scaled legend would shrink below legibility and would add empty space to `CircuitLayout.ContentBounds`. The legend is capped at seven rows, remaining rows stay in the inspector, and pointer presses inside its bounds are consumed so the circuit underneath is not accidentally selected. Like the lane data itself, it is presentation only and cannot affect compilation or routing.
 
+The **OVERVIEW** map is another screen-space overlay, below the top-right zoom controls. A pure `OverviewMap` projection preserves the content aspect ratio into a fixed plot, maps rectangles and pointer positions in both directions, and clips the visible-world marker to authored content. Drawing samples at most 500 parts and 100 ports so a very large definition cannot turn every frame into thousands of primitives. Pointer presses inside the map are consumed before routing, selection, or context-menu code; a press starts a capture-backed drag that centers `Viewport` on the mapped world point. Resizing, fitting, panning, and zooming change only the map's viewport marker. The map hides below 480×300 pixels of canvas or when the lane legend would overlap it, has no project state, and cannot create or modify connectivity.
+
 ### Concurrency
 
 The engine is single-threaded by design so event order remains obvious and reproducible. Parallel deterministic simulation would require a partitioning/island model and a proof of independence; it is not present.
@@ -497,6 +499,6 @@ The engine is single-threaded by design so event order remains obvious and repro
 - **Determinism tests**: repeated runs produce identical values and traces.
 - **Differential tests**: randomized combinational designs compare the event engine against a reference evaluator.
 - **Round-trip tests**: projects serialize, reload, validate, and simulate identically; malformed/unknown data is rejected.
-- **Headless GUI tests**: view-model editing, wire geometry, clipboard/extraction/library behavior, project-wide search ranking and one-step navigation, saved viewport restoration, theme variant switching, and offscreen render captures in both themes.
+- **Headless GUI tests**: view-model editing, wire geometry, clipboard/extraction/library behavior, project-wide search ranking and one-step navigation, canvas overview projection and click-to-center mapping, saved viewport restoration, theme variant switching, and offscreen render captures in both themes.
 
 Tests are the primary correctness evidence. The manual test document covers what automation intentionally cannot: human interaction, visual judgment, and window-manager behavior.

@@ -56,6 +56,38 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void CanvasOverviewRendersAndCentersTheViewport()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateTinyCpuDemo());
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.Measure(new Size(1480, 920));
+        window.Arrange(new Rect(0, 0, 1480, 920));
+        Dispatcher.UIThread.RunJobs();
+
+        using (var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96)))
+        {
+            bitmap.Render(window);
+            string path = Path.Combine(ArtifactDirectory(), "workbench-overview.png");
+            using FileStream stream = File.Create(path);
+            bitmap.Save(stream);
+            Assert.True(new FileInfo(path).Length > 10_000);
+        }
+
+        CircuitCanvas canvas = window.GetVisualDescendants().OfType<CircuitCanvas>().Single();
+        Assert.True(canvas.OverviewBounds.Width > 100, "expected the overview panel to be rendered");
+        Rect content = viewModel.Layout!.ContentBounds;
+
+        Assert.True(canvas.CenterOnOverview(canvas.OverviewBounds.Center));
+        Rect visible = canvas.Viewport.VisibleWorld(canvas.Bounds.Size);
+        Assert.Equal(content.Center.X, visible.Center.X, precision: 1);
+        Assert.Equal(content.Center.Y, visible.Center.Y, precision: 1);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void FindPaletteRendersMixedProjectResults()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());

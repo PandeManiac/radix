@@ -64,6 +64,8 @@ public sealed class CircuitCanvas : Control
     private bool _rubberBanding;
     private Point _rubberBandStart;
     private Point _rubberBandCurrent;
+    private bool _overviewDragging;
+    private OverviewMap? _overviewMap;
 
     public CircuitCanvas()
     {
@@ -92,6 +94,12 @@ public sealed class CircuitCanvas : Control
     /// the initial fit zooms out; it does not affect routing or content bounds.
     /// </summary>
     public Rect LaneOverlayBounds { get; private set; }
+
+    /// <summary>
+    /// Screen-space bounds of the overview map from the last render, or empty when the
+    /// surface is too small, has no parts, or the lane legend would overlap it.
+    /// </summary>
+    public Rect OverviewBounds { get; private set; }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -242,6 +250,7 @@ public sealed class CircuitCanvas : Control
         DrawRubberBand(context);
         DrawHoverTooltip(context);
         DrawConnectionPreview(context);
+        DrawOverview(context, layout);
         DrawZoomBadge(context);
 
         if (layout.Components.Count == 0 && layout.Ports.Count == 0)
@@ -692,6 +701,99 @@ public sealed class CircuitCanvas : Control
         }
     }
 
+    /// <summary>
+    /// Draws a compact, aspect-correct map of the layout's parts, ports, and the current
+    /// viewport. It samples very large designs instead of building thousands of pens, and
+    /// it is hidden when the surface or lane legend would make it overlap or unreadable.
+    /// </summary>
+    private void DrawOverview(DrawingContext context, CircuitLayout layout)
+    {
+        OverviewBounds = default;
+        _overviewMap = null;
+        if (layout.Components.Count == 0 || Bounds.Width < 480 || Bounds.Height < 300)
+        {
+            return;
+        }
+
+        // Sit below the top-right zoom controls, clear of the bottom-right navigation
+        // hint and the lower-left lane legend. The fixed margin keeps it screen-space.
+        var panel = new Rect(Bounds.Width - 208, 52, 196, 136);
+        if (LaneOverlayBounds.Width > 0 && LaneOverlayBounds.Intersects(panel))
+        {
+            return;
+        }
+
+        var plot = new Rect(panel.X + 8, panel.Y + 20, panel.Width - 16, panel.Height - 40);
+        OverviewMap? map = OverviewMap.Create(layout.ContentBounds, plot);
+        if (map is null)
+        {
+            return;
+        }
+
+        OverviewBounds = panel;
+        _overviewMap = map;
+        context.DrawRectangle(
+            WithOpacity(_panelBackground, 0.95),
+            new Pen(_boxBorder, 1.1),
+            panel,
+            6,
+            6);
+        FormattedText header = Text("OVERVIEW", 9, _muted, FontWeight.SemiBold);
+        context.DrawText(header, new Point(panel.X + 10, panel.Y + 5));
+        context.DrawRectangle(
+            WithOpacity(_canvasBackground, 0.75),
+            new Pen(WithOpacity(_boxBorder, 0.7), 0.8),
+            plot,
+            3,
+            3);
+
+        IBrush bodyFill = WithOpacity(_boxFill, 0.9);
+        var bodyPen = new Pen(WithOpacity(_boxBorder, 0.85), 0.6);
+        int step = Math.Max(1, (int)Math.Ceiling(layout.Components.Count / 500.0));
+        for (int i = 0; i < layout.Components.Count; i += step)
+        {
+            Rect box = map.MapRect(layout.Components[i].Bounds);
+            context.DrawRectangle(bodyFill, bodyPen, box, 1, 1);
+        }
+
+        IBrush portFill = WithOpacity(_accentSoft, 0.85);
+        var portPen = new Pen(WithOpacity(_accent, 0.55), 0.6);
+        int portStep = Math.Max(1, (int)Math.Ceiling(layout.Ports.Count / 100.0));
+        for (int i = 0; i < layout.Ports.Count; i += portStep)
+        {
+            Rect box = map.MapRect(layout.Ports[i].Bounds);
+            context.DrawRectangle(portFill, portPen, box, 1, 1);
+        }
+
+        Rect frame = map.ViewportFrame(Viewport.VisibleWorld(Bounds.Size));
+        if (frame.Width > 0 && frame.Height > 0)
+        {
+            context.DrawRectangle(
+                WithOpacity(_accentSoft, 0.22),
+                new Pen(_accent, 1.4),
+                frame,
+                2,
+                2);
+        }
+    }
+
+    /// <summary>
+    /// Centers the circuit on the world point represented by an overview position.
+    /// Returns false when no overview is currently rendered.
+    /// </summary>
+    public bool CenterOnOverview(Point screen)
+    {
+        if (_overviewMap is null || Bounds.Width <= 1 || Bounds.Height <= 1)
+        {
+            return false;
+        }
+
+        Point world = _overviewMap.ToWorld(screen);
+        Viewport.CenterOn(new Rect(world.X, world.Y, 0, 0), Bounds.Size);
+        InvalidateVisual();
+        return true;
+    }
+
     private void DrawRubberBand(DrawingContext context)
     {
         if (!_rubberBanding)
@@ -778,13 +880,26 @@ public sealed class CircuitCanvas : Control
 
         Focus();
         Point screen = e.GetPosition(this);
+        PointerPoint point = e.GetCurrentPoint(this);
+        if (OverviewBounds.Contains(screen))
+        {
+            if (point.Properties.IsLeftButtonPressed)
+            {
+                _overviewDragging = true;
+                CenterOnOverview(screen);
+                e.Pointer.Capture(this);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (LaneOverlayBounds.Contains(screen))
         {
             e.Handled = true;
             return;
         }
 
-        PointerPoint point = e.GetCurrentPoint(this);
         Point world = Viewport.ScreenToWorld(screen);
         _pointerScreen = screen;
         _pointerWorld = world;
@@ -1062,6 +1177,13 @@ public sealed class CircuitCanvas : Control
         _pointerWorld = world;
         _viewModel?.SetPlacementPoint(world);
 
+        if (_overviewDragging)
+        {
+            CenterOnOverview(screen);
+            e.Handled = true;
+            return;
+        }
+
         if (_panning)
         {
             Vector delta = screen - _lastScreen;
@@ -1151,6 +1273,15 @@ public sealed class CircuitCanvas : Control
         Point screen = e.GetPosition(this);
         Point world = Viewport.ScreenToWorld(screen);
         _pointerWorld = world;
+
+        if (_overviewDragging)
+        {
+            _overviewDragging = false;
+            e.Pointer.Capture(null);
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
 
         if (_draggingWaypoint)
         {
