@@ -249,6 +249,15 @@ These steps use a terminal only; they never open a window. Run from the reposito
 4. Click **Clear**. Expected: the result panel disappears while the ordinary diagnostics remain.
 5. Run the passing script again, then open another project. Expected: the result panel clears because it described the previous project.
 
+### Editor sweep panel
+
+1. Start the workbench and open `examples/full-adder.radix`. Select the **Sweep** tab. Expected: settle ticks `10`, max rows `4096`, and a **Run sweep** button; no table is shown yet.
+2. Click **Run sweep**. Expected: the summary reads `demo.full-adder · 3 input(s) → 2 output(s) · 8 row(s) · settle 10 tick(s)` and a monospaced table headed `a | b | cin | s | cout`. The last row is `1 | 1 | 1 | 1 | 1`, every cell is a value label rather than blank, and the live simulation clock does not move.
+3. Set settle ticks to `0` and run again. Expected: the output columns show `-` because this example builds the adder from delayed primitives; this shows settle time is explicit rather than implied.
+4. Set settle ticks back to `10` and max rows to `4`, then run. Expected: `Sweep error: Sweep needs at least 8 rows, above the limit of 4. Reduce the input set or raise --max-rows.` in the error colour, with no table. **Clear** removes the message.
+5. Run a sweep, then drag a part to a new position. Expected: the table remains, because position is presentation only. Delete a part instead: the table disappears as soon as the edit commits, so it never describes stale wiring.
+6. Open a definition with ternary input pins and run a sweep. Expected: rows enumerate that pin's own domain labels (for example `-`, `0`, `+`) in declaration order, with no assumption that inputs are binary.
+
 ## 14. Ternary multi-trit addition
 
 This check uses the GUI and the examples from the previous section.
@@ -433,6 +442,7 @@ Do not file these as new failures until they change in the README:
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
+- a workbench sweep runs synchronously on the UI thread: the row limit bounds the work and rejects oversized products before simulating, but the window is unresponsive while a large permitted sweep runs;
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; they do not express edge direction, edge order, or minimum setup/hold constraints. The editor's result panel is transient and is not marked stale when the circuit is edited afterward; rerun for a current result;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;

@@ -517,7 +517,8 @@ internal static class Program
         Console.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
             $"rows:       {result.Rows.Count} (settle {result.SettleTicks} tick(s))"));
-        PrintSweepTable(result);
+        Console.WriteLine();
+        Console.WriteLine(InputSweepTable.Format(result));
         return 0;
     }
 
@@ -525,69 +526,6 @@ internal static class Program
         ports.Count == 0
             ? "(none)"
             : string.Join("  ", ports.Select(port => $"{port.PinId}:{port.Domain.Id}"));
-
-    private static string FormatSweepValue(SweepPort port, int value) =>
-        value == SignalValue.UndrivenIndex ? "-" : port.Domain.ValueName(value);
-
-    private static void PrintSweepTable(InputSweepResult result)
-    {
-        var widths = new int[result.Inputs.Count + result.Outputs.Count];
-        for (int i = 0; i < result.Inputs.Count; i++)
-        {
-            SweepPort port = result.Inputs[i];
-            widths[i] = Math.Max(port.PinId.Length, result.Rows
-                .Select(row => FormatSweepValue(port, row.Inputs[i]).Length)
-                .DefaultIfEmpty(1)
-                .Max());
-        }
-
-        for (int i = 0; i < result.Outputs.Count; i++)
-        {
-            SweepPort port = result.Outputs[i];
-            int column = result.Inputs.Count + i;
-            widths[column] = Math.Max(port.PinId.Length, result.Rows
-                .Select(row => FormatSweepValue(port, row.Outputs[i]).Length)
-                .DefaultIfEmpty(1)
-                .Max());
-        }
-
-        Console.WriteLine();
-        if (widths.Length == 0)
-        {
-            Console.WriteLine("(no interface ports)");
-            return;
-        }
-
-        var header = new List<string>(widths.Length);
-        for (int i = 0; i < result.Inputs.Count; i++)
-        {
-            header.Add(result.Inputs[i].PinId.PadRight(widths[i]));
-        }
-
-        for (int i = 0; i < result.Outputs.Count; i++)
-        {
-            header.Add(result.Outputs[i].PinId.PadRight(widths[result.Inputs.Count + i]));
-        }
-
-        Console.WriteLine(string.Join(" | ", header));
-        Console.WriteLine(string.Join("-+-", widths.Select(width => new string('-', width))));
-
-        foreach (SweepRow row in result.Rows)
-        {
-            var cells = new List<string>(widths.Length);
-            for (int i = 0; i < result.Inputs.Count; i++)
-            {
-                cells.Add(FormatSweepValue(result.Inputs[i], row.Inputs[i]).PadRight(widths[i]));
-            }
-
-            for (int i = 0; i < result.Outputs.Count; i++)
-            {
-                cells.Add(FormatSweepValue(result.Outputs[i], row.Outputs[i]).PadRight(widths[result.Inputs.Count + i]));
-            }
-
-            Console.WriteLine(string.Join(" | ", cells));
-        }
-    }
 
     private static int InspectCommand(string[] args)
     {

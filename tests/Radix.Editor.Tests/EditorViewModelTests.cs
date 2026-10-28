@@ -1779,6 +1779,64 @@ public sealed class EditorViewModelTests
         }
     }
 
+    [Fact]
+    public void SweepRendersEveryInputCombinationOfTheCurrentDefinition()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        viewModel.SweepSettleTicksText = "2";
+
+        Assert.True(viewModel.RunSweep());
+
+        Assert.True(viewModel.HasSweepResult);
+        Assert.False(viewModel.HasSweepError);
+        Assert.Contains("a | b | y", viewModel.SweepResultText, StringComparison.Ordinal);
+        Assert.Contains("0 | 0 | 0", viewModel.SweepResultText, StringComparison.Ordinal);
+        Assert.Contains("0 | 1 | 0", viewModel.SweepResultText, StringComparison.Ordinal);
+        Assert.Contains("1 | 0 | 0", viewModel.SweepResultText, StringComparison.Ordinal);
+        Assert.Contains("1 | 1 | 1", viewModel.SweepResultText, StringComparison.Ordinal);
+        Assert.Contains("4 row(s)", viewModel.SweepSummary, StringComparison.Ordinal);
+        Assert.Contains("settle 2 tick(s)", viewModel.SweepSummary, StringComparison.Ordinal);
+        Assert.False(viewModel.IsDirty);
+    }
+
+    [Fact]
+    public void SweepRejectsBadLimitsAndOversizedInputSpaces()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+
+        viewModel.SweepSettleTicksText = "-1";
+        Assert.False(viewModel.RunSweep());
+        Assert.True(viewModel.HasSweepError);
+        Assert.Contains("settle ticks", viewModel.SweepSummary, StringComparison.Ordinal);
+        Assert.Equal(string.Empty, viewModel.SweepResultText);
+
+        viewModel.SweepSettleTicksText = "2";
+        viewModel.SweepMaxRowsText = "2";
+        Assert.False(viewModel.RunSweep());
+        Assert.True(viewModel.HasSweepError);
+        Assert.Contains("above the limit of 2", viewModel.SweepSummary, StringComparison.Ordinal);
+
+        viewModel.SweepMaxRowsText = "4096";
+        viewModel.ClearSweepResult();
+        Assert.False(viewModel.HasSweepResult);
+        Assert.Equal(string.Empty, viewModel.SweepSummary);
+    }
+
+    [Fact]
+    public void SweepResultIsDroppedByStructuralEditsButSurvivesPresentationEdits()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        Assert.True(viewModel.RunSweep());
+
+        ComponentInstance gate = viewModel.Definition.FindInstance("g")!;
+        viewModel.NudgeInstance(gate.Id, 8, 0);
+        Assert.True(viewModel.HasSweepResult);
+
+        viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(c => c.Name == "NOT gate"));
+        Assert.False(viewModel.HasSweepResult);
+        Assert.Equal(string.Empty, viewModel.SweepResultText);
+    }
+
     private static EditorViewModel CreateLookupEditor()
     {
         var builder = new ProjectBuilder("lookup editor");

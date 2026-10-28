@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Windows.Input;
 using Avalonia;
 using Radix.Core;
+using Radix.Core.Analysis;
 using Radix.Core.Compilation;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
@@ -99,6 +100,12 @@ public sealed class EditorViewModel : ObservableObject
     private bool _testScriptPassed;
     private string _testScriptSummary = string.Empty;
     private string _testScriptPath = string.Empty;
+    private string _sweepSettleTicksText = "10";
+    private string _sweepMaxRowsText = "4096";
+    private string _sweepResultText = string.Empty;
+    private string _sweepSummary = string.Empty;
+    private bool _hasSweepResult;
+    private bool _hasSweepError;
     private bool _hasLookupTable;
     private string _lookupTableSummary = string.Empty;
     private string? _lookupTableInstanceId;
@@ -176,6 +183,8 @@ public sealed class EditorViewModel : ObservableObject
         SettleCommand = new RelayCommand(Settle);
         ClearDrivesCommand = new RelayCommand(ClearDrives);
         ClearTestScriptResultCommand = new RelayCommand(ClearTestScriptResult);
+        RunSweepCommand = new RelayCommand(() => RunSweep());
+        ClearSweepResultCommand = new RelayCommand(ClearSweepResult);
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
         CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
         AddNumericLaneCommand = new RelayCommand(AddNumericLane);
@@ -390,6 +399,10 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ClearTestScriptResultCommand { get; }
 
+    public ICommand RunSweepCommand { get; }
+
+    public ICommand ClearSweepResultCommand { get; }
+
     public ICommand FitCommand { get; }
 
     public ICommand CloseDefinitionCommand { get; }
@@ -498,6 +511,44 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _testScriptPath;
         private set => SetField(ref _testScriptPath, value);
+    }
+
+    /// <summary>Ticks advanced after driving each sweep row.</summary>
+    public string SweepSettleTicksText
+    {
+        get => _sweepSettleTicksText;
+        set => SetField(ref _sweepSettleTicksText, value);
+    }
+
+    /// <summary>Upper bound on input combinations, guarding the UI from huge sweeps.</summary>
+    public string SweepMaxRowsText
+    {
+        get => _sweepMaxRowsText;
+        set => SetField(ref _sweepMaxRowsText, value);
+    }
+
+    public string SweepResultText
+    {
+        get => _sweepResultText;
+        private set => SetField(ref _sweepResultText, value);
+    }
+
+    public string SweepSummary
+    {
+        get => _sweepSummary;
+        private set => SetField(ref _sweepSummary, value);
+    }
+
+    public bool HasSweepResult
+    {
+        get => _hasSweepResult;
+        private set => SetField(ref _hasSweepResult, value);
+    }
+
+    public bool HasSweepError
+    {
+        get => _hasSweepError;
+        private set => SetField(ref _hasSweepError, value);
     }
 
     public string ZoomText => "100%";
@@ -1284,6 +1335,73 @@ public sealed class EditorViewModel : ObservableObject
         TestScriptPassed = false;
         HasTestScriptResult = false;
         RaisePropertyChanged(nameof(HasTestScriptFailures));
+    }
+
+    /// <summary>
+    /// Sweeps every interface-input combination of the current definition in an
+    /// isolated engine, leaving the live simulation untouched. Results are cleared
+    /// whenever the project changes so a table can never describe stale structure.
+    /// </summary>
+    public bool RunSweep()
+    {
+        ClearSweepResult();
+        if (!int.TryParse(SweepSettleTicksText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int settle) ||
+            settle < 0)
+        {
+            return FailSweep("settle ticks must be a non-negative integer.");
+        }
+
+        if (!int.TryParse(SweepMaxRowsText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int maxRows) ||
+            maxRows < 1)
+        {
+            return FailSweep("max rows must be a positive integer.");
+        }
+
+        try
+        {
+            InputSweepResult result = InputSweep.Run(_project, Definition.Id, settle, maxRows);
+            SweepResultText = InputSweepTable.Format(result);
+            SweepSummary = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{Definition.Id} · {result.Inputs.Count} input(s) → {result.Outputs.Count} output(s) · " +
+                $"{result.Rows.Count} row(s) · settle {result.SettleTicks} tick(s)");
+            HasSweepResult = true;
+            StatusText = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Sweep: {result.Rows.Count} row(s) on {Definition.Name}");
+            return true;
+        }
+        catch (InputSweepException exception)
+        {
+            return FailSweep(exception.Message);
+        }
+        catch (CircuitValidationException exception)
+        {
+            Diagnostic? first = exception.Diagnostics.FirstOrDefault(d =>
+                d.Severity == DiagnosticSeverity.Error);
+            return FailSweep(first?.Message ?? exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return FailSweep(exception.Message);
+        }
+    }
+
+    public void ClearSweepResult()
+    {
+        SweepResultText = string.Empty;
+        SweepSummary = string.Empty;
+        HasSweepResult = false;
+        HasSweepError = false;
+    }
+
+    private bool FailSweep(string message)
+    {
+        SweepSummary = "Sweep error: " + message;
+        HasSweepResult = true;
+        HasSweepError = true;
+        StatusText = "Sweep failed: " + message;
+        return false;
     }
 
     public void OpenRecentProject(string path) => RecentProjectOpenRequested?.Invoke(path);
@@ -3462,6 +3580,7 @@ public sealed class EditorViewModel : ObservableObject
 
     private void RefreshAll(bool fit)
     {
+        ClearSweepResult();
         EnsureProjectShape();
         if (_project.FindDefinition(_definitionId) is null)
         {
@@ -4454,6 +4573,7 @@ public sealed class EditorViewModel : ObservableObject
         IsDirty = true;
         if (invalidateSimulation)
         {
+            ClearSweepResult();
             Simulator.Retarget(_project, Definition);
         }
 

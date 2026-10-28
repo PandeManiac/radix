@@ -628,6 +628,54 @@
             </Grid>
           </TabItem>
 
+          <TabItem Header="Sweep">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="10,8,12,10">
+              <TextBlock
+                Text="Drives every combination of the current definition's input pins and reads its outputs after settling. Each row restarts from power-on state, so sequential circuits are not chained between rows."
+                Classes="muted"
+                FontSize="9.5"
+                TextWrapping="Wrap" />
+              <Grid Grid.Row="1" ColumnDefinitions="Auto,58,Auto,64,Auto,Auto" ColumnSpacing="6" Margin="0,6,0,4">
+                <TextBlock Text="Settle ticks" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" />
+                <TextBox Grid.Column="1" Text="{Binding SweepSettleTicksText, Mode=TwoWay}" ToolTip.Tip="Ticks advanced after each combination is driven; enough to cover the circuit's delays" />
+                <TextBlock Grid.Column="2" Text="Max rows" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" />
+                <TextBox Grid.Column="3" Text="{Binding SweepMaxRowsText, Mode=TwoWay}" ToolTip.Tip="Refuse sweeps larger than this instead of freezing the workbench" />
+                <Button Grid.Column="4" Content="Run sweep" Command="{Binding RunSweepCommand}" VerticalAlignment="Center" />
+                <Button Grid.Column="5" Classes="tool" Content="Clear" Command="{Binding ClearSweepResultCommand}" IsVisible="{Binding HasSweepResult}" VerticalAlignment="Center" />
+              </Grid>
+              <TextBlock
+                Grid.Row="2"
+                Text="{Binding SweepSummary}"
+                Classes="diag"
+                Classes.error="{Binding HasSweepError}"
+                FontSize="10"
+                TextWrapping="Wrap"
+                Margin="0,0,0,5" />
+              <Border Grid.Row="3" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
+                <Grid>
+                  <TextBlock
+                    Text="No sweep yet. Set the settle window and run it to see every input combination."
+                    Classes="muted"
+                    FontSize="10"
+                    TextWrapping="Wrap"
+                    Margin="8,6"
+                    IsVisible="{Binding !HasSweepResult}" />
+                  <ScrollViewer
+                    HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto"
+                    IsVisible="{Binding HasSweepResult}">
+                    <TextBlock
+                      Text="{Binding SweepResultText}"
+                      FontFamily="monospace"
+                      FontSize="10"
+                      Foreground="{DynamicResource App.TextSecondary}"
+                      Margin="8,6" />
+                  </ScrollViewer>
+                </Grid>
+              </Border>
+            </Grid>
+          </TabItem>
+
           <TabItem Header="Waveform">
             <Grid RowDefinitions="Auto,*" Margin="8,6,8,8">
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">

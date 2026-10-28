@@ -66,7 +66,7 @@ public sealed class RenderingTests
         Dispatcher.UIThread.RunJobs();
         var tabs = window.FindControl<TabControl>("RightTabs");
         Assert.NotNull(tabs);
-        tabs!.SelectedIndex = 2;
+        tabs!.SelectedIndex = 3;
         Dispatcher.UIThread.RunJobs();
 
         using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
@@ -95,7 +95,7 @@ public sealed class RenderingTests
         Dispatcher.UIThread.RunJobs();
         var tabs = window.FindControl<TabControl>("RightTabs");
         Assert.NotNull(tabs);
-        tabs!.SelectedIndex = 2;
+        tabs!.SelectedIndex = 3;
         Dispatcher.UIThread.RunJobs();
 
         WaveformView waveform = window.GetVisualDescendants().OfType<WaveformView>().Single();
@@ -533,6 +533,69 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void SweepTabRendersTableInDarkTheme()
+    {
+        Application? application = Application.Current;
+        Assert.NotNull(application);
+        ThemeVariant? previous = application.RequestedThemeVariant;
+        application.RequestedThemeVariant = ThemeVariant.Dark;
+
+        MainWindow? window = null;
+        try
+        {
+            var builder = new ProjectBuilder("sweep render");
+            DefinitionBuilder root = builder.Define("root", "Root");
+            Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+            Net b = root.AddPin("b", "B", PinDirection.Input, StandardDomains.BinaryId);
+            Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+            root.AddPrimitive("g", new LookupSpec(2, [0, 0, 0, 1], 1));
+            root.Connect(a, root.Pin("g", "in0"));
+            root.Connect(b, root.Pin("g", "in1"));
+            root.Connect(y, root.Pin("g", "out"));
+            var viewModel = new EditorViewModel(builder.Build("root"));
+            viewModel.SweepSettleTicksText = "2";
+            Assert.True(viewModel.RunSweep());
+
+            window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            window.Measure(new Size(1480, 920));
+            window.Arrange(new Rect(0, 0, 1480, 920));
+            Dispatcher.UIThread.RunJobs();
+
+            var tabs = window.FindControl<TabControl>("RightTabs");
+            Assert.NotNull(tabs);
+            tabs!.SelectedIndex = 2;
+            Dispatcher.UIThread.RunJobs();
+
+            Button run = Assert.Single(
+                window.GetVisualDescendants().OfType<Button>(),
+                button => button.Content is "Run sweep");
+            Assert.True(run.IsEffectivelyVisible);
+
+            TextBlock table = Assert.Single(
+                window.GetVisualDescendants().OfType<TextBlock>(),
+                text => text.Text?.Contains("1 | 1 | 1", StringComparison.Ordinal) == true);
+            Assert.True(table.IsEffectivelyVisible);
+
+            using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+            bitmap.Render(window);
+            string path = Path.Combine(ArtifactDirectory(), "workbench-sweep-dark.png");
+            using (FileStream stream = File.Create(path))
+            {
+                bitmap.Save(stream);
+            }
+
+            Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+        }
+        finally
+        {
+            window?.Close();
+            application.RequestedThemeVariant = previous;
+        }
+    }
+
+    [AvaloniaFact]
     public void EmptyProjectCanvasRendersHint()
     {
         var project = Core.Model.CircuitProject.CreateEmpty("Empty");
@@ -586,7 +649,7 @@ public sealed class RenderingTests
 
             var tabs = window.FindControl<TabControl>("RightTabs");
             Assert.NotNull(tabs);
-            tabs!.SelectedIndex = 2;
+            tabs!.SelectedIndex = 3;
             Dispatcher.UIThread.RunJobs();
             using (var waveform = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96)))
             {

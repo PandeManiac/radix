@@ -57,6 +57,25 @@ public sealed class InputSweepTests
     }
 
     [Fact]
+    public void TableFormatterAlignsColumnsAndShowsEveryRow()
+    {
+        InputSweepResult result = InputSweep.Run(BinaryGate([0, 0, 0, 1]), "and");
+
+        string table = InputSweepTable.Format(result).Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        Assert.Equal(
+            "a | b | y\n" +
+            "--+---+--\n" +
+            "0 | 0 | 0\n" +
+            "0 | 1 | 0\n" +
+            "1 | 0 | 0\n" +
+            "1 | 1 | 1",
+            table);
+        Assert.Equal("-", InputSweepTable.FormatValue(result.Outputs[0], SignalValue.UndrivenIndex));
+        Assert.Equal("0", InputSweepTable.FormatValue(result.Outputs[0], 0));
+    }
+
+    [Fact]
     public void SweepRejectsMoreCombinationsThanTheLimit()
     {
         CircuitProject project = TernaryPair();
