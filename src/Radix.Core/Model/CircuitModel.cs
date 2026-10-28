@@ -94,6 +94,26 @@ public sealed class Net
 /// <summary>Binds an interface pin of a definition to an internal net.</summary>
 public sealed record PortBinding(string PinId, string NetId);
 
+/// <summary>
+/// An ordered group of interface pins displayed as one number. Lanes are pure
+/// presentation: they never merge nets, drive signals, or affect simulation. Pin
+/// order is least-significant-first as declared, matching the built-in formats.
+/// </summary>
+public sealed class NumericLane
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Identifier from <c>NumericFormats</c> used to decode this lane.</summary>
+    public string FormatId { get; set; } = string.Empty;
+
+    /// <summary>Ordered interface-pin IDs. The first pin is the least significant.</summary>
+    public List<string> PinIds { get; } = [];
+
+    public override string ToString() => Id;
+}
+
 /// <summary>Simulation defaults stored with a project.</summary>
 public sealed class ProjectSettings
 {
@@ -134,6 +154,9 @@ public sealed class CircuitDefinition
 
     public List<PortBinding> Ports { get; } = [];
 
+    /// <summary>Presentation-only numeric groupings of interface pins.</summary>
+    public List<NumericLane> NumericLanes { get; } = [];
+
     public IReadOnlyList<PinDescriptor> InterfacePins =>
         Pins.Select(p => p.ToDescriptor()).ToArray();
 
@@ -148,6 +171,9 @@ public sealed class CircuitDefinition
 
     public PortBinding? FindPort(string pinId) =>
         Ports.FirstOrDefault(p => string.Equals(p.PinId, pinId, StringComparison.Ordinal));
+
+    public NumericLane? FindNumericLane(string laneId) =>
+        NumericLanes.FirstOrDefault(l => string.Equals(l.Id, laneId, StringComparison.Ordinal));
 
     public Net? FindPortNet(string pinId)
     {
@@ -165,7 +191,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 2;
+    public const int CurrentFormatVersion = 3;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 

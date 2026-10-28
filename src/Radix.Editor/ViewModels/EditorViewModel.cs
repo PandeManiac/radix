@@ -4,6 +4,7 @@ using System.Windows.Input;
 using Avalonia;
 using Radix.Core;
 using Radix.Core.Compilation;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
@@ -59,6 +60,8 @@ public sealed class EditorViewModel : ObservableObject
     private string? _savedProjectJson;
     private string _newComponentName = "Component";
     private string _promoteNetName = string.Empty;
+    private string _newLaneName = string.Empty;
+    private NumericDisplayOption? _selectedLaneFormat;
 
 
     public EditorViewModel(CircuitProject project)
@@ -69,6 +72,8 @@ public sealed class EditorViewModel : ObservableObject
         _definitionId = _project.RootDefinitionId;
         Simulator = new SimulatorHost(_project, Definition);
         _advanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
+        _selectedLaneFormat = FormatChoices.FirstOrDefault(option => option.Format.Id == NumericFormats.UnsignedBinary.Id) ??
+            FormatChoices.FirstOrDefault();
 
         _undoCommand = new RelayCommand(Undo, () => _undo.Count > 0);
         _redoCommand = new RelayCommand(Redo, () => _redo.Count > 0);
@@ -109,6 +114,7 @@ public sealed class EditorViewModel : ObservableObject
         ClearDrivesCommand = new RelayCommand(ClearDrives);
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
         CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
+        AddNumericLaneCommand = new RelayCommand(AddNumericLane);
 
         RefreshAll(fit: false);
     }
@@ -141,6 +147,13 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<PinListItem> Pins { get; } = [];
 
     public ObservableCollection<IoPinViewModel> IoPins { get; } = [];
+
+    public ObservableCollection<NumericLaneListItem> NumericLanes { get; } = [];
+
+    public ObservableCollection<LanePinChoice> LanePinChoices { get; } = [];
+
+    public ObservableCollection<NumericDisplayOption> FormatChoices { get; } =
+        [.. NumericFormats.All.Select(format => new NumericDisplayOption(format))];
 
     public ObservableCollection<DiagnosticItem> Diagnostics { get; } = [];
 
@@ -354,6 +367,22 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public bool HasPaletteResults => Palette.Count > 0;
+
+    public bool HasNumericLanes => NumericLanes.Count > 0;
+
+    public string NewLaneName
+    {
+        get => _newLaneName;
+        set => SetField(ref _newLaneName, value);
+    }
+
+    public NumericDisplayOption? SelectedLaneFormat
+    {
+        get => _selectedLaneFormat;
+        set => SetField(ref _selectedLaneFormat, value);
+    }
+
+    public ICommand AddNumericLaneCommand { get; }
 
     public string NewComponentName
     {
@@ -1001,6 +1030,64 @@ public sealed class EditorViewModel : ObservableObject
         DefinitionEditor.SetPinDirection(Definition, pinId, direction);
         AfterMutation(structural: true);
         StatusText = $"Pin '{pin.Name}' is now {(direction == PinDirection.Input ? "an input" : "an output")}";
+    }
+
+    public void AddNumericLane()
+    {
+        List<PinDeclaration> selected = Definition.Pins
+            .Where(pin => LanePinChoices.Any(choice =>
+                choice.IsSelected && string.Equals(choice.PinId, pin.Id, StringComparison.Ordinal)))
+            .ToList();
+        if (selected.Count == 0)
+        {
+            StatusText = "Select at least one interface pin for the numeric lane.";
+            return;
+        }
+
+        if (selected.Select(pin => pin.DomainId).Distinct(StringComparer.Ordinal).Count() > 1)
+        {
+            StatusText = "A numeric lane can only group pins from one signal domain.";
+            return;
+        }
+
+        INumericFormat format = SelectedLaneFormat?.Format ?? NumericFormats.UnsignedBinary;
+        PushUndo();
+        NumericLane? lane = DefinitionEditor.AddNumericLane(
+            Definition,
+            NewLaneName,
+            format.Id,
+            selected.Select(pin => pin.Id));
+        if (lane is null)
+        {
+            _undo.Pop();
+            StatusText = "Could not add the numeric lane.";
+            return;
+        }
+
+        NewLaneName = string.Empty;
+        AfterMutation(structural: true);
+        string note = string.Equals(selected[0].DomainId, format.DomainId, StringComparison.Ordinal)
+            ? string.Empty
+            : $" · note: {format.Name} is intended for domain '{format.DomainId}'.";
+        StatusText = $"Added numeric lane '{lane.Name}' ({lane.PinIds.Count} pins).{note}";
+    }
+
+    public void RemoveNumericLane(string laneId)
+    {
+        if (Definition.FindNumericLane(laneId) is not NumericLane lane)
+        {
+            return;
+        }
+
+        PushUndo();
+        if (!DefinitionEditor.RemoveNumericLane(Definition, laneId))
+        {
+            _undo.Pop();
+            return;
+        }
+
+        AfterMutation(structural: true);
+        StatusText = $"Removed numeric lane '{lane.Name}'";
     }
 
     public void RemovePin(string pinId)
@@ -1754,6 +1841,7 @@ public sealed class EditorViewModel : ObservableObject
         RefreshDomains();
         RefreshPins();
         RefreshIoPins();
+        RefreshNumericLanes();
         RebuildLayout();
         RefreshInspector();
         RefreshDiagnosticsFromValidator();
@@ -1887,6 +1975,97 @@ public sealed class EditorViewModel : ObservableObject
         {
             view.ValueText = Simulator.Format(EditorPin.ForPort(view.PinId));
         }
+
+        RefreshNumericLaneValues();
+    }
+
+    private void RefreshNumericLanes()
+    {
+        NumericLanes.Clear();
+        foreach (NumericLane lane in Definition.NumericLanes)
+        {
+            string laneId = lane.Id;
+            INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, lane.FormatId, StringComparison.Ordinal));
+            string pins = string.Join(
+                " · ",
+                lane.PinIds.Select(pinId => Definition.FindPin(pinId)?.Name ?? $"{pinId} (missing)"));
+            NumericLanes.Add(new NumericLaneListItem(
+                lane,
+                format?.Name ?? $"{lane.FormatId} (unknown)",
+                pins.Length == 0 ? "no pins" : pins,
+                new RelayCommand(() => RemoveNumericLane(laneId))));
+        }
+
+        LanePinChoices.Clear();
+        foreach (PinDeclaration pin in Definition.Pins)
+        {
+            LanePinChoices.Add(new LanePinChoice(pin));
+        }
+
+        RaisePropertyChanged(nameof(HasNumericLanes));
+        RefreshNumericLaneValues();
+    }
+
+    private void RefreshNumericLaneValues()
+    {
+        foreach (NumericLaneListItem view in NumericLanes)
+        {
+            if (Definition.FindNumericLane(view.Id) is not NumericLane lane)
+            {
+                view.ValueText = "—";
+                view.ValueHint = "This lane no longer exists.";
+                continue;
+            }
+
+            (string text, string hint) = DecodeNumericLane(lane, view.FormatId);
+            view.ValueText = text;
+            view.ValueHint = hint;
+        }
+    }
+
+    private (string Text, string Hint) DecodeNumericLane(NumericLane lane, string formatId)
+    {
+        if (Simulator.Circuit is null || Simulator.Engine is null)
+        {
+            return ("—", "Start or advance the simulation to decode this lane.");
+        }
+
+        INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, formatId, StringComparison.Ordinal));
+        if (format is null)
+        {
+            return ("invalid", $"Unknown numeric format '{formatId}'.");
+        }
+
+        if (lane.PinIds.Count == 0)
+        {
+            return ("invalid", "This lane has no interface pins.");
+        }
+
+        int[] values = new int[lane.PinIds.Count];
+        for (int i = 0; i < lane.PinIds.Count; i++)
+        {
+            string pinId = lane.PinIds[i];
+            if (!Simulator.TryRead(EditorPin.ForPort(pinId), out int value, out _))
+            {
+                return ("missing", $"Pin '{pinId}' is not available in the compiled circuit.");
+            }
+
+            values[i] = value;
+        }
+
+        // Lanes are declared least-significant first by contract. Formats that read
+        // most-significant first need the sequence reversed before decoding.
+        if (!format.LeastSignificantFirst)
+        {
+            Array.Reverse(values);
+        }
+
+        NumericDecodeResult result = format.Decode(values);
+        return result.IsValid
+            ? (result.Value.ToString(CultureInfo.InvariantCulture), format.Describe(values.Length))
+            : ("invalid", result.Error ?? "The pin values cannot be decoded.");
     }
 
     private void RefreshEvents()
@@ -2212,6 +2391,7 @@ public sealed class EditorViewModel : ObservableObject
             RefreshDomains();
             RefreshPins();
             RefreshIoPins();
+            RefreshNumericLanes();
             RefreshEvents();
         }
         else

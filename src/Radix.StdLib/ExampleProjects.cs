@@ -1,3 +1,4 @@
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 
@@ -83,6 +84,15 @@ public static class ExampleProjects
                 0);
         }
 
+        root.AddNumericLane(
+            "count",
+            "Count",
+            NumericFormats.UnsignedBinary.Id,
+            "q0",
+            "q1",
+            "q2",
+            "q3");
+
         Net clock = root.AddNet("clk", StandardDomains.BinaryId);
         // A 20-tick clock leaves ample time for the ripple-carry next state to
         // settle before the flip-flop capture window.
@@ -142,6 +152,10 @@ public static class ExampleProjects
             data[i] = root.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.BinaryId);
             q[i] = root.SetInitial(root.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.BinaryId), 0);
         }
+
+        root.AddNumericLane("opcode", "Opcode", NumericFormats.UnsignedBinary.Id, "op0", "op1");
+        root.AddNumericLane("data", "Data", NumericFormats.UnsignedBinary.Id, "d0", "d1", "d2", "d3");
+        root.AddNumericLane("result", "Result", NumericFormats.UnsignedBinary.Id, "q0", "q1", "q2", "q3");
 
         Net carry = root.SetInitial(
             root.AddPin("carry", "CARRY", PinDirection.Output, StandardDomains.BinaryId),

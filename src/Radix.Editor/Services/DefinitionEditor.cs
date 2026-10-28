@@ -30,6 +30,9 @@ public static class DefinitionEditor
     public static string UniquePinId(CircuitDefinition definition, string stem = "p") =>
         UniqueId(stem, id => definition.FindPin(id) is not null);
 
+    public static string UniqueLaneId(CircuitDefinition definition, string stem = "lane") =>
+        UniqueId(stem, id => definition.FindNumericLane(id) is not null);
+
     public static PinDeclaration? AddPin(
         CircuitProject project,
         CircuitDefinition definition,
@@ -85,6 +88,61 @@ public static class DefinitionEditor
             definition.Nets.Remove(net);
         }
 
+        foreach (NumericLane lane in definition.NumericLanes)
+        {
+            lane.PinIds.RemoveAll(id => string.Equals(id, pinId, StringComparison.Ordinal));
+        }
+
+        definition.NumericLanes.RemoveAll(lane => lane.PinIds.Count == 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Adds a numeric lane over existing interface pins, preserving the caller's
+    /// order and dropping duplicates. Returns null when no known pin remains.
+    /// </summary>
+    public static NumericLane? AddNumericLane(
+        CircuitDefinition definition,
+        string name,
+        string formatId,
+        IEnumerable<string> pinIds)
+    {
+        var ordered = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string pinId in pinIds)
+        {
+            if (definition.FindPin(pinId) is not null && seen.Add(pinId))
+            {
+                ordered.Add(pinId);
+            }
+        }
+
+        if (ordered.Count == 0)
+        {
+            return null;
+        }
+
+        string trimmed = name.Trim();
+        var lane = new NumericLane
+        {
+            Id = UniqueLaneId(definition),
+            Name = trimmed.Length == 0 ? $"Bus {ordered.Count}" : trimmed,
+            FormatId = formatId,
+        };
+        lane.PinIds.AddRange(ordered);
+        definition.NumericLanes.Add(lane);
+        return lane;
+    }
+
+    public static bool RemoveNumericLane(CircuitDefinition definition, string laneId)
+    {
+        NumericLane? lane = definition.FindNumericLane(laneId);
+        if (lane is null)
+        {
+            return false;
+        }
+
+        definition.NumericLanes.Remove(lane);
         return true;
     }
 

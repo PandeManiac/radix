@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 2,
+  "version": 3,
   "name": "Full adder demo",
   "root": "demo.full-adder",
   "settings": {

@@ -32,7 +32,7 @@ Consequences:
 | Compiler | `src/Radix.Core/Compilation` | Hierarchy expansion, net merging, flat immutable arrays |
 | Engine | `src/Radix.Core/Simulation` | Deterministic event queue, primitive runtimes, traces, diagnostics |
 | Project format | `src/Radix.Core/Serialization` | Versioned JSON, strict mapping, secure loading |
-| Interpretation | `src/Radix.Core/Interpretation` | Display-only positional and sign-magnitude decoding |
+| Interpretation | `src/Radix.Core/Interpretation` | Display-only positional and sign-magnitude decoding; numeric lane formats |
 | Standard library | `src/Radix.StdLib` | Reusable project definitions and examples |
 | CLI | `src/Radix.Cli` | Headless validation, simulation, reports, benchmarks |
 | Editor | `src/Radix.Editor` | Mutable project state, layout, rendering, gesture handling |
@@ -386,6 +386,10 @@ This is an architectural boundary in the project format and UI, not a promise th
 ### Buses and numeric encodings
 
 There is no first-class bus. Users can create a definition with N pins and use lookup tables; the compiler intentionally does not impose width or encoding. Numeric interpretation (`PositionalFormat`, `SignMagnitudeFormat`) operates on an ordered span of value indices for display/reporting only. Complement conventions are documented on the format classes and in tests; they never affect net values.
+
+A `NumericLane` persists a named, ordered list of **interface pin IDs** plus a format ID. The first pin is least significant by contract. Lanes exist to make an interface readable and to let a reusable part carry its numeric presentation; they are deliberately not compiler input. The compiler flattens circuits exactly as if every lane were absent, and deleting a lane cannot change simulation. Lanes are validated (known format, known/unique pins) and pruned when a pin is removed. This avoids two common design errors: turning a group of pins into a hidden vector whose width and encoding the kernel must understand, and storing numeric state separately from the nets it describes.
+
+Encoding a typed number back into input pins is a future editor operation. It must still decompose into independent pin drives; no new signal type is needed.
 
 ### Concurrency
 

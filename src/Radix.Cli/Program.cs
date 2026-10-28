@@ -442,6 +442,10 @@ internal static class Program
             Console.WriteLine($"    pins:      {string.Join(", ", definition.Pins.Select(p => $"{p.Id}:{p.Direction.ToString().ToLowerInvariant()}:{p.DomainId}"))}");
             Console.WriteLine($"    instances: {definition.Instances.Count.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"    nets:      {definition.Nets.Count.ToString(CultureInfo.InvariantCulture)}");
+            foreach (NumericLane lane in definition.NumericLanes)
+            {
+                Console.WriteLine($"    lane:      {lane.Id} ({lane.Name}) format={lane.FormatId} pins=[{string.Join(", ", lane.PinIds)}]");
+            }
         }
 
         return 0;

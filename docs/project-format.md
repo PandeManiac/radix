@@ -1,4 +1,4 @@
-# RADIX project format, version 2
+# RADIX project format, version 3
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,7 +9,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 2,
+  "version": 3,
   "name": "Example",
   "description": "optional",
   "root": "main",
@@ -22,7 +22,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `2`. Version 1 files load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `3`. Versions 1–3 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Definition opened by default and simulated by the CLI unless overridden |
@@ -96,11 +96,12 @@ Multiple active drivers resolve deterministically to the first active driver in 
   "pins": [],
   "instances": [],
   "nets": [],
-  "ports": []
+  "ports": [],
+  "numericLanes": []
 }
 ```
 
-A definition is a reusable circuit: its interface (`pins`), its body (`instances`, `nets`), and the bindings from interface pins to internal nets (`ports`). Definitions may instantiate other definitions. Cycles are rejected; maximum instantiation depth is 64.
+A definition is a reusable circuit: its interface (`pins`), its body (`instances`, `nets`), the bindings from interface pins to internal nets (`ports`), and optional presentation-only numeric groupings (`numericLanes`). Definitions may instantiate other definitions. Cycles are rejected; maximum instantiation depth is 64.
 
 ### Pins
 
@@ -182,7 +183,7 @@ Instance pins are derived from the referenced definition's interface or from the
 
 - `color` is optional editor metadata: `#RRGGBB` (normalized to upper case) or `"auto"`. Omit it for signal-derived coloring. Invalid colors fail the load.
 - `route` is optional editor metadata: up to 64 author bendpoints in world coordinates, in order. Empty or omitted means automatic orthogonal routing. Bendpoints never enter compilation or simulation.
-- Version 1 files have neither field and load unchanged. Saving always writes version 2.
+- Version 1 files have neither field and load unchanged. Saving always writes the current version (3).
 
 ### Port bindings
 
@@ -195,6 +196,24 @@ Instance pins are derived from the referenced definition's interface or from the
 
 Every interface pin needs exactly one binding. The pin's declared domain must match the bound net's domain. Only root ports are exposed to the CLI/testbench; nested definition ports are resolved by the compiler into flattened nets.
 
+### Numeric lanes
+
+```json
+"numericLanes": [
+  {
+    "id": "count",
+    "name": "Count",
+    "format": "unsigned-binary",
+    "pins": ["q0", "q1", "q2", "q3"]
+  }
+]
+```
+
+- A lane is an ordered group of interface pins shown as one number. The first pin is least significant.
+- `format` is one of the built-in format IDs: `unsigned-binary`, `twos-complement`, `ones-complement`, `sign-magnitude`, `unsigned-ternary`, `ternary-top-negative`, or `balanced-ternary`.
+- Lanes are **presentation only**. They do not merge nets, add drivers, change values, or enter compilation. Unknown formats, unknown pins, duplicate pins, and duplicate lane IDs are validation errors; mismatched pin domains are warnings.
+- Removing an interface pin also removes it from any lane; a lane left with no pins is removed. The editor saves lanes with the definition and library export/import preserves them.
+
 ## Complete minimal example
 
 This project has one definition, one input port, one lookup inverter, and one output port:
@@ -202,7 +221,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 ```json
 {
   "format": "radix-project",
-  "version": 2,
+  "version": 3,
   "name": "Inverter",
   "root": "main",
   "domains": [
@@ -262,7 +281,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 
 ## Versioning and migration
 
-Versions 1 and 2 are implemented. Version 2 adds optional per-net `color` and `route`; version 1 input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1, 2, and 3 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.
@@ -276,7 +295,7 @@ Versions 1 and 2 are implemented. Version 2 adds optional per-net `color` and `r
 A `.radixlib` file uses **exactly this project format**. It is a project containing one exported root definition plus its transitive dependency closure and the domains those definitions use. The extension is a hint for file pickers, not a separate schema.
 
 - Exporting a definition writes the closure so the library is self-contained.
-- Importing validates the library first, merges compatible domains by ID, and reuses definitions that are electrically equivalent (ignoring labels, positions, wire colors, and routes).
+- Importing validates the library first, merges compatible domains by ID, and reuses definitions that are electrically equivalent (ignoring labels, positions, wire colors, routes, and numeric-lane presentation).
 - A library definition whose ID collides with a structurally different local definition is imported under a fresh unique ID; existing definitions are never overwritten.
 - Import aborts without partial changes if a domain conflicts or if the merge would introduce new validation errors.
 
@@ -294,7 +313,7 @@ Because libraries are ordinary projects, they can also be opened directly as pro
 ## What is not persisted yet
 
 - viewport pan/zoom, active tab, and selection;
-- chosen numeric display formats;
+- custom numeric-format definitions (lanes reference the built-in format IDs);
 - external input event history;
 - simulation runtime state (projects save topology and initial configuration only).
 

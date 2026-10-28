@@ -1,3 +1,4 @@
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 using Radix.Editor.Services;
@@ -112,6 +113,32 @@ public sealed class ComponentLibraryTests
         Assert.True(result.Success, result.Message);
         Assert.Equal(before + 1, target.Project.Definitions.Count);
         Assert.DoesNotContain(target.Project.Domains, d => d.Id == "unused" && d.ValueNames[0] == "x");
+    }
+
+    [Fact]
+    public void ExportedPartKeepsNumericLanePresentation()
+    {
+        var source = CreateEmptyEditor();
+        source.NewPinName = "A";
+        source.NewPinIsInput = true;
+        source.NewPinDomain = source.Domains.Single(domain => domain.Id == StandardDomains.BinaryId);
+        source.AddPin();
+        string customId = source.Definition.Id;
+        PinDeclaration pin = Assert.Single(source.Definition.Pins);
+        var lane = new NumericLane { Id = "input", Name = "Input", FormatId = NumericFormats.UnsignedBinary.Id };
+        lane.PinIds.Add(pin.Id);
+        source.Definition.NumericLanes.Add(lane);
+
+        string json = ComponentLibraryService.Export(source.Project, customId);
+        var target = CreateEmptyEditor();
+        LibraryImportResult result = ComponentLibraryService.Import(target.Project, json);
+
+        Assert.True(result.Success, result.Message);
+        CircuitDefinition imported = target.Project.RequireDefinition(result.RootDefinitionId!);
+        NumericLane importedLane = Assert.Single(imported.NumericLanes);
+        Assert.Equal("Input", importedLane.Name);
+        Assert.Equal(NumericFormats.UnsignedBinary.Id, importedLane.FormatId);
+        Assert.Equal([lane.PinIds[0]], importedLane.PinIds);
     }
 
     [Fact]

@@ -387,6 +387,18 @@ public static class ComponentLibraryService
         }
 
         definition.Ports.AddRange(source.Ports);
+        foreach (NumericLane lane in source.NumericLanes)
+        {
+            var clone = new NumericLane
+            {
+                Id = lane.Id,
+                Name = lane.Name,
+                FormatId = lane.FormatId,
+            };
+            clone.PinIds.AddRange(lane.PinIds);
+            definition.NumericLanes.Add(clone);
+        }
+
         return definition;
     }
 }

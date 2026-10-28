@@ -67,6 +67,19 @@ internal sealed class DefinitionDto
     public List<NetDto>? Nets { get; set; }
 
     public List<PortDto>? Ports { get; set; }
+
+    public List<NumericLaneDto>? NumericLanes { get; set; }
+}
+
+internal sealed class NumericLaneDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Format { get; set; }
+
+    public List<string>? Pins { get; set; }
 }
 
 internal sealed class PinDto

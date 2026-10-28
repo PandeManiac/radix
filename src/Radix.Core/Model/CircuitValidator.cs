@@ -1,3 +1,4 @@
+using Radix.Core.Interpretation;
 using Radix.Core.Signals;
 
 namespace Radix.Core.Model;
@@ -198,6 +199,77 @@ public static class CircuitValidator
         ValidateInstances(project, definition, diagnostics);
         ValidateNets(project, definition, diagnostics);
         ValidatePorts(project, definition, diagnostics);
+        ValidateNumericLanes(definition, diagnostics);
+    }
+
+    private static void ValidateNumericLanes(
+        CircuitDefinition definition,
+        DiagnosticBag diagnostics)
+    {
+        var laneIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (NumericLane lane in definition.NumericLanes)
+        {
+            if (!Identifiers.IsValid(lane.Id))
+            {
+                diagnostics.Error("RAD095", $"Numeric lane has an invalid ID. {Identifiers.Rule}", definition.Id);
+            }
+            else if (!laneIds.Add(lane.Id))
+            {
+                diagnostics.Error("RAD096", $"Duplicate numeric lane ID '{lane.Id}'.", definition.Id);
+            }
+
+            INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, lane.FormatId, StringComparison.Ordinal));
+            if (format is null)
+            {
+                diagnostics.Error(
+                    "RAD097",
+                    $"Numeric lane '{lane.Id}' uses unknown format '{lane.FormatId}'.",
+                    definition.Id);
+            }
+
+            if (lane.PinIds.Count == 0)
+            {
+                diagnostics.Warning("RAD098", $"Numeric lane '{lane.Id}' has no pins.", definition.Id);
+                continue;
+            }
+
+            var seenPins = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string pinId in lane.PinIds)
+            {
+                if (!seenPins.Add(pinId))
+                {
+                    diagnostics.Error(
+                        "RAD099",
+                        $"Numeric lane '{lane.Id}' repeats pin '{pinId}'.",
+                        definition.Id,
+                        pinId: pinId);
+                    continue;
+                }
+
+                PinDeclaration? pin = definition.FindPin(pinId);
+                if (pin is null)
+                {
+                    diagnostics.Error(
+                        "RAD100",
+                        $"Numeric lane '{lane.Id}' refers to unknown interface pin '{pinId}'.",
+                        definition.Id,
+                        pinId: pinId);
+                    continue;
+                }
+
+                if (format is not null &&
+                    !string.Equals(pin.DomainId, format.DomainId, StringComparison.Ordinal))
+                {
+                    diagnostics.Warning(
+                        "RAD101",
+                        $"Numeric lane '{lane.Id}' pin '{pinId}' uses domain '{pin.DomainId}', but format '{format.Id}' is defined for '{format.DomainId}'.",
+                        definition.Id,
+                        pinId: pinId);
+                }
+            }
+        }
     }
 
     private static void ValidateInterface(CircuitProject project, CircuitDefinition definition, DiagnosticBag diagnostics)

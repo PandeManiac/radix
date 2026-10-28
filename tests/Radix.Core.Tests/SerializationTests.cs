@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
@@ -241,6 +242,49 @@ public sealed class SerializationTests
 
         Assert.Equal("#AB12EF", reloaded.WireColor);
         Assert.Equal([new NetWaypoint(120.5, 44), new NetWaypoint(-8, 90.25)], reloaded.RoutePoints);
+    }
+
+    [Fact]
+    public void NumericLanesRoundTripAndVersionTwoFilesRemainReadable()
+    {
+        CircuitProject project = ExampleProjects.CreateCounterDemo();
+        NumericLane lane = Assert.Single(project.RequireDefinition("demo.counter").NumericLanes);
+        Assert.Equal(NumericFormats.UnsignedBinary.Id, lane.FormatId);
+        Assert.Equal(["q0", "q1", "q2", "q3"], lane.PinIds);
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project));
+        NumericLane reloaded = Assert.Single(loaded.RequireDefinition("demo.counter").NumericLanes);
+        Assert.Equal("Count", reloaded.Name);
+        Assert.Equal("unsigned-binary", reloaded.FormatId);
+        Assert.Equal(["q0", "q1", "q2", "q3"], reloaded.PinIds);
+
+        JsonObject old = Json(TestCircuits.ValidProject());
+        old["version"] = 2;
+        CircuitProject oldLoaded = ProjectSerializer.LoadFromString(old.ToJsonString());
+        Assert.Empty(oldLoaded.Definitions[0].NumericLanes);
+        Assert.Equal(ProjectSerializer.CurrentVersion, (int?)Json(oldLoaded)["version"]);
+    }
+
+    [Fact]
+    public void NumericLaneValidationRejectsUnknownFormatsAndPinErrors()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        CircuitDefinition definition = project.Definitions[0];
+        definition.NumericLanes.Add(new NumericLane
+        {
+            Id = "bad",
+            Name = "Bad",
+            FormatId = "no-such-format",
+        });
+        definition.NumericLanes[0].PinIds.AddRange(["a", "a", "missing"]);
+
+        DiagnosticBag report = CircuitValidator.Validate(project);
+
+        Assert.Contains(report, diagnostic => diagnostic.Code == "RAD097");
+        Assert.Contains(report, diagnostic => diagnostic.Code == "RAD099");
+        Assert.Contains(report, diagnostic => diagnostic.Code == "RAD100");
+        Assert.Throws<CircuitValidationException>(() =>
+            ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project)));
     }
 
     [Fact]

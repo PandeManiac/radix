@@ -17,10 +17,12 @@ public static class ProjectSerializer
     public const string FormatName = "radix-project";
 
     /// <summary>
-    /// Version 2 adds optional per-net wire colors and author bendpoints. Version 1
-    /// files load unchanged; both are accepted and saving always writes version 2.
+    /// Version 2 adds optional per-net wire colors and author bendpoints. Version 3
+    /// adds optional definition-scoped numeric lanes. Older files load unchanged;
+    /// every version up to <see cref="CurrentVersion"/> is accepted, and saving always
+    /// writes the current version.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private const string Extension = ".radix";
 
@@ -257,6 +259,22 @@ public static class ProjectSerializer
                 port.Net ?? throw new ProjectFormatException($"Definition '{id}' has a port without 'net'.")));
         }
 
+        foreach (NumericLaneDto lane in dto.NumericLanes ?? [])
+        {
+            var numericLane = new NumericLane
+            {
+                Id = lane.Id ?? throw new ProjectFormatException($"Definition '{id}' has a numeric lane without 'id'."),
+                Name = lane.Name ?? lane.Id ?? string.Empty,
+                FormatId = lane.Format ?? throw new ProjectFormatException($"Numeric lane '{lane.Id}' in definition '{id}' is missing 'format'."),
+            };
+            foreach (string pinId in lane.Pins ?? [])
+            {
+                numericLane.PinIds.Add(pinId);
+            }
+
+            definition.NumericLanes.Add(numericLane);
+        }
+
         return definition;
     }
 
@@ -447,6 +465,15 @@ public static class ProjectSerializer
             Pins = net.Pins.Select(pin => new PinRefDto { Instance = pin.InstanceId, Pin = pin.PinId }).ToList(),
         }).ToList(),
         Ports = definition.Ports.Select(port => new PortDto { Pin = port.PinId, Net = port.NetId }).ToList(),
+        NumericLanes = definition.NumericLanes.Count == 0
+            ? null
+            : definition.NumericLanes.Select(lane => new NumericLaneDto
+            {
+                Id = lane.Id,
+                Name = lane.Name,
+                Format = lane.FormatId,
+                Pins = lane.PinIds.ToList(),
+            }).ToList(),
     };
 
     private static InstanceDto MapInstanceDto(ComponentInstance instance)

@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 2,
+  "version": 3,
   "name": "4-bit accumulator CPU",
   "root": "demo.accumulator",
   "settings": {
@@ -3297,6 +3297,39 @@
         {
           "pin": "carry",
           "net": "carry_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "opcode",
+          "name": "Opcode",
+          "format": "unsigned-binary",
+          "pins": [
+            "op0",
+            "op1"
+          ]
+        },
+        {
+          "id": "data",
+          "name": "Data",
+          "format": "unsigned-binary",
+          "pins": [
+            "d0",
+            "d1",
+            "d2",
+            "d3"
+          ]
+        },
+        {
+          "id": "result",
+          "name": "Result",
+          "format": "unsigned-binary",
+          "pins": [
+            "q0",
+            "q1",
+            "q2",
+            "q3"
+          ]
         }
       ]
     }

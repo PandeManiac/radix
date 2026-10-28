@@ -100,6 +100,66 @@ public sealed class DomainChoice
     public override string ToString() => Label;
 }
 
+/// <summary>One interface pin offered when composing a numeric lane.</summary>
+public sealed class LanePinChoice
+{
+    public LanePinChoice(PinDeclaration pin)
+    {
+        PinId = pin.Id;
+        Label = $"{pin.Name} · {pin.Id} · {pin.Direction.ToString().ToLowerInvariant()}";
+        DomainId = pin.DomainId;
+    }
+
+    public string PinId { get; }
+
+    public string Label { get; }
+
+    public string DomainId { get; }
+
+    public bool IsSelected { get; set; }
+}
+
+/// <summary>Live presentation of one saved numeric lane.</summary>
+public sealed class NumericLaneListItem : ObservableObject
+{
+    private string _valueText = "—";
+    private string _valueHint = "Start or advance the simulation to decode this lane.";
+
+    public NumericLaneListItem(NumericLane lane, string formatName, string pinSummary, ICommand removeCommand)
+    {
+        Id = lane.Id;
+        Name = lane.Name;
+        FormatId = lane.FormatId;
+        FormatName = formatName;
+        PinSummary = pinSummary;
+        RemoveCommand = removeCommand;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public string FormatId { get; }
+
+    public string FormatName { get; }
+
+    public string PinSummary { get; }
+
+    public ICommand RemoveCommand { get; }
+
+    public string ValueText
+    {
+        get => _valueText;
+        set => SetField(ref _valueText, value);
+    }
+
+    public string ValueHint
+    {
+        get => _valueHint;
+        set => SetField(ref _valueHint, value);
+    }
+}
+
 public sealed class IoState
 {
     public IoState(string pinId, string name, string direction, string domainId)

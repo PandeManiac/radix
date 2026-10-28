@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 2,
+  "version": 3,
   "name": "4-bit binary counter",
   "root": "demo.counter",
   "settings": {
@@ -2777,6 +2777,19 @@
         {
           "pin": "q3",
           "net": "q3_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "count",
+          "name": "Count",
+          "format": "unsigned-binary",
+          "pins": [
+            "q0",
+            "q1",
+            "q2",
+            "q3"
+          ]
         }
       ]
     }

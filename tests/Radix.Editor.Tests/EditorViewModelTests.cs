@@ -1,4 +1,5 @@
 using Avalonia;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 using Radix.Editor.Services;
@@ -410,6 +411,77 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void NumericLaneDecodesInterfacePinsAndFollowsSimulation()
+    {
+        var viewModel = CreateEmptyEditor();
+        string b0 = AddInputPin(viewModel, "B0");
+        string b1 = AddInputPin(viewModel, "B1");
+        string b2 = AddInputPin(viewModel, "B2");
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = choice.PinId is var id && (id == b0 || id == b1 || id == b2);
+        }
+
+        viewModel.SelectedLaneFormat = viewModel.FormatChoices.Single(option =>
+            option.Format.Id == NumericFormats.UnsignedBinary.Id);
+        viewModel.NewLaneName = "Value";
+        viewModel.AddNumericLane();
+
+        NumericLane lane = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal([b0, b1, b2], lane.PinIds);
+        Assert.Equal("Value", lane.Name);
+        Assert.Equal("—", viewModel.NumericLanes.Single().ValueText);
+
+        viewModel.BeginSimulation();
+        viewModel.SetPortValue(b0, 1);
+        viewModel.SetPortValue(b1, 0);
+        viewModel.SetPortValue(b2, 1);
+        Assert.Equal("5", viewModel.NumericLanes.Single().ValueText);
+
+        viewModel.SetPortValue(b1, 1);
+        Assert.Equal("7", viewModel.NumericLanes.Single().ValueText);
+
+        viewModel.SetPortValue(b1, 0);
+        Assert.Equal("5", viewModel.NumericLanes.Single().ValueText);
+    }
+
+    [Fact]
+    public void NumericLaneRejectsMixedDomainsAndPrunesRemovedPins()
+    {
+        var viewModel = CreateEmptyEditor();
+        string binary = AddInputPin(viewModel, "B0");
+        viewModel.NewPinName = "T0";
+        viewModel.NewPinIsInput = true;
+        viewModel.NewPinDomain = viewModel.Domains.Single(domain => domain.Id == StandardDomains.TernaryId);
+        viewModel.AddPin();
+        string ternary = viewModel.Definition.Pins.Single(pin => pin.Name == "T0").Id;
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = choice.PinId == binary || choice.PinId == ternary;
+        }
+
+        viewModel.AddNumericLane();
+        Assert.Empty(viewModel.Definition.NumericLanes);
+        Assert.Contains("one signal domain", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.LanePinChoices.Single(choice => choice.PinId == binary).IsSelected = true;
+        viewModel.LanePinChoices.Single(choice => choice.PinId == ternary).IsSelected = false;
+        viewModel.AddNumericLane();
+        string laneId = Assert.Single(viewModel.Definition.NumericLanes).Id;
+
+        viewModel.RemovePin(binary);
+        Assert.Empty(viewModel.Definition.NumericLanes);
+
+        viewModel.Undo();
+        Assert.NotNull(viewModel.Definition.FindPin(binary));
+        NumericLane restored = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal(laneId, restored.Id);
+        Assert.Equal([binary], restored.PinIds);
+    }
+
+    [Fact]
     public void LayoutIncludesWireJunctionsForMultiPinNets()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
@@ -431,4 +503,13 @@ public sealed class EditorViewModelTests
 
     private static string PinValue(EditorViewModel viewModel, string pinId) =>
         viewModel.IoPins.Single(p => p.PinId == pinId).ValueText;
+
+    private static string AddInputPin(EditorViewModel viewModel, string name)
+    {
+        viewModel.NewPinName = name;
+        viewModel.NewPinIsInput = true;
+        viewModel.NewPinDomain = viewModel.Domains.First(domain => domain.Id == StandardDomains.BinaryId);
+        viewModel.AddPin();
+        return viewModel.Definition.Pins.Single(pin => pin.Name == name).Id;
+    }
 }

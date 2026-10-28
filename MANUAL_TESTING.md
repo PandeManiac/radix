@@ -57,7 +57,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 3. Drag the handle. Expected: the wire follows orthogonally; the rest of the net stays connected. Undo restores the previous route.
 4. Alt+click a handle. Expected: that bendpoint is removed.
 5. Select a routed net and click **Reset wire route** in the net inspector. Expected: automatic routing resumes.
-6. Save, close, reopen. Expected: bendpoints and custom wire colors survive (project format v2).
+6. Save, close, reopen. Expected: bendpoints, custom wire colors, and numeric lanes survive (project format v3).
 7. In the net inspector, set **Wire color** to `#38bdf8`, then `auto`. Expected: valid hex applies; invalid text is rejected with a status message; `auto` returns to domain/signal coloring.
 8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
 
@@ -100,7 +100,19 @@ If counter values differ, record the values and diagnostics; this is a correctne
 6. Click `⇄` on a pin. Expected: its direction flips in the Interface list, I/O PINS, and any instance of this definition. Change its domain with the picker. Expected: the pin's port net adopts the same domain and an incompatible existing connection is reported in Diagnostics rather than silently rewritten.
 7. Remove a pin, then undo. Expected: the pin, binding, generated net, and its wire all return in one step.
 
-## 7. Library export and import
+## 7. Numeric lanes
+
+1. Open `examples/binary-counter.radix`. In **NUMERIC LANES**, expected: `Count · Unsigned binary` with pins `Q0 · Q1 · Q2 · Q3`.
+2. Begin, then advance 100 ticks. Expected: the lane value tracks the four Q outputs as an unsigned binary number (`5` at t=100), and the value changes when you advance again.
+3. Delete the lane, then undo. Expected: it returns, one undo step.
+4. Add a lane: select `Unsigned binary`, tick `Q0`..`Q3` in a different order check sequence, enter a name, click **Add numeric lane**. Expected: the lane uses declaration order (Q0 first, least significant) regardless of tick order, and the card explains the grouping.
+5. Add a lane with mixed domains (one binary and one ternary pin). Expected: refused with a message that a lane groups one domain; no lane is created.
+6. Change a lane pin's domain in the Interface picker, then inspect Diagnostics. Expected: a warning explains that the format's nominal domain differs; the lane still decodes signal indices if the values are valid.
+7. Remove a pin used by a lane. Expected: the pin disappears from the lane. If it was the last pin, the lane is removed. Undo restores both.
+8. Save, reopen, and export/import the definition as a `.radixlib`. Expected: lane name, format, pin order, and decoded behavior survive.
+9. Expected non-behavior: lanes never merge nets, add wires, affect drivers, or prevent simulation. A lane referencing a missing or unknown format shows `invalid` with a tooltip and a Diagnostics error instead of throwing.
+
+## 8. Library export and import
 
 1. Create the `Double inverter` part from section 5. Click **Export part…**.
 2. Save `double-inverter.radixlib` in a scratch directory.
@@ -114,23 +126,24 @@ If counter values differ, record the values and diagnostics; this is a correctne
 7. Attempt to import a library whose domain ID exists locally with different values or driver policy. Expected: import is refused with a domain message and the project is completely unchanged.
 8. Export a definition that instantiates other definitions. Expected: the `.radixlib` contains the dependency closure and imports successfully into a project that does not have those dependencies.
 
-## 8. Domains and project round trip
+## 9. Domains and project round trip
 
 1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, click **Add domain**.
 2. Expected: the domain appears in the list, pin domain picker, and net domain selector.
 3. Add an input pin using the new domain. Expected: the port and its net use `five-state`.
-4. Save As in a scratch path. Close and relaunch, then Open. Expected: domain, pin, current root, instance positions, wire colors, and bendpoints survive.
+4. Save As in a scratch path. Close and relaunch, then Open. Expected: domain, pin, current root, instance positions, wire colors, numeric lanes, and bendpoints survive.
 5. Expected non-persistence: viewport pan/zoom, selection, active tab, external drive history, waveform history.
 
-## 9. Hierarchy and malformed projects
+## 10. Hierarchy and malformed projects
 
 1. Open `examples/binary-counter.radix`. Expected: root counter loads without a modal error.
 2. Double-click the ripple-carry adder, then a full adder, then a half adder. Expected: nested internals render and the definition header identifies the current simulation root.
 3. Return to the root and verify simulation resets for the new root.
-4. Open a deliberately malformed file (change `"version": 2` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
-5. Save a project and inspect the JSON. Expected: `"version": 2`, with optional net `color` and `route` fields, and no executable content.
+4. Open a deliberately malformed file (change `"version": 3` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
+5. Save a project and inspect the JSON. Expected: `"version": 3`, with optional net `color`/`route` and definition `numericLanes` fields, and no executable content.
+6. Load a version 1 or version 2 project. Expected: it opens normally, lanes are absent or empty, and the next save writes version 3.
 
-## 10. Unsaved changes and window behavior
+## 11. Unsaved changes and window behavior
 
 1. Modify a project (move a part). Click **New**, **Open…**, and close the window.
 2. Expected each time: a themed Save/Discard/Cancel dialog.
@@ -142,18 +155,18 @@ If counter values differ, record the values and diagnostics; this is a correctne
 5. Zoom/pan, clear selection on empty click, press Escape during a pending wire, and hover pins for tooltips.
 6. `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Ctrl+C/V/D/A`, `Delete`, arrow nudging, and `Ctrl+S/Shift+S` should work without moving the mouse. Shortcuts must not hijack typing in a TextBox.
 
-## 11. Known limitations to verify as *limitations*
+## 12. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
 - auto-routing is heuristic; dense circuits may need bendpoints, and components are not collision-moved automatically;
 - extraction refuses nets with drivers on both sides because there is no inout pin direction;
-- library equivalence ignores labels/layout; conflicting IDs are renamed rather than offering a merge dialog;
+- library equivalence ignores labels/layout and numeric-lane presentation; conflicting IDs are renamed rather than offering a merge dialog;
 - viewport, selection, and active tab are not saved;
-- no analog solver, JIT, parallel engine, or first-class bus type;
+- no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;
-- numeric display formats are CLI-only in this build;
+- numeric lanes use built-in formats only; they cannot yet be authored with custom digit mappings, drive inputs by number, or show on the canvas;
 - undo snapshots whole projects and is capped at 80 entries;
 - the editor does not auto-save or recover crash state.
 
