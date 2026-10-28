@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Radix.Core;
+using Radix.Core.Analysis;
 using Radix.Core.Compilation;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
@@ -31,6 +32,7 @@ internal static class Program
                 "validate" => ValidateCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
+                "sweep" => SweepCommand(args[1..]),
                 "inspect" => InspectCommand(args[1..]),
                 "examples" => ExamplesCommand(args[1..]),
                 "bench" or "benchmark" => BenchCommand(args[1..]),
@@ -102,6 +104,10 @@ internal static class Program
               test <project.radix> <script.radixtest>
                                              Run scripted drives and assertions
                   [--definition <id>]        Definition to simulate (default: script or root)
+              sweep <project.radix>          Exhaustively drive input combinations
+                  [--definition <id>]        Definition to sweep (default: project root)
+                  [--ticks <n>]              Ticks to settle after each row (default 10)
+                  [--max-rows <n>]           Combination limit (default 4096)
               inspect <project.radix>        Print the project structure
               examples [directory]           Write the bundled example projects
               bench [--gates <n>] [--ticks <n>]
@@ -471,6 +477,116 @@ internal static class Program
         }
 
         return true;
+    }
+
+    private static int SweepCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["definition", "ticks", "max-rows"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix sweep <project.radix> [--definition <id>] [--ticks <n>] [--max-rows <n>]");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0]);
+        string? definitionId = GetOption(options, "definition");
+        if (definitionId is not null && project.FindDefinition(definitionId) is null)
+        {
+            Console.Error.WriteLine($"unknown definition '{definitionId}'.");
+            return 2;
+        }
+
+        long settleTicks = GetLongOption(options, "ticks", 10, 0, 100_000);
+        int maxRows = GetIntOption(options, "max-rows", InputSweep.DefaultMaxRows, 1, 1_000_000);
+        InputSweepResult result;
+        try
+        {
+            result = InputSweep.Run(project, definitionId, settleTicks, maxRows);
+        }
+        catch (InputSweepException exception)
+        {
+            Console.Error.WriteLine($"sweep error: {exception.Message}");
+            return 1;
+        }
+
+        Console.WriteLine($"project:    {project.Name}");
+        Console.WriteLine($"definition: {result.DefinitionId}");
+        Console.WriteLine($"inputs:     {FormatSweepPorts(result.Inputs)}");
+        Console.WriteLine($"outputs:    {FormatSweepPorts(result.Outputs)}");
+        Console.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"rows:       {result.Rows.Count} (settle {result.SettleTicks} tick(s))"));
+        PrintSweepTable(result);
+        return 0;
+    }
+
+    private static string FormatSweepPorts(IReadOnlyList<SweepPort> ports) =>
+        ports.Count == 0
+            ? "(none)"
+            : string.Join("  ", ports.Select(port => $"{port.PinId}:{port.Domain.Id}"));
+
+    private static string FormatSweepValue(SweepPort port, int value) =>
+        value == SignalValue.UndrivenIndex ? "-" : port.Domain.ValueName(value);
+
+    private static void PrintSweepTable(InputSweepResult result)
+    {
+        var widths = new int[result.Inputs.Count + result.Outputs.Count];
+        for (int i = 0; i < result.Inputs.Count; i++)
+        {
+            SweepPort port = result.Inputs[i];
+            widths[i] = Math.Max(port.PinId.Length, result.Rows
+                .Select(row => FormatSweepValue(port, row.Inputs[i]).Length)
+                .DefaultIfEmpty(1)
+                .Max());
+        }
+
+        for (int i = 0; i < result.Outputs.Count; i++)
+        {
+            SweepPort port = result.Outputs[i];
+            int column = result.Inputs.Count + i;
+            widths[column] = Math.Max(port.PinId.Length, result.Rows
+                .Select(row => FormatSweepValue(port, row.Outputs[i]).Length)
+                .DefaultIfEmpty(1)
+                .Max());
+        }
+
+        Console.WriteLine();
+        if (widths.Length == 0)
+        {
+            Console.WriteLine("(no interface ports)");
+            return;
+        }
+
+        var header = new List<string>(widths.Length);
+        for (int i = 0; i < result.Inputs.Count; i++)
+        {
+            header.Add(result.Inputs[i].PinId.PadRight(widths[i]));
+        }
+
+        for (int i = 0; i < result.Outputs.Count; i++)
+        {
+            header.Add(result.Outputs[i].PinId.PadRight(widths[result.Inputs.Count + i]));
+        }
+
+        Console.WriteLine(string.Join(" | ", header));
+        Console.WriteLine(string.Join("-+-", widths.Select(width => new string('-', width))));
+
+        foreach (SweepRow row in result.Rows)
+        {
+            var cells = new List<string>(widths.Length);
+            for (int i = 0; i < result.Inputs.Count; i++)
+            {
+                cells.Add(FormatSweepValue(result.Inputs[i], row.Inputs[i]).PadRight(widths[i]));
+            }
+
+            for (int i = 0; i < result.Outputs.Count; i++)
+            {
+                cells.Add(FormatSweepValue(result.Outputs[i], row.Outputs[i]).PadRight(widths[result.Inputs.Count + i]));
+            }
+
+            Console.WriteLine(string.Join(" | ", cells));
+        }
     }
 
     private static int InspectCommand(string[] args)

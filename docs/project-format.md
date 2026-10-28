@@ -357,10 +357,10 @@ Because libraries are ordinary projects, they can also be opened directly as pro
 - There is currently no maximum file size or maximum table count beyond the per-table 1,048,576-entry limit. Treat untrusted projects as a potential resource-exhaustion vector until a configurable size limit is added.
 - `ProjectSerializer.Save` writes via a temporary file and atomic move, but callers are responsible for choosing a safe destination. The editor uses the platform file picker.
 
-## What is not persisted yet
+## What is not persisted
 
-- viewport pan/zoom, active tab, and selection;
+- active inspector/waveform tab and selection (workspace preferences, not document state);
 - external input event history;
 - simulation runtime state (projects save topology and initial configuration only).
 
-Instance `x`/`y` coordinates are persisted. Editor viewport state is intentionally a future addition; adding it should not change circuit semantics.
+Instance `x`/`y` coordinates, the active definition, and viewport pan/zoom are persisted. The `view` object is presentation only and never changes circuit semantics.
