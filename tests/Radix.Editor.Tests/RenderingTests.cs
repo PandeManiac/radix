@@ -83,6 +83,45 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void WaveformZoomRendersASubrangeAndKeepsTheFullTraceReachable()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        viewModel.BeginSimulation();
+        viewModel.AdvanceTicksText = "200";
+        viewModel.AdvanceSimulation();
+
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var tabs = window.FindControl<TabControl>("RightTabs");
+        Assert.NotNull(tabs);
+        tabs!.SelectedIndex = 2;
+        Dispatcher.UIThread.RunJobs();
+
+        WaveformView waveform = window.GetVisualDescendants().OfType<WaveformView>().Single();
+        waveform.ZoomTo(60, 120);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(60, waveform.VisibleWindow.Start);
+        Assert.Equal(120, waveform.VisibleWindow.End);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-waveform-zoom.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        waveform.FitAll();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(0, waveform.VisibleWindow.Start);
+        Assert.Equal(200, waveform.VisibleWindow.End);
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void NumericLaneDriveControlsRenderInInspector()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateAccumulatorCpuDemo());

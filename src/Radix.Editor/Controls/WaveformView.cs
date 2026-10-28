@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Radix.Core.Signals;
 using Radix.Editor.Rendering;
@@ -26,6 +27,16 @@ public sealed class WaveformView : Control
     private IBrush _two = Brushes.DarkOrange;
     private IBrush _three = Brushes.MediumPurple;
     private IBrush _four = Brushes.MediumVioletRed;
+    private bool _followEnd = true;
+    private long _lastEnd = 1;
+    private Rect _plotRect;
+    private bool _panning;
+    private Point _panOrigin;
+    private long _panStart;
+    private long _panEnd;
+
+    /// <summary>Visible tick range. Wheel zooms, drag pans, and double-click refits.</summary>
+    public WaveformWindow VisibleWindow { get; } = new();
 
     public WaveformSnapshot? Snapshot
     {
@@ -43,6 +54,33 @@ public sealed class WaveformView : Control
         ActualThemeVariantChanged += (_, _) => InvalidateVisual();
     }
 
+    /// <summary>Shows the whole trace and resumes following the simulation end.</summary>
+    public void FitAll()
+    {
+        _followEnd = true;
+        if (Snapshot is { } snapshot)
+        {
+            VisibleWindow.Fit(snapshot.End);
+            _lastEnd = Math.Max(1, snapshot.End);
+        }
+
+        InvalidateVisual();
+    }
+
+    /// <summary>Shows an explicit absolute tick range, clamped to the snapshot.</summary>
+    public void ZoomTo(long start, long end)
+    {
+        if (Snapshot is not { } snapshot)
+        {
+            return;
+        }
+
+        _followEnd = false;
+        VisibleWindow.Set(start, end);
+        VisibleWindow.ClampTo(snapshot.End);
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -51,6 +89,7 @@ public sealed class WaveformView : Control
         WaveformSnapshot? snapshot = Snapshot;
         if (snapshot is null || snapshot.Rows.Count == 0)
         {
+            _plotRect = default;
             FormattedText empty = Text("No nets to display — open a circuit with nets.", 12, _muted);
             context.DrawText(empty, new Point(
                 Math.Max(12, (Bounds.Width - empty.Width) / 2),
@@ -58,12 +97,14 @@ public sealed class WaveformView : Control
             return;
         }
 
+        SyncWindow(snapshot);
         double labelWidth = Math.Min(150, Math.Max(80, Bounds.Width * 0.26));
         double top = 16;
         double bottom = 24;
         var plot = new Rect(labelWidth, top, Math.Max(10, Bounds.Width - labelWidth - 46), Math.Max(10, Bounds.Height - top - bottom));
-        long start = snapshot.Start;
-        long end = Math.Max(snapshot.End, start + 1);
+        _plotRect = plot;
+        long start = VisibleWindow.Start;
+        long end = Math.Max(VisibleWindow.End, start + 1);
         double rowHeight = plot.Height / snapshot.Rows.Count;
 
         context.DrawLine(new Pen(_grid, 1), new Point(plot.Left, plot.Top), new Point(plot.Left, plot.Bottom));
@@ -131,6 +172,113 @@ public sealed class WaveformView : Control
                 ValueBrush(row.Domain, value));
             context.DrawText(last, new Point(plot.Right + 4, center - (last.Height / 2)));
         }
+    }
+
+    /// <summary>
+    /// Keeps the visible range coherent when a new snapshot arrives. Follow mode fits
+    /// the whole trace; after zooming, the window is clamped instead. A simulation
+    /// reset (a shorter trace) returns to follow mode.
+    /// </summary>
+    private void SyncWindow(WaveformSnapshot snapshot)
+    {
+        long end = Math.Max(1, snapshot.End);
+        if (end < _lastEnd)
+        {
+            _followEnd = true;
+        }
+
+        _lastEnd = end;
+        if (_followEnd)
+        {
+            VisibleWindow.Fit(end);
+        }
+        else
+        {
+            VisibleWindow.ClampTo(end);
+        }
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (Snapshot is not { } snapshot || _plotRect.Width <= 0 || e.Delta.Y == 0)
+        {
+            return;
+        }
+
+        Point position = e.GetPosition(this);
+        if (!_plotRect.Contains(position))
+        {
+            return;
+        }
+
+        long span = Math.Max(1, VisibleWindow.Span);
+        long anchor = VisibleWindow.Start +
+            (long)Math.Round((position.X - _plotRect.Left) / _plotRect.Width * span);
+        _followEnd = false;
+        VisibleWindow.ZoomAt(anchor, e.Delta.Y > 0 ? 0.8 : 1.25, snapshot.End);
+        InvalidateVisual();
+        e.Handled = true;
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (Snapshot is null)
+        {
+            return;
+        }
+
+        if (e.ClickCount == 2)
+        {
+            FitAll();
+            e.Handled = true;
+            return;
+        }
+
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed ||
+            _plotRect.Width <= 0 ||
+            !_plotRect.Contains(e.GetPosition(this)))
+        {
+            return;
+        }
+
+        _panning = true;
+        _panOrigin = e.GetPosition(this);
+        _panStart = VisibleWindow.Start;
+        _panEnd = VisibleWindow.End;
+        e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (!_panning || Snapshot is not { } snapshot || _plotRect.Width <= 0)
+        {
+            return;
+        }
+
+        double deltaX = e.GetPosition(this).X - _panOrigin.X;
+        long span = Math.Max(1, _panEnd - _panStart);
+        long deltaTicks = -(long)Math.Round(deltaX / _plotRect.Width * span);
+        VisibleWindow.Set(_panStart + deltaTicks, _panEnd + deltaTicks);
+        VisibleWindow.ClampTo(snapshot.End);
+        InvalidateVisual();
+        e.Handled = true;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (!_panning)
+        {
+            return;
+        }
+
+        _panning = false;
+        e.Pointer.Capture(null);
+        e.Handled = true;
     }
 
     private static double X(long time, long start, long end, Rect plot) =>

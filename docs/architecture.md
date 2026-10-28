@@ -227,7 +227,9 @@ Determinism requirements:
 
 `SimulationTrace` is a bounded ring buffer of `NetChange(time, netIndex, old, new)`. It does not affect simulation results. The editor builds waveforms from it in one pass over the trace, filtering visible nets. When capacity is exceeded, old events are overwritten and `TotalRecorded` still reports the true total.
 
-The visible set is the definition's first 16 nets in declaration order, unless the user pins nets from the net inspector. Pins are ordered per definition, scoped to the editor session, and filled ahead of the declaration-order remainder; removing a net drops its pin, and duplicated definitions start unpinned because the key is the definition ID. Pinning changes only which trace slices are copied into the immutable `WaveformSnapshot`; it never perturbs compilation or simulation.
+The visible net set is the definition's first 16 nets in declaration order, unless the user pins nets from the net inspector. Pins are ordered per definition, scoped to the editor session, and filled ahead of the declaration-order remainder; removing a net drops its pin, and duplicated definitions start unpinned because the key is the definition ID. Pinning changes only which trace slices are copied into the immutable `WaveformSnapshot`; it never perturbs compilation or simulation.
+
+`WaveformView` maps that snapshot onto a `WaveformWindow`, a pure absolute-tick range. The window starts in follow mode (0..trace end) and refits on every snapshot; wheel zoom around the pointer or a drag pan leaves follow mode and clamps the range to the data, while double-clicking or a simulation reset returns to follow mode. Zooming changes only X mapping and clipping of already-recorded changes, so the trace, snapshot, and simulation are untouched.
 
 Reproducibility tests compile the same project multiple times, run identical schedules, and compare final values, transition counts, and trace entries.
 
