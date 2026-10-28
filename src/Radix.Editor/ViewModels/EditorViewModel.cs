@@ -59,6 +59,9 @@ public sealed class EditorViewModel : ObservableObject
     private string _newDomainConflictValue = "0";
     private DriverPolicyChoice? _selectedDriverPolicy;
     private string? _editingDomainId;
+
+    /// <summary>Net IDs pinned for the waveform, keyed by definition ID.</summary>
+    private readonly Dictionary<string, List<string>> _waveformPins = new(StringComparer.Ordinal);
     private string _librarySearch = string.Empty;
     private string _netSearch = string.Empty;
     private string _netListSummary = string.Empty;
@@ -107,6 +110,8 @@ public sealed class EditorViewModel : ObservableObject
         AddPinCommand = new RelayCommand(AddPin);
         AddDomainCommand = new RelayCommand(AddDomain);
         CancelDomainEditCommand = new RelayCommand(CancelDomainEdit);
+        ToggleWaveformPinCommand = new RelayCommand(ToggleSelectedNetWaveformPin);
+        ClearWaveformPinsCommand = new RelayCommand(ClearWaveformPins);
         _deleteCommand = new RelayCommand(DeleteSelection, () => _selectedInstanceIds.Count > 0 || _selectedNet is not null);
         DeleteSelectionCommand = _deleteCommand;
         _copyCommand = new RelayCommand(() => CopySelection(), () => _selectedInstanceIds.Count > 0);
@@ -252,6 +257,35 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Value labels and count stay fixed during a policy edit.</summary>
     public bool IsDomainValueFieldsEnabled => !IsEditingDomainPolicy;
+
+    /// <summary>Maximum waveform rows; pinned nets are shown first.</summary>
+    public const int MaxWaveformRows = 16;
+
+    public ICommand ToggleWaveformPinCommand { get; }
+
+    public ICommand ClearWaveformPinsCommand { get; }
+
+    public bool SelectedNetOnWaveform =>
+        _selectedNet is not null && IsWaveformPinned(_selectedNet.Id);
+
+    public string WaveformPinButtonText => SelectedNetOnWaveform
+        ? "Hide from waveform"
+        : "Show in waveform";
+
+    public int WaveformPinCount => PinnedWaveformNetIds().Count;
+
+    public bool HasWaveformPins => WaveformPinCount > 0;
+
+    public string WaveformPinSummary
+    {
+        get
+        {
+            int pinned = WaveformPinCount;
+            return pinned == 0
+                ? $"Up to {MaxWaveformRows} nets, in declaration order. Pin a net from its inspector to show it first."
+                : $"{pinned} pinned net(s) shown first, {MaxWaveformRows} rows max.";
+        }
+    }
 
     public ICommand DeleteSelectionCommand { get; }
 
@@ -895,6 +929,7 @@ public sealed class EditorViewModel : ObservableObject
     public void NewProject()
     {
         CancelDomainEdit();
+        _waveformPins.Clear();
         var project = CircuitProject.CreateEmpty("Untitled");
         var root = new CircuitDefinition { Id = "main", Name = "Main", Description = "Root circuit" };
         project.Definitions.Add(root);
@@ -925,6 +960,7 @@ public sealed class EditorViewModel : ObservableObject
         {
             CircuitProject loaded = ProjectSerializer.Load(path);
             CancelDomainEdit();
+            _waveformPins.Clear();
             _project = loaded;
             EnsureProjectShape();
             _definitionId = loaded.FindDefinition(loaded.View.ActiveDefinitionId)?.Id ?? loaded.RootDefinitionId;
@@ -2108,6 +2144,73 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = $"Moved interface pin '{pin.Name}' {(offset < 0 ? "up" : "down")}";
     }
 
+    /// <summary>Pins or unpins the selected net for the waveform panel.</summary>
+    public void ToggleSelectedNetWaveformPin()
+    {
+        if (_selectedNet is null)
+        {
+            return;
+        }
+
+        Net net = _selectedNet;
+        List<string> pins = PinnedWaveformNetIds();
+        if (pins.Remove(net.Id))
+        {
+            StatusText = $"Removed {(string.IsNullOrWhiteSpace(net.Label) ? net.Id : net.Label)} from the waveform";
+        }
+        else
+        {
+            pins.Add(net.Id);
+            StatusText = $"Pinned {(string.IsNullOrWhiteSpace(net.Label) ? net.Id : net.Label)} to the waveform";
+        }
+
+        WaveformPinsChanged();
+    }
+
+    public void ClearWaveformPins()
+    {
+        if (!_waveformPins.TryGetValue(Definition.Id, out List<string>? pins) || pins.Count == 0)
+        {
+            return;
+        }
+
+        int count = pins.Count;
+        pins.Clear();
+        StatusText = $"Cleared {count} waveform pin(s) for {Definition.Name}";
+        WaveformPinsChanged();
+    }
+
+    public bool IsWaveformPinned(string netId) =>
+        _waveformPins.TryGetValue(Definition.Id, out List<string>? pins) && pins.Contains(netId);
+
+    /// <summary>
+    /// Pinned nets that still exist in the current definition, in pin order. Stale IDs
+    /// are dropped so removing a net cannot leave a phantom waveform row.
+    /// </summary>
+    private List<string> PinnedWaveformNetIds()
+    {
+        if (!_waveformPins.TryGetValue(Definition.Id, out List<string>? pins))
+        {
+            pins = [];
+            _waveformPins[Definition.Id] = pins;
+        }
+
+        pins.RemoveAll(id => Definition.FindNet(id) is null);
+        return pins;
+    }
+
+    private void WaveformPinsChanged()
+    {
+        RaisePropertyChanged(nameof(SelectedNetOnWaveform));
+        RaisePropertyChanged(nameof(WaveformPinButtonText));
+        RaisePropertyChanged(nameof(WaveformPinCount));
+        RaisePropertyChanged(nameof(HasWaveformPins));
+        RaisePropertyChanged(nameof(WaveformPinSummary));
+        RefreshNetList();
+        RefreshWaveform();
+        VisualInvalidated?.Invoke();
+    }
+
     public void ChangeNetDomain(string domainId)
     {
         if (_selectedNet is null || _project.FindDomain(domainId) is null ||
@@ -3082,6 +3185,10 @@ public sealed class EditorViewModel : ObservableObject
             string summary = string.IsNullOrWhiteSpace(net.Label)
                 ? $"{domain?.Name ?? net.DomainId} · {net.Pins.Count} pin(s)"
                 : $"{net.Id} · {domain?.Name ?? net.DomainId} · {net.Pins.Count} pin(s)";
+            if (IsWaveformPinned(net.Id))
+            {
+                summary += " · waveform";
+            }
             if (query.Length > 0 &&
                 !name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
                 !net.Id.Contains(query, StringComparison.OrdinalIgnoreCase) &&
@@ -3502,6 +3609,8 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(SelectedInstanceIds));
         RaisePropertyChanged(nameof(IsRootDefinition));
         RaisePropertyChanged(nameof(SelectedNetHasRoute));
+        RaisePropertyChanged(nameof(SelectedNetOnWaveform));
+        RaisePropertyChanged(nameof(WaveformPinButtonText));
         RaisePropertyChanged(nameof(CanPromoteSelectedNet));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));
@@ -3719,6 +3828,45 @@ public sealed class EditorViewModel : ObservableObject
     {
         SimulationEngineSnapshot snapshot = CaptureSimulationSnapshot();
         Waveform = snapshot.Waveform;
+        RaisePropertyChanged(nameof(WaveformPinCount));
+        RaisePropertyChanged(nameof(HasWaveformPins));
+        RaisePropertyChanged(nameof(WaveformPinSummary));
+    }
+
+    /// <summary>
+    /// Waveform rows in display order: pinned nets first (in pin order), then the rest
+    /// of the definition's nets in declaration order, capped at the row limit.
+    /// </summary>
+    private List<Net> OrderedWaveformNets()
+    {
+        var ordered = new List<Net>();
+        foreach (string netId in PinnedWaveformNetIds())
+        {
+            if (ordered.Count >= MaxWaveformRows)
+            {
+                break;
+            }
+
+            if (Definition.FindNet(netId) is Net net && !ordered.Contains(net))
+            {
+                ordered.Add(net);
+            }
+        }
+
+        foreach (Net net in Definition.Nets)
+        {
+            if (ordered.Count >= MaxWaveformRows)
+            {
+                break;
+            }
+
+            if (!ordered.Contains(net))
+            {
+                ordered.Add(net);
+            }
+        }
+
+        return ordered;
     }
 
     private SimulationEngineSnapshot CaptureSimulationSnapshot()
@@ -3730,7 +3878,7 @@ public sealed class EditorViewModel : ObservableObject
 
         var rows = new List<WaveformRow>();
         var targets = new Dictionary<int, (string Label, SignalDomain Domain, int Start, List<WaveValueChange> Changes)>();
-        foreach (Net net in Definition.Nets.Take(16))
+        foreach (Net net in OrderedWaveformNets())
         {
             if (!Simulator.TryNetIndex(net.Id, out int netIndex, out SignalDomain? domain) || domain is null ||
                 targets.ContainsKey(netIndex))
@@ -4038,6 +4186,8 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(SelectedInstanceIds));
         RaisePropertyChanged(nameof(IsRootDefinition));
         RaisePropertyChanged(nameof(SelectedNetHasRoute));
+        RaisePropertyChanged(nameof(SelectedNetOnWaveform));
+        RaisePropertyChanged(nameof(WaveformPinButtonText));
         RaisePropertyChanged(nameof(CanPromoteSelectedNet));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));

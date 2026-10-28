@@ -372,6 +372,79 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void WaveformPinsShowANetBeforeTheDeclarationOrderedRows()
+    {
+        var viewModel = new EditorViewModel(WideNetProject(20));
+        viewModel.BeginSimulation();
+
+        Assert.Equal(EditorViewModel.MaxWaveformRows, viewModel.Waveform.Rows.Count);
+        Assert.Equal("n0", viewModel.Waveform.Rows[0].Label);
+        Assert.False(viewModel.HasWaveformPins);
+        Assert.Contains("declaration order", viewModel.WaveformPinSummary, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.SelectNet("n19");
+        Assert.False(viewModel.SelectedNetOnWaveform);
+        Assert.Equal("Show in waveform", viewModel.WaveformPinButtonText);
+        viewModel.ToggleSelectedNetWaveformPin();
+
+        Assert.True(viewModel.SelectedNetOnWaveform);
+        Assert.Equal("Hide from waveform", viewModel.WaveformPinButtonText);
+        Assert.Equal(1, viewModel.WaveformPinCount);
+        Assert.True(viewModel.HasWaveformPins);
+        Assert.Contains("pinned", viewModel.WaveformPinSummary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("n19", viewModel.Waveform.Rows[0].Label);
+        Assert.Equal(EditorViewModel.MaxWaveformRows, viewModel.Waveform.Rows.Count);
+        Assert.Contains(viewModel.NetList, item =>
+            item.Id == "n19" && item.Summary.Contains("waveform", StringComparison.Ordinal));
+
+        viewModel.ToggleSelectedNetWaveformPin();
+        Assert.False(viewModel.HasWaveformPins);
+        Assert.Equal("n0", viewModel.Waveform.Rows[0].Label);
+    }
+
+    [Fact]
+    public void WaveformPinsAreScopedPerDefinitionAndDroppedWithTheirNet()
+    {
+        var viewModel = new EditorViewModel(WideNetProject(18));
+        viewModel.BeginSimulation();
+        viewModel.SelectNet("n17");
+        viewModel.ToggleSelectedNetWaveformPin();
+        Assert.Equal(1, viewModel.WaveformPinCount);
+
+        viewModel.AddDefinition();
+        Assert.Equal(0, viewModel.WaveformPinCount);
+        Assert.False(viewModel.HasWaveformPins);
+
+        viewModel.OpenDefinition("main");
+        Assert.Equal(1, viewModel.WaveformPinCount);
+
+        viewModel.DuplicateDefinition();
+        Assert.Equal(0, viewModel.WaveformPinCount);
+
+        viewModel.OpenDefinition("main");
+        viewModel.SelectNet("n17");
+        viewModel.DeleteSelection();
+        Assert.Equal(0, viewModel.WaveformPinCount);
+        Assert.Null(viewModel.Project.FindDefinition("main")!.FindNet("n17"));
+    }
+
+    [Fact]
+    public void ClearingWaveformPinsRestoresDeclarationOrder()
+    {
+        var viewModel = new EditorViewModel(WideNetProject(20));
+        viewModel.BeginSimulation();
+        viewModel.SelectNet("n19");
+        viewModel.ToggleSelectedNetWaveformPin();
+        Assert.Equal("n19", viewModel.Waveform.Rows[0].Label);
+
+        viewModel.ClearWaveformPins();
+
+        Assert.Equal(0, viewModel.WaveformPinCount);
+        Assert.Equal("n0", viewModel.Waveform.Rows[0].Label);
+        Assert.Contains("Cleared 1 waveform pin", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void PinInterfaceCanBeRenamedRetargetedAndFlipped()
     {
         var viewModel = CreateEmptyEditor();
@@ -1235,6 +1308,29 @@ public sealed class EditorViewModelTests
         Assert.NotEmpty(viewModel.Layout!.Components);
         Assert.NotEmpty(viewModel.Layout.Wires);
         Assert.Contains(viewModel.Layout.Wires, w => w.Endpoints.Count >= 2);
+    }
+
+    private static CircuitProject WideNetProject(int netCount)
+    {
+        var project = CircuitProject.CreateEmpty("Waveform test");
+        var root = new CircuitDefinition { Id = "main", Name = "Main" };
+        project.Definitions.Add(root);
+        project.RootDefinitionId = root.Id;
+        StandardLibrary.Install(project);
+        for (int i = 0; i < netCount; i++)
+        {
+            var net = new Net { Id = $"n{i}", DomainId = StandardDomains.BinaryId };
+            root.Nets.Add(net);
+            string instanceId = $"c{i}";
+            root.Instances.Add(new ComponentInstance
+            {
+                Id = instanceId,
+                Primitive = new ConstantSpec(i % 2),
+            });
+            net.Pins.Add(new PinRef(instanceId, "out"));
+        }
+
+        return project;
     }
 
     private static EditorViewModel CreateEmptyEditor()

@@ -250,7 +250,8 @@
                   </StackPanel>
                 </StackPanel>
 
-                <Button Content="Reset wire route" Command="{Binding ClearNetRouteCommand}" IsVisible="{Binding SelectedNetHasRoute}" Margin="0,10,0,0" HorizontalAlignment="Left" ToolTip.Tip="Return the selected wire to automatic orthogonal routing" />
+                <Button Content="{Binding WaveformPinButtonText}" Command="{Binding ToggleWaveformPinCommand}" IsVisible="{Binding HasSelectedNet}" Margin="0,10,0,0" HorizontalAlignment="Left" ToolTip.Tip="Pin the selected net to the Waveform tab so it is listed first" />
+                <Button Content="Reset wire route" Command="{Binding ClearNetRouteCommand}" IsVisible="{Binding SelectedNetHasRoute}" Margin="0,6,0,0" HorizontalAlignment="Left" ToolTip.Tip="Return the selected wire to automatic orthogonal routing" />
                 <Button Content="Delete selection" Command="{Binding DeleteSelectionCommand}" Classes="danger" Margin="0,6,0,0" HorizontalAlignment="Left" />
 
                 <StackPanel IsVisible="{Binding HasSelectedInstance}" Margin="0,4,0,0">
@@ -499,10 +500,13 @@
 
           <TabItem Header="Waveform">
             <Grid RowDefinitions="Auto,*" Margin="8,6,8,8">
-              <StackPanel>
-                <TextBlock Text="Recorded net transitions" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource App.TextPrimary}" />
-                <TextBlock Text="Advance or step the simulator to collect history. Up to 16 current-definition nets are shown." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,5" />
-              </StackPanel>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <StackPanel>
+                  <TextBlock Text="Recorded net transitions" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource App.TextPrimary}" />
+                  <TextBlock Text="{Binding WaveformPinSummary}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,5" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Clear pins" Command="{Binding ClearWaveformPinsCommand}" IsVisible="{Binding HasWaveformPins}" VerticalAlignment="Top" Margin="0,0,0,5" ToolTip.Tip="Remove every waveform pin for this definition; the net set returns to declaration order" />
+              </Grid>
               <Border Grid.Row="1" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
                 <controls:WaveformView Snapshot="{Binding Waveform}" />
               </Border>

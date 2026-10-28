@@ -41,8 +41,9 @@ Expected first screen: the light workbench (or your saved theme), the **4-bit bi
    - `Q2 = 1`
    - `Q3 = 0`
    - Header shows `t = 100`, zero errors/warnings.
-4. Click **Waveform**. Expected: rows for `Q0`…`Q3`, `clk`, constants and adder sums over a 0–100 tick axis; the clock has 10-tick phases.
-5. Click **Trace**. Expected: recent net changes newest first, formatted `t=<time>  <net> → <value>`.
+4. Click **Waveform**. Expected: rows for `Q0`…`Q3`, `clk`, constants and adder sums over a 0–100 tick axis; the clock has 10-tick phases; the header describes up to 16 nets in declaration order.
+5. In **Inspect**, select a late net in **NETS** (for example `sum3` or `carry`) and click **Show in waveform**. Expected: the button becomes **Hide from waveform**, the net row's summary gains `· waveform`, the Waveform tab lists that net first with the header reporting one pinned net, and simulation values are unchanged. Click again to unpin; the rows return to declaration order. Pins belong to the current definition and are not saved with the project.
+6. Click **Trace**. Expected: recent net changes newest first, formatted `t=<time>  <net> → <value>`.
 
 If counter values differ, record the values and diagnostics; this is a correctness failure.
 
