@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 
@@ -14,6 +15,7 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            ThemeService.Initialize();
             var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
         }

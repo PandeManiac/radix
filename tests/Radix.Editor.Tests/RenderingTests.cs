@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using System.Runtime.InteropServices;
 using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
@@ -91,6 +93,77 @@ public sealed class RenderingTests
         Assert.Empty(viewModel.Definition.Instances);
         Assert.Empty(viewModel.Diagnostics);
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public void DarkThemeRendersDarkSurfacesAndCircuit()
+    {
+        Application? application = Application.Current;
+        Assert.NotNull(application);
+        ThemeVariant? previous = application.RequestedThemeVariant;
+        application.RequestedThemeVariant = ThemeVariant.Dark;
+
+        try
+        {
+            var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+            viewModel.BeginSimulation();
+            viewModel.AdvanceTicksText = "100";
+            viewModel.AdvanceSimulation();
+
+            var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            window.Measure(new Size(1480, 920));
+            window.Arrange(new Rect(0, 0, 1480, 920));
+            Dispatcher.UIThread.RunJobs();
+
+            using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+            bitmap.Render(window);
+            string path = Path.Combine(ArtifactDirectory(), "workbench-counter-dark.png");
+            using (FileStream stream = File.Create(path))
+            {
+                bitmap.Save(stream);
+            }
+
+            (byte r, byte g, byte b) = SamplePixel(bitmap, 5, 5);
+            double luminance = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+
+            var tabs = window.FindControl<TabControl>("RightTabs");
+            Assert.NotNull(tabs);
+            tabs!.SelectedIndex = 2;
+            Dispatcher.UIThread.RunJobs();
+            using (var waveform = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96)))
+            {
+                waveform.Render(window);
+                using FileStream stream = File.Create(Path.Combine(ArtifactDirectory(), "workbench-waveform-dark.png"));
+                waveform.Save(stream);
+            }
+
+            window.Close();
+
+            Assert.True(luminance < 90, $"expected a dark window background, sampled {r},{g},{b}");
+            Assert.True(new FileInfo(path).Length > 10_000);
+        }
+        finally
+        {
+            application.RequestedThemeVariant = previous;
+        }
+    }
+
+    private static (byte R, byte G, byte B) SamplePixel(Bitmap bitmap, int x, int y)
+    {
+        var buffer = new byte[4];
+        GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+        try
+        {
+            bitmap.CopyPixels(new PixelRect(x, y, 1, 1), handle.AddrOfPinnedObject(), buffer.Length, 4);
+        }
+        finally
+        {
+            handle.Free();
+        }
+
+        return (buffer[2], buffer[1], buffer[0]);
     }
 
     private static string ArtifactDirectory()

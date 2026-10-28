@@ -1,0 +1,104 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="App.WindowBackground" Color="#EDF2F6" />
+      <SolidColorBrush x:Key="App.ToolbarBackground" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="App.PanelBackground" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="App.PanelAltBackground" Color="#F8FAFC" />
+      <SolidColorBrush x:Key="App.SubtleBackground" Color="#F4F6F8" />
+      <SolidColorBrush x:Key="App.Border" Color="#D9E1E8" />
+      <SolidColorBrush x:Key="App.BorderStrong" Color="#D5DCE3" />
+      <SolidColorBrush x:Key="App.TextPrimary" Color="#1E3A55" />
+      <SolidColorBrush x:Key="App.TextSecondary" Color="#425A70" />
+      <SolidColorBrush x:Key="App.TextMuted" Color="#6F8092" />
+      <SolidColorBrush x:Key="App.Accent" Color="#2B6CB0" />
+      <SolidColorBrush x:Key="App.AccentSoft" Color="#DCE9F7" />
+      <SolidColorBrush x:Key="App.AccentText" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="App.SuccessBackground" Color="#E8F4EE" />
+      <SolidColorBrush x:Key="App.SuccessBorder" Color="#B4D8C6" />
+      <SolidColorBrush x:Key="App.DangerBackground" Color="#FBEDEC" />
+      <SolidColorBrush x:Key="App.DangerBorder" Color="#E5B9B5" />
+      <SolidColorBrush x:Key="App.HoverBackground" Color="#E7EDF3" />
+      <SolidColorBrush x:Key="App.CanvasBackground" Color="#F8FAFC" />
+      <SolidColorBrush x:Key="App.CanvasGrid" Color="#E9EEF3" />
+      <SolidColorBrush x:Key="App.ComponentFill" Color="#FFFDFC" />
+      <SolidColorBrush x:Key="App.ComponentHeader" Color="#F1F5F9" />
+      <SolidColorBrush x:Key="App.ComponentBorder" Color="#9BAAB8" />
+      <SolidColorBrush x:Key="App.PortFill" Color="#EEF3F8" />
+      <SolidColorBrush x:Key="App.PinFill" Color="#4A5A6A" />
+      <SolidColorBrush x:Key="App.PinBadgeBackground" Color="#F9FBFD" />
+      <SolidColorBrush x:Key="App.WireLabelBackground" Color="#F2F5F8" />
+      <SolidColorBrush x:Key="App.ZoomBadgeBackground" Color="#EEF3F8" />
+      <SolidColorBrush x:Key="App.TooltipBackground" Color="#1F2A36" />
+      <SolidColorBrush x:Key="App.TooltipText" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="App.SignalLow" Color="#8091A3" />
+      <SolidColorBrush x:Key="App.SignalHigh" Color="#1F9D72" />
+      <SolidColorBrush x:Key="App.SignalOne" Color="#2B6CB0" />
+      <SolidColorBrush x:Key="App.SignalTwo" Color="#D97706" />
+      <SolidColorBrush x:Key="App.SignalThree" Color="#7C5CBF" />
+      <SolidColorBrush x:Key="App.SignalFour" Color="#B0427A" />
+      <SolidColorBrush x:Key="App.SignalUndriven" Color="#B7C2CC" />
+      <SolidColorBrush x:Key="App.HudBackground" Color="#F2F6FAEE" />
+      <SolidColorBrush x:Key="App.HudBorder" Color="#DDE5EC" />
+      <SolidColorBrush x:Key="App.CanvasHintBackground" Color="#FFFFFFEA" />
+      <SolidColorBrush x:Key="App.CanvasHintBorder" Color="#DCE4EB" />
+      <SolidColorBrush x:Key="App.WavePanel" Color="#FBFCFD" />
+      <SolidColorBrush x:Key="App.WaveGrid" Color="#E3E9EF" />
+      <SolidColorBrush x:Key="App.WaveRowAlt" Color="#F4F7FA" />
+      <SolidColorBrush x:Key="App.DiagnosticError" Color="#B3261E" />
+      <SolidColorBrush x:Key="App.DiagnosticWarning" Color="#8A5A00" />
+      <SolidColorBrush x:Key="App.DiagnosticInfo" Color="#44576A" />
+    </ResourceDictionary>
+
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="App.WindowBackground" Color="#0D1319" />
+      <SolidColorBrush x:Key="App.ToolbarBackground" Color="#151D25" />
+      <SolidColorBrush x:Key="App.PanelBackground" Color="#141C24" />
+      <SolidColorBrush x:Key="App.PanelAltBackground" Color="#1A232D" />
+      <SolidColorBrush x:Key="App.SubtleBackground" Color="#202A35" />
+      <SolidColorBrush x:Key="App.Border" Color="#2A3743" />
+      <SolidColorBrush x:Key="App.BorderStrong" Color="#34424F" />
+      <SolidColorBrush x:Key="App.TextPrimary" Color="#E6EDF3" />
+      <SolidColorBrush x:Key="App.TextSecondary" Color="#B9C7D4" />
+      <SolidColorBrush x:Key="App.TextMuted" Color="#8294A5" />
+      <SolidColorBrush x:Key="App.Accent" Color="#6AB0F3" />
+      <SolidColorBrush x:Key="App.AccentSoft" Color="#1C3A55" />
+      <SolidColorBrush x:Key="App.AccentText" Color="#0B1117" />
+      <SolidColorBrush x:Key="App.SuccessBackground" Color="#153026" />
+      <SolidColorBrush x:Key="App.SuccessBorder" Color="#2F6B51" />
+      <SolidColorBrush x:Key="App.DangerBackground" Color="#351D1D" />
+      <SolidColorBrush x:Key="App.DangerBorder" Color="#7A3C3A" />
+      <SolidColorBrush x:Key="App.HoverBackground" Color="#25313D" />
+      <SolidColorBrush x:Key="App.CanvasBackground" Color="#0B1016" />
+      <SolidColorBrush x:Key="App.CanvasGrid" Color="#1E2832" />
+      <SolidColorBrush x:Key="App.ComponentFill" Color="#18212B" />
+      <SolidColorBrush x:Key="App.ComponentHeader" Color="#222E3A" />
+      <SolidColorBrush x:Key="App.ComponentBorder" Color="#4B5E70" />
+      <SolidColorBrush x:Key="App.PortFill" Color="#1D2A36" />
+      <SolidColorBrush x:Key="App.PinFill" Color="#9AAABC" />
+      <SolidColorBrush x:Key="App.PinBadgeBackground" Color="#121A22" />
+      <SolidColorBrush x:Key="App.WireLabelBackground" Color="#1A242E" />
+      <SolidColorBrush x:Key="App.ZoomBadgeBackground" Color="#1D2833" />
+      <SolidColorBrush x:Key="App.TooltipBackground" Color="#E6EDF3" />
+      <SolidColorBrush x:Key="App.TooltipText" Color="#0D1319" />
+      <SolidColorBrush x:Key="App.SignalLow" Color="#8798A8" />
+      <SolidColorBrush x:Key="App.SignalHigh" Color="#3DDC97" />
+      <SolidColorBrush x:Key="App.SignalOne" Color="#6AB0F3" />
+      <SolidColorBrush x:Key="App.SignalTwo" Color="#F2A94B" />
+      <SolidColorBrush x:Key="App.SignalThree" Color="#B69DF8" />
+      <SolidColorBrush x:Key="App.SignalFour" Color="#F27FB4" />
+      <SolidColorBrush x:Key="App.SignalUndriven" Color="#5D6C7A" />
+      <SolidColorBrush x:Key="App.HudBackground" Color="#16202AEE" />
+      <SolidColorBrush x:Key="App.HudBorder" Color="#2F3E4C" />
+      <SolidColorBrush x:Key="App.CanvasHintBackground" Color="#121A22EA" />
+      <SolidColorBrush x:Key="App.CanvasHintBorder" Color="#2A3743" />
+      <SolidColorBrush x:Key="App.WavePanel" Color="#101820" />
+      <SolidColorBrush x:Key="App.WaveGrid" Color="#26323E" />
+      <SolidColorBrush x:Key="App.WaveRowAlt" Color="#161F28" />
+      <SolidColorBrush x:Key="App.DiagnosticError" Color="#FF9A90" />
+      <SolidColorBrush x:Key="App.DiagnosticWarning" Color="#FFD27A" />
+      <SolidColorBrush x:Key="App.DiagnosticInfo" Color="#B9C7D4" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

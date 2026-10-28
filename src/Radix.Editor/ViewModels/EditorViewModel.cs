@@ -1226,6 +1226,27 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = "Cleared external drives";
     }
 
+    /// <summary>
+    /// Rebuilds presentation that cannot use DynamicResource directly (diagnostic
+    /// rows and waveform colours) after a theme change.
+    /// </summary>
+    public void RefreshTheme()
+    {
+        RefreshInspector();
+        if (Simulator.Engine is null)
+        {
+            RefreshDiagnosticsFromValidator();
+        }
+        else
+        {
+            RefreshDiagnosticsFromSimulator();
+        }
+
+        RefreshWaveform();
+        RefreshRecentTransitions();
+        VisualInvalidated?.Invoke();
+    }
+
     public void RunEvent(string description)
     {
         if (!EnsureSimulation())

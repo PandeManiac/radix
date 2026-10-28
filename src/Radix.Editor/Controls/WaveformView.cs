@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Radix.Core.Signals;
+using Radix.Editor.Rendering;
 using Radix.Editor.ViewModels;
 
 namespace Radix.Editor.Controls;
@@ -13,12 +14,18 @@ public sealed class WaveformView : Control
     public static readonly StyledProperty<WaveformSnapshot?> SnapshotProperty =
         AvaloniaProperty.Register<WaveformView, WaveformSnapshot?>(nameof(Snapshot));
 
-    private static readonly IBrush Panel = Brush.Parse("#FBFCFD");
-    private static readonly IBrush Ink = Brush.Parse("#263442");
-    private static readonly IBrush Muted = Brush.Parse("#758596");
-    private static readonly IBrush Grid = Brush.Parse("#E3E9EF");
-    private static readonly IBrush RowAlt = Brush.Parse("#F4F7FA");
-    private static readonly IBrush Undriven = Brush.Parse("#B7C2CC");
+    private IBrush _panel = Brushes.White;
+    private IBrush _ink = Brushes.Black;
+    private IBrush _muted = Brushes.Gray;
+    private IBrush _grid = Brushes.LightGray;
+    private IBrush _rowAlt = Brushes.WhiteSmoke;
+    private IBrush _undriven = Brushes.LightGray;
+    private IBrush _low = Brushes.SlateGray;
+    private IBrush _high = Brushes.SeaGreen;
+    private IBrush _one = Brushes.SteelBlue;
+    private IBrush _two = Brushes.DarkOrange;
+    private IBrush _three = Brushes.MediumPurple;
+    private IBrush _four = Brushes.MediumVioletRed;
 
     public WaveformSnapshot? Snapshot
     {
@@ -31,14 +38,20 @@ public sealed class WaveformView : Control
         AffectsRender<WaveformView>(SnapshotProperty);
     }
 
+    public WaveformView()
+    {
+        ActualThemeVariantChanged += (_, _) => InvalidateVisual();
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        context.FillRectangle(Panel, new Rect(Bounds.Size));
+        LoadTheme();
+        context.FillRectangle(_panel, new Rect(Bounds.Size));
         WaveformSnapshot? snapshot = Snapshot;
         if (snapshot is null || snapshot.Rows.Count == 0)
         {
-            FormattedText empty = Text("No nets to display — open a circuit with nets.", 12, Muted);
+            FormattedText empty = Text("No nets to display — open a circuit with nets.", 12, _muted);
             context.DrawText(empty, new Point(
                 Math.Max(12, (Bounds.Width - empty.Width) / 2),
                 Math.Max(12, (Bounds.Height - empty.Height) / 2)));
@@ -53,16 +66,16 @@ public sealed class WaveformView : Control
         long end = Math.Max(snapshot.End, start + 1);
         double rowHeight = plot.Height / snapshot.Rows.Count;
 
-        context.DrawLine(new Pen(Grid, 1), new Point(plot.Left, plot.Top), new Point(plot.Left, plot.Bottom));
-        context.DrawLine(new Pen(Grid, 1), new Point(plot.Left, plot.Bottom), new Point(plot.Right, plot.Bottom));
+        context.DrawLine(new Pen(_grid, 1), new Point(plot.Left, plot.Top), new Point(plot.Left, plot.Bottom));
+        context.DrawLine(new Pen(_grid, 1), new Point(plot.Left, plot.Bottom), new Point(plot.Right, plot.Bottom));
 
         // Four evenly spaced time grid lines, labelled with simulated ticks.
         for (int i = 0; i <= 4; i++)
         {
             double x = plot.Left + (plot.Width * i / 4);
-            context.DrawLine(new Pen(Grid, 1), new Point(x, plot.Top), new Point(x, plot.Bottom));
+            context.DrawLine(new Pen(_grid, 1), new Point(x, plot.Top), new Point(x, plot.Bottom));
             long tick = start + ((end - start) * i / 4);
-            FormattedText label = Text($"t={tick.ToString(CultureInfo.InvariantCulture)}", 9, Muted);
+            FormattedText label = Text($"t={tick.ToString(CultureInfo.InvariantCulture)}", 9, _muted);
             context.DrawText(label, new Point(x - (label.Width / 2), plot.Bottom + 4));
         }
 
@@ -74,15 +87,15 @@ public sealed class WaveformView : Control
             double rowTop = plot.Top + (rowIndex * rowHeight);
             if (rowIndex % 2 == 1)
             {
-                context.FillRectangle(RowAlt, new Rect(plot.Left, rowTop, plot.Width, rowHeight));
+                context.FillRectangle(_rowAlt, new Rect(plot.Left, rowTop, plot.Width, rowHeight));
             }
 
             double center = rowTop + (rowHeight / 2);
-            FormattedText name = Text(row.Label, Math.Min(11, Math.Max(8.5, rowHeight * 0.45)), Ink);
+            FormattedText name = Text(row.Label, Math.Min(11, Math.Max(8.5, rowHeight * 0.45)), _ink);
             name.MaxTextWidth = labelWidth - 18;
             name.Trimming = TextTrimming.CharacterEllipsis;
             context.DrawText(name, new Point(8, center - (name.Height / 2)));
-            context.DrawLine(new Pen(Grid, 1), new Point(0, rowTop), new Point(plot.Right, rowTop));
+            context.DrawLine(new Pen(_grid, 1), new Point(0, rowTop), new Point(plot.Right, rowTop));
         }
 
         using (context.PushClip(plot))
@@ -123,7 +136,7 @@ public sealed class WaveformView : Control
     private static double X(long time, long start, long end, Rect plot) =>
         plot.Left + ((time - start) * plot.Width / Math.Max(1, end - start));
 
-    private static void DrawLevel(
+    private void DrawLevel(
         DrawingContext context,
         SignalDomain domain,
         int value,
@@ -139,12 +152,12 @@ public sealed class WaveformView : Control
 
         double y = LevelY(value, domain, center, rowHeight);
         IPen pen = value < 0
-            ? new Pen(Undriven, 1.2, new DashStyle([3, 3], 0))
+            ? new Pen(_undriven, 1.2, new DashStyle([3, 3], 0))
             : new Pen(ValueBrush(domain, value), 1.8, lineCap: PenLineCap.Round);
         context.DrawLine(pen, new Point(fromX, y), new Point(toX, y));
     }
 
-    private static void DrawTransition(
+    private void DrawTransition(
         DrawingContext context,
         SignalDomain domain,
         int from,
@@ -156,7 +169,7 @@ public sealed class WaveformView : Control
         double fromY = LevelY(from, domain, center, rowHeight);
         double toY = LevelY(to, domain, center, rowHeight);
         IPen pen = to < 0
-            ? new Pen(Undriven, 1.2, new DashStyle([3, 3], 0))
+            ? new Pen(_undriven, 1.2, new DashStyle([3, 3], 0))
             : new Pen(ValueBrush(domain, to), 1.8, lineCap: PenLineCap.Round);
         context.DrawLine(pen, new Point(x, fromY), new Point(x, toY));
     }
@@ -177,25 +190,42 @@ public sealed class WaveformView : Control
     private static string Format(int value, SignalDomain domain) =>
         domain.IsValidValue(value) ? domain.ValueName(value) : "!";
 
-    private static IBrush ValueBrush(SignalDomain domain, int value)
+    private IBrush ValueBrush(SignalDomain domain, int value)
     {
         if (value < 0)
         {
-            return Undriven;
+            return _undriven;
         }
 
         if (domain.ValueCount == 2)
         {
-            return value == 0 ? Brush.Parse("#8091A3") : Brush.Parse("#1F9D72");
+            return value == 0 ? _low : _high;
         }
 
         return value switch
         {
-            0 => Brush.Parse("#8091A3"),
-            1 => Brush.Parse("#2B6CB0"),
-            2 => Brush.Parse("#D97706"),
-            _ => Brush.Parse("#7C5CBF"),
+            0 => _low,
+            1 => _one,
+            2 => _two,
+            3 => _three,
+            _ => _four,
         };
+    }
+
+    private void LoadTheme()
+    {
+        _panel = ThemeBrushes.Get(this, "App.WavePanel", "#FBFCFD");
+        _ink = ThemeBrushes.Get(this, "App.TextPrimary", "#263442");
+        _muted = ThemeBrushes.Get(this, "App.TextMuted", "#758596");
+        _grid = ThemeBrushes.Get(this, "App.WaveGrid", "#E3E9EF");
+        _rowAlt = ThemeBrushes.Get(this, "App.WaveRowAlt", "#F4F7FA");
+        _undriven = ThemeBrushes.Get(this, "App.SignalUndriven", "#B7C2CC");
+        _low = ThemeBrushes.Get(this, "App.SignalLow", "#8091A3");
+        _high = ThemeBrushes.Get(this, "App.SignalHigh", "#1F9D72");
+        _one = ThemeBrushes.Get(this, "App.SignalOne", "#2B6CB0");
+        _two = ThemeBrushes.Get(this, "App.SignalTwo", "#D97706");
+        _three = ThemeBrushes.Get(this, "App.SignalThree", "#7C5CBF");
+        _four = ThemeBrushes.Get(this, "App.SignalFour", "#B0427A");
     }
 
     private static FormattedText Text(string text, double size, IBrush brush, FontWeight weight = FontWeight.Normal)

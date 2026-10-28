@@ -170,17 +170,13 @@ public sealed class DiagnosticItem
         Message = diagnostic.Message;
         Location = diagnostic.Location;
         Display = diagnostic.ToString();
-        Color = diagnostic.Severity switch
-        {
-            DiagnosticSeverity.Error => "#B3261E",
-            DiagnosticSeverity.Warning => "#8A5A00",
-            _ => "#44576A",
-        };
     }
 
     public DiagnosticSeverity Severity { get; }
 
-    public string Color { get; }
+    public bool IsError => Severity == DiagnosticSeverity.Error;
+
+    public bool IsWarning => Severity == DiagnosticSeverity.Warning;
 
     public string Code { get; }
 

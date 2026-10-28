@@ -10,29 +10,29 @@
     Height="920"
     MinWidth="1040"
     MinHeight="660"
-    Background="#EDF2F6"
+    Background="{DynamicResource App.WindowBackground}"
     FontFamily="Inter"
     WindowStartupLocation="CenterScreen">
 
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- Toolbar -->
-    <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="0,0,0,1" Padding="10,7">
+    <Border Grid.Row="0" Background="{DynamicResource App.ToolbarBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="10,7">
       <DockPanel>
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <TextBlock Text="RADIX" FontSize="18" FontWeight="Bold" Foreground="#1E3A55" VerticalAlignment="Center" Margin="4,0,2,0" />
-          <TextBlock Text="workbench" FontSize="11" Foreground="#7A8B9B" VerticalAlignment="Center" Margin="0,4,10,0" />
+          <TextBlock Text="RADIX" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource App.TextPrimary}" VerticalAlignment="Center" Margin="4,0,2,0" />
+          <TextBlock Text="workbench" FontSize="11" Foreground="{DynamicResource App.TextMuted}" VerticalAlignment="Center" Margin="0,4,10,0" />
 
           <Button Classes="tool" Content="New" Command="{Binding NewProjectCommand}" />
           <Button Classes="tool" Content="Open…" Click="OpenProject_Click" />
           <Button Classes="tool" Content="Save" Click="SaveProject_Click" />
           <Button Classes="tool" Content="Save as…" Click="SaveProjectAs_Click" />
 
-          <Border Width="1" Background="#DCE3EA" Margin="6,3" />
+          <Border Width="1" Background="{DynamicResource App.Border}" Margin="6,3" />
           <Button Classes="tool" Content="↶ Undo" Command="{Binding UndoCommand}" />
           <Button Classes="tool" Content="↷ Redo" Command="{Binding RedoCommand}" />
 
-          <Border Width="1" Background="#DCE3EA" Margin="6,3" />
-          <Button Content="Begin" Command="{Binding BeginCommand}" Background="#E8F4EE" BorderBrush="#B4D8C6" />
+          <Border Width="1" Background="{DynamicResource App.Border}" Margin="6,3" />
+          <Button Content="Begin" Command="{Binding BeginCommand}" Background="{DynamicResource App.SuccessBackground}" BorderBrush="{DynamicResource App.SuccessBorder}" />
           <Button Content="Advance" Command="{Binding AdvanceCommand}" />
           <TextBox Width="46" Text="{Binding AdvanceTicksText, Mode=TwoWay}" VerticalAlignment="Center" />
           <Button Classes="tool" Content="Event" Command="{Binding StepEventCommand}" />
@@ -40,13 +40,18 @@
           <Button Classes="tool" Content="Settle" Command="{Binding SettleCommand}" />
           <Button Classes="tool" Content="Clear inputs" Command="{Binding ClearDrivesCommand}" />
 
-          <Border Width="1" Background="#DCE3EA" Margin="6,3" />
+          <Border Width="1" Background="{DynamicResource App.Border}" Margin="6,3" />
           <Button Classes="tool" Content="Fit view" Command="{Binding FitCommand}" />
         </StackPanel>
 
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="#294B66" />
-          <TextBlock Text="{Binding SimStatusText}" Foreground="#7A8B9B" FontSize="11" />
+          <ComboBox x:Name="ThemeBox" Width="82" SelectedIndex="0" SelectionChanged="ThemeBox_SelectionChanged" ToolTip.Tip="Colour theme: follow the system, light, or dark">
+            <ComboBoxItem Content="Auto" />
+            <ComboBoxItem Content="Light" />
+            <ComboBoxItem Content="Dark" />
+          </ComboBox>
+          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="{DynamicResource App.TextSecondary}" />
+          <TextBlock Text="{Binding SimStatusText}" Foreground="{DynamicResource App.TextMuted}" FontSize="11" />
         </StackPanel>
       </DockPanel>
     </Border>
@@ -54,10 +59,10 @@
     <!-- Work area -->
     <Grid Grid.Row="1" ColumnDefinitions="306,*,382" Margin="8">
       <!-- Left panel -->
-      <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="1" CornerRadius="6" Padding="8">
+      <Border Grid.Column="0" Background="{DynamicResource App.PanelBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6" Padding="8">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
-            <TextBlock Text="{Binding ProjectTitle}" FontSize="14" FontWeight="SemiBold" Foreground="#22384C" Margin="4,4,4,0" />
+            <TextBlock Text="{Binding ProjectTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" Margin="4,4,4,0" />
             <TextBlock Text="{Binding ProjectSubtitle}" Classes="muted" FontSize="10.5" Margin="4,1,4,2" TextWrapping="Wrap" />
 
             <TextBlock Text="LIBRARY" Classes="section" />
@@ -83,7 +88,7 @@
                       <Button Classes="list" Command="{Binding OpenCommand}">
                         <StackPanel>
                           <StackPanel Orientation="Horizontal" Spacing="4">
-                            <TextBlock Text="{Binding Prefix}" Foreground="#2B6CB0" FontSize="11" />
+                            <TextBlock Text="{Binding Prefix}" Foreground="{DynamicResource App.Accent}" FontSize="11" />
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
                           </StackPanel>
                           <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="10" />
@@ -106,7 +111,7 @@
                 <DataTemplate x:DataType="vm:PinListItem">
                   <Grid ColumnDefinitions="*,Auto" Margin="2,1">
                     <StackPanel Orientation="Horizontal" Spacing="5">
-                      <TextBlock Text="{Binding DirectionText}" FontSize="9" Foreground="#587089" Width="24" />
+                      <TextBlock Text="{Binding DirectionText}" FontSize="9" Foreground="{DynamicResource App.TextSecondary}" Width="24" />
                       <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                       <TextBlock Text="{Binding DomainId}" Classes="muted" FontSize="10" />
                     </StackPanel>
@@ -116,7 +121,7 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Border Background="#F8FAFC" BorderBrush="#E2E8EE" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,5,0,0">
+            <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,5,0,0">
               <StackPanel Spacing="4">
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBox Grid.ColumnSpan="2" Watermark="new pin name" Text="{Binding NewPinName, Mode=TwoWay}" />
@@ -142,14 +147,14 @@
       </Border>
 
       <!-- Canvas -->
-      <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#D9E1E8" BorderThickness="1" CornerRadius="6" Margin="8,0" ClipToBounds="True">
+      <Border Grid.Column="1" Background="{DynamicResource App.CanvasBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6" Margin="8,0" ClipToBounds="True">
         <Grid>
           <controls:CircuitCanvas x:Name="CircuitCanvas" />
-          <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Background="#F2F6FAEE" BorderBrush="#DDE5EC" BorderThickness="1" CornerRadius="5" Padding="8,4" IsHitTestVisible="False">
+          <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Background="{DynamicResource App.HudBackground}" BorderBrush="{DynamicResource App.HudBorder}" BorderThickness="1" CornerRadius="5" Padding="8,4" IsHitTestVisible="False">
             <StackPanel Orientation="Horizontal" Spacing="12">
-              <TextBlock Text="{Binding DefinitionTitle}" FontWeight="SemiBold" Foreground="#263D52" FontSize="11" />
-              <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="#2B6CB0" FontSize="11" />
-              <TextBlock Text="{Binding DiagnosticSummary}" Foreground="#7A8B9B" FontSize="10" />
+              <TextBlock Text="{Binding DefinitionTitle}" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" FontSize="11" />
+              <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="{DynamicResource App.Accent}" FontSize="11" />
+              <TextBlock Text="{Binding DiagnosticSummary}" Foreground="{DynamicResource App.TextMuted}" FontSize="10" />
             </StackPanel>
           </Border>
           <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Orientation="Horizontal" Spacing="3" Margin="12">
@@ -158,24 +163,24 @@
             <Button Classes="tool" Content="100%" Click="ResetZoom_Click" ToolTip.Tip="Reset zoom" />
             <Button Classes="tool" Content="⤢" Click="FitZoom_Click" ToolTip.Tip="Fit circuit" />
           </StackPanel>
-          <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" Background="#FFFFFFEA" BorderBrush="#DCE4EB" BorderThickness="1" CornerRadius="5" IsHitTestVisible="False" Padding="8,5">
+          <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" Background="{DynamicResource App.CanvasHintBackground}" BorderBrush="{DynamicResource App.CanvasHintBorder}" BorderThickness="1" CornerRadius="5" IsHitTestVisible="False" Padding="8,5">
             <StackPanel Spacing="2">
-              <TextBlock Text="DRAG A PIN TO A PIN OR WIRE TO CONNECT" FontSize="9" FontWeight="SemiBold" Foreground="#6A7B8C" />
-              <TextBlock Text="double-click a part to enter its definition" FontSize="9.5" Foreground="#5E7184" />
-              <TextBlock Text="double-click a wire to add a bendpoint · drag handles · alt+click removes" FontSize="9.5" Foreground="#5E7184" />
-              <TextBlock Text="ctrl+wheel zoom · middle/alt drag pan" FontSize="9.5" Foreground="#5E7184" />
+              <TextBlock Text="DRAG A PIN TO A PIN OR WIRE TO CONNECT" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource App.TextMuted}" />
+              <TextBlock Text="double-click a part to enter its definition" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+              <TextBlock Text="double-click a wire to add a bendpoint · drag handles · alt+click removes" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+              <TextBlock Text="ctrl+wheel zoom · middle/alt drag pan" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
             </StackPanel>
           </Border>
         </Grid>
       </Border>
 
       <!-- Right panel -->
-      <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="1" CornerRadius="6">
+      <Border Grid.Column="2" Background="{DynamicResource App.PanelBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6">
         <TabControl x:Name="RightTabs" Margin="2">
           <TabItem Header="Inspect">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
               <StackPanel Margin="10,6,14,10">
-                <TextBlock Text="{Binding SelectionTitle}" FontSize="15" FontWeight="SemiBold" Foreground="#22384C" />
+                <TextBlock Text="{Binding SelectionTitle}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
                 <TextBlock Text="{Binding SelectionSubtitle}" Classes="muted" FontSize="10" Margin="0,0,0,8" />
 
                 <ItemsControl ItemsSource="{Binding Fields}">
@@ -215,14 +220,14 @@
                 <ItemsControl ItemsSource="{Binding IoPins}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:IoPinViewModel">
-                      <Border Background="#FBFCFD" BorderBrush="#E2E8EE" BorderThickness="1" CornerRadius="5" Padding="7,5" Margin="0,2">
+                      <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="7,5" Margin="0,2">
                         <StackPanel Spacing="3">
                           <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11.5" />
-                            <TextBlock Grid.Column="1" Text="{Binding DirectionText}" FontSize="9" Foreground="#708396" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding DirectionText}" FontSize="9" Foreground="{DynamicResource App.TextMuted}" VerticalAlignment="Center" />
                           </Grid>
                           <StackPanel Orientation="Horizontal" Spacing="5">
-                            <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="17" Foreground="#1E3A55" />
+                            <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="17" Foreground="{DynamicResource App.TextPrimary}" />
                             <TextBlock Text="{Binding DomainText}" Classes="muted" FontSize="9.5" VerticalAlignment="Bottom" Margin="0,0,0,3" />
                           </StackPanel>
                           <ItemsControl ItemsSource="{Binding Values}">
@@ -254,11 +259,11 @@
                 <ItemsControl ItemsSource="{Binding Domains}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:DomainChoice">
-                      <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="#425A70" Margin="2,1" />
+                      <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" Margin="2,1" />
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <Border Background="#F8FAFC" BorderBrush="#E2E8EE" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
+                <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
                   <StackPanel Spacing="4">
                     <TextBox Watermark="domain name" Text="{Binding NewDomainName, Mode=TwoWay}" />
                     <TextBox Watermark="values, e.g. 0 1 2" Text="{Binding NewDomainValues, Mode=TwoWay}" />
@@ -273,13 +278,13 @@
           <TabItem Header="Diagnostics">
             <Grid RowDefinitions="Auto,*" Margin="10,8,12,10">
               <StackPanel>
-                <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="#5C7185" />
+                <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
                 <TextBlock Text="Validation, compile, and runtime messages" Classes="muted" FontSize="9.5" Margin="0,1,0,6" />
               </StackPanel>
-              <ListBox Grid.Row="1" ItemsSource="{Binding Diagnostics}" Background="#FBFCFD" BorderBrush="#E3E9EF" BorderThickness="1">
+              <ListBox Grid.Row="1" ItemsSource="{Binding Diagnostics}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:DiagnosticItem">
-                    <TextBlock Text="{Binding Display}" Foreground="{Binding Color}" FontSize="10.5" TextWrapping="Wrap" Margin="2,2" />
+                    <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" Classes.warning="{Binding IsWarning}" FontSize="10.5" TextWrapping="Wrap" Margin="2,2" />
                   </DataTemplate>
                 </ListBox.ItemTemplate>
               </ListBox>
@@ -289,10 +294,10 @@
           <TabItem Header="Waveform">
             <Grid RowDefinitions="Auto,*" Margin="8,6,8,8">
               <StackPanel>
-                <TextBlock Text="Recorded net transitions" FontWeight="SemiBold" FontSize="11.5" Foreground="#294257" />
+                <TextBlock Text="Recorded net transitions" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource App.TextPrimary}" />
                 <TextBlock Text="Advance or step the simulator to collect history. Up to 16 current-definition nets are shown." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,5" />
               </StackPanel>
-              <Border Grid.Row="1" BorderBrush="#E3E9EF" BorderThickness="1" CornerRadius="4">
+              <Border Grid.Row="1" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
                 <controls:WaveformView Snapshot="{Binding Waveform}" />
               </Border>
             </Grid>
@@ -314,10 +319,10 @@
           <TabItem Header="Trace">
             <Grid RowDefinitions="Auto,*" Margin="10,8,12,10">
               <TextBlock Text="Most recent net changes, newest first." Classes="muted" FontSize="9.5" />
-              <ListBox Grid.Row="1" ItemsSource="{Binding RecentTransitions}" Background="#FBFCFD" BorderBrush="#E3E9EF" BorderThickness="1" Margin="0,5,0,0">
+              <ListBox Grid.Row="1" ItemsSource="{Binding RecentTransitions}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" Margin="0,5,0,0">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="x:String" x:CompileBindings="False">
-                    <TextBlock Text="{Binding}" FontFamily="monospace" FontSize="10" Foreground="#314A60" />
+                    <TextBlock Text="{Binding}" FontFamily="monospace" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" />
                   </DataTemplate>
                 </ListBox.ItemTemplate>
               </ListBox>
@@ -328,13 +333,13 @@
     </Grid>
 
     <!-- Status bar -->
-    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="0,1,0,0" Padding="12,4">
+    <Border Grid.Row="2" Background="{DynamicResource App.ToolbarBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="12,4">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="{Binding StatusText}" FontSize="10.5" Foreground="#475F76" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding StatusText}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" TextTrimming="CharacterEllipsis" />
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14">
-          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" FontSize="10.5" Foreground="#2B6CB0" />
-          <TextBlock Text="{Binding SimStatusText}" FontSize="10.5" Foreground="#6F8092" />
-          <TextBlock Text="{Binding DiagnosticSummary}" FontSize="10.5" Foreground="#6F8092" />
+          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" FontSize="10.5" Foreground="{DynamicResource App.Accent}" />
+          <TextBlock Text="{Binding SimStatusText}" FontSize="10.5" Foreground="{DynamicResource App.TextMuted}" />
+          <TextBlock Text="{Binding DiagnosticSummary}" FontSize="10.5" Foreground="{DynamicResource App.TextMuted}" />
         </StackPanel>
       </Grid>
     </Border>
