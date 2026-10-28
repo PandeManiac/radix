@@ -18,6 +18,7 @@ public static class ExampleProjects
     public const string TernaryCounterFile = "ternary-counter.radix";
     public const string TernaryAdder2File = "ternary-adder-2.radix";
     public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
+    public const string TernaryMachineFile = "ternary-machine.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
 
@@ -31,6 +32,7 @@ public static class ExampleProjects
         new(TernaryCounterFile, "Ternary counter", "A two-trit sequential machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane.", CreateTernaryCounterDemo()),
         new(TernaryAdder2File, "Ternary 2-trit adder", "Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane.", CreateTernaryAdder2Demo()),
         new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
+        new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
@@ -978,5 +980,139 @@ public static class ExampleProjects
         }
 
         return builder.Build("demo.t-accumulator");
+    }
+
+    public static CircuitProject CreateTernaryMachineDemo()
+    {
+        var builder = new ProjectBuilder("Ternary program machine");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.t-machine", "Ternary program machine");
+        root.Definition.Description =
+            "A tiny stored-program ternary machine: a two-trit program counter, two 9-entry lookup ROMs, " +
+            "a trit decoder, and the ternary accumulator. Each rising CLK edge (0 -> 2) advances PC and executes " +
+            "the current instruction. Opcodes: 0 NOP, 1 LOAD operand, 2 ADD operand modulo 9.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+        var pc = new Net[2];
+        var acc = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            pc[i] = root.SetInitial(
+                root.AddPin($"pc{i}", $"PC{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+            acc[i] = root.SetInitial(
+                root.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        Net opcode = root.SetInitial(
+            root.AddPin("op", "OP", PinDirection.Output, StandardDomains.TernaryId),
+            0);
+        Net operand = root.SetInitial(
+            root.AddPin("arg", "ARG", PinDirection.Output, StandardDomains.TernaryId),
+            0);
+
+        root.AddNumericLane("pc", "PC", NumericFormats.UnsignedTernary.Id, "pc0", "pc1");
+        root.AddNumericLane("acc", "ACC", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+        root.AddNumericLane("opcode", "Opcode", NumericFormats.UnsignedTernary.Id, "op");
+        root.AddNumericLane("operand", "Operand", NumericFormats.UnsignedTernary.Id, "arg");
+
+        var nextPc = new Net[2];
+        nextPc[0] = root.Rename(root.AddNet("next_pc0", StandardDomains.TernaryId), "PC + 1 trit 0");
+        nextPc[1] = root.Rename(root.AddNet("next_pc1", StandardDomains.TernaryId), "PC + 1 trit 1");
+        Net pcCarry = root.Rename(root.AddNet("pc_carry", StandardDomains.TernaryId), "PC carry");
+
+        Net loadEnable = root.Rename(root.AddNet("load_enable", StandardDomains.TernaryId), "LOAD enable");
+        Net addEnable = root.Rename(root.AddNet("add_enable", StandardDomains.TernaryId), "ADD enable");
+        Net writeEnable = root.Rename(root.AddNet("write_enable", StandardDomains.TernaryId), "LOAD or ADD");
+
+        var sum = new Net[2];
+        sum[0] = root.Rename(root.AddNet("sum0", StandardDomains.TernaryId), "Q + ARG trit 0");
+        sum[1] = root.Rename(root.AddNet("sum1", StandardDomains.TernaryId), "Q + ARG trit 1");
+        Net sumCarry = root.Rename(root.AddNet("sum_carry", StandardDomains.TernaryId), "Q + ARG carry");
+
+        Net zero = root.Rename(root.AddNet("zero", StandardDomains.TernaryId), "zero");
+        Net always = root.Rename(root.AddNet("always_load", StandardDomains.TernaryId), "always load PC");
+        var registerInput = new Net[2];
+        registerInput[0] = root.Rename(root.AddNet("reg_in0", StandardDomains.TernaryId), "register D0");
+        registerInput[1] = root.Rename(root.AddNet("reg_in1", StandardDomains.TernaryId), "register D1");
+
+        root.AddPrimitive("const0", new ConstantSpec(0), 60, 980);
+        root.AddPrimitive("const2", new ConstantSpec(2), 60, 1080);
+        root.Connect(zero, root.Pin("const0", PrimitiveShapes.OutputPinId));
+        root.Connect(always, root.Pin("const2", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("pc_inc", "std.t-inc", 300, 40);
+        root.AddInstance("pc_carry_gate", "std.t-carry", 300, 180);
+        root.AddInstance("pc_add", "std.t-add", 540, 180);
+        root.Connect(pc[0], root.Pin("pc_inc", "a"), root.Pin("pc_carry_gate", "a"));
+        root.Connect(nextPc[0], root.Pin("pc_inc", "y"));
+        root.Connect(pcCarry, root.Pin("pc_carry_gate", "y"), root.Pin("pc_add", "b"));
+        root.Connect(pc[1], root.Pin("pc_add", "a"));
+        root.Connect(nextPc[1], root.Pin("pc_add", "y"));
+
+        // Instructions are data: each ROM is a lookup primitive, indexed by
+        // PC0 (most significant) and PC1. Index 0 is PC 0, index 3 is PC 1, ...
+        int[] opcodeTable = [1, 0, 2, 2, 1, 0, 2, 2, 0];
+        int[] operandTable = [1, 0, 1, 2, 2, 0, 2, 2, 0];
+        root.AddPrimitive("rom_op", new LookupSpec(2, opcodeTable, 1), 300, 720);
+        root.AddPrimitive("rom_arg", new LookupSpec(2, operandTable, 1), 300, 860);
+        for (int input = 0; input < 2; input++)
+        {
+            root.Connect(pc[input], root.Pin("rom_op", $"in{input}"), root.Pin("rom_arg", $"in{input}"));
+        }
+
+        root.Connect(opcode, root.Pin("rom_op", PrimitiveShapes.OutputPinId));
+        root.Connect(operand, root.Pin("rom_arg", PrimitiveShapes.OutputPinId));
+
+        root.AddPrimitive("decode_load", new LookupSpec(1, [0, 2, 0], 1), 540, 720);
+        root.AddPrimitive("decode_add", new LookupSpec(1, [0, 0, 2], 1), 540, 860);
+        root.Connect(opcode, root.Pin("decode_load", "in0"), root.Pin("decode_add", "in0"));
+        root.Connect(loadEnable, root.Pin("decode_load", PrimitiveShapes.OutputPinId));
+        root.Connect(addEnable, root.Pin("decode_add", PrimitiveShapes.OutputPinId));
+
+        root.AddPrimitive("add_low", new LookupSpec(2, [0, 1, 2, 1, 2, 0, 2, 0, 1], 1), 760, 40);
+        root.AddPrimitive("add_carry", new LookupSpec(2, [0, 0, 0, 0, 0, 1, 0, 1, 1], 1), 760, 180);
+        root.AddPrimitive("add_high", new LookupSpec(2, [0, 1, 2, 1, 2, 0, 2, 0, 1], 1), 760, 320);
+        root.Connect(acc[0], root.Pin("add_low", "in0"), root.Pin("add_carry", "in0"));
+        root.Connect(operand, root.Pin("add_low", "in1"), root.Pin("add_carry", "in1"));
+        root.Connect(acc[1], root.Pin("add_high", "in0"));
+        root.Connect(sum[0], root.Pin("add_low", PrimitiveShapes.OutputPinId));
+        root.Connect(sumCarry, root.Pin("add_carry", PrimitiveShapes.OutputPinId), root.Pin("add_high", "in1"));
+        root.Connect(sum[1], root.Pin("add_high", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("enable", "std.t-max", 760, 620);
+        root.Connect(loadEnable, root.Pin("enable", "a"));
+        root.Connect(addEnable, root.Pin("enable", "b"));
+        root.Connect(writeEnable, root.Pin("enable", "y"));
+
+        root.AddInstance("mux0", "std.t-mux", 980, 120);
+        root.AddInstance("mux1", "std.t-mux", 980, 320);
+        root.Connect(operand, root.Pin("mux0", "a"));
+        root.Connect(sum[0], root.Pin("mux0", "b"));
+        root.Connect(addEnable, root.Pin("mux0", "s"));
+        root.Connect(zero, root.Pin("mux1", "a"));
+        root.Connect(sum[1], root.Pin("mux1", "b"));
+        root.Connect(addEnable, root.Pin("mux1", "s"));
+        root.Connect(registerInput[0], root.Pin("mux0", "y"));
+        root.Connect(registerInput[1], root.Pin("mux1", "y"));
+
+        root.AddInstance("pc_reg", StandardLibrary.TernaryRegister2Id, 1240, 40);
+        root.Connect(pc[0], root.Pin("pc_reg", "q0"));
+        root.Connect(pc[1], root.Pin("pc_reg", "q1"));
+        root.Connect(nextPc[0], root.Pin("pc_reg", "d0"));
+        root.Connect(nextPc[1], root.Pin("pc_reg", "d1"));
+        root.Connect(always, root.Pin("pc_reg", "load"));
+        root.Connect(clk, root.Pin("pc_reg", "clk"));
+
+        root.AddInstance("acc_reg", StandardLibrary.TernaryRegister2Id, 1240, 360);
+        root.Connect(acc[0], root.Pin("acc_reg", "q0"));
+        root.Connect(acc[1], root.Pin("acc_reg", "q1"));
+        root.Connect(registerInput[0], root.Pin("acc_reg", "d0"));
+        root.Connect(registerInput[1], root.Pin("acc_reg", "d1"));
+        root.Connect(writeEnable, root.Pin("acc_reg", "load"));
+        root.Connect(clk, root.Pin("acc_reg", "clk"));
+
+        return builder.Build("demo.t-machine");
     }
 }

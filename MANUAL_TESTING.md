@@ -218,6 +218,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 12. Run `dotnet run --project src/Radix.Cli -- simulate examples/ternary-counter.radix --ticks 100 --schedule 0:clk=0 --schedule 20:clk=2 --schedule 60:clk=0 --bus t0,t1 --format unsigned-ternary`. Expected: the decoded bus prints `1`; the two flip-flops sample the increment only on the 0→2 clock edge.
 13. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-adder-2.radix examples/tests/ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0, covering sums 16, 9, 8, and 0.
 14. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-accumulator.radix examples/tests/ternary-accumulator.radixtest`. Expected: `PASS: 17 step(s) through t=410`, exit code 0; the `Result` lane goes 5 → 8 → 3 (wrap) → 3 (hold) → 8.
+15. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-machine.radix examples/tests/ternary-machine.radixtest`. Expected: `PASS: 32 step(s) through t=2260`, exit code 0; PC walks 0..8, ACC follows 1, 3, 5, 5, 2, 4, 5, 5, 5, then restarts with 1.
 
 ## 14. Ternary multi-trit addition
 
@@ -266,7 +267,18 @@ Recovery uses a 20-second timer and one snapshot slot. Verify the destructive st
 5. Repeat step 1 with another scratch edit, then close the window and choose **Discard**. Relaunch. Expected: no recovery opens and the snapshot files are gone.
 6. Repeat step 1 but kill the process within a few seconds of the edit. Expected, per the limitation below: the previous or no snapshot is restored, showing that at most 20 seconds of edits are protected.
 
-## 18. Tiny program-driven CPU
+## 18. Ternary program machine
+
+This uses the GUI. The machine fetches a two-trit instruction from lookup ROMs and executes it on each rising clock edge; the program is data in the two ROM tables.
+
+1. Open `examples/ternary-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: lanes **PC** = 0, **ACC** = 0, **Opcode** = 1, **Operand** = 1. The status is clean.
+2. Set `CLK = 2`, settle, then set `CLK = 0` and settle. Expected: **PC** = 1, **ACC** = 1, opcode 2, operand 2 (ADD 2 is next).
+3. Repeat the 0 → 2 → 0 pulse seven more times. Expected pairs (PC, ACC): (2,3), (3,5), (4,5), (5,2), (6,4), (7,5), (8,5). Opcode/operand follow the program: ADD 2, NOP 0, LOAD 2, ADD 2, ADD 1, NOP 0, NOP 0.
+4. Pulse once more. Expected: **PC** returns to 0, ACC stays 5, opcode/operand read LOAD 1. Pulse again: ACC becomes 1, showing the program restarted.
+5. Select the `rom_op` instance and edit its table in the inspector. Change entry 0 (PC 0) from 1 to 2 and commit. Expected: one undo step, a diagnostic-free project, and PC 0 now executes ADD instead of LOAD (ACC becomes 1+1=2 on the next pass). Undo restores LOAD.
+6. Double-click `pc_reg` and `acc_reg`. Expected: each contains two mux/flip-flop slices; the PC register's `LOAD` input is tied to a constant 2, while the accumulator's comes from the decoder and a ternary max gate. No errors or warnings appear.
+
+## 19. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -293,7 +305,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 19. Known limitations to verify as *limitations*
+## 20. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 

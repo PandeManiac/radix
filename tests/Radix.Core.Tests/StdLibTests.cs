@@ -406,6 +406,36 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryMachineExecutesItsLookupProgram()
+    {
+        CircuitProject project = ExampleProjects.CreateTernaryMachineDemo();
+        SimulationEngine engine = Engine("demo.t-machine", project);
+        engine.Drive("clk", 0);
+        Settle(engine, 120);
+
+        Assert.Equal(0, ReadTernaryPair(engine, "pc"));
+        Assert.Equal(0, ReadTernaryPair(engine, "q"));
+        Assert.Equal(1, engine.Read("op"));
+        Assert.Equal(1, engine.Read("arg"));
+
+        (int Pc, int Accumulator)[] expected =
+        [
+            (1, 1), (2, 3), (3, 5), (4, 5), (5, 2),
+            (6, 4), (7, 5), (8, 5), (0, 5), (1, 1),
+        ];
+
+        foreach ((int pc, int accumulator) in expected)
+        {
+            PulseTernaryClock(engine, settle: 120);
+            Assert.Equal(pc, ReadTernaryPair(engine, "pc"));
+            Assert.Equal(accumulator, ReadTernaryPair(engine, "q"));
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryRegisterLoadsOnTheEdgeAndHoldsWhenDisabled()
     {
         SimulationEngine engine = Engine(StandardLibrary.TernaryRegister2Id);

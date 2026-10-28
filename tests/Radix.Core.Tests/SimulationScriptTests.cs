@@ -17,6 +17,7 @@ public sealed class SimulationScriptTests
         { "ternary-counter.radix", "ternary-counter.radixtest" },
         { "ternary-adder-2.radix", "ternary-adder-2.radixtest" },
         { "ternary-accumulator.radix", "ternary-accumulator.radixtest" },
+        { "ternary-machine.radix", "ternary-machine.radixtest" },
         { "binary-counter.radix", "counter-counts.radixtest" },
         { "accumulator-cpu.radix", "accumulator.radixtest" },
         { "tiny-cpu.radix", "tiny-cpu.radixtest" },
