@@ -414,7 +414,10 @@
                 <ItemsControl ItemsSource="{Binding Domains}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:DomainChoice">
-                      <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" Margin="2,1" />
+                      <StackPanel Margin="2,2">
+                        <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" />
+                        <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                      </StackPanel>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -422,10 +425,22 @@
                   <StackPanel Spacing="4">
                     <TextBox Watermark="domain name" Text="{Binding NewDomainName, Mode=TwoWay}" />
                     <TextBox Watermark="values, e.g. 0 1 2" Text="{Binding NewDomainValues, Mode=TwoWay}" />
+                    <ComboBox x:Name="DomainPolicyBox" ItemsSource="{Binding DriverPolicies}" SelectedItem="{Binding SelectedDriverPolicy, Mode=TwoWay}" ToolTip.Tip="How multiple active drivers on one net are resolved">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DriverPolicyChoice">
+                          <TextBlock Text="{Binding Label}" FontSize="11" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="{Binding DriverPolicyHint}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,110" ColumnSpacing="4" IsVisible="{Binding IsPriorityDriverPolicy}">
+                      <TextBox x:Name="DomainPrioritiesBox" Watermark="priorities, one per value" Text="{Binding NewDomainPriorities, Mode=TwoWay}" ToolTip.Tip="Priority for each value index, e.g. 1 1 3 0" />
+                      <TextBox x:Name="DomainConflictBox" Grid.Column="1" Watermark="conflict index" Text="{Binding NewDomainConflictValue, Mode=TwoWay}" ToolTip.Tip="Value index produced when equal-priority drivers disagree" />
+                    </Grid>
                     <Button Content="Add domain" Command="{Binding AddDomainCommand}" HorizontalAlignment="Left" />
                   </StackPanel>
                 </Border>
-                <TextBlock Text="Values are arbitrary symbols. Arithmetic meaning belongs to interpretation tools, never to the kernel." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock Text="Values are arbitrary symbols. Arithmetic meaning belongs to interpretation tools, never to the kernel. A priority domain lets the highest-priority active driver win; ties between different values produce the conflict value." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,0" />
               </StackPanel>
             </ScrollViewer>
           </TabItem>

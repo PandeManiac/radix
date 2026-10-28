@@ -144,6 +144,58 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void PriorityDriverDomainIsValidatedAndAuthoredFromTheInspector()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.NewDomainName = "Wired";
+        viewModel.NewDomainValues = "0 1 X Z";
+        viewModel.SelectedDriverPolicy = viewModel.DriverPolicies.Single(policy => policy.Id == "priority");
+        Assert.True(viewModel.IsPriorityDriverPolicy);
+
+        viewModel.NewDomainPriorities = "1 1 3";
+        viewModel.NewDomainConflictValue = "2";
+        viewModel.AddDomain();
+        Assert.Contains("exactly 4", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(viewModel.Project.FindDomain("wired"));
+
+        viewModel.NewDomainPriorities = "1 1 3 nope";
+        viewModel.AddDomain();
+        Assert.Contains("non-negative whole numbers", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(viewModel.Project.FindDomain("wired"));
+
+        viewModel.NewDomainPriorities = "1 1 3 0";
+        viewModel.NewDomainConflictValue = "4";
+        viewModel.AddDomain();
+        Assert.Contains("between 0 and 3", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(viewModel.Project.FindDomain("wired"));
+
+        viewModel.NewDomainConflictValue = "2";
+        viewModel.AddDomain();
+        SignalDomain? domain = viewModel.Project.FindDomain("wired");
+        Assert.NotNull(domain);
+        var policy = Assert.IsType<PriorityDriverResolution>(domain!.Drivers);
+        Assert.Equal([1, 1, 3, 0], policy.Priorities);
+        Assert.Equal(2, policy.ConflictValue);
+        Assert.True(domain.IsMultipleDriverPolicy);
+
+        DomainChoice choice = viewModel.Domains.Single(candidate => candidate.Id == domain.Id);
+        Assert.Contains("0 1 X Z", choice.Summary, StringComparison.Ordinal);
+        Assert.Contains("priority [0:1, 1:1, 2:3, 3:0]", choice.Summary, StringComparison.Ordinal);
+        Assert.Contains("ties resolve to 2", choice.Summary, StringComparison.Ordinal);
+
+        viewModel.NewDomainName = "Plain";
+        viewModel.NewDomainValues = "low high";
+        viewModel.SelectedDriverPolicy = viewModel.DriverPolicies.Single(candidate => candidate.Id == "single");
+        viewModel.AddDomain();
+        Assert.IsType<SingleDriverResolution>(viewModel.Project.FindDomain("plain")!.Drivers);
+
+        viewModel.Undo();
+        Assert.Null(viewModel.Project.FindDomain("plain"));
+        viewModel.Undo();
+        Assert.Null(viewModel.Project.FindDomain("wired"));
+    }
+
+    [Fact]
     public void PinInterfaceCanBeRenamedRetargetedAndFlipped()
     {
         var viewModel = CreateEmptyEditor();

@@ -62,7 +62,7 @@ The editor opens the 4-bit counter example. It is a normal desktop application w
 - **Drive inputs** from the I/O PINS section. Each input shows its domain values as buttons.
 - **Inspect signals** on the canvas badges, the I/O section, the Waveform tab, and the Trace tab.
 - **Undo/redo** uses whole-project snapshots. Structural changes invalidate the running simulation, as do parameter changes.
-- **Create domains** (for example a five-value logic or a radix-5 digit set) in the Inspect tab. Values are arbitrary labels; no arithmetic semantics are attached.
+- **Create domains** (for example a five-value logic or a radix-5 digit set) in the Inspect tab. Values are arbitrary labels; no arithmetic semantics are attached. Choose a **Single driver** policy, or a **Priority table** with one priority per value and a conflict index for equal-priority disagreements; the list shows each domain's values and resolution policy.
 - **Choose a theme** with the Auto/Light/Dark selector in the toolbar. Auto follows the operating system; the choice is persisted per user. Canvas, wires, waveform, inspectors, menus, and diagnostics share one semantic token set.
 
 Shortcuts: `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` undo and redo; `Ctrl+C` / `Ctrl+V` / `Ctrl+D` copy, paste, and duplicate; `Ctrl+A` selects all parts; `Delete` removes the selection; `F` fits the circuit; arrows nudge selected parts; `Ctrl+wheel` zooms; middle-drag or Alt+drag pans; right-click opens canvas actions; `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+O`, and `Ctrl+N` save, save as, open, and create projects. New, Open, and window close prompt to Save, Discard, or Cancel when there are unsaved changes.
@@ -175,7 +175,7 @@ These are deliberate current boundaries, not hidden behavior:
 - Active definition and canvas pan/zoom persist in the project. Selection, external drive history, and waveform history do not; instance positions, wire routes, and colors do.
 - Numeric formats and lanes can be authored and edited in place; the preview decodes the first lane in the current definition that uses the format, not an arbitrary draft pin set. Lanes appear in the inspector and in a fixed canvas legend capped at seven rows; the legend does not move with the circuit. A lane edit cannot reorder pins independently of declaration order.
 - `--set` drives static initial values and `--schedule <tick>:<pin>=<value>` adds timed drives for a one-shot run. Multi-step assertions belong in a `.radixtest` script, which can drive, settle, and check pins and numeric lanes at chosen ticks.
-- Domain creation in the editor uses a single-driver policy. Projects loaded from JSON can still declare priority/conflict policies, but the GUI does not edit those policies yet.
+- Domain creation in the editor supports single-driver and priority-table policies. A saved domain's policy cannot be changed in place yet; recreate the domain or edit the project JSON.
 - Undo snapshots the whole project and retains up to 80 states. This is simple and reliable, not asymptotically optimal for very large designs.
 - Very large traces are bounded (default 500,000 net changes); old changes are dropped and the UI shows only a subset of nets.
 
@@ -196,9 +196,9 @@ docs/                    architecture, project format, test scripts, benchmarks
 ## Testing summary
 
 - Kernel and library tests: **171 passing**.
-- Editor tests: **58 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, canvas lane legend, lane editor, and custom-format editor.
+- Editor tests: **60 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, canvas lane legend, lane editor, custom-format editor, and domain-policy editor.
 - Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, built-in and custom numeric formats, exhaustive encode/decode ranges, scripted drive/assert runs, determinism, randomized differential comparison against a reference evaluator, RAM write/read/hold behavior, and the tiny CPU's fetch/decode/execute loop including memory operations, nested calls, a taken branch, and reset.
-- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, in-place lane editing with stable IDs and cancellation, custom-format authoring and in-place editing, saved viewport restoration, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
+- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, in-place lane editing with stable IDs and cancellation, custom-format authoring and in-place editing, single-driver and priority-domain authoring with validation, saved viewport restoration, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 
 ## Near-term roadmap
 

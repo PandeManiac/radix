@@ -55,6 +55,9 @@ public sealed class EditorViewModel : ObservableObject
     private string _advanceTicksText = "10";
     private string _newDomainName = string.Empty;
     private string _newDomainValues = "0 1 2";
+    private string _newDomainPriorities = "1 1 1";
+    private string _newDomainConflictValue = "0";
+    private DriverPolicyChoice? _selectedDriverPolicy;
     private string _librarySearch = string.Empty;
     private ClipboardPayload? _clipboard;
     private int _pasteOffset;
@@ -88,6 +91,7 @@ public sealed class EditorViewModel : ObservableObject
         _selectedFormatMode = FormatModes[0];
         _selectedLaneFormat = FormatChoices.FirstOrDefault(option => option.Format.Id == NumericFormats.UnsignedBinary.Id) ??
             FormatChoices.FirstOrDefault();
+        _selectedDriverPolicy = DriverPolicies[0];
 
         _undoCommand = new RelayCommand(Undo, () => _undo.Count > 0);
         _redoCommand = new RelayCommand(Redo, () => _redo.Count > 0);
@@ -208,6 +212,12 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<string> RecentTransitions { get; } = [];
 
     public ObservableCollection<DomainChoice> Domains { get; } = [];
+
+    public ObservableCollection<DriverPolicyChoice> DriverPolicies { get; } =
+    [
+        new("single", "Single driver", "Multiple active drivers are a conflict; the first compiled driver wins."),
+        new("priority", "Priority table", "The highest-priority active driver wins; ties resolve to a conflict value."),
+    ];
 
     public ObservableCollection<string> Events { get; } = [];
 
@@ -600,6 +610,35 @@ public sealed class EditorViewModel : ObservableObject
         get => _newDomainValues;
         set => SetField(ref _newDomainValues, value);
     }
+
+    public string NewDomainPriorities
+    {
+        get => _newDomainPriorities;
+        set => SetField(ref _newDomainPriorities, value);
+    }
+
+    public string NewDomainConflictValue
+    {
+        get => _newDomainConflictValue;
+        set => SetField(ref _newDomainConflictValue, value);
+    }
+
+    public DriverPolicyChoice? SelectedDriverPolicy
+    {
+        get => _selectedDriverPolicy;
+        set
+        {
+            if (SetField(ref _selectedDriverPolicy, value))
+            {
+                RaisePropertyChanged(nameof(IsPriorityDriverPolicy));
+                RaisePropertyChanged(nameof(DriverPolicyHint));
+            }
+        }
+    }
+
+    public bool IsPriorityDriverPolicy => _selectedDriverPolicy?.Id == "priority";
+
+    public string DriverPolicyHint => _selectedDriverPolicy?.Description ?? string.Empty;
 
     public void SetPlacementPoint(Point world)
     {
@@ -1088,6 +1127,51 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
+        IDriverResolution drivers;
+        if (IsPriorityDriverPolicy)
+        {
+            string[] priorityTokens = NewDomainPriorities.Split(
+                [' ', ',', ';', '\t'],
+                StringSplitOptions.RemoveEmptyEntries);
+            if (priorityTokens.Length != values.Length)
+            {
+                StatusText = $"Enter exactly {values.Length} priority value(s), one per domain value.";
+                return;
+            }
+
+            var priorities = new int[priorityTokens.Length];
+            for (int i = 0; i < priorityTokens.Length; i++)
+            {
+                if (!int.TryParse(priorityTokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out priorities[i]) ||
+                    priorities[i] < 0)
+                {
+                    StatusText = "Priorities must be non-negative whole numbers.";
+                    return;
+                }
+            }
+
+            if (!int.TryParse(NewDomainConflictValue.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int conflictValue) ||
+                conflictValue < 0 || conflictValue >= values.Length)
+            {
+                StatusText = $"Conflict value must be a value index between 0 and {values.Length - 1}.";
+                return;
+            }
+
+            try
+            {
+                drivers = new PriorityDriverResolution(priorities, conflictValue);
+            }
+            catch (ArgumentException exception)
+            {
+                StatusText = "Invalid priority policy: " + exception.Message;
+                return;
+            }
+        }
+        else
+        {
+            drivers = new SingleDriverResolution();
+        }
+
         string stem = Slug(name);
         string id = DefinitionEditor.UniqueId(stem, candidate => _project.FindDomain(candidate) is not null);
         SignalDomain domain;
@@ -1097,7 +1181,7 @@ public sealed class EditorViewModel : ObservableObject
                 id,
                 name,
                 values,
-                new SingleDriverResolution(),
+                drivers,
                 "User-defined discrete domain. Values are symbols, not arithmetic digits.");
         }
         catch (ArgumentException exception)
@@ -1111,7 +1195,9 @@ public sealed class EditorViewModel : ObservableObject
         NewDomainName = string.Empty;
         AfterMutation(structural: true);
         NewPinDomain = Domains.FirstOrDefault(d => d.Id == id) ?? NewPinDomain;
-        StatusText = $"Added domain {domain.Name} ({domain.ValueCount} values)";
+        StatusText = domain.IsMultipleDriverPolicy
+            ? $"Added domain {domain.Name} ({domain.ValueCount} values · priority resolution)"
+            : $"Added domain {domain.Name} ({domain.ValueCount} values)";
     }
 
     public void AddPin()
@@ -2498,7 +2584,8 @@ public sealed class EditorViewModel : ObservableObject
         foreach (SignalDomain domain in _project.Domains)
         {
             bool standard = StandardDomains.All().Any(d => string.Equals(d.Id, domain.Id, StringComparison.Ordinal));
-            var choice = new DomainChoice(domain.Id, domain.Name, standard);
+            string summary = $"{string.Join(" ", domain.ValueNames)} · {domain.Drivers.Describe()}";
+            var choice = new DomainChoice(domain.Id, domain.Name, standard, summary);
             Domains.Add(choice);
         }
 

@@ -217,6 +217,54 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void DomainPolicyEditorRendersPriorityFields()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        viewModel.SelectedDriverPolicy = viewModel.DriverPolicies.Single(policy => policy.Id == "priority");
+        viewModel.NewDomainName = "Wired";
+        viewModel.NewDomainValues = "0 1 X Z";
+        viewModel.NewDomainPriorities = "1 1 3 0";
+        viewModel.NewDomainConflictValue = "2";
+
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var inspector = window.FindControl<ScrollViewer>("InspectorScroll");
+        Assert.NotNull(inspector);
+        inspector!.ScrollToEnd();
+        Dispatcher.UIThread.RunJobs();
+
+        ComboBox policyBox = Assert.IsType<ComboBox>(window.FindControl<ComboBox>("DomainPolicyBox"));
+        TextBox priorities = Assert.IsType<TextBox>(window.FindControl<TextBox>("DomainPrioritiesBox"));
+        TextBox conflict = Assert.IsType<TextBox>(window.FindControl<TextBox>("DomainConflictBox"));
+        Assert.True(policyBox.IsVisible);
+        Assert.True(priorities.IsVisible);
+        Assert.True(conflict.IsVisible);
+        Assert.Equal("1 1 3 0", priorities.Text);
+        Assert.Equal("2", conflict.Text);
+
+        priorities.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-domain-policy.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        viewModel.SelectedDriverPolicy = viewModel.DriverPolicies.Single(candidate => candidate.Id == "single");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(priorities.IsEffectivelyVisible);
+        Assert.False(conflict.IsEffectivelyVisible);
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void EmptyProjectCanvasRendersHint()
     {
         var project = Core.Model.CircuitProject.CreateEmpty("Empty");

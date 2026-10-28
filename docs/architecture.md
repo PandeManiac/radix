@@ -67,7 +67,7 @@ Resolution depends only on values and their compiled order, never on wall-clock 
 
 ### 3.2 Domain creation
 
-Projects own complete domain definitions, so loading a project never depends on a global registry. The editor can create a domain with arbitrary unique labels and a single-driver policy. More complex driver policies are currently authored in JSON.
+Projects own complete domain definitions, so loading a project never depends on a global registry. The editor can create a domain with arbitrary unique labels and either a single-driver policy or a priority table: one non-negative priority per value plus a conflict value index. The form validates the table length and conflict range before constructing the immutable domain, and the inspector lists each domain's values and policy. Changing the policy of an already-saved domain is not yet supported in place; recreate the domain or edit the project JSON.
 
 ## 4. Hierarchy and flattening
 

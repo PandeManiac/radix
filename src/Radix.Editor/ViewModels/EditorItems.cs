@@ -83,11 +83,12 @@ public sealed class PinListItem
 
 public sealed class DomainChoice
 {
-    public DomainChoice(string id, string name, bool isStandard)
+    public DomainChoice(string id, string name, bool isStandard, string summary = "")
     {
         Id = id;
         Name = name;
         IsStandard = isStandard;
+        Summary = summary;
     }
 
     public string Id { get; }
@@ -96,7 +97,29 @@ public sealed class DomainChoice
 
     public bool IsStandard { get; }
 
+    /// <summary>Value symbols and driver policy, shown in the project inspector.</summary>
+    public string Summary { get; }
+
     public string Label => IsStandard ? $"{Name} ({Id})" : Id;
+
+    public override string ToString() => Label;
+}
+
+/// <summary>Selectable multi-driver policy for a user-authored domain.</summary>
+public sealed class DriverPolicyChoice
+{
+    public DriverPolicyChoice(string id, string label, string description)
+    {
+        Id = id;
+        Label = label;
+        Description = description;
+    }
+
+    public string Id { get; }
+
+    public string Label { get; }
+
+    public string Description { get; }
 
     public override string ToString() => Label;
 }

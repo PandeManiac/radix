@@ -16,7 +16,9 @@ The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git
 - `workbench-counter-dark.png`;
 - `workbench-waveform.png` (light);
 - `workbench-waveform-dark.png`;
-- `workbench-accumulator-lanes.png` (scrolled numeric-lane inspector with a drive control).
+- `workbench-accumulator-lanes.png` (scrolled numeric-lane inspector with a drive control);
+- `workbench-lane-editor.png` (numeric lane loaded into the edit form);
+- `workbench-domain-policy.png` (signal-domain inspector with a priority table).
 
 Launch the editor only when you are ready to use it:
 
@@ -146,13 +148,16 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 ## 10. Domains and project round trip
 
-1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, click **Add domain**.
-2. Expected: the domain appears in the list, pin domain picker, and net domain selector.
-3. Add an input pin using the new domain. Expected: the port and its net use `five-state`.
-4. Save As in a scratch path. Close and relaunch, then Open. Expected: domain, pin, current root, instance positions, wire colors, numeric lanes, bendpoints, active definition, viewport zoom, and pan survive.
-5. Open a child definition, zoom to a distinctive level, and pan away from center. Save, close, and reopen. Expected: the same definition is active and the canvas returns to the same scale and offset instead of fitting to content.
-6. Pan and zoom without changing the circuit. Expected: the title does not gain an unsaved-changes marker.
-7. Expected non-persistence: selection, external drive history, and waveform history.
+1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, leave **Single driver** selected, and click **Add domain**.
+2. Expected: the domain appears in the list with its values and `single driver` policy, in the pin domain picker, and in the net domain selector.
+3. Create a priority domain: name `wired`, values `0 1 X Z`, policy **Priority table**, priorities `1 1 3 0`, conflict index `2`; click **Add domain**. Expected: the list summary reads `0 1 X Z · priority [0:1, 1:1, 2:3, 3:0] (ties resolve to 2)`, and the new domain appears in both pickers. With two constants on one net of this domain, compile/run Diagnostics should show no single-driver warning; if equal-priority drivers disagree, the net settles to `X` and a conflict warning names the net.
+4. Validation: set policy **Priority table** and try priorities `1 1 3` (wrong count), `1 1 3 nope`, and conflict index `4`. Expected: each is refused with a specific message, no domain is added, and the form keeps the entered draft.
+5. Add an input pin and choose `five state` as its domain. Expected: the port and its net use `five-state`.
+6. Save As in a scratch path. Close and relaunch, then Open. Expected: domain values and driver policy, pin, current root, instance positions, wire colors, numeric lanes, bendpoints, active definition, viewport zoom, and pan survive.
+7. Open a child definition, zoom to a distinctive level, and pan away from center. Save, close, and reopen. Expected: the same definition is active and the canvas returns to the same scale and offset instead of fitting to content.
+8. Pan and zoom without changing the circuit. Expected: the title does not gain an unsaved-changes marker.
+9. Change an existing domain's policy. Expected: not supported yet in the inspector; the list is display-only. Recreating the domain creates a new ID.
+10. Expected non-persistence: selection, external drive history, and waveform history.
 
 ## 11. Hierarchy and malformed projects
 
