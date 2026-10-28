@@ -127,6 +127,37 @@ public sealed class ScriptTransitionWindow
 }
 
 /// <summary>
+/// One filtered edge count. A missing <see cref="From"/> or <see cref="To"/> matches
+/// any value on that side, so a filter can count rising edges (0 to 1), falling
+/// edges (1 to 0), or every change into a chosen value.
+/// </summary>
+public sealed record ScriptEdgeFilter(ScriptValue? From, ScriptValue? To, long Count);
+
+/// <summary>Filtered edge expectations for one interface pin.</summary>
+public sealed record ScriptEdgeExpectation(string PinId, IReadOnlyList<ScriptEdgeFilter> Filters);
+
+/// <summary>
+/// A filtered-edge assertion: each filter must match exactly its expected number of
+/// resolved net transitions between the step's tick and <c>At + Ticks</c>, inclusive,
+/// after this step's drives are applied. Unlike a total transition count, this can
+/// distinguish a rising clock edge from a falling one or from a data change.
+/// </summary>
+public sealed class ScriptEdgeWindow
+{
+    public ScriptEdgeWindow(
+        long ticks,
+        IReadOnlyList<ScriptEdgeExpectation> pinExpectations)
+    {
+        Ticks = ticks;
+        PinExpectations = pinExpectations;
+    }
+
+    public long Ticks { get; }
+
+    public IReadOnlyList<ScriptEdgeExpectation> PinExpectations { get; }
+}
+
+/// <summary>
 /// One ordered step. The runner advances to <see cref="At"/>, applies drives, settles
 /// zero-delay events at that timestamp, then checks expectations.
 /// </summary>
@@ -141,7 +172,8 @@ public sealed class SimulationScriptStep
         string? description,
         ScriptWindow? window = null,
         ScriptStability? stability = null,
-        ScriptTransitionWindow? transitions = null)
+        ScriptTransitionWindow? transitions = null,
+        ScriptEdgeWindow? edges = null)
     {
         At = at;
         Drives = drives;
@@ -152,6 +184,7 @@ public sealed class SimulationScriptStep
         Window = window;
         Stability = stability;
         Transitions = transitions;
+        Edges = edges;
     }
 
     /// <summary>Absolute simulated tick. Missing values default to the previous step's tick.</summary>
@@ -177,10 +210,13 @@ public sealed class SimulationScriptStep
     /// <summary>Optional transition-count assertion over an inclusive interval of ticks.</summary>
     public ScriptTransitionWindow? Transitions { get; }
 
+    /// <summary>Optional filtered-edge assertion over an inclusive interval of ticks.</summary>
+    public ScriptEdgeWindow? Edges { get; }
+
     public bool HasActions =>
         Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
         ExpectHalted is not null || Window is not null || Stability is not null ||
-        Transitions is not null;
+        Transitions is not null || Edges is not null;
 }
 
 /// <summary>
@@ -296,13 +332,21 @@ public sealed class SimulationScript
                     $"Step {stepNumber} has both 'within' and 'stable'; a step can wait for a value or require it to hold, not both.");
             }
 
+            if (step.Edges is not null &&
+                (step.Within is not null || step.Stable is not null || step.Transitions is not null))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} cannot combine 'edges' with 'within', 'stable', or 'transitions'; only one timing block may advance the step.");
+            }
+
             if (step.Transitions is not null && (step.Within is not null || step.Stable is not null))
             {
                 throw new SimulationScriptException(
                     $"Step {stepNumber} cannot combine 'transitions' with 'within' or 'stable'; only one timing block may advance the step.");
             }
 
-            if ((step.Stable is not null || step.Transitions is not null) && step.ExpectHalted == true)
+            if ((step.Stable is not null || step.Transitions is not null || step.Edges is not null) &&
+                step.ExpectHalted == true)
             {
                 throw new SimulationScriptException(
                     $"Step {stepNumber} cannot combine a timing window with 'expectHalted: true'; the window needs the simulation to run to its deadline.");
@@ -311,6 +355,7 @@ public sealed class SimulationScript
             ScriptWindow? window = MapWindow(step.Within, stepNumber, at);
             ScriptStability? stability = MapStability(step.Stable, stepNumber, at);
             ScriptTransitionWindow? transitions = MapTransitions(step.Transitions, stepNumber, at);
+            ScriptEdgeWindow? edges = MapEdges(step.Edges, stepNumber, at);
 
             // A bare step is a deliberate advance-only marker; it is useful for
             // separating phases and lets later steps inherit this tick.
@@ -323,7 +368,8 @@ public sealed class SimulationScript
                 step.Description,
                 window,
                 stability,
-                transitions));
+                transitions,
+                edges));
         }
 
         return new SimulationScript(
@@ -486,6 +532,84 @@ public sealed class SimulationScript
         return new ScriptTransitionWindow(ticks, expectations);
     }
 
+    private static ScriptEdgeWindow? MapEdges(EdgesDto? source, int stepNumber, long at)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        if (source.Ticks is null)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'edges' needs an explicit 'ticks' value.");
+        }
+
+        long ticks = source.Ticks.Value;
+        if (ticks < 0)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'edges.ticks' must be non-negative.");
+        }
+
+        if (ticks > long.MaxValue - at)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'edges.ticks' moves the deadline past the maximum simulated time.");
+        }
+
+        if (source.Expect is null || source.Expect.Count == 0)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'edges' needs at least one 'expect' entry.");
+        }
+
+        var expectations = new List<ScriptEdgeExpectation>(source.Expect.Count);
+        foreach ((string pinId, List<EdgeFilterDto>? filters) in source.Expect)
+        {
+            string normalizedPin = NormalizeId(pinId, "pin", stepNumber, "edges.expect");
+            if (filters is null || filters.Count == 0)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} 'edges.expect.{pinId}' needs at least one edge filter.");
+            }
+
+            var mapped = new List<ScriptEdgeFilter>(filters.Count);
+            foreach (EdgeFilterDto filter in filters)
+            {
+                if (filter is null)
+                {
+                    throw new SimulationScriptException(
+                        $"Step {stepNumber} 'edges.expect.{pinId}' contains a null filter.");
+                }
+
+                bool hasFrom = filter.From.ValueKind != JsonValueKind.Undefined;
+                bool hasTo = filter.To.ValueKind != JsonValueKind.Undefined;
+                if (!hasFrom && !hasTo)
+                {
+                    throw new SimulationScriptException(
+                        $"Step {stepNumber} 'edges.expect.{pinId}' filter needs 'from', 'to', or both.");
+                }
+
+                if (filter.Count is null || filter.Count < 0)
+                {
+                    throw new SimulationScriptException(
+                        $"Step {stepNumber} 'edges.expect.{pinId}' filter needs a non-negative 'count'.");
+                }
+
+                ScriptValue? from = hasFrom
+                    ? ReadValue(filter.From, stepNumber, $"edges.expect.{pinId}.from")
+                    : null;
+                ScriptValue? to = hasTo
+                    ? ReadValue(filter.To, stepNumber, $"edges.expect.{pinId}.to")
+                    : null;
+                mapped.Add(new ScriptEdgeFilter(from, to, filter.Count.Value));
+            }
+
+            expectations.Add(new ScriptEdgeExpectation(normalizedPin, mapped));
+        }
+
+        return new ScriptEdgeWindow(ticks, expectations);
+    }
+
     private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes)
         MapWindowContents(WindowDto source, int stepNumber, long at, string field)
     {
@@ -629,6 +753,8 @@ public sealed class SimulationScript
         public WindowDto? Stable { get; set; }
 
         public TransitionsDto? Transitions { get; set; }
+
+        public EdgesDto? Edges { get; set; }
     }
 
     private sealed class TransitionsDto
@@ -636,6 +762,22 @@ public sealed class SimulationScript
         public long? Ticks { get; set; }
 
         public Dictionary<string, JsonElement>? Expect { get; set; }
+    }
+
+    private sealed class EdgesDto
+    {
+        public long? Ticks { get; set; }
+
+        public Dictionary<string, List<EdgeFilterDto>?>? Expect { get; set; }
+    }
+
+    private sealed class EdgeFilterDto
+    {
+        public JsonElement From { get; set; }
+
+        public JsonElement To { get; set; }
+
+        public long? Count { get; set; }
     }
 
     private sealed class WindowDto

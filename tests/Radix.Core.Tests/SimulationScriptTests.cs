@@ -520,6 +520,247 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void EdgeWindowCountsOnlyMatchingTransitions()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "edges": {
+                    "ticks": 30,
+                    "expect": {
+                      "y": [
+                        { "from": 0, "to": 1, "count": 2 },
+                        { "from": 1, "to": 0, "count": 1 },
+                        { "to": 1, "count": 2 },
+                        { "from": 0, "count": 2 }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(WaveformProject(), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(30, result.FinalTime);
+        Assert.Equal(1, result.StepsExecuted);
+    }
+
+    [Fact]
+    public void EdgeWindowResolvesDomainLabels()
+    {
+        var builder = new ProjectBuilder("edge labels");
+        builder.EnsureDomain(new SignalDomain(
+            "level",
+            "Level",
+            ["low", "high"],
+            new SingleDriverResolution()));
+        DefinitionBuilder definition = builder.Define("labels", "Labels");
+        Net input = definition.AddPin("a", "A", PinDirection.Input, "level");
+        Net output = definition.AddPin("y", "Y", PinDirection.Output, "level");
+        definition.AddPrimitive("buf", new LookupSpec(1, [0, 1], delayTicks: 1));
+        definition.Connect(input, definition.Pin("buf", "in0"));
+        definition.Connect(output, definition.Pin("buf", "out"));
+
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "a": "low" } },
+                {
+                  "at": 10,
+                  "set": { "a": "high" },
+                  "edges": { "ticks": 5, "expect": { "y": [ { "from": "low", "to": "high", "count": 1 } ] } }
+                },
+                {
+                  "at": 20,
+                  "set": { "a": "low" },
+                  "edges": { "ticks": 5, "expect": { "y": [ { "from": "high", "count": 1 }, { "to": "high", "count": 0 } ] } }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(builder.Build("labels"), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(25, result.FinalTime);
+    }
+
+    [Fact]
+    public void EdgeWindowFailureReportsTheDirectionAndCounts()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "edges": { "ticks": 20, "expect": { "y": [ { "from": 0, "to": 1, "count": 3 } ] } }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(WaveformProject(), script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(20, failure.At);
+        Assert.Contains(
+            "pin 'y': expected 3 edge(s) 0 (0) -> 1 (1) between t=0 and t=20, observed 1",
+            failure.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EdgeWindowRejectsUnknownPinsAndValuesAsFailures()
+    {
+        SimulationScript unknownPin = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "edges": { "ticks": 5, "expect": { "nope": [ { "to": 1, "count": 0 } ] } } }
+              ]
+            }
+            """);
+        SimulationScriptResult pinResult = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            unknownPin);
+        Assert.False(pinResult.Passed);
+        Assert.Contains("unknown interface pin 'nope'", pinResult.Failures[0].Message, StringComparison.Ordinal);
+
+        SimulationScript unknownValue = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "edges": { "ticks": 5, "expect": { "q": [ { "to": 5, "count": 0 } ] } } }
+              ]
+            }
+            """);
+        SimulationScriptResult valueResult = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            unknownValue);
+        Assert.False(valueResult.Passed);
+        Assert.Contains("invalid 'to' for pin 'q'", valueResult.Failures[0].Message, StringComparison.Ordinal);
+        Assert.Contains("outside domain 'binary'", valueResult.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMalformedEdgeWindows()
+    {
+        Assert.Contains(
+            "'edges' needs an explicit 'ticks' value",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "expect": { "q": [ { "to": 1, "count": 1 } ] } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'edges.ticks' must be non-negative",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "ticks": -1, "expect": { "q": [ { "to": 1, "count": 1 } ] } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'edges' needs at least one",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "ticks": 5, "expect": {} } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs at least one edge filter",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "ticks": 5, "expect": { "q": [] } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "filter needs 'from', 'to', or both",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "ticks": 5, "expect": { "q": [ { "count": 1 } ] } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs a non-negative 'count'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "ticks": 5, "expect": { "q": [ { "to": 1 } ] } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs a non-negative 'count'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "ticks": 5, "expect": { "q": [ { "to": 1, "count": -1 } ] } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "must be a number, a string, or null",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "edges": { "ticks": 5, "expect": { "q": [ { "to": true, "count": 1 } ] } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine 'edges' with 'within', 'stable', or 'transitions'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    {
+                      "edges": { "ticks": 5, "expect": { "q": [ { "to": 1, "count": 1 } ] } },
+                      "transitions": { "ticks": 5, "expect": { "q": 1 } }
+                    }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine a timing window with 'expectHalted: true'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    { "edges": { "ticks": 5, "expect": { "q": [ { "to": 1, "count": 1 } ] } }, "expectHalted": true }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RejectsMalformedTransitionWindows()
     {
         Assert.Contains(

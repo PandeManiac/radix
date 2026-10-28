@@ -95,13 +95,25 @@ public static class SimulationScriptRunner
         CircuitDefinition definition = project.RequireDefinition(definitionId);
 
         var transitionCounts = new Dictionary<int, long>();
+        var edgeCounts = new Dictionary<(int Net, int OldValue, int NewValue), long>();
         bool observesTransitions = script.Steps.Any(step => step.Transitions is not null);
-        if (observesTransitions)
+        bool observesEdges = script.Steps.Any(step => step.Edges is not null);
+        if (observesTransitions || observesEdges)
         {
             engine.NetChanged += change =>
             {
-                transitionCounts.TryGetValue(change.Net, out long count);
-                transitionCounts[change.Net] = count + 1;
+                if (observesTransitions)
+                {
+                    transitionCounts.TryGetValue(change.Net, out long count);
+                    transitionCounts[change.Net] = count + 1;
+                }
+
+                if (observesEdges)
+                {
+                    var key = (change.Net, change.OldValue, change.NewValue);
+                    edgeCounts.TryGetValue(key, out long count);
+                    edgeCounts[key] = count + 1;
+                }
             };
         }
 
@@ -121,11 +133,12 @@ public static class SimulationScriptRunner
             }
 
             engine.AdvanceTo(step.At);
-            if (observesTransitions)
+            if (observesTransitions || observesEdges)
             {
                 // The interval starts at this step, including changes caused by its
                 // drives at this tick but excluding earlier activity.
                 transitionCounts.Clear();
+                edgeCounts.Clear();
             }
 
             if (!engine.IsHalted)
@@ -295,6 +308,114 @@ public static class SimulationScriptRunner
                                     deadline,
                                     $"pin '{expectation.PinId}': expected {expectation.Count.ToString(CultureInfo.InvariantCulture)} " +
                                     $"transition(s) between t={step.At} and t={deadline}, observed {actual.ToString(CultureInfo.InvariantCulture)}."));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (step.Edges is { } edges)
+            {
+                long deadline = step.At + edges.Ticks;
+                var observed = new List<ResolvedEdgeExpectation>();
+                bool pinsValid = true;
+                foreach (ScriptEdgeExpectation expectation in edges.PinExpectations)
+                {
+                    if (!TryFindPort(engine, expectation.PinId, out _, out CompiledPort port, out string error))
+                    {
+                        failures.Add(new ScriptFailure(stepNumber, step.At, error));
+                        pinsValid = false;
+                        continue;
+                    }
+
+                    var filters = new List<ResolvedEdgeFilter>(expectation.Filters.Count);
+                    foreach (ScriptEdgeFilter filter in expectation.Filters)
+                    {
+                        int? from = null;
+                        int? to = null;
+                        if (filter.From is ScriptValue fromValue)
+                        {
+                            if (!TryResolveValue(port.Domain, fromValue, out int resolved, out error))
+                            {
+                                failures.Add(new ScriptFailure(
+                                    stepNumber,
+                                    step.At,
+                                    $"invalid 'from' for pin '{expectation.PinId}': {error}"));
+                                pinsValid = false;
+                                continue;
+                            }
+
+                            from = resolved;
+                        }
+
+                        if (filter.To is ScriptValue toValue)
+                        {
+                            if (!TryResolveValue(port.Domain, toValue, out int resolved, out error))
+                            {
+                                failures.Add(new ScriptFailure(
+                                    stepNumber,
+                                    step.At,
+                                    $"invalid 'to' for pin '{expectation.PinId}': {error}"));
+                                pinsValid = false;
+                                continue;
+                            }
+
+                            to = resolved;
+                        }
+
+                        filters.Add(new ResolvedEdgeFilter(from, to, filter.Count));
+                    }
+
+                    observed.Add(new ResolvedEdgeExpectation(
+                        expectation.PinId,
+                        port.Net,
+                        port.Domain,
+                        filters));
+                }
+
+                if (pinsValid)
+                {
+                    if (engine.Now < deadline)
+                    {
+                        engine.AdvanceTo(deadline);
+                    }
+
+                    if (engine.IsHalted)
+                    {
+                        failures.Add(new ScriptFailure(
+                            stepNumber,
+                            engine.Now,
+                            $"edge window needs the simulation to keep running through t={deadline}, " +
+                            $"but it halted at t={engine.Now}: {engine.HaltReason}"));
+                    }
+                    else
+                    {
+                        foreach (ResolvedEdgeExpectation expectation in observed)
+                        {
+                            foreach (ResolvedEdgeFilter filter in expectation.Filters)
+                            {
+                                long actual = 0;
+                                foreach (((int net, int oldValue, int newValue), long count) in edgeCounts)
+                                {
+                                    if (net == expectation.Net &&
+                                        (filter.From is null || filter.From == oldValue) &&
+                                        (filter.To is null || filter.To == newValue))
+                                    {
+                                        actual += count;
+                                    }
+                                }
+
+                                if (actual != filter.Count)
+                                {
+                                    failures.Add(new ScriptFailure(
+                                        stepNumber,
+                                        deadline,
+                                        $"pin '{expectation.PinId}': expected " +
+                                        $"{filter.Count.ToString(CultureInfo.InvariantCulture)} edge(s) " +
+                                        $"{DescribeEdge(expectation.Domain, filter.From, filter.To)} " +
+                                        $"between t={step.At} and t={deadline}, observed " +
+                                        $"{actual.ToString(CultureInfo.InvariantCulture)}."));
+                                }
                             }
                         }
                     }
@@ -535,4 +656,16 @@ public static class SimulationScriptRunner
         value == SignalValue.UndrivenIndex
             ? "undriven"
             : $"{value.ToString(CultureInfo.InvariantCulture)} ({domain.ValueName(value)})";
+
+    private static string DescribeEdge(SignalDomain domain, int? from, int? to) =>
+        $"{(from is int start ? DescribeValue(domain, start) : "any")} -> " +
+        $"{(to is int end ? DescribeValue(domain, end) : "any")}";
+
+    private sealed record ResolvedEdgeFilter(int? From, int? To, long Count);
+
+    private sealed record ResolvedEdgeExpectation(
+        string PinId,
+        int Net,
+        SignalDomain Domain,
+        IReadOnlyList<ResolvedEdgeFilter> Filters);
 }
