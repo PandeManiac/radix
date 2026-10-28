@@ -151,7 +151,7 @@ public static class InputSweep
                 engine.SetPortValue(inputs[i].Index, combination[i]);
             }
 
-            engine.AdvanceTo(settleTicks);
+            engine.AdvanceTo(settleTicks, cancellationToken);
             if (engine.IsHalted)
             {
                 throw new InputSweepException(

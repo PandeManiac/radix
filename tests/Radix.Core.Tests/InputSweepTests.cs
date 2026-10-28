@@ -146,6 +146,40 @@ public sealed class InputSweepTests
     }
 
     [Fact]
+    public void SweepHonorsCancellationInsideASingleSettleRow()
+    {
+        var builder = new ProjectBuilder("cancel sweep");
+        DefinitionBuilder definition = builder.Define("cancel", "Cancel");
+        Net output = definition.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        long[] durations = Enumerable.Repeat(1L, 500).ToArray();
+        int[] values = Enumerable.Range(0, 500).Select(index => index % 2).ToArray();
+        definition.AddPrimitive("clock", new WaveformSpec(durations, values));
+        Net current = definition.AddNet("clock_net", StandardDomains.BinaryId);
+        definition.Connect(current, definition.Pin("clock", PrimitiveShapes.OutputPinId));
+        for (int i = 0; i < 2_000; i++)
+        {
+            string id = $"buffer{i}";
+            definition.AddPrimitive(id, new LookupSpec(1, [0, 1]));
+            definition.Connect(current, definition.Pin(id, "in0"));
+            Net next = i == 1_999
+                ? output
+                : definition.AddNet($"stage{i}", StandardDomains.BinaryId);
+            definition.Connect(next, definition.Pin(id, "out"));
+            current = next;
+        }
+
+        CircuitProject project = builder.Build("cancel");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(30));
+
+        Assert.Throws<OperationCanceledException>(() => InputSweep.Run(
+            project,
+            "cancel",
+            settleTicks: 1_000,
+            cancellationToken: cancellation.Token));
+    }
+
+    [Fact]
     public void SweepRejectsUnknownDefinitionsAndInvalidLimits()
     {
         CircuitProject project = BinaryGate([0, 1]);
