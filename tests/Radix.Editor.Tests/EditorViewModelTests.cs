@@ -434,16 +434,46 @@ public sealed class EditorViewModelTests
         Assert.Equal("—", viewModel.NumericLanes.Single().ValueText);
 
         viewModel.BeginSimulation();
-        viewModel.SetPortValue(b0, 1);
-        viewModel.SetPortValue(b1, 0);
-        viewModel.SetPortValue(b2, 1);
-        Assert.Equal("5", viewModel.NumericLanes.Single().ValueText);
+        NumericLaneListItem card = viewModel.NumericLanes.Single();
+        Assert.True(card.CanDrive);
 
-        viewModel.SetPortValue(b1, 1);
-        Assert.Equal("7", viewModel.NumericLanes.Single().ValueText);
+        card.DriveText = "5";
+        viewModel.DriveNumericLane(lane.Id);
+        Assert.Equal("5", card.ValueText);
+        Assert.Equal("1", PinValue(viewModel, b0));
+        Assert.Equal("0", PinValue(viewModel, b1));
+        Assert.Equal("1", PinValue(viewModel, b2));
 
-        viewModel.SetPortValue(b1, 0);
-        Assert.Equal("5", viewModel.NumericLanes.Single().ValueText);
+        card.DriveText = "7";
+        viewModel.DriveNumericLane(lane.Id);
+        Assert.Equal("7", card.ValueText);
+
+        card.DriveText = "8";
+        viewModel.DriveNumericLane(lane.Id);
+        Assert.Equal("7", card.ValueText);
+        Assert.Contains("outside", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+
+        card.DriveText = "not a number";
+        viewModel.DriveNumericLane(lane.Id);
+        Assert.Contains("whole number", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.ClearDrives();
+        Assert.Equal("invalid", card.ValueText);
+        Assert.Contains("undriven", card.ValueHint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void OutputOnlyLaneIsReadOnly()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        NumericLaneListItem card = Assert.Single(viewModel.NumericLanes);
+        Assert.False(card.CanDrive);
+
+        card.DriveText = "5";
+        viewModel.DriveNumericLane(card.Id);
+
+        Assert.Contains("every pin is an input", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(viewModel.Simulator.Drives);
     }
 
     [Fact]

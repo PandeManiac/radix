@@ -389,7 +389,7 @@ There is no first-class bus. Users can create a definition with N pins and use l
 
 A `NumericLane` persists a named, ordered list of **interface pin IDs** plus a format ID. The first pin is least significant by contract. Lanes exist to make an interface readable and to let a reusable part carry its numeric presentation; they are deliberately not compiler input. The compiler flattens circuits exactly as if every lane were absent, and deleting a lane cannot change simulation. Lanes are validated (known format, known/unique pins) and pruned when a pin is removed. This avoids two common design errors: turning a group of pins into a hidden vector whose width and encoding the kernel must understand, and storing numeric state separately from the nets it describes.
 
-Encoding a typed number back into input pins is a future editor operation. It must still decompose into independent pin drives; no new signal type is needed.
+Encoding follows the same boundary. An `INumericFormat` can encode a value into signal indices; for a lane whose pins are all inputs, the editor encodes, checks every pin's domain, and then applies one batch of ordinary external drives. The batch is validated before mutation so a failed lane drive cannot leave a partially applied value. No vector signal, bus driver, or numeric net state reaches the compiler or engine.
 
 ### Concurrency
 

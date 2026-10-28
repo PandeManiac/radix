@@ -39,6 +39,13 @@ public interface INumericFormat
     /// <summary>Decodes a sequence of signal value indices.</summary>
     public NumericDecodeResult Decode(ReadOnlySpan<int> signalValues);
 
+    /// <summary>
+    /// Encodes a number as signal value indices in the same orientation this format
+    /// decodes. <paramref name="signalValues"/> determines the width. Encoding is a
+    /// display/input convenience; callers still drive independent pins afterward.
+    /// </summary>
+    public bool TryEncode(BigInteger value, Span<int> signalValues, out string? error);
+
     public BigInteger MinimumValue(int width);
 
     public BigInteger MaximumValue(int width);
@@ -151,6 +158,105 @@ public sealed class PositionalFormat : INumericFormat
         return NumericDecodeResult.Valid(sum);
     }
 
+    public bool TryEncode(BigInteger value, Span<int> signalValues, out string? error)
+    {
+        signalValues.Clear();
+        int width = signalValues.Length;
+        BigInteger minimum = MinimumValue(width);
+        BigInteger maximum = MaximumValue(width);
+        if (value < minimum || value > maximum)
+        {
+            error = $"value {value} is outside {Name} width {width} range {minimum}..{maximum}";
+            return false;
+        }
+
+        if (width == 0)
+        {
+            error = null;
+            return true;
+        }
+
+        long minDigit = DigitValues.Min();
+        long maxDigit = DigitValues.Max();
+        if (maxDigit - minDigit + 1 != DigitValues.Count)
+        {
+            error = $"{Name} encoding requires a contiguous digit set";
+            return false;
+        }
+
+        BigInteger radix = Radix;
+        BigInteger lowerWeight = BigInteger.One;
+        BigInteger lowerSum = BigInteger.Zero;
+        for (int position = 0; position < width - 1; position++)
+        {
+            lowerSum += lowerWeight;
+            lowerWeight *= radix;
+        }
+
+        if (Weighting == WeightingMode.Standard)
+        {
+            BigInteger offset = value - (minDigit * (lowerSum + lowerWeight));
+            for (int position = 0; position < width; position++)
+            {
+                offset = BigInteger.DivRem(offset, radix, out BigInteger remainder);
+                int signal = LeastSignificantFirst ? position : width - 1 - position;
+                if (!TryDigitIndex(minDigit + (long)remainder, out signalValues[signal]))
+                {
+                    error = $"{Name} cannot represent digit {minDigit + (long)remainder}";
+                    return false;
+                }
+            }
+
+            if (!offset.IsZero)
+            {
+                error = $"value {value} does not fit {Name} width {width}";
+                return false;
+            }
+
+            error = null;
+            return true;
+        }
+
+        BigInteger topWeight = Weighting == WeightingMode.RadixComplement
+            ? -lowerWeight
+            : -(lowerWeight - 1);
+        BigInteger topSpan = -topWeight;
+        BigInteger offsetValue = value - (minDigit * (lowerSum + topWeight));
+        BigInteger topOffset = offsetValue >= 0 || topSpan.IsZero
+            ? BigInteger.Zero
+            : CeilingDivide(-offsetValue, topSpan);
+        BigInteger lowerValue = offsetValue + (topSpan * topOffset);
+        if (topOffset < 0 ||
+            topOffset >= radix ||
+            lowerValue < 0 ||
+            lowerValue > lowerWeight - 1)
+        {
+            error = $"value {value} does not fit {Name} width {width}";
+            return false;
+        }
+
+        for (int position = 0; position < width - 1; position++)
+        {
+            lowerValue = BigInteger.DivRem(lowerValue, radix, out BigInteger remainder);
+            int signal = LeastSignificantFirst ? position : width - 1 - position;
+            if (!TryDigitIndex(minDigit + (long)remainder, out signalValues[signal]))
+            {
+                error = $"{Name} cannot represent digit {minDigit + (long)remainder}";
+                return false;
+            }
+        }
+
+        int topSignal = LeastSignificantFirst ? width - 1 : 0;
+        if (!TryDigitIndex(minDigit + (long)topOffset, out signalValues[topSignal]))
+        {
+            error = $"{Name} cannot represent digit {minDigit + (long)topOffset}";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
     public BigInteger MinimumValue(int width) => Extreme(width, maximum: false);
 
     public BigInteger MaximumValue(int width) => Extreme(width, maximum: true);
@@ -162,6 +268,24 @@ public sealed class PositionalFormat : INumericFormat
             CultureInfo.InvariantCulture,
             $"{Name} (radix {Radix}, digits {digits}, width {width}, range {MinimumValue(width)}..{MaximumValue(width)})");
     }
+
+    private bool TryDigitIndex(long digit, out int index)
+    {
+        for (int i = 0; i < DigitValues.Count; i++)
+        {
+            if (DigitValues[i] == digit)
+            {
+                index = i;
+                return true;
+            }
+        }
+
+        index = -1;
+        return false;
+    }
+
+    private static BigInteger CeilingDivide(BigInteger numerator, BigInteger denominator) =>
+        (numerator + denominator - 1) / denominator;
 
     private int SignalAt(ReadOnlySpan<int> values, int significance) =>
         LeastSignificantFirst ? values[significance] : values[values.Length - 1 - significance];
@@ -297,6 +421,98 @@ public sealed class SignMagnitudeFormat : INumericFormat
 
         bool negative = signSignal == NegativeSignValue;
         return NumericDecodeResult.Valid(negative ? BigInteger.Negate(magnitude) : magnitude);
+    }
+
+    public bool TryEncode(BigInteger value, Span<int> signalValues, out string? error)
+    {
+        signalValues.Clear();
+        int width = signalValues.Length;
+        BigInteger minimum = MinimumValue(width);
+        BigInteger maximum = MaximumValue(width);
+        if (value < minimum || value > maximum)
+        {
+            error = $"value {value} is outside {Name} width {width} range {minimum}..{maximum}";
+            return false;
+        }
+
+        if (width == 0)
+        {
+            error = null;
+            return true;
+        }
+
+        int zeroIndex = IndexOfDigit(0);
+        if (zeroIndex < 0)
+        {
+            error = $"{Name} requires digit 0";
+            return false;
+        }
+
+        for (int i = 0; i < signalValues.Length; i++)
+        {
+            signalValues[i] = zeroIndex;
+        }
+
+        if (width == 1)
+        {
+            error = null;
+            return true;
+        }
+
+        BigInteger magnitude = BigInteger.Abs(value);
+        int magnitudeCount = width - 1;
+        for (int position = 0; position < magnitudeCount; position++)
+        {
+            magnitude = BigInteger.DivRem(magnitude, Radix, out BigInteger remainder);
+            int index = IndexOfDigit((long)remainder);
+            if (index < 0)
+            {
+                error = $"{Name} cannot represent magnitude digit {remainder}";
+                return false;
+            }
+
+            int signal = LeastSignificantFirst ? position : width - 2 - position;
+            signalValues[signal] = index;
+        }
+
+        if (!magnitude.IsZero)
+        {
+            error = $"value {value} does not fit {Name} width {width}";
+            return false;
+        }
+
+        int signPosition = LeastSignificantFirst ? width - 1 : 0;
+        signalValues[signPosition] = value.Sign < 0
+            ? NegativeSignValue
+            : (NegativeSignValue == 0 ? PreferredPositiveSign() : 0);
+        error = null;
+        return true;
+    }
+
+    private int IndexOfDigit(long digit)
+    {
+        for (int i = 0; i < DigitValues.Count; i++)
+        {
+            if (DigitValues[i] == digit)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private int PreferredPositiveSign()
+    {
+        for (int i = 0; i < DigitValues.Count; i++)
+        {
+            if (i != NegativeSignValue)
+            {
+                return i;
+            }
+        }
+
+        return 0;
     }
 
     public BigInteger MinimumValue(int width)

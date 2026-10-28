@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Numerics;
 using System.Windows.Input;
 using Avalonia;
 using Radix.Core;
@@ -1990,11 +1991,15 @@ public sealed class EditorViewModel : ObservableObject
             string pins = string.Join(
                 " · ",
                 lane.PinIds.Select(pinId => Definition.FindPin(pinId)?.Name ?? $"{pinId} (missing)"));
+            bool canDrive = lane.PinIds.Count > 0 && lane.PinIds.All(pinId =>
+                Definition.FindPin(pinId)?.Direction == PinDirection.Input);
             NumericLanes.Add(new NumericLaneListItem(
                 lane,
                 format?.Name ?? $"{lane.FormatId} (unknown)",
                 pins.Length == 0 ? "no pins" : pins,
-                new RelayCommand(() => RemoveNumericLane(laneId))));
+                canDrive,
+                new RelayCommand(() => RemoveNumericLane(laneId)),
+                new RelayCommand(() => DriveNumericLane(laneId))));
         }
 
         LanePinChoices.Clear();
@@ -2005,6 +2010,93 @@ public sealed class EditorViewModel : ObservableObject
 
         RaisePropertyChanged(nameof(HasNumericLanes));
         RefreshNumericLaneValues();
+    }
+
+    /// <summary>
+    /// Encodes a typed number with the lane's format and applies every resulting
+    /// digit as an external drive. All validation happens before any drive is applied.
+    /// </summary>
+    public void DriveNumericLane(string laneId)
+    {
+        NumericLane? lane = Definition.FindNumericLane(laneId);
+        NumericLaneListItem? view = NumericLanes.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, laneId, StringComparison.Ordinal));
+        if (lane is null || view is null)
+        {
+            return;
+        }
+
+        string text = view.DriveText.Trim();
+        if (!BigInteger.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out BigInteger value))
+        {
+            StatusText = $"Enter a whole number to drive lane '{lane.Name}'.";
+            return;
+        }
+
+        INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, lane.FormatId, StringComparison.Ordinal));
+        if (format is null)
+        {
+            StatusText = $"Lane '{lane.Name}' uses unknown format '{lane.FormatId}'.";
+            return;
+        }
+
+        int[] signals = new int[lane.PinIds.Count];
+        if (!format.TryEncode(value, signals, out string? encodeError))
+        {
+            StatusText = encodeError ?? $"Value {value} cannot be encoded for lane '{lane.Name}'.";
+            return;
+        }
+
+        if (!format.LeastSignificantFirst)
+        {
+            Array.Reverse(signals);
+        }
+
+        var drives = new List<(string PinId, int Value)>(signals.Length);
+        string? domainId = null;
+        for (int i = 0; i < lane.PinIds.Count; i++)
+        {
+            PinDeclaration? pin = Definition.FindPin(lane.PinIds[i]);
+            if (pin is null || pin.Direction != PinDirection.Input)
+            {
+                StatusText = $"Lane '{lane.Name}' can only be driven when every pin is an input.";
+                return;
+            }
+
+            if (domainId is null)
+            {
+                domainId = pin.DomainId;
+            }
+            else if (!string.Equals(domainId, pin.DomainId, StringComparison.Ordinal))
+            {
+                StatusText = $"Lane '{lane.Name}' contains pins from more than one domain.";
+                return;
+            }
+
+            SignalDomain? domain = _project.FindDomain(pin.DomainId);
+            if (domain is null || !domain.IsValidValue(signals[i]))
+            {
+                StatusText = $"Value {value} needs a digit outside domain '{pin.DomainId}' for lane '{lane.Name}'.";
+                return;
+            }
+
+            drives.Add((pin.Id, signals[i]));
+        }
+
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        if (!Simulator.DrivePorts(drives))
+        {
+            StatusText = $"Could not drive lane '{lane.Name}' on the compiled circuit.";
+            return;
+        }
+
+        RefreshSimulationPresentation();
+        StatusText = $"Drove lane '{lane.Name}' with {value.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private void RefreshNumericLaneValues()

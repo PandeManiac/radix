@@ -206,7 +206,7 @@
       <Border Grid.Column="2" Background="{DynamicResource App.PanelBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6">
         <TabControl x:Name="RightTabs" Margin="2">
           <TabItem Header="Inspect">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ScrollViewer x:Name="InspectorScroll" VerticalScrollBarVisibility="Auto">
               <StackPanel Margin="10,6,14,10">
                 <TextBlock Text="{Binding SelectionTitle}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
                 <TextBlock Text="{Binding SelectionSubtitle}" Classes="muted" FontSize="10" Margin="0,0,0,8" />
@@ -305,6 +305,16 @@
                             <Button Grid.Column="2" Classes="tool" Content="×" Command="{Binding RemoveCommand}" Padding="5,1" ToolTip.Tip="Remove this numeric lane (never changes signals)" />
                           </Grid>
                           <TextBlock Text="{Binding PinSummary}" Classes="muted" FontFamily="monospace" FontSize="9.5" TextWrapping="Wrap" />
+                          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding CanDrive}" Margin="0,2,0,0">
+                            <TextBox
+                                Text="{Binding DriveText, Mode=TwoWay}"
+                                KeyDown="LaneValue_KeyDown"
+                                Watermark="drive value…"
+                                FontSize="11"
+                                Padding="5,2"
+                                ToolTip.Tip="Type a whole number, then press Enter or click Drive. Every pin in this lane must be an input." />
+                            <Button Grid.Column="1" Content="Drive" Command="{Binding DriveCommand}" Margin="4,0,0,0" Padding="8,2" ToolTip.Tip="Encode this number and drive all lane input pins" />
+                          </Grid>
                         </StackPanel>
                       </Border>
                     </DataTemplate>

@@ -15,7 +15,8 @@ The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git
 - `workbench-counter.png` (light);
 - `workbench-counter-dark.png`;
 - `workbench-waveform.png` (light);
-- `workbench-waveform-dark.png`.
+- `workbench-waveform-dark.png`;
+- `workbench-accumulator-lanes.png` (scrolled numeric-lane inspector with a drive control).
 
 Launch the editor only when you are ready to use it:
 
@@ -104,13 +105,17 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 1. Open `examples/binary-counter.radix`. In **NUMERIC LANES**, expected: `Count · Unsigned binary` with pins `Q0 · Q1 · Q2 · Q3`.
 2. Begin, then advance 100 ticks. Expected: the lane value tracks the four Q outputs as an unsigned binary number (`5` at t=100), and the value changes when you advance again.
-3. Delete the lane, then undo. Expected: it returns, one undo step.
-4. Add a lane: select `Unsigned binary`, tick `Q0`..`Q3` in a different order check sequence, enter a name, click **Add numeric lane**. Expected: the lane uses declaration order (Q0 first, least significant) regardless of tick order, and the card explains the grouping.
-5. Add a lane with mixed domains (one binary and one ternary pin). Expected: refused with a message that a lane groups one domain; no lane is created.
-6. Change a lane pin's domain in the Interface picker, then inspect Diagnostics. Expected: a warning explains that the format's nominal domain differs; the lane still decodes signal indices if the values are valid.
-7. Remove a pin used by a lane. Expected: the pin disappears from the lane. If it was the last pin, the lane is removed. Undo restores both.
-8. Save, reopen, and export/import the definition as a `.radixlib`. Expected: lane name, format, pin order, and decoded behavior survive.
-9. Expected non-behavior: lanes never merge nets, add wires, affect drivers, or prevent simulation. A lane referencing a missing or unknown format shows `invalid` with a tooltip and a Diagnostics error instead of throwing.
+3. Expected: the output-only `Count` lane has no drive box. Attempting to drive it through code reports that every pin must be an input.
+4. Delete the lane, then undo. Expected: it returns, one undo step.
+5. Add a lane: select `Unsigned binary`, tick `Q0`..`Q3` in a different order check sequence, enter a name, click **Add numeric lane**. Expected: the lane uses declaration order (Q0 first, least significant) regardless of tick order, and the card explains the grouping.
+6. Add a lane with mixed domains (one binary and one ternary pin). Expected: refused with a message that a lane groups one domain; no lane is created.
+7. Open `examples/accumulator-cpu.radix`. Begin, type `9` in the **Data** lane box, and press Enter. Expected: `D0`/`D3` become 1 and `D1`/`D2` become 0 (9 = 1001 binary, first pin least significant), and the lane reads `9`. Click **Drive** instead of pressing Enter and verify the same result.
+8. Type `2` in **Opcode** and drive it. Expected: `OP1=1`, `OP0=0`. Advance the clock; expected: the accumulator result lane updates according to the documented opcode.
+9. Type `16` for the 4-bit Data lane and drive it. Expected: refused as outside the 0..15 range; no input pin changes; the previous value stays visible. Type a non-integer and verify a clear status message.
+10. Change a lane pin's domain in the Interface picker, then inspect Diagnostics. Expected: a warning explains that the format's nominal domain differs; the lane still decodes signal indices if the values are valid.
+11. Remove a pin used by a lane. Expected: the pin disappears from the lane. If it was the last pin, the lane is removed. Undo restores both.
+12. Save, reopen, and export/import the definition as a `.radixlib`. Expected: lane name, format, pin order, and decoded behavior survive.
+13. Expected non-behavior: lanes never merge nets, add wires, affect drivers, or prevent simulation. A lane referencing a missing or unknown format shows `invalid` with a tooltip and a Diagnostics error instead of throwing. Typing a lane value is not undoable; like other external drives, it belongs to the simulation session, and **Clear inputs** resets it.
 
 ## 8. Library export and import
 
@@ -166,7 +171,7 @@ Do not file these as new failures until they change in the README:
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;
-- numeric lanes use built-in formats only; they cannot yet be authored with custom digit mappings, drive inputs by number, or show on the canvas;
+- numeric lanes use built-in formats only and appear only in the inspector; custom digit mappings and canvas annotations are not implemented;
 - undo snapshots whole projects and is capped at 80 entries;
 - the editor does not auto-save or recover crash state.
 

@@ -53,7 +53,7 @@ The editor opens the 4-bit counter example. It is a normal desktop application w
 - **Extract a reusable part** by selecting components, entering a name in **Reusable part**, and clicking **Extract selection**. Boundary nets become input/output pins, internal nets move into the new definition, and the parent keeps one replacement instance.
 - **Expose a net** as an input or output pin from the net inspector. Give it a name first if desired; leave the name blank to use the net label.
 - **Edit an interface in place** in the Interface list: rename a pin, flip its direction with `⇄`, or change its domain. The bound net follows the pin, and each edit is one undo step.
-- **Read a group of pins as a number** in **NUMERIC LANES**: choose a format, tick the interface pins (first pin is least significant), and add the lane. Its decoded value updates during simulation. Lanes are saved with the definition and copied by library export; they never change nets or signal values.
+- **Read a group of pins as a number** in **NUMERIC LANES**: choose a format, tick the interface pins (first pin is least significant), and add the lane. Its decoded value updates during simulation. If every pin is an input, type a number and press Enter or click **Drive** to encode it and drive all pins together. Lanes are saved with the definition and copied by library export; they never change nets or signal values.
 - **Navigate hierarchy** by double-clicking a composite part, or selecting it in Definitions. Edited definitions propagate to every instance.
 - **Share parts** with **Export part…** (current definition and dependencies) and **Import library…** (`.radixlib`). Equivalent definitions are reused; conflicting IDs are renamed instead of overwritten.
 - **Simulate** with Begin, Advance, Event, Clock, and Settle. The current definition is compiled as the simulation root, so a reusable component can be tested in isolation.
@@ -161,7 +161,7 @@ These are deliberate current boundaries, not hidden behavior:
 - Extraction refuses boundary nets driven from both sides, because the interface model has only input/output pins and no inout direction. Split the net or adjust the selection.
 - Library import compares electrical structure, not layout. A local part with the same ID but different labels or positions is reused; genuinely different structure is imported under a new ID.
 - Editor pan/zoom, active tab, and selection are not persisted in the project yet; instance positions, wire routes, and colors are.
-- Numeric lanes use the built-in format set. Custom numeric formats are code-defined today; projects cannot yet save a user-authored digit mapping or drive a lane by typing a number.
+- Numeric lanes use the built-in format set. Custom numeric formats are code-defined today; projects cannot yet save a user-authored digit mapping. Lanes are shown in the inspector, not as canvas annotations.
 - `--set` drives static initial values; `--schedule <tick>:<pin>=<value>` drives timed edges. There is no script/assertion file format yet.
 - Domain creation in the editor uses a single-driver policy. Projects loaded from JSON can still declare priority/conflict policies, but the GUI does not edit those policies yet.
 - Undo snapshots the whole project and retains up to 80 states. This is simple and reliable, not asymptotically optimal for very large designs.
@@ -182,15 +182,15 @@ docs/                    architecture, format, benchmarks
 
 ## Testing summary
 
-- Kernel and library tests: **143 passing**.
-- Editor tests: **42 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, and dark waveform tab.
-- Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, numeric formats and lanes, determinism, and randomized differential comparison against a reference evaluator.
-- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
+- Kernel and library tests: **147 passing**.
+- Editor tests: **44 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, and numeric-lane inspector.
+- Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, numeric formats and lanes, exhaustive built-in encode/decode ranges, determinism, and randomized differential comparison against a reference evaluator.
+- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 
 ## Near-term roadmap
 
 1. Add a scripted/assertion test harness for timed CLI simulations and edge-triggered circuits.
-2. Add numeric-lane encoding: type a number to drive a lane's input pins with digit decomposition, keeping the lane display-only in the kernel.
+2. Add user-authored numeric formats and a digit-mapping editor, then let lanes render as canvas annotations.
 3. Persist viewport, active tab, and editor preferences with the project or user settings.
 4. Add a faster incremental compile path for large projects; measure before optimizing.
 5. Extend the accumulator into an instruction-driven processor example with a small custom ISA.

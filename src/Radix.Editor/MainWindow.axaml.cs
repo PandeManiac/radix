@@ -133,6 +133,19 @@ public partial class MainWindow : Window
         }
     }
 
+    private void LaneValue_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter ||
+            sender is not TextBox { DataContext: NumericLaneListItem lane } ||
+            lane.DriveCommand.CanExecute(null) == false)
+        {
+            return;
+        }
+
+        lane.DriveCommand.Execute(null);
+        e.Handled = true;
+    }
+
     private void EventButton_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { DataContext: string description } && ViewModel is EditorViewModel viewModel)

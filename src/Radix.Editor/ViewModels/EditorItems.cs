@@ -124,15 +124,24 @@ public sealed class NumericLaneListItem : ObservableObject
 {
     private string _valueText = "—";
     private string _valueHint = "Start or advance the simulation to decode this lane.";
+    private string _driveText = string.Empty;
 
-    public NumericLaneListItem(NumericLane lane, string formatName, string pinSummary, ICommand removeCommand)
+    public NumericLaneListItem(
+        NumericLane lane,
+        string formatName,
+        string pinSummary,
+        bool canDrive,
+        ICommand removeCommand,
+        ICommand driveCommand)
     {
         Id = lane.Id;
         Name = lane.Name;
         FormatId = lane.FormatId;
         FormatName = formatName;
         PinSummary = pinSummary;
+        CanDrive = canDrive;
         RemoveCommand = removeCommand;
+        DriveCommand = driveCommand;
     }
 
     public string Id { get; }
@@ -146,6 +155,17 @@ public sealed class NumericLaneListItem : ObservableObject
     public string PinSummary { get; }
 
     public ICommand RemoveCommand { get; }
+
+    public ICommand DriveCommand { get; }
+
+    /// <summary>True when every pin in the lane is an input and can be driven.</summary>
+    public bool CanDrive { get; }
+
+    public string DriveText
+    {
+        get => _driveText;
+        set => SetField(ref _driveText, value);
+    }
 
     public string ValueText
     {
