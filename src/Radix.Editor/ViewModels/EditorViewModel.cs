@@ -196,6 +196,16 @@ public sealed class EditorViewModel : ObservableObject
             () => CanPromoteSelectedNet);
         PromoteOutputCommand = _promoteOutputCommand;
         ClearNetRouteCommand = new RelayCommand(ClearSelectedNetRoute, () => _selectedNet is not null);
+        WireColorChoices =
+        [
+            WireColorChoice("A", null, "Automatic domain/signal color"),
+            WireColorChoice(string.Empty, "#38BDF8", "Sky"),
+            WireColorChoice(string.Empty, "#22C55E", "Green"),
+            WireColorChoice(string.Empty, "#F59E0B", "Amber"),
+            WireColorChoice(string.Empty, "#EF4444", "Red"),
+            WireColorChoice(string.Empty, "#A855F7", "Purple"),
+            WireColorChoice(string.Empty, "#94A3B8", "Slate"),
+        ];
         BeginCommand = new RelayCommand(BeginSimulation);
         AdvanceCommand = new RelayCommand(AdvanceSimulation);
         StepEventCommand = new RelayCommand(StepEvent);
@@ -289,6 +299,9 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<NetEndpointItem> NetEndpoints { get; } = [];
 
     public bool HasNetEndpoints => NetEndpoints.Count > 0;
+
+    /// <summary>Quick wire-color swatches, always applied to the selected net.</summary>
+    public ObservableCollection<WireColorChoice> WireColorChoices { get; }
 
     public ObservableCollection<PaletteItem> Palette { get; } = [];
 
@@ -3543,6 +3556,17 @@ public sealed class EditorViewModel : ObservableObject
         AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
         StatusText = normalized is null ? "Wire color set to automatic" : $"Wire color set to {normalized}";
     }
+
+    public void SetSelectedNetWireColor(string? color)
+    {
+        if (_selectedNet is not null)
+        {
+            SetNetWireColor(_selectedNet.Id, color);
+        }
+    }
+
+    private WireColorChoice WireColorChoice(string label, string? color, string tip) =>
+        new(label, color, tip, new RelayCommand(() => SetSelectedNetWireColor(color)));
 
     public void AddNetWaypoint(string netId, Point point)
     {

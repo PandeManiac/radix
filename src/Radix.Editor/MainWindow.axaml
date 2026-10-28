@@ -3,6 +3,7 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Radix.Editor.Controls"
+    xmlns:conv="using:Radix.Editor.Converters"
     xmlns:vm="using:Radix.Editor.ViewModels"
     x:DataType="vm:EditorViewModel"
     Title="RADIX — circuit workbench"
@@ -13,6 +14,10 @@
     Background="{DynamicResource App.WindowBackground}"
     FontFamily="Inter"
     WindowStartupLocation="CenterScreen">
+
+  <Window.Resources>
+    <conv:HexColorBrushConverter x:Key="HexColorBrush" />
+  </Window.Resources>
 
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- Toolbar -->
@@ -355,6 +360,29 @@
                 </Border>
 
                 <StackPanel IsVisible="{Binding HasSelectedNet}" Margin="0,6,0,0">
+                  <TextBlock Text="WIRE COLOR" Classes="section" Margin="4,8,4,4" />
+                  <ItemsControl ItemsSource="{Binding WireColorChoices}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="4" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:WireColorChoice">
+                        <Button
+                            Command="{Binding ApplyCommand}"
+                            Content="{Binding Label}"
+                            Background="{Binding Color, Converter={StaticResource HexColorBrush}}"
+                            BorderBrush="{DynamicResource App.Border}"
+                            Width="25"
+                            Height="23"
+                            Padding="0"
+                            FontSize="9"
+                            FontWeight="SemiBold"
+                            ToolTip.Tip="{Binding Tip}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                   <TextBlock Text="Net domain" Classes="muted" FontSize="10.5" Margin="0,0,0,3" />
                   <ComboBox ItemsSource="{Binding Domains}" SelectedItem="{Binding SelectedNetDomain, Mode=TwoWay}">
                     <ComboBox.ItemTemplate>

@@ -69,6 +69,28 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void WireColorPaletteAppliesAndClearsTheSelectedNetColor()
+    {
+        var viewModel = CreateLookupEditor();
+        viewModel.SelectNet("a_net");
+
+        WireColorChoice sky = viewModel.WireColorChoices.Single(choice => choice.Color == "#38BDF8");
+        sky.ApplyCommand.Execute(null);
+
+        Assert.Equal("#38BDF8", viewModel.Definition.FindNet("a_net")!.WireColor);
+        Assert.True(viewModel.IsDirty);
+
+        WireColorChoice automatic = viewModel.WireColorChoices.Single(choice => choice.Color is null);
+        automatic.ApplyCommand.Execute(null);
+
+        Assert.Null(viewModel.Definition.FindNet("a_net")!.WireColor);
+        Assert.Equal("Wire color set to automatic", viewModel.StatusText);
+
+        viewModel.Undo();
+        Assert.Equal("#38BDF8", viewModel.Definition.FindNet("a_net")!.WireColor);
+    }
+
+    [Fact]
     public void PlacingAndDeletingPartIsUndoable()
     {
         var viewModel = CreateEmptyEditor();

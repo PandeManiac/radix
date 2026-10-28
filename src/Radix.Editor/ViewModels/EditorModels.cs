@@ -63,6 +63,27 @@ public sealed class DefinitionListItem
     public ICommand DuplicateCommand { get; }
 }
 
+/// <summary>One quick-choice swatch for the selected net's authored wire color.</summary>
+public sealed class WireColorChoice
+{
+    public WireColorChoice(string label, string? color, string tip, ICommand applyCommand)
+    {
+        Label = label;
+        Color = color;
+        Tip = tip;
+        ApplyCommand = applyCommand;
+    }
+
+    public string Label { get; }
+
+    /// <summary>Normalized six-digit color, or null for automatic domain coloring.</summary>
+    public string? Color { get; }
+
+    public string Tip { get; }
+
+    public ICommand ApplyCommand { get; }
+}
+
 /// <summary>One instance pin on the currently selected net.</summary>
 public sealed class NetEndpointItem
 {
