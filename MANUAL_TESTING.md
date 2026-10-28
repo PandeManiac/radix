@@ -207,13 +207,13 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 These steps use a terminal only; they never open a window. Run from the repository root.
 
-1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 6 step(s) through t=50`, exit code 0.
+1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 5 step(s) through t=50`, exit code 0. The capture is asserted with `"within": { "ticks": 10, ... }`, so the script waits for the transport delay instead of pinning one tick.
 2. Run `dotnet run --project src/Radix.Cli -- test examples/accumulator-cpu.radix examples/tests/accumulator.radixtest`. Expected: PASS; the signed `Result` lane is `-1` after LOAD 15 and `0` after adding 1, with `CARRY=1`.
 3. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-adder-2.radix examples/tests/balanced-ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0. The step expectations cover sums 8, −8, 0, 2, and 1 through the three-trit `A + B` lane.
 4. Run `dotnet run --project src/Radix.Cli -- simulate examples/balanced-ternary-adder-2.radix --set a0=2 --set a1=2 --set b0=2 --set b1=2 --ticks 30 --bus s0,s1,cout --format balanced-ternary`. Expected: the decoded bus prints `8`.
 5. Run `dotnet run --project src/Radix.Cli -- inspect examples/balanced-ternary-adder-2.radix`. Expected: `std.bt-full-adder` and `std.bt-adder-2` appear as definitions, and the project root is `demo.bt-adder-2`.
 6. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 37 step(s) through t=1180`, exit code 0.
-7. Copy the DFF script to a scratch file and change the `t=30` expectation for `q` from `1` to `0`. Expected: `FAIL`, one line naming `step 4 (t=30)`, expected and actual values; exit code 1.
+7. Copy the DFF script to a scratch file and change its window to `"ticks": 0` while keeping `"q": 1`. Expected: `FAIL`, one line naming `step 3 (t=20)` with `no tick up to t=20 satisfied the window` and the last observed `q`; exit code 1. This shows a window is a settle-time bound, not an immediate guarantee.
 8. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
 9. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
 10. Run `RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --filter FullyQualifiedName~LayoutBenchmarkTests --logger "console;verbosity=detailed"`. Expected: one passing test and one line per size (`200`, `500`, `1,000` gates) in the form `1000 gates: construct … ms, canonical frames … ms, reused frames … ms, final rebuild … ms`. Reused frames must be far below canonical frames; exact milliseconds depend on the machine. With the variable unset, the test passes without printing.
@@ -367,7 +367,7 @@ Do not file these as new failures until they change in the README:
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
-- `.radixtest` scripts are linear; there are no loops, variables, expressions, random drives, or waveform-window assertions;
+- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts that values converge at some integer tick, not stability, glitch freedom, or a waveform shape;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.

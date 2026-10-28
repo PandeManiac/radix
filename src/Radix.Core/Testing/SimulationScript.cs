@@ -53,6 +53,32 @@ public sealed class ScriptLaneExpectation
 }
 
 /// <summary>
+/// An eventual assertion: every listed pin and lane expectation must hold together
+/// at the step's tick or at some later tick within <see cref="Ticks"/>. A match does
+/// not have to remain stable after the window, so this checks "settles by", not a
+/// stable period or a waveform edge.
+/// </summary>
+public sealed class ScriptWindow
+{
+    public ScriptWindow(
+        long ticks,
+        IReadOnlyList<ScriptPinExpectation> pinExpectations,
+        IReadOnlyList<ScriptLaneExpectation> laneExpectations)
+    {
+        Ticks = ticks;
+        PinExpectations = pinExpectations;
+        LaneExpectations = laneExpectations;
+    }
+
+    /// <summary>Maximum ticks after the step's tick, inclusive, to wait for a match.</summary>
+    public long Ticks { get; }
+
+    public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
+
+    public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
+}
+
+/// <summary>
 /// One ordered step. The runner advances to <see cref="At"/>, applies drives, settles
 /// zero-delay events at that timestamp, then checks expectations.
 /// </summary>
@@ -64,7 +90,8 @@ public sealed class SimulationScriptStep
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
         bool? expectHalted,
-        string? description)
+        string? description,
+        ScriptWindow? window = null)
     {
         At = at;
         Drives = drives;
@@ -72,6 +99,7 @@ public sealed class SimulationScriptStep
         LaneExpectations = laneExpectations;
         ExpectHalted = expectHalted;
         Description = description;
+        Window = window;
     }
 
     /// <summary>Absolute simulated tick. Missing values default to the previous step's tick.</summary>
@@ -88,8 +116,12 @@ public sealed class SimulationScriptStep
 
     public string? Description { get; }
 
+    /// <summary>Optional eventual assertion that may advance simulated time.</summary>
+    public ScriptWindow? Window { get; }
+
     public bool HasActions =>
-        Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 || ExpectHalted is not null;
+        Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
+        ExpectHalted is not null || Window is not null;
 }
 
 /// <summary>
@@ -197,8 +229,9 @@ public sealed class SimulationScript
 
             previousAt = at;
             var drives = MapDrives(step.Set, stepNumber);
-            var pinExpectations = MapExpectations(step.Expect, stepNumber);
-            var laneExpectations = MapLaneExpectations(step.ExpectLane, stepNumber);
+            var pinExpectations = MapExpectations(step.Expect, stepNumber, "expect");
+            var laneExpectations = MapLaneExpectations(step.ExpectLane, stepNumber, "expectLane");
+            ScriptWindow? window = MapWindow(step.Within, stepNumber, at);
 
             // A bare step is a deliberate advance-only marker; it is useful for
             // separating phases and lets later steps inherit this tick.
@@ -208,7 +241,8 @@ public sealed class SimulationScript
                 pinExpectations,
                 laneExpectations,
                 step.ExpectHalted,
-                step.Description));
+                step.Description,
+                window));
         }
 
         return new SimulationScript(
@@ -241,7 +275,10 @@ public sealed class SimulationScript
         return drives;
     }
 
-    private static List<ScriptPinExpectation> MapExpectations(Dictionary<string, JsonElement>? source, int stepNumber)
+    private static List<ScriptPinExpectation> MapExpectations(
+        Dictionary<string, JsonElement>? source,
+        int stepNumber,
+        string field)
     {
         var expectations = new List<ScriptPinExpectation>();
         if (source is null)
@@ -251,14 +288,14 @@ public sealed class SimulationScript
 
         if (source.Count == 0)
         {
-            throw new SimulationScriptException($"Step {stepNumber} has an empty 'expect' object.");
+            throw new SimulationScriptException($"Step {stepNumber} has an empty '{field}' object.");
         }
 
         foreach ((string pinId, JsonElement element) in source)
         {
             expectations.Add(new ScriptPinExpectation(
-                NormalizeId(pinId, "pin", stepNumber, "expect"),
-                ReadValue(element, stepNumber, $"expect.{pinId}")));
+                NormalizeId(pinId, "pin", stepNumber, field),
+                ReadValue(element, stepNumber, $"{field}.{pinId}")));
         }
 
         return expectations;
@@ -266,7 +303,8 @@ public sealed class SimulationScript
 
     private static List<ScriptLaneExpectation> MapLaneExpectations(
         Dictionary<string, JsonElement>? source,
-        int stepNumber)
+        int stepNumber,
+        string field)
     {
         var expectations = new List<ScriptLaneExpectation>();
         if (source is null)
@@ -276,22 +314,57 @@ public sealed class SimulationScript
 
         if (source.Count == 0)
         {
-            throw new SimulationScriptException($"Step {stepNumber} has an empty 'expectLane' object.");
+            throw new SimulationScriptException($"Step {stepNumber} has an empty '{field}' object.");
         }
 
         foreach ((string laneId, JsonElement element) in source)
         {
-            string normalizedLane = NormalizeId(laneId, "lane", stepNumber, "expectLane");
+            string normalizedLane = NormalizeId(laneId, "lane", stepNumber, field);
             if (!TryReadBigInteger(element, out BigInteger numeric))
             {
                 throw new SimulationScriptException(
-                    $"Step {stepNumber} 'expectLane.{laneId}' must be an integer value.");
+                    $"Step {stepNumber} '{field}.{laneId}' must be an integer value.");
             }
 
             expectations.Add(new ScriptLaneExpectation(normalizedLane, numeric));
         }
 
         return expectations;
+    }
+
+    private static ScriptWindow? MapWindow(WindowDto? source, int stepNumber, long at)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        if (source.Ticks is null)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'within' needs an explicit 'ticks' value.");
+        }
+
+        long ticks = source.Ticks.Value;
+        if (ticks < 0)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'within.ticks' must be non-negative.");
+        }
+
+        if (ticks > long.MaxValue - at)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'within.ticks' moves the deadline past the maximum simulated time.");
+        }
+
+        var pinExpectations = MapExpectations(source.Expect, stepNumber, "within.expect");
+        var laneExpectations = MapLaneExpectations(source.ExpectLane, stepNumber, "within.expectLane");
+        if (pinExpectations.Count == 0 && laneExpectations.Count == 0)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'within' needs at least one 'expect' or 'expectLane' entry.");
+        }
+
+        return new ScriptWindow(ticks, pinExpectations, laneExpectations);
     }
 
     private static string NormalizeId(string id, string kind, int stepNumber, string field)
@@ -400,5 +473,16 @@ public sealed class SimulationScript
         public Dictionary<string, JsonElement>? ExpectLane { get; set; }
 
         public bool? ExpectHalted { get; set; }
+
+        public WindowDto? Within { get; set; }
+    }
+
+    private sealed class WindowDto
+    {
+        public long? Ticks { get; set; }
+
+        public Dictionary<string, JsonElement>? Expect { get; set; }
+
+        public Dictionary<string, JsonElement>? ExpectLane { get; set; }
     }
 }

@@ -136,12 +136,70 @@ public static class SimulationScriptRunner
 
             foreach (ScriptPinExpectation expectation in step.PinExpectations)
             {
-                CheckPin(engine, stepNumber, step.At, expectation, failures);
+                if (CheckPin(engine, expectation) is { } message)
+                {
+                    failures.Add(new ScriptFailure(stepNumber, step.At, message));
+                }
             }
 
             foreach (ScriptLaneExpectation expectation in step.LaneExpectations)
             {
-                CheckLane(project, definition, engine, stepNumber, step.At, expectation, failures);
+                if (CheckLane(project, definition, engine, expectation) is { } message)
+                {
+                    failures.Add(new ScriptFailure(stepNumber, step.At, message));
+                }
+            }
+
+            if (step.Window is { } window)
+            {
+                long deadline = step.At + window.Ticks;
+                var mismatches = new List<string>();
+                bool matched = false;
+                while (true)
+                {
+                    mismatches.Clear();
+                    foreach (ScriptPinExpectation expectation in window.PinExpectations)
+                    {
+                        if (CheckPin(engine, expectation) is { } message)
+                        {
+                            mismatches.Add(message);
+                        }
+                    }
+
+                    foreach (ScriptLaneExpectation expectation in window.LaneExpectations)
+                    {
+                        if (CheckLane(project, definition, engine, expectation) is { } message)
+                        {
+                            mismatches.Add(message);
+                        }
+                    }
+
+                    if (mismatches.Count == 0)
+                    {
+                        matched = true;
+                        break;
+                    }
+
+                    // Signals change only at integer ticks, so checking once per tick
+                    // after settling is enough to catch every stable state in the window.
+                    if (engine.IsHalted || engine.Now >= deadline)
+                    {
+                        break;
+                    }
+
+                    engine.AdvanceTo(engine.Now + 1);
+                }
+
+                if (!matched)
+                {
+                    string reason = engine.IsHalted
+                        ? $"simulation halted at t={engine.Now} during the window: {engine.HaltReason}"
+                        : $"no tick up to t={deadline} satisfied the window";
+                    failures.Add(new ScriptFailure(
+                        stepNumber,
+                        engine.Now,
+                        $"window assertion failed: {reason}. Last values: {string.Join("; ", mismatches)}."));
+                }
             }
 
             if (step.ExpectHalted is bool expectedHalt && engine.IsHalted != expectedHalt)
@@ -209,75 +267,48 @@ public static class SimulationScriptRunner
         engine.SetPortValue(portIndex, value);
     }
 
-    private static void CheckPin(
-        SimulationEngine engine,
-        int stepNumber,
-        long at,
-        ScriptPinExpectation expectation,
-        List<ScriptFailure> failures)
+    /// <summary>Returns a failure message, or null when the pin matches.</summary>
+    private static string? CheckPin(SimulationEngine engine, ScriptPinExpectation expectation)
     {
         if (!TryFindPort(engine, expectation.PinId, out int portIndex, out CompiledPort port, out string error))
         {
-            failures.Add(new ScriptFailure(stepNumber, at, error));
-            return;
+            return error;
         }
 
         if (!TryResolveValue(port.Domain, expectation.Expected, out int expected, out error))
         {
-            failures.Add(new ScriptFailure(
-                stepNumber,
-                at,
-                $"invalid expectation for pin '{expectation.PinId}': {error}"));
-            return;
+            return $"invalid expectation for pin '{expectation.PinId}': {error}";
         }
 
         int actual = engine.GetPortValue(portIndex);
-        if (actual != expected)
-        {
-            failures.Add(new ScriptFailure(
-                stepNumber,
-                at,
-                $"pin '{expectation.PinId}': expected {DescribeValue(port.Domain, expected)}, " +
-                $"got {DescribeValue(port.Domain, actual)}."));
-        }
+        return actual == expected
+            ? null
+            : $"pin '{expectation.PinId}': expected {DescribeValue(port.Domain, expected)}, " +
+              $"got {DescribeValue(port.Domain, actual)}";
     }
 
-    private static void CheckLane(
+    /// <summary>Returns a failure message, or null when the lane matches.</summary>
+    private static string? CheckLane(
         CircuitProject project,
         CircuitDefinition definition,
         SimulationEngine engine,
-        int stepNumber,
-        long at,
-        ScriptLaneExpectation expectation,
-        List<ScriptFailure> failures)
+        ScriptLaneExpectation expectation)
     {
         NumericLane? lane = definition.FindNumericLane(expectation.LaneId);
         if (lane is null)
         {
-            failures.Add(new ScriptFailure(
-                stepNumber,
-                at,
-                $"definition '{definition.Id}' has no numeric lane '{expectation.LaneId}'."));
-            return;
+            return $"definition '{definition.Id}' has no numeric lane '{expectation.LaneId}'.";
         }
 
         INumericFormat? format = NumericFormatCatalog.Find(project, lane.FormatId);
         if (format is null)
         {
-            failures.Add(new ScriptFailure(
-                stepNumber,
-                at,
-                $"lane '{lane.Id}' uses unknown numeric format '{lane.FormatId}'."));
-            return;
+            return $"lane '{lane.Id}' uses unknown numeric format '{lane.FormatId}'.";
         }
 
         if (lane.PinIds.Count == 0)
         {
-            failures.Add(new ScriptFailure(
-                stepNumber,
-                at,
-                $"lane '{lane.Id}' has no interface pins."));
-            return;
+            return $"lane '{lane.Id}' has no interface pins.";
         }
 
         int[] values = new int[lane.PinIds.Count];
@@ -286,11 +317,7 @@ public static class SimulationScriptRunner
             string pinId = lane.PinIds[i];
             if (!TryFindPort(engine, pinId, out int portIndex, out _, out string error))
             {
-                failures.Add(new ScriptFailure(
-                    stepNumber,
-                    at,
-                    $"lane '{lane.Id}': {error}"));
-                return;
+                return $"lane '{lane.Id}': {error}";
             }
 
             values[i] = engine.GetPortValue(portIndex);
@@ -304,22 +331,14 @@ public static class SimulationScriptRunner
         NumericDecodeResult decoded = format.Decode(values);
         if (!decoded.IsValid)
         {
-            failures.Add(new ScriptFailure(
-                stepNumber,
-                at,
-                $"lane '{lane.Id}' could not be decoded with '{format.Id}': {decoded.Error}."));
-            return;
+            return $"lane '{lane.Id}' could not be decoded with '{format.Id}': {decoded.Error}.";
         }
 
-        if (decoded.Value != expectation.Expected)
-        {
-            failures.Add(new ScriptFailure(
-                stepNumber,
-                at,
-                $"lane '{lane.Id}': expected {expectation.Expected.ToString(CultureInfo.InvariantCulture)}, " +
-                $"got {decoded.Value.ToString(CultureInfo.InvariantCulture)} " +
-                $"({format.Describe(values.Length)} over {string.Join(",", lane.PinIds)})."));
-        }
+        return decoded.Value == expectation.Expected
+            ? null
+            : $"lane '{lane.Id}': expected {expectation.Expected.ToString(CultureInfo.InvariantCulture)}, " +
+              $"got {decoded.Value.ToString(CultureInfo.InvariantCulture)} " +
+              $"({format.Describe(values.Length)} over {string.Join(",", lane.PinIds)})";
     }
 
     private static bool TryFindPort(

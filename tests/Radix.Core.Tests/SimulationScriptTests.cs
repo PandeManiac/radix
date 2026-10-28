@@ -238,6 +238,123 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void WindowPassesWhenPinsAndLanesConvergeAtTheSameTick()
+    {
+        var builder = new ProjectBuilder("window lane");
+        DefinitionBuilder definition = builder.Define("lane", "Window lane");
+        Net input = definition.AddPin("a", "A", PinDirection.Input, "binary");
+        Net output = definition.AddPin("y0", "Y0", PinDirection.Output, "binary");
+        definition.AddPrimitive("buf", new LookupSpec(1, [0, 1], delayTicks: 3));
+        definition.Connect(input, definition.Pin("buf", "in0"));
+        definition.Connect(output, definition.Pin("buf", "out"));
+        definition.AddNumericLane("value", "Value", "unsigned-binary", "y0");
+
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "set": { "a": 1 },
+                  "within": { "ticks": 10, "expect": { "a": 1, "y0": 1 }, "expectLane": { "value": 1 } }
+                },
+                { "at": 20, "expect": { "y0": 1 }, "expectLane": { "value": 1 } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(builder.Build("lane"), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(20, result.FinalTime);
+        Assert.Equal(2, result.StepsExecuted);
+    }
+
+    [Fact]
+    public void WindowFailureReportsTheDeadlineAndLastValues()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "set": { "clk": 0, "d": 0 },
+                  "within": { "ticks": 5, "expect": { "q": 1 } }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(5, failure.At);
+        Assert.Contains("no tick up to t=5 satisfied the window", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("Last values:", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("pin 'q': expected 1 (1)", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(5, result.FinalTime);
+    }
+
+    [Fact]
+    public void WindowFailureInsideAZeroTickWindowDoesNotAdvance()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 0 }, "within": { "ticks": 0, "expect": { "q": 1 } } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        Assert.Contains("t=0", result.Failures[0].Message, StringComparison.Ordinal);
+        Assert.Equal(0, result.FinalTime);
+    }
+
+    [Fact]
+    public void RejectsMalformedWindows()
+    {
+        Assert.Contains(
+            "explicit 'ticks'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "within": { "expect": { "q": 1 } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "non-negative",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "within": { "ticks": -1, "expect": { "q": 1 } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "at least one",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "within": { "ticks": 5 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExpectedHaltIsAPassAndStopsTheRun()
     {
         CircuitProject project = InverterLoopProject();
