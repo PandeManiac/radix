@@ -312,6 +312,8 @@ public sealed class EditorViewModelTests
             // After saving the edited state, undo is dirty and redo is clean.
             Assert.True(viewModel.SaveProject(path));
             Assert.False(viewModel.IsDirty);
+            viewModel.SyncViewport(1.4, 20, -10);
+            Assert.False(viewModel.IsDirty);
             viewModel.Undo();
             Assert.True(viewModel.IsDirty);
             viewModel.Redo();
@@ -691,6 +693,56 @@ public sealed class EditorViewModelTests
         Assert.NotNull(viewModel.Project.RequireDefinition(childId).FindPin(childPin));
         Net restoredNet = viewModel.Project.RequireDefinition(rootId).FindPortNet(rootPin)!;
         Assert.Contains(restoredNet.Pins, p => p.InstanceId == child.Id && p.PinId == childPin);
+    }
+
+    [Fact]
+    public void ViewMetadataRoundTripsWithoutDirtyingTheProject()
+    {
+        var viewModel = CreateEmptyEditor();
+        string rootId = viewModel.Definition.Id;
+        viewModel.AddDefinition();
+        string childId = viewModel.Definition.Id;
+
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            Assert.True(viewModel.SaveProject(path));
+            viewModel.SyncViewport(1.25, 90.5, -12);
+            Assert.False(viewModel.IsDirty);
+            Assert.True(viewModel.SaveProject(path));
+
+            CircuitProject loaded = Core.Serialization.ProjectSerializer.Load(path);
+            Assert.Equal(childId, loaded.View.ActiveDefinitionId);
+            Assert.Equal(1.25, loaded.View.Scale);
+            Assert.Equal(90.5, loaded.View.OffsetX);
+            Assert.Equal(-12, loaded.View.OffsetY);
+
+            bool restoreRequested = false;
+            var opened = CreateEmptyEditor();
+            opened.ViewRestoreRequested += () => restoreRequested = true;
+            Assert.True(opened.LoadProject(path));
+            Assert.True(restoreRequested);
+            Assert.Equal(childId, opened.Definition.Id);
+            Assert.Equal(rootId, opened.Project.RootDefinitionId);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void OpenDefinitionUpdatesSavedActiveDefinition()
+    {
+        var viewModel = CreateEmptyEditor();
+        string rootId = viewModel.Definition.Id;
+        viewModel.AddDefinition();
+        string childId = viewModel.Definition.Id;
+
+        viewModel.OpenDefinition(rootId);
+        Assert.Equal(rootId, viewModel.Project.View.ActiveDefinitionId);
+        viewModel.OpenDefinition(childId);
+        Assert.Equal(childId, viewModel.Project.View.ActiveDefinitionId);
     }
 
     [Fact]

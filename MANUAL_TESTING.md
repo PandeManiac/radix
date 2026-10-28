@@ -58,7 +58,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 3. Drag the handle. Expected: the wire follows orthogonally; the rest of the net stays connected. Undo restores the previous route.
 4. Alt+click a handle. Expected: that bendpoint is removed.
 5. Select a routed net and click **Reset wire route** in the net inspector. Expected: automatic routing resumes.
-6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, and custom numeric formats survive (project format v4).
+6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, custom numeric formats, and the active definition/viewport survive (project format v5).
 7. In the net inspector, set **Wire color** to `#38bdf8`, then `auto`. Expected: valid hex applies; invalid text is rejected with a status message; `auto` returns to domain/signal coloring.
 8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
 
@@ -148,17 +148,19 @@ If counter values differ, record the values and diagnostics; this is a correctne
 1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, click **Add domain**.
 2. Expected: the domain appears in the list, pin domain picker, and net domain selector.
 3. Add an input pin using the new domain. Expected: the port and its net use `five-state`.
-4. Save As in a scratch path. Close and relaunch, then Open. Expected: domain, pin, current root, instance positions, wire colors, numeric lanes, and bendpoints survive.
-5. Expected non-persistence: viewport pan/zoom, selection, active tab, external drive history, waveform history.
+4. Save As in a scratch path. Close and relaunch, then Open. Expected: domain, pin, current root, instance positions, wire colors, numeric lanes, bendpoints, active definition, viewport zoom, and pan survive.
+5. Open a child definition, zoom to a distinctive level, and pan away from center. Save, close, and reopen. Expected: the same definition is active and the canvas returns to the same scale and offset instead of fitting to content.
+6. Pan and zoom without changing the circuit. Expected: the title does not gain an unsaved-changes marker.
+7. Expected non-persistence: selection, external drive history, and waveform history.
 
 ## 11. Hierarchy and malformed projects
 
 1. Open `examples/binary-counter.radix`. Expected: root counter loads without a modal error.
 2. Double-click the ripple-carry adder, then a full adder, then a half adder. Expected: nested internals render and the definition header identifies the current simulation root.
 3. Return to the root and verify simulation resets for the new root.
-4. Open a deliberately malformed file (change `"version": 4` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
-5. Save a project and inspect the JSON. Expected: `"version": 4`, with optional net `color`/`route`, definition `numericLanes`, and project `customNumericFormats` fields, and no executable content.
-6. Load a version 1, 2, or 3 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 4.
+4. Open a deliberately malformed file (change `"version": 5` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
+5. Save a project and inspect the JSON. Expected: `"version": 5`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
+6. Load a version 1, 2, 3, or 4 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 5.
 
 ## 12. Unsaved changes and window behavior
 
@@ -204,7 +206,7 @@ Do not file these as new failures until they change in the README:
 - auto-routing is heuristic; dense circuits may need bendpoints, and components are not collision-moved automatically;
 - extraction refuses nets with drivers on both sides because there is no inout pin direction;
 - library equivalence ignores labels/layout and numeric-lane presentation; conflicting IDs are renamed rather than offering a merge dialog;
-- viewport, selection, and active tab are not saved;
+- selection, external drive history, and waveform history are not saved; viewport and active definition are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;

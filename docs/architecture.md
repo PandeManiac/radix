@@ -255,7 +255,7 @@ The format is documented in [project-format.md](project-format.md). Key security
 
 - JSON deserialization uses `UnmappedMemberHandling.Disallow`, so unknown fields fail loudly.
 - Primitive kinds are a closed whitelist. No type names, assembly paths, scripts, or code are deserialized or executed.
-- All string references are validated against project-owned definitions, domains, instances, and nets.
+- All string references are validated against project-owned definitions, domains, instances, and nets. Optional view metadata is presentation-only and cannot alter the circuit or simulation root.
 - Loading is size-unbounded in this build; callers should avoid opening untrusted gigantic files until a size limit is added.
 - Writes go to a temporary file in the destination directory and then atomically replace the target.
 
@@ -298,7 +298,7 @@ Editor-side structural rules:
 
 ### 10.3 Simulation root choice
 
-The editor compiles the **currently edited definition** as the root. This lets a user navigate into `std.dff`, drive `D` and `CLK`, and observe `Q` without constructing a wrapper. The project root remains the default opening definition and the CLI's default simulation root.
+The editor compiles the **currently edited definition** as the root. This lets a user navigate into `std.dff`, drive `D` and `CLK`, and observe `Q` without constructing a wrapper. The project root remains the simulation root used by the CLI and the fallback when saved view metadata names a definition that no longer exists.
 
 Consequence: navigating to a subcircuit does not show the parent's surrounding state. This is intentional but should be made visible in UI copy; the definition header identifies the simulated root.
 
@@ -317,6 +317,8 @@ Wire routing uses a sparse orthogonal grid with A* search and a bend penalty. Co
 Author bendpoints are stored as ordered world coordinates on the net and guide an orthogonal path through the requested points. If no automatic path exists, the router still draws an explicit orthogonal fallback rather than a diagonal or a phantom connection. Wire colors can be domain/signal-derived or overridden per net; both are presentation state and never enter compilation.
 
 Pin values are rendered as small off-box badges; wire segments carry the current net value as a label at sufficient zoom. Domain-specific colors distinguish binary low/high, ternary values, and other finite domains. Selection and hover halos plus junction glyphs mean color is never the sole connection/state cue.
+
+The active definition and canvas viewport are stored as optional top-level project view metadata. `CircuitCanvas` applies a saved viewport after layout instead of fitting, and reports every later pan/zoom to the view model. Viewport changes are deliberately excluded from dirty-state comparison: moving the camera must not make a saved circuit look modified. Selection, drive history, and waveform history remain transient.
 
 The layout is recomputed after every project mutation. That is simple and adequate for the current designs; it is not an incremental layout engine.
 
@@ -429,6 +431,6 @@ The engine is single-threaded by design so event order remains obvious and repro
 - **Determinism tests**: repeated runs produce identical values and traces.
 - **Differential tests**: randomized combinational designs compare the event engine against a reference evaluator.
 - **Round-trip tests**: projects serialize, reload, validate, and simulate identically; malformed/unknown data is rejected.
-- **Headless GUI tests**: view-model editing, wire geometry, clipboard/extraction/library behavior, theme variant switching, and offscreen render captures in both themes.
+- **Headless GUI tests**: view-model editing, wire geometry, clipboard/extraction/library behavior, saved viewport restoration, theme variant switching, and offscreen render captures in both themes.
 
 Tests are the primary correctness evidence. The manual test document covers what automation intentionally cannot: human interaction, visual judgment, and window-manager behavior.

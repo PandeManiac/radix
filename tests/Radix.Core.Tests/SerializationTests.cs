@@ -217,6 +217,31 @@ public sealed class SerializationTests
     }
 
     [Fact]
+    public void ViewMetadataRoundTripsAndVersionFourFilesHaveNoView()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        project.View.ActiveDefinitionId = "main";
+        project.View.Scale = 0.75;
+        project.View.OffsetX = 132.5;
+        project.View.OffsetY = -48;
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project));
+        Assert.Equal("main", loaded.View.ActiveDefinitionId);
+        Assert.Equal(0.75, loaded.View.Scale);
+        Assert.Equal(132.5, loaded.View.OffsetX);
+        Assert.Equal(-48, loaded.View.OffsetY);
+        Assert.True(loaded.View.HasViewport);
+
+        JsonObject old = Json(TestCircuits.ValidProject());
+        old["version"] = 4;
+        old.Remove("view");
+        CircuitProject oldLoaded = ProjectSerializer.LoadFromString(old.ToJsonString());
+        Assert.False(oldLoaded.View.HasViewport);
+        Assert.Null(oldLoaded.View.ActiveDefinitionId);
+        Assert.Equal(ProjectSerializer.CurrentVersion, (int?)Json(oldLoaded)["version"]);
+    }
+
+    [Fact]
     public void VersionOneFilesStillLoad()
     {
         JsonObject json = Json(TestCircuits.ValidProject());

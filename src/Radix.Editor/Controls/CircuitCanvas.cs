@@ -71,11 +71,15 @@ public sealed class CircuitCanvas : Control
         ClipToBounds = true;
         ActualThemeVariantChanged += (_, _) => InvalidateVisual();
         DataContextChanged += (_, _) => AttachViewModel();
+        Viewport.Changed += OnViewportChanged;
         SizeChanged += (_, _) =>
         {
             if (_needsInitialFit && Bounds.Width > 20 && Bounds.Height > 20)
             {
-                FitToContent();
+                if (!TryApplySavedView())
+                {
+                    FitToContent();
+                }
             }
         };
     }
@@ -122,10 +126,14 @@ public sealed class CircuitCanvas : Control
         {
             _viewModel.VisualInvalidated += OnVisualInvalidated;
             _viewModel.FitRequested += OnFitRequested;
+            _viewModel.ViewRestoreRequested += OnViewRestoreRequested;
             _needsInitialFit = true;
             if (Bounds.Width > 20 && Bounds.Height > 20)
             {
-                FitToContent();
+                if (!TryApplySavedView())
+                {
+                    FitToContent();
+                }
             }
         }
 
@@ -138,6 +146,7 @@ public sealed class CircuitCanvas : Control
         {
             _viewModel.VisualInvalidated -= OnVisualInvalidated;
             _viewModel.FitRequested -= OnFitRequested;
+            _viewModel.ViewRestoreRequested -= OnViewRestoreRequested;
             _viewModel = null;
         }
     }
@@ -145,6 +154,26 @@ public sealed class CircuitCanvas : Control
     private void OnVisualInvalidated() => InvalidateVisual();
 
     private void OnFitRequested() => FitToContent();
+
+    private void OnViewRestoreRequested() => TryApplySavedView();
+
+    private void OnViewportChanged() =>
+        _viewModel?.SyncViewport(Viewport.Scale, Viewport.Offset.X, Viewport.Offset.Y);
+
+    /// <summary>Applies the project's saved viewport, if present and usable.</summary>
+    private bool TryApplySavedView()
+    {
+        ProjectView? view = _viewModel?.Project.View;
+        if (view is null || !view.HasViewport)
+        {
+            return false;
+        }
+
+        Viewport.Restore(view.Scale!.Value, new Point(view.OffsetX!.Value, view.OffsetY!.Value));
+        _needsInitialFit = false;
+        InvalidateVisual();
+        return true;
+    }
 
     public void FitToContent()
     {

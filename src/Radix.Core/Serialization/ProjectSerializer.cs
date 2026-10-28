@@ -20,11 +20,11 @@ public static class ProjectSerializer
     /// <summary>
     /// Version 2 adds optional per-net wire colors and author bendpoints. Version 3
     /// adds optional definition-scoped numeric lanes. Version 4 adds optional custom
-    /// numeric-format descriptors. Older files load unchanged; every version up to
-    /// <see cref="CurrentVersion"/> is accepted, and saving always writes the current
-    /// version.
+    /// numeric-format descriptors. Version 5 adds optional editor view metadata.
+    /// Older files load unchanged; every version up to <see cref="CurrentVersion"/> is
+    /// accepted, and saving always writes the current version.
     /// </summary>
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private const string Extension = ".radix";
 
@@ -108,10 +108,14 @@ public static class ProjectSerializer
         }
     }
 
-    public static string SaveToString(CircuitProject project)
+    /// <summary>
+    /// Serializes a project. <paramref name="includeView"/> exists so dirty-state
+    /// comparisons can ignore presentation-only pan/zoom changes.
+    /// </summary>
+    public static string SaveToString(CircuitProject project, bool includeView = true)
     {
         ArgumentNullException.ThrowIfNull(project);
-        ProjectDto dto = MapProjectDto(project);
+        ProjectDto dto = MapProjectDto(project, includeView);
         string json = JsonSerializer.Serialize(dto, JsonOptions);
         return json + Environment.NewLine;
     }
@@ -153,6 +157,14 @@ public static class ProjectSerializer
             project.Settings.MaxRecordedNetChanges = settings.MaxRecordedNetChanges;
             project.Settings.DefaultAdvanceTicks = settings.DefaultAdvanceTicks;
             project.Settings.TraceAllNets = settings.TraceAllNets;
+        }
+
+        if (dto.View is ViewDto view)
+        {
+            project.View.ActiveDefinitionId = view.Definition;
+            project.View.Scale = view.Scale;
+            project.View.OffsetX = view.OffsetX;
+            project.View.OffsetY = view.OffsetY;
         }
 
         foreach (DomainDto domainDto in dto.Domains ?? [])
@@ -440,7 +452,7 @@ public static class ProjectSerializer
             _ => throw new ProjectFormatException($"{location} has unknown direction '{value}'."),
         };
 
-    private static ProjectDto MapProjectDto(CircuitProject project)
+    private static ProjectDto MapProjectDto(CircuitProject project, bool includeView)
     {
         var dto = new ProjectDto
         {
@@ -456,6 +468,15 @@ public static class ProjectSerializer
                 DefaultAdvanceTicks = project.Settings.DefaultAdvanceTicks,
                 TraceAllNets = project.Settings.TraceAllNets,
             },
+            View = includeView
+                ? new ViewDto
+                {
+                    Definition = project.View.ActiveDefinitionId,
+                    Scale = project.View.Scale,
+                    OffsetX = project.View.OffsetX,
+                    OffsetY = project.View.OffsetY,
+                }
+                : null,
             Domains = project.Domains.Select(MapDomainDto).ToList(),
             CustomNumericFormats = project.CustomNumericFormats.Count == 0
                 ? null

@@ -1,4 +1,4 @@
-# RADIX project format, version 4
+# RADIX project format, version 5
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,11 +9,12 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 4,
+  "version": 5,
   "name": "Example",
   "description": "optional",
   "root": "main",
   "settings": { "...": "..." },
+  "view": { "...": "..." },
   "domains": [ "...": "..." ],
   "customNumericFormats": [ "...": "..." ],
   "definitions": [ "...": "..." ]
@@ -23,11 +24,12 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `4`. Versions 1–4 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `5`. Versions 1–5 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
-| `root` | yes | Definition opened by default and simulated by the CLI unless overridden |
+| `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
 | `settings` | no | Simulation defaults; omitted fields use defaults |
+| `view` | no | Presentation-only saved viewport and active definition |
 | `domains` | yes | At least one domain required for a valid project |
 | `customNumericFormats` | no | Project-owned display formats; omitted when none exist |
 | `definitions` | yes | One or more definitions; root must be present |
@@ -49,6 +51,22 @@ Property names are camelCase. JSON comments and trailing commas are accepted whe
 - `maxRecordedNetChanges`: capacity of the trace ring buffer; `0` disables trace storage.
 - `defaultAdvanceTicks`: editor default for an Advance action.
 - `traceAllNets`: whether net transitions are recorded at all.
+
+## View metadata
+
+```json
+"view": {
+  "definition": "main",
+  "scale": 0.75,
+  "offsetX": 132.5,
+  "offsetY": -48
+}
+```
+
+- `definition`: definition that was open in the editor. It is ignored if it no longer exists, and never changes the simulation root.
+- `scale`, `offsetX`, `offsetY`: canvas zoom and pan. The editor clamps the scale to its supported range and ignores non-finite values.
+- All fields are optional. A project without usable viewport fields opens with the usual fit-to-content view.
+- View metadata is presentation only. It does not affect validation, compilation, simulation, or dirty-state checks; panning and zooming never mark a project as modified.
 
 ## Domains
 
@@ -249,7 +267,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 ```json
 {
   "format": "radix-project",
-  "version": 4,
+  "version": 5,
   "name": "Inverter",
   "root": "main",
   "domains": [
@@ -309,7 +327,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 
 ## Versioning and migration
 
-Versions 1 through 4 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 5 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

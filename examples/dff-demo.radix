@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 4,
+  "version": 5,
   "name": "D flip-flop demo",
   "root": "demo.dff",
   "settings": {
@@ -9,6 +9,7 @@
     "defaultAdvanceTicks": 10,
     "traceAllNets": true
   },
+  "view": {},
   "domains": [
     {
       "id": "binary",

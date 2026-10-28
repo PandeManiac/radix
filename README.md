@@ -14,11 +14,12 @@ The repository currently contains a working simulation kernel, a hierarchical st
 | Propagation delays and zero-delay convergence guard | Working |
 | Asynchronous feedback and oscillation reporting | Working |
 | Standard library from primitives | Gates, latch, D flip-flop, register, adders, mux, ternary parts; complete CPU example |
-| Project save/load | Versioned JSON (v4), strict validation, atomic writes |
+| Project save/load | Versioned JSON (v5), strict validation, atomic writes |
 | Numeric interpretation | Built-in and project-authored formats; saved numeric lanes; display-only |
 | Headless CLI | Validate, simulate, scripted tests, inspect, examples, benchmark |
 | Graphical editor | Orthogonal obstacle-aware routing, bendpoints, multi-select, clipboard, search, hierarchy extraction, numeric lanes and canvas lane legend, light/dark themes, simulation, waveform, diagnostics, undo/redo |
 | Reusable parts and libraries | Extract selection to a pinned definition, promote nets to pins, carry numeric formats, import/export `.radixlib` |
+| Editor view persistence | Active definition and canvas zoom/pan save with the project; panning does not mark it dirty |
 | Headless GUI tests and screenshots | Working with Avalonia Headless + Skia |
 | Analog/electrical solver | Not implemented; boundary documented |
 | JIT/compiled native evaluation | Not implemented; managed engine benchmarked |
@@ -170,7 +171,7 @@ These are deliberate current boundaries, not hidden behavior:
 - Auto-routing resolves obstacles but cannot guarantee a short route in every dense design; authored bendpoints are the escape hatch. Wires can still be visually busy at low zoom.
 - Extraction refuses boundary nets driven from both sides, because the interface model has only input/output pins and no inout direction. Split the net or adjust the selection.
 - Library import compares electrical structure, not layout. A local part with the same ID but different labels or positions is reused; genuinely different structure is imported under a new ID.
-- Editor pan/zoom, active tab, and selection are not persisted in the project yet; instance positions, wire routes, and colors are.
+- Active definition and canvas pan/zoom persist in the project. Selection, external drive history, and waveform history do not; instance positions, wire routes, and colors do.
 - Numeric formats can be authored and edited in place; the preview decodes the first lane in the current definition that uses the format, not an arbitrary draft pin set. Lanes appear in the inspector and in a fixed canvas legend capped at seven rows; the legend does not move with the circuit.
 - `--set` drives static initial values and `--schedule <tick>:<pin>=<value>` adds timed drives for a one-shot run. Multi-step assertions belong in a `.radixtest` script, which can drive, settle, and check pins and numeric lanes at chosen ticks.
 - Domain creation in the editor uses a single-driver policy. Projects loaded from JSON can still declare priority/conflict policies, but the GUI does not edit those policies yet.
@@ -193,16 +194,16 @@ docs/                    architecture, project format, test scripts, benchmarks
 
 ## Testing summary
 
-- Kernel and library tests: **168 passing**.
-- Editor tests: **52 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, canvas lane legend, and custom-format editor.
+- Kernel and library tests: **169 passing**.
+- Editor tests: **55 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, canvas lane legend, and custom-format editor.
 - Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, built-in and custom numeric formats, exhaustive encode/decode ranges, scripted drive/assert runs, determinism, randomized differential comparison against a reference evaluator, and the tiny CPU's full fetch/decode/execute loop including a taken branch and reset.
-- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, custom-format authoring and in-place editing, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
+- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, custom-format authoring and in-place editing, saved viewport restoration, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 
 ## Near-term roadmap
 
-1. Persist viewport, active tab, and editor preferences with the project or user settings.
-2. Add a faster incremental compile path for large projects; measure before optimizing.
-3. Add writable memory and load/store instructions to the tiny CPU, with a richer scripted program suite.
+1. Add a faster incremental compile path for large projects; measure before optimizing.
+2. Add writable memory and load/store instructions to the tiny CPU, with a richer scripted program suite.
+3. Persist user preferences such as theme and default panel layout separately from projects.
 4. Explore an analog boundary as a separate solver sharing the project and UI, not as a new discrete primitive.
 
 RADIX is intentionally a foundation: the interesting architectures should live in projects, not in this engine.

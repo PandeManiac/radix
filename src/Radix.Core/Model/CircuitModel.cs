@@ -115,6 +115,31 @@ public sealed class NumericLane
     public override string ToString() => Id;
 }
 
+/// <summary>
+/// Presentation metadata for reopening a project where the author left it. It does
+/// not affect validation, compilation, or simulation.
+/// </summary>
+public sealed class ProjectView
+{
+    /// <summary>Definition that was open in the editor, when it still exists.</summary>
+    public string? ActiveDefinitionId { get; set; }
+
+    public double? Scale { get; set; }
+
+    public double? OffsetX { get; set; }
+
+    public double? OffsetY { get; set; }
+
+    public bool HasViewport =>
+        Scale is double scale &&
+        OffsetX is double x &&
+        OffsetY is double y &&
+        double.IsFinite(scale) &&
+        double.IsFinite(x) &&
+        double.IsFinite(y) &&
+        scale > 0;
+}
+
 /// <summary>Simulation defaults stored with a project.</summary>
 public sealed class ProjectSettings
 {
@@ -192,7 +217,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 4;
+    public const int CurrentFormatVersion = 5;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 
@@ -211,6 +236,9 @@ public sealed class CircuitProject
     public List<CircuitDefinition> Definitions { get; } = [];
 
     public ProjectSettings Settings { get; } = new();
+
+    /// <summary>Optional editor position and active definition; ignored by simulation.</summary>
+    public ProjectView View { get; } = new();
 
     public SignalDomain? FindDomain(string? domainId) =>
         domainId is null ? null : Domains.FirstOrDefault(d => string.Equals(d.Id, domainId, StringComparison.Ordinal));

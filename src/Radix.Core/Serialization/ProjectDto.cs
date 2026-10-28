@@ -14,6 +14,8 @@ internal sealed class ProjectDto
 
     public SettingsDto? Settings { get; set; }
 
+    public ViewDto? View { get; set; }
+
     public List<DomainDto>? Domains { get; set; }
 
     public List<NumericFormatDto>? CustomNumericFormats { get; set; }
@@ -40,6 +42,17 @@ internal sealed class NumericFormatDto
     public int? NegativeSignValue { get; set; }
 
     public string? Description { get; set; }
+}
+
+internal sealed class ViewDto
+{
+    public string? Definition { get; set; }
+
+    public double? Scale { get; set; }
+
+    public double? OffsetX { get; set; }
+
+    public double? OffsetY { get; set; }
 }
 
 internal sealed class SettingsDto

@@ -255,6 +255,30 @@ public sealed class RenderingTests
         }
     }
 
+    [AvaloniaFact]
+    public void SavedViewportIsAppliedInsteadOfFitting()
+    {
+        var project = ExampleProjects.CreateCounterDemo();
+        project.View.Scale = 0.7;
+        project.View.OffsetX = 123.5;
+        project.View.OffsetY = -45;
+
+        var viewModel = new EditorViewModel(project);
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.Measure(new Size(1480, 920));
+        window.Arrange(new Rect(0, 0, 1480, 920));
+        Dispatcher.UIThread.RunJobs();
+
+        CircuitCanvas canvas = Assert.IsType<CircuitCanvas>(window.FindControl<CircuitCanvas>("CircuitCanvas"));
+        Assert.Equal(0.7, canvas.Viewport.Scale, 3);
+        Assert.Equal(123.5, canvas.Viewport.Offset.X, 3);
+        Assert.Equal(-45, canvas.Viewport.Offset.Y, 3);
+
+        window.Close();
+    }
+
     private static (byte R, byte G, byte B) SamplePixel(Bitmap bitmap, int x, int y)
     {
         var buffer = new byte[4];

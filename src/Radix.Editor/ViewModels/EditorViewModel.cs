@@ -79,8 +79,8 @@ public sealed class EditorViewModel : ObservableObject
     {
         _project = project ?? throw new ArgumentNullException(nameof(project));
         EnsureProjectShape();
-        _savedProjectJson = ProjectSerializer.SaveToString(_project);
-        _definitionId = _project.RootDefinitionId;
+        _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
+        _definitionId = _project.FindDefinition(_project.View.ActiveDefinitionId)?.Id ?? _project.RootDefinitionId;
         Simulator = new SimulatorHost(_project, Definition);
         _advanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         RefreshFormatChoices();
@@ -138,7 +138,27 @@ public sealed class EditorViewModel : ObservableObject
 
     public event Action? FitRequested;
 
+    /// <summary>Raised after loading a project that has a saved viewport.</summary>
+    public event Action? ViewRestoreRequested;
+
     public CircuitProject Project => _project;
+
+    /// <summary>
+    /// Stores the canvas viewport with the project without marking the project dirty.
+    /// Presentation state is saved on the next explicit save, not on every pan.
+    /// </summary>
+    public void SyncViewport(double scale, double offsetX, double offsetY)
+    {
+        if (!double.IsFinite(scale) || scale <= 0 ||
+            !double.IsFinite(offsetX) || !double.IsFinite(offsetY))
+        {
+            return;
+        }
+
+        _project.View.Scale = scale;
+        _project.View.OffsetX = offsetX;
+        _project.View.OffsetY = offsetY;
+    }
 
     public CircuitDefinition Definition =>
         _project.FindDefinition(_definitionId) ?? _project.Definitions[0];
@@ -736,9 +756,9 @@ public sealed class EditorViewModel : ObservableObject
             CircuitProject loaded = ProjectSerializer.Load(path);
             _project = loaded;
             EnsureProjectShape();
-            _definitionId = loaded.RootDefinitionId;
+            _definitionId = loaded.FindDefinition(loaded.View.ActiveDefinitionId)?.Id ?? loaded.RootDefinitionId;
             _projectPath = path;
-            _savedProjectJson = ProjectSerializer.SaveToString(_project);
+            _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
             _selectedInstanceIds.Clear();
             _selectedInstance = null;
             _selectedNet = null;
@@ -748,6 +768,7 @@ public sealed class EditorViewModel : ObservableObject
             _redo.Clear();
             Simulator = new SimulatorHost(_project, Definition);
             RefreshAll(fit: true);
+            ViewRestoreRequested?.Invoke();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
             IsDirty = false;
             StatusText = $"Opened {Path.GetFileName(path)}";
@@ -819,7 +840,7 @@ public sealed class EditorViewModel : ObservableObject
         {
             ProjectSerializer.Save(path, _project);
             _projectPath = path;
-            _savedProjectJson = ProjectSerializer.SaveToString(_project);
+            _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
             IsDirty = false;
             StatusText = $"Saved {Path.GetFileName(path)}";
             return true;
@@ -2293,6 +2314,7 @@ public sealed class EditorViewModel : ObservableObject
             _definitionId = _project.RootDefinitionId;
         }
 
+        _project.View.ActiveDefinitionId = _definitionId;
         Simulator.Retarget(_project, Definition);
         RefreshDefinitions();
         RefreshPalette();
@@ -3388,8 +3410,14 @@ public sealed class EditorViewModel : ObservableObject
     {
         try
         {
+            double? savedScale = _project.View.Scale;
+            double? savedOffsetX = _project.View.OffsetX;
+            double? savedOffsetY = _project.View.OffsetY;
             _project = ProjectSerializer.LoadFromString(snapshot.Json, validate: false);
             EnsureProjectShape();
+            _project.View.Scale = savedScale;
+            _project.View.OffsetX = savedOffsetX;
+            _project.View.OffsetY = savedOffsetY;
             _definitionId = _project.FindDefinition(snapshot.DefinitionId)?.Id ?? _project.RootDefinitionId;
             _selectedInstanceIds.Clear();
             CircuitDefinition? restored = _project.FindDefinition(_definitionId);
@@ -3448,7 +3476,7 @@ public sealed class EditorViewModel : ObservableObject
         try
         {
             IsDirty = !string.Equals(
-                ProjectSerializer.SaveToString(_project),
+                ProjectSerializer.SaveToString(_project, includeView: false),
                 _savedProjectJson,
                 StringComparison.Ordinal);
         }
