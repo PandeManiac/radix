@@ -11523,6 +11523,231 @@
       ]
     },
     {
+      "id": "std.t-reg-2",
+      "name": "Ternary 2-trit register",
+      "description": "Two trit flip-flops with a shared level load. LOAD=2 captures D on the rising CLK edge (0 -\u003E 2); LOAD=0 holds. Q/QN power up at 0.",
+      "pins": [
+        {
+          "id": "d0",
+          "name": "D0",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "q0",
+          "name": "Q0",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "d1",
+          "name": "D1",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "q1",
+          "name": "Q1",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "load",
+          "name": "LOAD",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "mux0",
+          "definition": "std.t-mux",
+          "x": 220,
+          "y": 60
+        },
+        {
+          "id": "ff0",
+          "definition": "std.t-dff",
+          "x": 500,
+          "y": 60
+        },
+        {
+          "id": "mux1",
+          "definition": "std.t-mux",
+          "x": 220,
+          "y": 260
+        },
+        {
+          "id": "ff1",
+          "definition": "std.t-dff",
+          "x": 500,
+          "y": 260
+        }
+      ],
+      "nets": [
+        {
+          "id": "d0_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q0_net",
+          "domain": "ternary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d1_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "mux1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q1_net",
+          "domain": "ternary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "load_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux1",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "ff0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1",
+              "pin": "clk"
+            }
+          ]
+        },
+        {
+          "id": "selected0",
+          "domain": "ternary",
+          "label": "next Q0",
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "selected1",
+          "domain": "ternary",
+          "label": "next Q1",
+          "pins": [
+            {
+              "instance": "mux1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1",
+              "pin": "d"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d0",
+          "net": "d0_net"
+        },
+        {
+          "pin": "q0",
+          "net": "q0_net"
+        },
+        {
+          "pin": "d1",
+          "net": "d1_net"
+        },
+        {
+          "pin": "q1",
+          "net": "q1_net"
+        },
+        {
+          "pin": "load",
+          "net": "load_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "data",
+          "name": "Data",
+          "format": "unsigned-ternary",
+          "pins": [
+            "d0",
+            "d1"
+          ]
+        },
+        {
+          "id": "result",
+          "name": "Result",
+          "format": "unsigned-ternary",
+          "pins": [
+            "q0",
+            "q1"
+          ]
+        }
+      ]
+    },
+    {
       "id": "demo.bt-half-adder",
       "name": "Balanced ternary half adder",
       "pins": [

@@ -946,33 +946,35 @@ public static class ExampleProjects
         root.AddNumericLane("result", "Result", NumericFormats.UnsignedTernary.Id, "q0", "q1");
 
         var sum = new Net[2];
-        var held = new Net[2];
-        var next = new Net[2];
+        var registerInput = new Net[2];
         for (int i = 0; i < 2; i++)
         {
-            sum[i] = root.Rename(root.AddNet($"sum{i}", StandardDomains.TernaryId), $"D + Q trit {i}");
-            held[i] = root.Rename(root.AddNet($"held{i}", StandardDomains.TernaryId), $"load stage {i}");
-            next[i] = root.Rename(root.AddNet($"next{i}", StandardDomains.TernaryId), $"next Q{i}");
+            sum[i] = root.Rename(root.AddNet($"sum{i}", StandardDomains.TernaryId), $"Q + D trit {i}");
+            registerInput[i] = root.Rename(root.AddNet($"reg_in{i}", StandardDomains.TernaryId), $"register D{i}");
         }
+
+        Net writeEnable = root.Rename(root.AddNet("write_enable", StandardDomains.TernaryId), "load or add");
 
         root.AddInstance("adder", StandardLibrary.TernaryAdder2Id, 300, 40);
+        root.AddInstance("enable", "std.t-max", 300, 620);
+        root.AddInstance("register", StandardLibrary.TernaryRegister2Id, 820, 40);
         for (int i = 0; i < 2; i++)
         {
-            root.AddInstance($"mux_load{i}", "std.t-mux", 560, 40 + (i * 180));
-            root.AddInstance($"mux_add{i}", "std.t-mux", 800, 40 + (i * 180));
-            root.AddInstance($"ff{i}", StandardLibrary.TernaryDFlipFlopId, 1040, 40 + (i * 180));
+            root.AddInstance($"mux_add{i}", "std.t-mux", 560, 40 + (i * 200));
         }
+
+        root.Connect(load, root.Pin("enable", "a"));
+        root.Connect(add, root.Pin("enable", "b"));
+        root.Connect(writeEnable, root.Pin("enable", "y"), root.Pin("register", "load"));
+        root.Connect(clk, root.Pin("register", "clk"));
 
         for (int i = 0; i < 2; i++)
         {
-            root.Connect(q[i], root.Pin("adder", $"a{i}"), root.Pin($"mux_load{i}", "a"), root.Pin($"ff{i}", "q"));
-            root.Connect(data[i], root.Pin("adder", $"b{i}"), root.Pin($"mux_load{i}", "b"));
+            root.Connect(q[i], root.Pin("adder", $"a{i}"), root.Pin("register", $"q{i}"));
+            root.Connect(data[i], root.Pin("adder", $"b{i}"), root.Pin($"mux_add{i}", "a"));
             root.Connect(sum[i], root.Pin("adder", $"s{i}"), root.Pin($"mux_add{i}", "b"));
-            root.Connect(held[i], root.Pin($"mux_load{i}", "y"), root.Pin($"mux_add{i}", "a"));
-            root.Connect(next[i], root.Pin($"mux_add{i}", "y"), root.Pin($"ff{i}", "d"));
-            root.Connect(load, root.Pin($"mux_load{i}", "s"));
+            root.Connect(registerInput[i], root.Pin($"mux_add{i}", "y"), root.Pin("register", $"d{i}"));
             root.Connect(add, root.Pin($"mux_add{i}", "s"));
-            root.Connect(clk, root.Pin($"ff{i}", "clk"));
         }
 
         return builder.Build("demo.t-accumulator");

@@ -24,6 +24,7 @@ public static class StandardLibrary
     public const string TernaryDFlipFlopId = "std.t-dff";
     public const string TernaryFullAdderId = "std.t-full-adder";
     public const string TernaryAdder2Id = "std.t-adder-2";
+    public const string TernaryRegister2Id = "std.t-reg-2";
     public const string Ram16x4Id = "std.ram-16x4";
 
     private static readonly (string Id, string Name, int Inputs, int[] Table)[] BinaryGates =
@@ -631,7 +632,51 @@ public static class StandardLibrary
         }
 
         added.AddRange(AddTernarySequential(project));
+
+        if (project.FindDefinition(TernaryRegister2Id) is null)
+        {
+            AddTernaryRegister2(project);
+            added.Add(TernaryRegister2Id);
+        }
+
         return added;
+    }
+
+    private static void AddTernaryRegister2(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, TernaryRegister2Id, "Ternary 2-trit register");
+        builder.Definition.Description =
+            "Two trit flip-flops with a shared level load. LOAD=2 captures D on the rising CLK edge (0 -> 2); " +
+            "LOAD=0 holds. Q/QN power up at 0.";
+
+        var data = new Net[2];
+        var q = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            data[i] = builder.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.TernaryId);
+            q[i] = builder.SetInitial(
+                builder.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        Net load = builder.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.TernaryId);
+        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+
+        builder.AddNumericLane("data", "Data", NumericFormats.UnsignedTernary.Id, "d0", "d1");
+        builder.AddNumericLane("result", "Result", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+
+        for (int i = 0; i < 2; i++)
+        {
+            Net selected = builder.Rename(builder.AddNet($"selected{i}", StandardDomains.TernaryId), $"next Q{i}");
+            builder.AddInstance($"mux{i}", "std.t-mux", 220, 60 + (i * 200));
+            builder.AddInstance($"ff{i}", TernaryDFlipFlopId, 500, 60 + (i * 200));
+
+            builder.Connect(q[i], builder.Pin($"mux{i}", "a"), builder.Pin($"ff{i}", "q"));
+            builder.Connect(data[i], builder.Pin($"mux{i}", "b"));
+            builder.Connect(load, builder.Pin($"mux{i}", "s"));
+            builder.Connect(selected, builder.Pin($"mux{i}", "y"), builder.Pin($"ff{i}", "d"));
+            builder.Connect(clk, builder.Pin($"ff{i}", "clk"));
+        }
     }
 
     private static void AddTernaryFullAdder(CircuitProject project)

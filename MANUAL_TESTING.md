@@ -253,7 +253,7 @@ This uses the GUI. The accumulator is two trit flip-flops plus a ternary adder a
 4. Change `Data` to 4 and pulse `CLK` again. Expected: `Result = 3`, because 8 + 4 wraps modulo 9.
 5. Set `ADD = 0`, leave `LOAD = 0`, set `Data = 8`, and pulse `CLK`. Expected: `Result` stays 3; the data lane shows 8 but the register holds.
 6. Set `LOAD = 2` and pulse `CLK`. Expected: `Result = 8`.
-7. Double-click `mux_add0`, then `ff0`, then its `slave` latch. Expected: a single lookup primitive in the mux, and the latch/flip-flop structure from section 15. No errors or warnings appear.
+7. Double-click `register`, then `mux0`, then `ff0` and its `slave` latch. Expected: the register contains two mux/flip-flop trit slices, the mux is a single lookup primitive, and the latch/flip-flop structure matches section 15. Double-click `mux_add0` at the root. Expected: one lookup primitive selecting data or the adder result. No errors or warnings appear.
 
 ## 17. Tiny program-driven CPU
 

@@ -406,9 +406,36 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryRegisterLoadsOnTheEdgeAndHoldsWhenDisabled()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryRegister2Id);
+        engine.Drive("clk", 0);
+        engine.Drive("load", 2);
+
+        for (int value = 0; value < 9; value++)
+        {
+            LoadTernaryPair(engine, "d", value);
+            PulseTernaryClock(engine);
+            Assert.Equal(value, ReadTernaryPair(engine, "q"));
+        }
+
+        engine.Drive("load", 0);
+        LoadTernaryPair(engine, "d", 1);
+        PulseTernaryClock(engine);
+        Assert.Equal(8, ReadTernaryPair(engine, "q"));
+
+        engine.Drive("load", 2);
+        PulseTernaryClock(engine);
+        Assert.Equal(1, ReadTernaryPair(engine, "q"));
+    }
+
+    [Fact]
     public void TernaryAccumulatorLoadsAddsHoldsAndWraps()
     {
         CircuitProject project = ExampleProjects.CreateTernaryAccumulatorDemo();
+        Assert.Contains(
+            project.RequireDefinition("demo.t-accumulator").Instances,
+            instance => instance.DefinitionId == StandardLibrary.TernaryRegister2Id);
         SimulationEngine engine = Engine("demo.t-accumulator", project);
         engine.Drive("clk", 0);
         engine.Drive("load", 0);
