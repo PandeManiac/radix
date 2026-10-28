@@ -457,6 +457,14 @@ public static class CircuitValidator
         var pinOwner = new Dictionary<PinRef, string>();
         var connectedPins = new HashSet<PinRef>();
 
+        // Index instances once. Resolving each pin reference with a linear scan would
+        // make validation quadratic on designs with many gates and nets.
+        var instancesById = new Dictionary<string, ComponentInstance>(definition.Instances.Count, StringComparer.Ordinal);
+        foreach (ComponentInstance instance in definition.Instances)
+        {
+            instancesById.TryAdd(instance.Id, instance);
+        }
+
         foreach (Net net in definition.Nets)
         {
             if (!Identifiers.IsValid(net.Id))
@@ -543,7 +551,7 @@ public static class CircuitValidator
                 pinOwner[pinRef] = net.Id;
                 connectedPins.Add(pinRef);
 
-                ComponentInstance? instance = definition.FindInstance(pinRef.InstanceId);
+                instancesById.TryGetValue(pinRef.InstanceId, out ComponentInstance? instance);
                 if (instance is null)
                 {
                     diagnostics.Error(
@@ -589,7 +597,7 @@ public static class CircuitValidator
 
             if (domain is not null)
             {
-                WarnOnMultipleDrivers(project, definition, net, domain, diagnostics);
+                WarnOnMultipleDrivers(project, definition, net, domain, instancesById, diagnostics);
             }
         }
 
@@ -616,13 +624,18 @@ public static class CircuitValidator
         CircuitDefinition definition,
         Net net,
         SignalDomain domain,
+        IReadOnlyDictionary<string, ComponentInstance> instancesById,
         DiagnosticBag diagnostics)
     {
+        if (net.Pins.Count < 2)
+        {
+            return;
+        }
+
         int drivers = 0;
         foreach (PinRef pinRef in net.Pins)
         {
-            ComponentInstance? instance = definition.FindInstance(pinRef.InstanceId);
-            if (instance is null)
+            if (!instancesById.TryGetValue(pinRef.InstanceId, out ComponentInstance? instance))
             {
                 continue;
             }

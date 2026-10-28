@@ -559,6 +559,10 @@ internal static class Program
         int ticks = GetIntOption(options, "ticks", 50, 1, 100_000);
         CircuitProject project = BuildBench(gates);
 
+        var validateWatch = Stopwatch.StartNew();
+        CircuitValidator.Validate(project, "bench");
+        validateWatch.Stop();
+
         var compileWatch = Stopwatch.StartNew();
         CompiledCircuit circuit = CircuitCompiler.Compile(project, "bench");
         compileWatch.Stop();
@@ -582,7 +586,9 @@ internal static class Program
         Console.WriteLine("RADIX benchmark (synthetic zero-delay inverter chain, one clock tick = one full ripple)");
         Console.WriteLine($"  gates:                {gates.ToString(CultureInfo.InvariantCulture)}");
         Console.WriteLine($"  ticks simulated:      {ticks.ToString(CultureInfo.InvariantCulture)}");
-        Console.WriteLine($"  compile:              {compileWatch.Elapsed.TotalMilliseconds:F1} ms");
+        Console.WriteLine($"  validate:             {validateWatch.Elapsed.TotalMilliseconds:F1} ms");
+        Console.WriteLine($"  compile (incl. validate): {compileWatch.Elapsed.TotalMilliseconds:F1} ms");
+        Console.WriteLine($"  flatten (compile - validate): {(compileWatch.Elapsed - validateWatch.Elapsed).TotalMilliseconds:F1} ms");
         Console.WriteLine($"  simulate:             {runWatch.Elapsed.TotalMilliseconds:F1} ms");
         Console.WriteLine($"  events:               {events.ToString("N0", CultureInfo.InvariantCulture)}");
         Console.WriteLine($"  component evals:      {engine.ComponentEvaluations.ToString("N0", CultureInfo.InvariantCulture)}");

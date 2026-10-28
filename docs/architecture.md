@@ -382,7 +382,8 @@ Implemented:
 - bounded trace with ring storage;
 - primitive runtimes created once per reset, not per evaluation;
 - one-pass waveform snapshot construction;
-- automatic compile cache? No: compilation is explicit. The editor recompiles on Begin/after invalidation, not per frame.
+- one indexed validation pass per definition for instance, pin, and driver checks;
+- explicit compilation: the editor recompiles on Begin or after invalidation, not per frame.
 
 Not implemented:
 
@@ -392,7 +393,9 @@ Not implemented:
 - spatial indexing for very large editor canvases beyond O(n) hit tests;
 - waveform downsampling for millions of transitions.
 
-Measured baseline: 2,000-gate chain at 50 ticks → 200,150 events in ~21 ms (~9.3M events/s); 10,000-gate chain → ~1.0M events in ~98 ms (~10.2M events/s) on an AMD Ryzen 9 9950X3D with .NET 10. See [benchmarks.md](benchmarks.md) for exact runs and caveats.
+Before the validation index, net pin references and driver counts each scanned the definition's instance list, making validation quadratic. A 20,000-gate synthetic chain spent ~1,985 ms in validation; it now spends ~97 ms, and total compile is ~134 ms, close to linear in flattened topology. The benchmark reports validation and flattening separately so future regressions can be attributed. See [benchmarks.md](benchmarks.md) for exact runs and caveats.
+
+Measured baseline: 2,000-gate chain at 50 ticks → 200,150 events in ~21 ms (~9.4M events/s); 20,000-gate chain → 2,000,150 events in ~170 ms (~11.8M events/s) on an AMD Ryzen 9 9950X3D with .NET 10.
 
 ## 12. Extension points and non-goals
 
