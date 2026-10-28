@@ -372,6 +372,32 @@ public static class CircuitValidator
                 diagnostics.Warning("RAD074", "Net has no connected pins.", definition.Id, netId: net.Id);
             }
 
+            if (!WireAnnotation.TryNormalizeColor(net.WireColor, out _))
+            {
+                diagnostics.Error(
+                    "RAD078",
+                    $"Net wire color '{net.WireColor}' is invalid; use #RRGGBB or 'auto'.",
+                    definition.Id,
+                    netId: net.Id);
+            }
+
+            if (net.RoutePoints.Count > WireAnnotation.MaxRoutePoints)
+            {
+                diagnostics.Error(
+                    "RAD079",
+                    $"Net has {net.RoutePoints.Count} wire bendpoints; the maximum is {WireAnnotation.MaxRoutePoints}.",
+                    definition.Id,
+                    netId: net.Id);
+            }
+            else if (net.RoutePoints.Any(point => !point.IsFinite))
+            {
+                diagnostics.Error(
+                    "RAD080",
+                    "Net has a non-finite or out-of-range wire bendpoint.",
+                    definition.Id,
+                    netId: net.Id);
+            }
+
             var pinsInNet = new HashSet<PinRef>();
             foreach (PinRef pinRef in net.Pins)
             {

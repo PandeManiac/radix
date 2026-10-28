@@ -170,8 +170,8 @@ public static class StandardLibrary
 
         builder.AddInstance("g1", NandId, 140, 60);
         builder.AddInstance("g2", NandId, 140, 200);
-        builder.AddInstance("g3", NandId, 320, 60);
-        builder.AddInstance("g4", NandId, 320, 200);
+        builder.AddInstance("g3", NandId, 400, 60);
+        builder.AddInstance("g4", NandId, 400, 200);
 
         builder.Connect(d, builder.Pin("g1", "a"));
         builder.Connect(e, builder.Pin("g1", "b"), builder.Pin("g2", "b"));
@@ -199,9 +199,9 @@ public static class StandardLibrary
         Net masterQ = builder.SetInitial(builder.AddNet("master_q", StandardDomains.BinaryId), 0);
         Net masterQn = builder.SetInitial(builder.AddNet("master_qn", StandardDomains.BinaryId), 1);
 
-        builder.AddInstance("inv", NotId, 120, 40);
-        builder.AddInstance("master", "std.d-latch", 260, 40);
-        builder.AddInstance("slave", "std.d-latch", 440, 160);
+        builder.AddInstance("inv", NotId, 80, 40);
+        builder.AddInstance("master", "std.d-latch", 340, 40);
+        builder.AddInstance("slave", "std.d-latch", 600, 160);
 
         builder.Connect(clk, builder.Pin("inv", "a"));
         builder.Connect(clkN, builder.Pin("inv", "y"), builder.Pin("master", "e"));
@@ -242,9 +242,9 @@ public static class StandardLibrary
         Net carry1 = builder.AddNet("carry1", StandardDomains.BinaryId);
         Net carry2 = builder.AddNet("carry2", StandardDomains.BinaryId);
 
-        builder.AddInstance("h1", HalfAdderId, 120, 60);
-        builder.AddInstance("h2", HalfAdderId, 320, 60);
-        builder.AddInstance("or", "std.or", 520, 200);
+        builder.AddInstance("h1", HalfAdderId, 80, 60);
+        builder.AddInstance("h2", HalfAdderId, 340, 60);
+        builder.AddInstance("or", "std.or", 600, 200);
 
         builder.Connect(a, builder.Pin("h1", "a"));
         builder.Connect(b, builder.Pin("h1", "b"));
@@ -283,7 +283,7 @@ public static class StandardLibrary
 
         for (int i = 0; i < 4; i++)
         {
-            builder.AddInstance($"fa{i}", "std.full-adder", 150 + (i * 210), 100);
+            builder.AddInstance($"fa{i}", "std.full-adder", 80 + (i * 260), 100);
             builder.Connect(aNets[i], builder.Pin($"fa{i}", "a"));
             builder.Connect(bNets[i], builder.Pin($"fa{i}", "b"));
             builder.Connect(carries[i], builder.Pin($"fa{i}", "cin"));

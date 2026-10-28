@@ -74,6 +74,18 @@ public sealed class Net
     /// </summary>
     public int? InitialValue { get; set; }
 
+    /// <summary>
+    /// Optional author color for this net's wire. Presentation only; signal values
+    /// remain the primary state indicator.
+    /// </summary>
+    public string? WireColor { get; set; }
+
+    /// <summary>
+    /// Author-placed routing bendpoints. Empty means automatic routing. These are
+    /// editor layout hints and never enter the compiler or simulator.
+    /// </summary>
+    public List<NetWaypoint> RoutePoints { get; } = [];
+
     public List<PinRef> Pins { get; } = [];
 
     public override string ToString() => Id;
@@ -153,7 +165,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 

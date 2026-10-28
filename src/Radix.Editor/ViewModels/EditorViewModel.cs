@@ -24,6 +24,8 @@ public sealed class EditorViewModel : ObservableObject
     private readonly Stack<EditorSnapshot> _redo = new();
     private readonly RelayCommand _undoCommand;
     private readonly RelayCommand _redoCommand;
+    private readonly RelayCommand _deleteCommand;
+    private readonly HashSet<string> _selectedInstanceIds = new(StringComparer.Ordinal);
     private CircuitProject _project;
     private string _definitionId = string.Empty;
     private ComponentInstance? _selectedInstance;
@@ -64,7 +66,9 @@ public sealed class EditorViewModel : ObservableObject
         RemoveDefinitionCommand = new RelayCommand(RemoveDefinition);
         AddPinCommand = new RelayCommand(AddPin);
         AddDomainCommand = new RelayCommand(AddDomain);
-        DeleteSelectionCommand = new RelayCommand(DeleteSelection, () => _selectedInstance is not null || _selectedNet is not null);
+        _deleteCommand = new RelayCommand(DeleteSelection, () => _selectedInstanceIds.Count > 0 || _selectedNet is not null);
+        DeleteSelectionCommand = _deleteCommand;
+        ClearNetRouteCommand = new RelayCommand(ClearSelectedNetRoute, () => _selectedNet is not null);
         BeginCommand = new RelayCommand(BeginSimulation);
         AdvanceCommand = new RelayCommand(AdvanceSimulation);
         StepEventCommand = new RelayCommand(StepEvent);
@@ -131,6 +135,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand AddDomainCommand { get; }
 
     public ICommand DeleteSelectionCommand { get; }
+
+    public ICommand ClearNetRouteCommand { get; }
 
     public ICommand BeginCommand { get; }
 
@@ -222,20 +228,35 @@ public sealed class EditorViewModel : ObservableObject
 
     public string ZoomText => "100%";
 
-    public bool HasSelection => _selectedInstance is not null || _selectedNet is not null;
+    public bool HasSelection => _selectedInstanceIds.Count > 0 || _selectedNet is not null;
 
-    public bool HasSelectedInstance => _selectedInstance is not null;
+    public bool HasSelectedInstance => _selectedInstanceIds.Count > 0;
 
     public bool HasSelectedNet => _selectedNet is not null;
+
+    public bool HasMultipleSelection => _selectedInstanceIds.Count > 1;
+
+    public int SelectionCount => _selectedInstanceIds.Count + (_selectedNet is null ? 0 : 1);
+
+    public IReadOnlyCollection<string> SelectedInstanceIds => _selectedInstanceIds;
 
     public string SelectedInstanceId => _selectedInstance?.Id ?? string.Empty;
 
     public string SelectedNetId => _selectedNet?.Id ?? string.Empty;
 
+    public bool IsRootDefinition => Definition.Id == _project.RootDefinitionId;
+
+    public bool SelectedNetHasRoute => _selectedNet?.RoutePoints.Count > 0;
+
     public string SelectionTitle
     {
         get
         {
+            if (_selectedInstanceIds.Count > 1)
+            {
+                return string.Create(CultureInfo.InvariantCulture, $"{_selectedInstanceIds.Count} parts");
+            }
+
             if (_selectedInstance is not null)
             {
                 return _selectedInstance.Label ?? TypeName(_selectedInstance);
@@ -254,6 +275,11 @@ public sealed class EditorViewModel : ObservableObject
     {
         get
         {
+            if (_selectedInstanceIds.Count > 1)
+            {
+                return "multi-selection · drag any selected part to move the group";
+            }
+
             if (_selectedInstance is not null)
             {
                 return $"instance · {_selectedInstance.Id}";
@@ -321,19 +347,74 @@ public sealed class EditorViewModel : ObservableObject
         _placementPoint = world;
     }
 
-    public void SelectInstance(string? instanceId)
+    public void SelectInstance(string? instanceId, bool additive = false)
     {
-        _selectedInstance = instanceId is null ? null : Definition.FindInstance(instanceId);
         _selectedNet = null;
+        if (instanceId is null)
+        {
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+        }
+        else if (additive)
+        {
+            if (!_selectedInstanceIds.Add(instanceId))
+            {
+                _selectedInstanceIds.Remove(instanceId);
+            }
+
+            _selectedInstance = _selectedInstanceIds.Count == 0
+                ? null
+                : Definition.FindInstance(instanceId) ?? FindSelectedInstance();
+        }
+        else
+        {
+            _selectedInstanceIds.Clear();
+            _selectedInstanceIds.Add(instanceId);
+            _selectedInstance = Definition.FindInstance(instanceId);
+            if (_selectedInstance is null)
+            {
+                _selectedInstanceIds.Clear();
+            }
+        }
+
         RaiseSelectionChanged();
         RefreshInspector();
         VisualInvalidated?.Invoke();
+    }
+
+    public void SelectInstances(IEnumerable<string> instanceIds, bool additive = false)
+    {
+        _selectedNet = null;
+        if (!additive)
+        {
+            _selectedInstanceIds.Clear();
+        }
+
+        foreach (string id in instanceIds)
+        {
+            if (Definition.FindInstance(id) is not null)
+            {
+                _selectedInstanceIds.Add(id);
+            }
+        }
+
+        _selectedInstance = FindSelectedInstance();
+        RaiseSelectionChanged();
+        RefreshInspector();
+        VisualInvalidated?.Invoke();
+    }
+
+    public void SelectAllInstances()
+    {
+        SelectInstances(Definition.Instances.Select(i => i.Id));
+        StatusText = string.Create(CultureInfo.InvariantCulture, $"Selected {_selectedInstanceIds.Count} parts");
     }
 
     public void SelectNet(string? netId)
     {
         _selectedNet = netId is null ? null : Definition.FindNet(netId);
         _selectedInstance = null;
+        _selectedInstanceIds.Clear();
         RaiseSelectionChanged();
         RefreshInspector();
         VisualInvalidated?.Invoke();
@@ -342,10 +423,24 @@ public sealed class EditorViewModel : ObservableObject
     public void ClearSelection()
     {
         _selectedInstance = null;
+        _selectedInstanceIds.Clear();
         _selectedNet = null;
         RaiseSelectionChanged();
         RefreshInspector();
         VisualInvalidated?.Invoke();
+    }
+
+    private ComponentInstance? FindSelectedInstance()
+    {
+        for (int i = Definition.Instances.Count - 1; i >= 0; i--)
+        {
+            if (_selectedInstanceIds.Contains(Definition.Instances[i].Id))
+            {
+                return Definition.Instances[i];
+            }
+        }
+
+        return null;
     }
 
     public void OpenDefinition(string definitionId)
@@ -356,6 +451,7 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         _definitionId = definitionId;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
@@ -387,6 +483,7 @@ public sealed class EditorViewModel : ObservableObject
         _project = project;
         _definitionId = root.Id;
         _projectPath = null;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         _undo.Clear();
@@ -407,6 +504,7 @@ public sealed class EditorViewModel : ObservableObject
             EnsureProjectShape();
             _definitionId = loaded.RootDefinitionId;
             _projectPath = path;
+            _selectedInstanceIds.Clear();
             _selectedInstance = null;
             _selectedNet = null;
             _undo.Clear();
@@ -482,6 +580,12 @@ public sealed class EditorViewModel : ObservableObject
 
     public void NudgeInstance(string instanceId, double dx, double dy)
     {
+        if (_selectedInstanceIds.Count > 1)
+        {
+            NudgeSelection(dx, dy);
+            return;
+        }
+
         ComponentInstance? instance = Definition.FindInstance(instanceId);
         if (instance is null)
         {
@@ -494,22 +598,77 @@ public sealed class EditorViewModel : ObservableObject
         AfterMutation(structural: false);
     }
 
+    public void NudgeSelection(double dx, double dy)
+    {
+        if (_selectedInstanceIds.Count == 0)
+        {
+            return;
+        }
+
+        PushUndo();
+        foreach (string id in _selectedInstanceIds)
+        {
+            ComponentInstance? instance = Definition.FindInstance(id);
+            if (instance is not null)
+            {
+                instance.X += dx;
+                instance.Y += dy;
+            }
+        }
+
+        AfterMutation(structural: false);
+    }
+
+    public void SetInstanceState(string instanceId, double x, double y)
+    {
+        ComponentInstance? instance = Definition.FindInstance(instanceId);
+        if (instance is null)
+        {
+            return;
+        }
+
+        if (_pendingDragUndo)
+        {
+            PushUndo();
+            _pendingDragUndo = false;
+        }
+
+        instance.X = Math.Round(x, 1);
+        instance.Y = Math.Round(y, 1);
+        IsDirty = true;
+        Simulator.Invalidate();
+        RebuildLayout();
+        RefreshSimStatus();
+    }
+
     public void DeleteSelection()
     {
-        if (_selectedInstance is not null)
+        if (_selectedInstanceIds.Count > 0)
         {
-            string id = _selectedInstance.Id;
+            var ids = _selectedInstanceIds.ToArray();
             PushUndo();
-            Definition.Instances.Remove(_selectedInstance);
-            foreach (Net net in Definition.Nets)
+            foreach (string id in ids)
             {
-                net.Pins.RemoveAll(p => string.Equals(p.InstanceId, id, StringComparison.Ordinal));
+                ComponentInstance? instance = Definition.FindInstance(id);
+                if (instance is null)
+                {
+                    continue;
+                }
+
+                Definition.Instances.Remove(instance);
+                foreach (Net net in Definition.Nets)
+                {
+                    net.Pins.RemoveAll(p => string.Equals(p.InstanceId, id, StringComparison.Ordinal));
+                }
             }
 
             CleanEmptyNets();
+            _selectedInstanceIds.Clear();
             _selectedInstance = null;
             AfterMutation(structural: true);
-            StatusText = $"Deleted instance {id}";
+            StatusText = ids.Length == 1
+                ? $"Deleted instance {ids[0]}"
+                : string.Create(CultureInfo.InvariantCulture, $"Deleted {ids.Length} instances");
             return;
         }
 
@@ -544,6 +703,7 @@ public sealed class EditorViewModel : ObservableObject
         };
         _project.Definitions.Add(definition);
         _definitionId = id;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
@@ -577,6 +737,7 @@ public sealed class EditorViewModel : ObservableObject
         string removed = Definition.Id;
         _project.Definitions.Remove(Definition);
         _definitionId = _project.RootDefinitionId;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
@@ -677,6 +838,103 @@ public sealed class EditorViewModel : ObservableObject
         AfterMutation(structural: false);
     }
 
+    public void SetNetWireColor(string netId, string? color)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null)
+        {
+            return;
+        }
+
+        if (!WireAnnotation.TryNormalizeColor(color, out string? normalized))
+        {
+            StatusText = "Wire color must be #RRGGBB or auto.";
+            return;
+        }
+
+        PushUndo();
+        net.WireColor = normalized;
+        AfterMutation(structural: false);
+        StatusText = normalized is null ? "Wire color set to automatic" : $"Wire color set to {normalized}";
+    }
+
+    public void AddNetWaypoint(string netId, Point point)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null)
+        {
+            return;
+        }
+
+        if (net.RoutePoints.Count >= WireAnnotation.MaxRoutePoints)
+        {
+            StatusText = $"A wire can have at most {WireAnnotation.MaxRoutePoints} bendpoints.";
+            return;
+        }
+
+        PushUndo();
+        net.RoutePoints.Add(new NetWaypoint(Math.Round(point.X, 1), Math.Round(point.Y, 1)));
+        SelectNet(net.Id);
+        AfterMutation(structural: false);
+        StatusText = "Added wire bendpoint";
+    }
+
+    public void MoveNetWaypoint(string netId, int index, Point point)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null || index < 0 || index >= net.RoutePoints.Count)
+        {
+            return;
+        }
+
+        if (_pendingDragUndo)
+        {
+            PushUndo();
+            _pendingDragUndo = false;
+        }
+
+        net.RoutePoints[index] = new NetWaypoint(Math.Round(point.X, 1), Math.Round(point.Y, 1));
+        IsDirty = true;
+        RebuildLayout();
+        VisualInvalidated?.Invoke();
+    }
+
+    public void RemoveNetWaypoint(string netId, int index)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null || index < 0 || index >= net.RoutePoints.Count)
+        {
+            return;
+        }
+
+        PushUndo();
+        net.RoutePoints.RemoveAt(index);
+        AfterMutation(structural: false);
+        StatusText = "Removed wire bendpoint";
+    }
+
+    public void ClearNetRoute(string netId)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null || net.RoutePoints.Count == 0)
+        {
+            return;
+        }
+
+        PushUndo();
+        net.RoutePoints.Clear();
+        AfterMutation(structural: false);
+        StatusText = "Wire route reset to automatic";
+    }
+
+    public void ClearSelectedNetRoute()
+    {
+        if (_selectedNet is not null)
+        {
+            ClearNetRoute(_selectedNet.Id);
+        }
+    }
+
     public void PlaceLibraryComponent(LibraryComponent component)
     {
         PushUndo();
@@ -691,6 +949,8 @@ public sealed class EditorViewModel : ObservableObject
         };
         Definition.Instances.Add(instance);
         _selectedInstance = instance;
+        _selectedInstanceIds.Clear();
+        _selectedInstanceIds.Add(instance.Id);
         _selectedNet = null;
         AfterMutation(structural: true);
         FormatPlacement();
@@ -723,6 +983,8 @@ public sealed class EditorViewModel : ObservableObject
         };
         Definition.Instances.Add(instance);
         _selectedInstance = instance;
+        _selectedInstanceIds.Clear();
+        _selectedInstanceIds.Add(instance.Id);
         _selectedNet = null;
         AfterMutation(structural: true);
         FormatPlacement();
@@ -1193,7 +1455,19 @@ public sealed class EditorViewModel : ObservableObject
     {
         Fields.Clear();
 
-        if (_selectedInstance is not null)
+        if (_selectedInstanceIds.Count > 1)
+        {
+            Fields.Add(new EditableField(
+                "Selection",
+                string.Create(CultureInfo.InvariantCulture, $"{_selectedInstanceIds.Count} parts"),
+                isReadOnly: true));
+            Fields.Add(new EditableField("Instances", string.Join(", ", _selectedInstanceIds.Order(StringComparer.Ordinal)), isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Extract",
+                "Use Create from selection in the Definitions panel to turn this group into a reusable component.",
+                isReadOnly: true));
+        }
+        else if (_selectedInstance is not null)
         {
             ComponentInstance instance = _selectedInstance;
             string instanceId = instance.Id;
@@ -1244,6 +1518,26 @@ public sealed class EditorViewModel : ObservableObject
                            MutateNet(netId, n => n.InitialValue = parsed, "initial value");
                 }));
             Fields.Add(new EditableField(
+                "Wire color",
+                net.WireColor ?? WireAnnotation.AutoColor,
+                hint: "#RRGGBB, or auto for domain-derived colors",
+                apply: value =>
+                {
+                    if (!WireAnnotation.TryNormalizeColor(value, out string? normalized))
+                    {
+                        return false;
+                    }
+
+                    PushUndo();
+                    net.WireColor = normalized;
+                    AfterMutation(structural: false);
+                    return true;
+                }));
+            Fields.Add(new EditableField(
+                "Bendpoints",
+                net.RoutePoints.Count == 0 ? "automatic" : net.RoutePoints.Count.ToString(CultureInfo.InvariantCulture),
+                isReadOnly: true));
+            Fields.Add(new EditableField(
                 "Pins",
                 net.Pins.Count == 0 ? "none" : string.Join(", ", net.Pins.Select(p => p.ToString())),
                 isReadOnly: true));
@@ -1292,12 +1586,15 @@ public sealed class EditorViewModel : ObservableObject
         _refreshingDomainSelection = true;
         SelectedNetDomain = _selectedNet is null
             ? null
-            : Domains.FirstOrDefault(d => d.Id == _selectedNet.DomainId);
-        _refreshingDomainSelection = false;
-
+            : Domains.FirstOrDefault(d => d.Id == _selectedNet.DomainId);        _refreshingDomainSelection = false;
         RaisePropertyChanged(nameof(HasSelection));
         RaisePropertyChanged(nameof(HasSelectedInstance));
         RaisePropertyChanged(nameof(HasSelectedNet));
+        RaisePropertyChanged(nameof(HasMultipleSelection));
+        RaisePropertyChanged(nameof(SelectionCount));
+        RaisePropertyChanged(nameof(SelectedInstanceIds));
+        RaisePropertyChanged(nameof(IsRootDefinition));
+        RaisePropertyChanged(nameof(SelectedNetHasRoute));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));
         RaisePropertyChanged(nameof(SelectionTitle));
@@ -1820,10 +2117,16 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(HasSelection));
         RaisePropertyChanged(nameof(HasSelectedInstance));
         RaisePropertyChanged(nameof(HasSelectedNet));
+        RaisePropertyChanged(nameof(HasMultipleSelection));
+        RaisePropertyChanged(nameof(SelectionCount));
+        RaisePropertyChanged(nameof(SelectedInstanceIds));
+        RaisePropertyChanged(nameof(IsRootDefinition));
+        RaisePropertyChanged(nameof(SelectedNetHasRoute));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));
         RaisePropertyChanged(nameof(SelectionTitle));
         RaisePropertyChanged(nameof(SelectionSubtitle));
+        UpdateCommandStates();
     }
 
     private EditorSnapshot Capture()
@@ -1831,7 +2134,7 @@ public sealed class EditorViewModel : ObservableObject
         return new EditorSnapshot(
             ProjectSerializer.SaveToString(_project),
             Definition.Id,
-            _selectedInstance?.Id,
+            _selectedInstanceIds.Order(StringComparer.Ordinal).ToArray(),
             _selectedNet?.Id,
             IsDirty);
     }
@@ -1843,7 +2146,20 @@ public sealed class EditorViewModel : ObservableObject
             _project = ProjectSerializer.LoadFromString(snapshot.Json, validate: false);
             EnsureProjectShape();
             _definitionId = _project.FindDefinition(snapshot.DefinitionId)?.Id ?? _project.RootDefinitionId;
-            _selectedInstance = _project.FindDefinition(_definitionId)?.FindInstance(snapshot.SelectedInstanceId ?? string.Empty);
+            _selectedInstanceIds.Clear();
+            CircuitDefinition? restored = _project.FindDefinition(_definitionId);
+            if (restored is not null)
+            {
+                foreach (string id in snapshot.SelectedInstanceIds)
+                {
+                    if (restored.FindInstance(id) is not null)
+                    {
+                        _selectedInstanceIds.Add(id);
+                    }
+                }
+            }
+
+            _selectedInstance = FindSelectedInstance();
             _selectedNet = _project.FindDefinition(_definitionId)?.FindNet(snapshot.SelectedNetId ?? string.Empty);
             Simulator = new SimulatorHost(_project, Definition);
             IsDirty = snapshot.Dirty;
@@ -1860,13 +2176,15 @@ public sealed class EditorViewModel : ObservableObject
     {
         _undoCommand.RaiseCanExecuteChanged();
         _redoCommand.RaiseCanExecuteChanged();
+        _deleteCommand.RaiseCanExecuteChanged();
+        (ClearNetRouteCommand as RelayCommand)?.RaiseCanExecuteChanged();
         RaisePropertyChanged(nameof(ProjectTitle));
     }
 
     private sealed record EditorSnapshot(
         string Json,
         string DefinitionId,
-        string? SelectedInstanceId,
+        string[] SelectedInstanceIds,
         string? SelectedNetId,
         bool Dirty);
 

@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Radix.Core.Model;
 using Radix.Core.Signals;
 using Radix.Editor.Rendering;
 using Radix.Editor.ViewModels;
@@ -43,9 +44,18 @@ public sealed class CircuitCanvas : Control
     private Point _pointerWorld;
     private Point _connectAnchor;
     private EditorPin? _connectStart;
-    private string? _draggedInstance;
-    private Point _dragOffset;
     private PinHit? _hoverPin;
+    private NetWire? _hoverWire;
+    private ComponentBox? _hoverComponent;
+    private string? _hoverNetId;
+    private string? _draggedWaypointNet;
+    private int _draggedWaypointIndex = -1;
+    private bool _draggingWaypoint;
+    private readonly Dictionary<string, Point> _dragStarts = new(StringComparer.Ordinal);
+    private Point _dragStartWorld;
+    private bool _rubberBanding;
+    private Point _rubberBandStart;
+    private Point _rubberBandCurrent;
 
     public CircuitCanvas()
     {
@@ -171,6 +181,7 @@ public sealed class CircuitCanvas : Control
         DrawWires(context, viewModel, layout);
         DrawComponents(context, viewModel, layout);
         DrawPorts(context, viewModel, layout);
+        DrawRubberBand(context);
         DrawHoverTooltip(context);
         DrawConnectionPreview(context);
         DrawZoomBadge(context);
@@ -206,45 +217,193 @@ public sealed class CircuitCanvas : Control
 
     private void DrawWires(DrawingContext context, EditorViewModel viewModel, CircuitLayout layout)
     {
-        foreach (NetWire wire in layout.Wires)
+        HashSet<string> focus = FocusNets(viewModel, layout);
+        bool hasFocus = focus.Count > 0;
+        double dot = Viewport.Scale < 0.5 ? 2.2 : 3.2;
+
+        foreach (NetWire wire in layout.Wires.OrderBy(w => w.NetId, StringComparer.Ordinal))
         {
             (int value, SignalDomain? domain) = ReadNet(viewModel, wire.NetId);
-            IBrush brush = WireBrush(domain, value);
-            bool undriven = value < 0;
-            var pen = undriven
-                ? new Pen(brush, 1.6, new DashStyle([4, 4], 0))
-                : new Pen(brush, 2.1, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
-
+            Net? net = viewModel.Definition.FindNet(wire.NetId);
+            IBrush signalBrush = WireBrush(domain, value);
+            IBrush brush = net?.WireColor is string custom && custom.Length == 7
+                ? Brush.Parse(custom)
+                : signalBrush;
             bool selected = string.Equals(viewModel.SelectedNetId, wire.NetId, StringComparison.Ordinal);
+            bool hovered = ReferenceEquals(_hoverWire, wire);
+            bool focused = focus.Contains(wire.NetId);
+            bool dim = hasFocus && !focused;
+            double opacity = dim ? 0.22 : 1.0;
+
             if (selected)
             {
-                var halo = new Pen(AccentSoft, 7, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
-                DrawPolyline(context, halo, wire.Points);
-                pen = new Pen(Accent, 2.8, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+                var halo = new Pen(AccentSoft, 8, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+                DrawWireSegments(context, halo, wire, drawBreaks: false);
+            }
+            else if (hovered)
+            {
+                var halo = new Pen(WithOpacity(AccentSoft, 0.55), 6, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+                DrawWireSegments(context, halo, wire, drawBreaks: false);
             }
 
-            DrawPolyline(context, pen, wire.Points);
-            double dot = Viewport.Scale < 0.5 ? 2 : 3;
+            bool undriven = value < 0;
+            IBrush lineBrush = WithOpacity(brush, opacity);
+            var pen = undriven
+                ? new Pen(lineBrush, selected ? 2.1 : 1.6, new DashStyle([4, 3], 0))
+                : new Pen(
+                    selected ? Accent : lineBrush,
+                    selected ? 2.8 : dim ? 1.6 : 2.1,
+                    lineCap: PenLineCap.Round,
+                    lineJoin: PenLineJoin.Round);
+            DrawWireSegments(context, pen, wire, drawBreaks: true);
+
             foreach (Point junction in wire.Junctions)
             {
-                context.DrawEllipse(brush, null, Viewport.WorldToScreen(junction), dot, dot);
+                context.DrawEllipse(lineBrush, null, Viewport.WorldToScreen(junction), dot, dot);
             }
 
-            if (Viewport.Scale >= 0.75)
+            if (Viewport.Scale >= 0.72 && (!dim || focused))
             {
-                string label = viewModel.Definition.FindNet(wire.NetId)?.Label ?? wire.NetId;
+                string label = net?.Label ?? wire.NetId;
                 string valueText = value < 0 ? "z" : FormatValue(value, domain);
-                DrawWireLabel(context, wire.LabelPoint, $"{label} = {valueText}", brush);
+                DrawWireLabel(context, wire.LabelPoint, $"{label} = {valueText}", lineBrush);
+            }
+        }
+
+        DrawRouteHandles(context, viewModel, layout);
+    }
+
+    private HashSet<string> FocusNets(EditorViewModel viewModel, CircuitLayout layout)
+    {
+        var focus = new HashSet<string>(StringComparer.Ordinal);
+        if (viewModel.SelectedNetId.Length > 0)
+        {
+            focus.Add(viewModel.SelectedNetId);
+        }
+
+        foreach (string instanceId in viewModel.SelectedInstanceIds)
+        {
+            if (layout.Components.FirstOrDefault(c => c.Instance.Id == instanceId) is ComponentBox box)
+            {
+                focus.UnionWith(layout.NetsForInstance(box.Instance));
+            }
+        }
+
+        if (_hoverNetId is not null)
+        {
+            focus.Add(_hoverNetId);
+        }
+
+        if (_hoverWire is not null)
+        {
+            focus.Add(_hoverWire.NetId);
+        }
+
+        if (_hoverComponent is not null)
+        {
+            focus.UnionWith(layout.NetsForInstance(_hoverComponent.Instance));
+        }
+
+        if (_hoverPin is not null)
+        {
+            focus.UnionWith(layout.NetsForPin(_hoverPin.Value.Pin));
+        }
+
+        return focus;
+    }
+
+    private void DrawWireSegments(DrawingContext context, IPen pen, NetWire wire, bool drawBreaks)
+    {
+        foreach ((Point a, Point b) in wire.Segments)
+        {
+            Point sa = Viewport.WorldToScreen(a);
+            Point sb = Viewport.WorldToScreen(b);
+            bool horizontal = Math.Abs(sa.Y - sb.Y) < 0.5;
+            double start = horizontal ? sa.X : sa.Y;
+            double end = horizontal ? sb.X : sb.Y;
+            if (Math.Abs(end - start) < 0.2)
+            {
+                continue;
+            }
+
+            double direction = Math.Sign(end - start);
+            double low = Math.Min(start, end);
+            double high = Math.Max(start, end);
+            var breakCoordinates = new List<double>();
+            if (drawBreaks)
+            {
+                foreach (Point breakWorld in wire.Breaks)
+                {
+                    Point screen = Viewport.WorldToScreen(breakWorld);
+                    double along = horizontal ? screen.X : screen.Y;
+                    double across = horizontal ? screen.Y - sa.Y : screen.X - sa.X;
+                    if (Math.Abs(across) < 0.8 && along > low + 1 && along < high - 1)
+                    {
+                        breakCoordinates.Add(along);
+                    }
+                }
+            }
+
+            breakCoordinates.Sort();
+            double cursor = start;
+            const double gap = 4.5;
+            foreach (double breakAt in breakCoordinates)
+            {
+                double stop = breakAt - gap;
+                if ((stop - cursor) * direction > 0.5)
+                {
+                    DrawAlong(context, pen, sa, sb, horizontal, cursor, stop);
+                }
+
+                cursor = breakAt + gap;
+            }
+
+            if ((end - cursor) * direction > 0.5)
+            {
+                DrawAlong(context, pen, sa, sb, horizontal, cursor, end);
             }
         }
     }
 
-    private void DrawPolyline(DrawingContext context, IPen pen, IReadOnlyList<Point> points)
+    private static void DrawAlong(
+        DrawingContext context,
+        IPen pen,
+        Point a,
+        Point b,
+        bool horizontal,
+        double from,
+        double to)
     {
-        for (int i = 0; i + 1 < points.Count; i++)
+        Point start = horizontal ? new Point(from, a.Y) : new Point(a.X, from);
+        Point end = horizontal ? new Point(to, a.Y) : new Point(a.X, to);
+        context.DrawLine(pen, start, end);
+    }
+
+    private void DrawRouteHandles(DrawingContext context, EditorViewModel viewModel, CircuitLayout layout)
+    {
+        if (viewModel.SelectedNetId.Length == 0 || Viewport.Scale < 0.35)
         {
-            context.DrawLine(pen, Viewport.WorldToScreen(points[i]), Viewport.WorldToScreen(points[i + 1]));
+            return;
         }
+
+        NetWire? wire = layout.FindWire(viewModel.SelectedNetId);
+        if (wire is null)
+        {
+            return;
+        }
+
+        foreach (NetWaypoint point in wire.RoutePoints)
+        {
+            Point screen = Viewport.WorldToScreen(new Point(point.X, point.Y));
+            context.DrawEllipse(Brushes.White, new Pen(Accent, 1.8), screen, 4.6, 4.6);
+            context.DrawEllipse(Accent, null, screen, 1.6, 1.6);
+        }
+
+        Point label = Viewport.WorldToScreen(wire.LabelPoint);
+        var hint = new Rect(label.X + 3, label.Y + 8, 15, 15);
+        context.DrawRectangle(Brushes.White, new Pen(WithOpacity(Accent, 0.6), 1, new DashStyle([2, 2], 0)), hint, 3, 3);
+        FormattedText plus = Text("+", 11, Accent, FontWeight.SemiBold);
+        context.DrawText(plus, new Point(hint.X + 4, hint.Y - 1));
     }
 
     private void DrawWireLabel(DrawingContext context, Point world, string text, IBrush accent)
@@ -260,19 +419,32 @@ public sealed class CircuitCanvas : Control
         context.DrawText(formatted, new Point(background.X + 4, background.Y + 1));
     }
 
+    private static IBrush WithOpacity(IBrush brush, double opacity) =>
+        brush is ISolidColorBrush solid ? new SolidColorBrush(solid.Color, opacity) : brush;
+
     private void DrawComponents(DrawingContext context, EditorViewModel viewModel, CircuitLayout layout)
     {
         double scale = Viewport.Scale;
         bool detailed = scale >= 0.32;
         double fontSize = Math.Clamp(12 * scale, 8.5, 14);
         double idSize = Math.Clamp(9 * scale, 7, 10);
+        HashSet<string> focus = FocusNets(viewModel, layout);
 
         foreach (ComponentBox component in layout.Components)
         {
             Rect screen = WorldRect(component.Bounds);
-            bool selected = string.Equals(viewModel.SelectedInstanceId, component.Instance.Id, StringComparison.Ordinal);
-            var border = selected ? new Pen(Accent, 2.4) : new Pen(BoxBorder, 1.1);
+            bool selected = viewModel.SelectedInstanceIds.Contains(component.Instance.Id);
+            bool hovered = ReferenceEquals(_hoverComponent, component);
+            var border = selected
+                ? new Pen(Accent, 2.4)
+                : hovered
+                    ? new Pen(WithOpacity(Accent, 0.75), 1.8)
+                    : new Pen(BoxBorder, 1.1);
             context.DrawRectangle(BoxFill, border, screen, 6, 6);
+            if (hovered && !selected)
+            {
+                context.DrawRectangle(null, new Pen(WithOpacity(AccentSoft, 0.9), 4), screen.Inflate(2), 7, 7);
+            }
 
             double header = Math.Min(screen.Height, CircuitLayout.HeaderHeight * scale);
             if (header > 3)
@@ -309,6 +481,15 @@ public sealed class CircuitCanvas : Control
                 (int value, SignalDomain? domain) = ReadPin(viewModel, EditorPin.ForInstance(component.Instance.Id, pin.PinId));
                 IBrush pinBrush = value < 0 ? UndrivenBrush : ValueBrush(domain, value);
                 double radius = Math.Clamp(3.4 * scale, 2.2, 4.2);
+                bool pinFocused = focus.Any(netId =>
+                    layout.Definition.FindNet(netId)?.Pins.Any(p =>
+                        string.Equals(p.InstanceId, component.Instance.Id, StringComparison.Ordinal) &&
+                        string.Equals(p.PinId, pin.PinId, StringComparison.Ordinal)) == true);
+                if (pinFocused)
+                {
+                    context.DrawEllipse(null, new Pen(WithOpacity(Accent, 0.7), 2.2), center, radius + 3.4, radius + 3.4);
+                }
+
                 context.DrawEllipse(PinFill, null, center, radius + 0.8, radius + 0.8);
                 context.DrawEllipse(pinBrush, null, center, radius, radius);
 
@@ -368,6 +549,19 @@ public sealed class CircuitCanvas : Control
             context.DrawEllipse(PinFill, null, connector, 4.2, 4.2);
             context.DrawEllipse(valueBrush, null, connector, 3.1, 3.1);
         }
+    }
+
+    private void DrawRubberBand(DrawingContext context)
+    {
+        if (!_rubberBanding)
+        {
+            return;
+        }
+
+        Point a = Viewport.WorldToScreen(_rubberBandStart);
+        Point b = Viewport.WorldToScreen(_rubberBandCurrent);
+        var rect = new Rect(a, b);
+        context.DrawRectangle(WithOpacity(AccentSoft, 0.35), new Pen(Accent, 1.2, new DashStyle([4, 3], 0)), rect, 2, 2);
     }
 
     private void DrawConnectionPreview(DrawingContext context)
@@ -462,6 +656,7 @@ public sealed class CircuitCanvas : Control
         if (point.Properties.IsRightButtonPressed)
         {
             _connectStart = null;
+            SelectUnderPointer(world, tolerance);
             InvalidateVisual();
             return;
         }
@@ -469,6 +664,41 @@ public sealed class CircuitCanvas : Control
         if (!point.Properties.IsLeftButtonPressed)
         {
             return;
+        }
+
+        // Bendpoint handles take priority over the wire beneath them.
+        if (_viewModel.SelectedNetId.Length > 0 &&
+            _viewModel.Layout.FindWire(_viewModel.SelectedNetId) is NetWire selectedWire)
+        {
+            int? waypoint = HitWaypoint(selectedWire, world);
+            if (waypoint is int index)
+            {
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+                {
+                    _viewModel.RemoveNetWaypoint(selectedWire.NetId, index);
+                    InvalidateVisual();
+                    e.Handled = true;
+                    return;
+                }
+
+                _draggedWaypointNet = selectedWire.NetId;
+                _draggedWaypointIndex = index;
+                _draggingWaypoint = true;
+                _viewModel.BeginDrag();
+                e.Pointer.Capture(this);
+                e.Handled = true;
+                return;
+            }
+
+            Point labelScreen = Viewport.WorldToScreen(selectedWire.LabelPoint);
+            var addHandle = new Point(labelScreen.X + 10, labelScreen.Y + 15);
+            if (CircuitLayout.Distance(screen, addHandle) < 11)
+            {
+                _viewModel.AddNetWaypoint(selectedWire.NetId, selectedWire.LabelPoint);
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
         }
 
         PinHit? pin = _viewModel.Layout.HitPin(world, tolerance);
@@ -485,16 +715,33 @@ public sealed class CircuitCanvas : Control
         ComponentBox? component = _viewModel.Layout.HitComponent(world);
         if (component is not null)
         {
-            _viewModel.SelectInstance(component.Instance.Id);
+            bool additive = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            if (additive)
+            {
+                _viewModel.SelectInstance(component.Instance.Id, additive: true);
+            }
+            else if (!_viewModel.SelectedInstanceIds.Contains(component.Instance.Id))
+            {
+                _viewModel.SelectInstance(component.Instance.Id);
+            }
+
             if (e.ClickCount == 2 && component.Instance.DefinitionId is string definitionId)
             {
                 _viewModel.OpenDefinition(definitionId);
                 return;
             }
 
-            _dragging = true;
-            _draggedInstance = component.Instance.Id;
-            _dragOffset = world - new Point(component.Instance.X, component.Instance.Y);
+            _dragStartWorld = world;
+            _dragStarts.Clear();
+            foreach (string id in _viewModel.SelectedInstanceIds)
+            {
+                if (_viewModel.Definition.FindInstance(id) is ComponentInstance instance)
+                {
+                    _dragStarts[id] = new Point(instance.X, instance.Y);
+                }
+            }
+
+            _dragging = _dragStarts.Count > 0;
             _viewModel.BeginDrag();
             e.Pointer.Capture(this);
             e.Handled = true;
@@ -513,15 +760,56 @@ public sealed class CircuitCanvas : Control
         if (wire is not null)
         {
             _viewModel.SelectNet(wire.NetId);
+            if (e.ClickCount == 2 && NearestPointOnWire(wire, world) is Point nearest)
+            {
+                _viewModel.AddNetWaypoint(wire.NetId, nearest);
+            }
+
             e.Handled = true;
             return;
         }
 
-        _viewModel.ClearSelection();
-        _panning = true;
-        _lastScreen = screen;
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            _viewModel.ClearSelection();
+        }
+
+        _rubberBanding = true;
+        _rubberBandStart = world;
+        _rubberBandCurrent = world;
         e.Pointer.Capture(this);
         e.Handled = true;
+    }
+
+    private void SelectUnderPointer(Point world, double tolerance)
+    {
+        if (_viewModel?.Layout is null)
+        {
+            return;
+        }
+
+        if (_viewModel.Layout.HitPin(world, tolerance) is PinHit pin)
+        {
+            _viewModel.SelectNet(_viewModel.Simulator.NetFor(pin.Pin)?.Id);
+            return;
+        }
+
+        if (_viewModel.Layout.HitComponent(world) is ComponentBox component)
+        {
+            _viewModel.SelectInstance(component.Instance.Id);
+            return;
+        }
+
+        if (_viewModel.Layout.HitPortBody(world) is PortBox port)
+        {
+            _viewModel.SelectNet(port.NetId);
+            return;
+        }
+
+        if (_viewModel.Layout.HitWire(world, tolerance) is NetWire wire)
+        {
+            _viewModel.SelectNet(wire.NetId);
+        }
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -542,12 +830,28 @@ public sealed class CircuitCanvas : Control
             return;
         }
 
-        if (_dragging && _draggedInstance is not null)
+        if (_draggingWaypoint && _draggedWaypointNet is not null && _viewModel is not null)
         {
-            _viewModel?.MoveInstance(
-                _draggedInstance,
-                world.X - _dragOffset.X,
-                world.Y - _dragOffset.Y);
+            _viewModel.MoveNetWaypoint(_draggedWaypointNet, _draggedWaypointIndex, world);
+            return;
+        }
+
+        if (_rubberBanding)
+        {
+            _rubberBandCurrent = world;
+            InvalidateVisual();
+            return;
+        }
+
+        if (_dragging && _viewModel is not null)
+        {
+            double dx = world.X - _dragStartWorld.X;
+            double dy = world.Y - _dragStartWorld.Y;
+            foreach ((string id, Point start) in _dragStarts)
+            {
+                _viewModel.SetInstanceState(id, start.X + dx, start.Y + dy);
+            }
+
             return;
         }
 
@@ -557,9 +861,43 @@ public sealed class CircuitCanvas : Control
             return;
         }
 
+        bool changed = false;
         PinHit? hover = _viewModel?.Layout?.HitPin(world, 11 / Math.Max(Viewport.Scale, 0.2));
-        bool changed = !Nullable.Equals(hover, _hoverPin);
-        _hoverPin = hover;
+        if (!Nullable.Equals(hover, _hoverPin))
+        {
+            _hoverPin = hover;
+            changed = true;
+        }
+
+        ComponentBox? hoverComponent = hover is null ? _viewModel?.Layout?.HitComponent(world) : null;
+        if (!ReferenceEquals(hoverComponent, _hoverComponent))
+        {
+            _hoverComponent = hoverComponent;
+            changed = true;
+        }
+
+        PortBox? hoverPort = hover is null && hoverComponent is null ? _viewModel?.Layout?.HitPortBody(world) : null;
+        string? hoverNet = hoverPort?.NetId;
+        NetWire? hoverWire = hover is null && hoverComponent is null && hoverPort is null
+            ? _viewModel?.Layout?.HitWire(world, 8 / Math.Max(Viewport.Scale, 0.2))
+            : null;
+        if (hoverNet is null && hoverWire is not null)
+        {
+            hoverNet = hoverWire.NetId;
+        }
+
+        if (!ReferenceEquals(hoverWire, _hoverWire))
+        {
+            _hoverWire = hoverWire;
+            changed = true;
+        }
+
+        if (!string.Equals(hoverNet, _hoverNetId, StringComparison.Ordinal))
+        {
+            _hoverNetId = hoverNet;
+            changed = true;
+        }
+
         if (changed)
         {
             InvalidateVisual();
@@ -573,18 +911,45 @@ public sealed class CircuitCanvas : Control
         Point world = Viewport.ScreenToWorld(screen);
         _pointerWorld = world;
 
-        if (_connectStart is EditorPin start && _viewModel is not null)
+        if (_draggingWaypoint)
+        {
+            _viewModel?.EndDrag();
+            _draggingWaypoint = false;
+            _draggedWaypointNet = null;
+            _draggedWaypointIndex = -1;
+        }
+
+        if (_rubberBanding)
+        {
+            Point start = Viewport.WorldToScreen(_rubberBandStart);
+            bool dragged = CircuitLayout.Distance(screen, start) > 5;
+            if (_viewModel?.Layout is CircuitLayout layout)
+            {
+                Rect worldRect = new(_rubberBandStart, _rubberBandCurrent);
+                if (dragged)
+                {
+                    IEnumerable<string> hits = layout.Components
+                        .Where(c => c.Bounds.Intersects(worldRect))
+                        .Select(c => c.Instance.Id);
+                    _viewModel.SelectInstances(hits, additive: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+                }
+            }
+
+            _rubberBanding = false;
+        }
+
+        if (_connectStart is EditorPin startPin && _viewModel is not null)
         {
             double tolerance = 11 / Math.Max(Viewport.Scale, 0.2);
             PinHit? targetPin = _viewModel.Layout?.HitPin(world, tolerance);
             NetWire? targetWire = targetPin is null ? _viewModel.Layout?.HitWire(world, tolerance) : null;
-            if (targetPin is not null && targetPin.Value.Pin != start)
+            if (targetPin is not null && targetPin.Value.Pin != startPin)
             {
-                _viewModel.Connect(start, targetPin.Value.Pin);
+                _viewModel.Connect(startPin, targetPin.Value.Pin);
             }
             else if (targetWire is not null)
             {
-                _viewModel.AttachPinToNet(start, targetWire.NetId);
+                _viewModel.AttachPinToNet(startPin, targetWire.NetId);
             }
 
             _connectStart = null;
@@ -596,11 +961,58 @@ public sealed class CircuitCanvas : Control
         }
 
         _dragging = false;
-        _draggedInstance = null;
+        _dragStarts.Clear();
         _panning = false;
         e.Pointer.Capture(null);
         InvalidateVisual();
         e.Handled = true;
+    }
+
+    private static int? HitWaypoint(NetWire wire, Point world)
+    {
+        for (int i = 0; i < wire.RoutePoints.Count; i++)
+        {
+            NetWaypoint point = wire.RoutePoints[i];
+            if (CircuitLayout.Distance(world, new Point(point.X, point.Y)) <= 9)
+            {
+                return i;
+            }
+        }
+
+        return null;
+    }
+
+    private static Point? NearestPointOnWire(NetWire wire, Point world)
+    {
+        Point? best = null;
+        double bestDistance = 14;
+        foreach ((Point a, Point b) in wire.Segments)
+        {
+            Point candidate = NearestPointOnSegment(world, a, b);
+            double distance = CircuitLayout.Distance(world, candidate);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private static Point NearestPointOnSegment(Point point, Point a, Point b)
+    {
+        double dx = b.X - a.X;
+        double dy = b.Y - a.Y;
+        double lengthSquared = (dx * dx) + (dy * dy);
+        if (lengthSquared < 1e-9)
+        {
+            return a;
+        }
+
+        double t = (((point.X - a.X) * dx) + ((point.Y - a.Y) * dy)) / lengthSquared;
+        t = Math.Clamp(t, 0, 1);
+        return new Point(a.X + (t * dx), a.Y + (t * dy));
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)

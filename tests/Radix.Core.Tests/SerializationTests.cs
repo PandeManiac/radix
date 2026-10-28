@@ -211,7 +211,55 @@ public sealed class SerializationTests
     {
         JsonObject json = Json(TestCircuits.ValidProject());
         Assert.Equal("radix-project", (string?)json["format"]);
-        Assert.Equal(1, (int?)json["version"]);
+        Assert.Equal(ProjectSerializer.CurrentVersion, (int?)json["version"]);
         Assert.Equal("main", (string?)json["root"]);
+    }
+
+    [Fact]
+    public void VersionOneFilesStillLoad()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        json["version"] = 1;
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(json.ToJsonString());
+
+        Assert.Equal(1, loaded.FormatVersion);
+        Assert.Single(loaded.Definitions);
+    }
+
+    [Fact]
+    public void WireColorAndRoutePointsRoundTrip()
+    {
+        CircuitProject project = ExampleProjects.CreateFullAdderDemo();
+        Net net = project.Definitions[0].Nets[0];
+        net.WireColor = "#AB12EF";
+        net.RoutePoints.Add(new NetWaypoint(120.5, 44));
+        net.RoutePoints.Add(new NetWaypoint(-8, 90.25));
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project));
+        Net reloaded = loaded.Definitions[0].Nets[0];
+
+        Assert.Equal("#AB12EF", reloaded.WireColor);
+        Assert.Equal([new NetWaypoint(120.5, 44), new NetWaypoint(-8, 90.25)], reloaded.RoutePoints);
+    }
+
+    [Fact]
+    public void InvalidWireColorAndRouteLimitAreRejected()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        Net net = project.Definitions[0].Nets[0];
+        net.WireColor = "bright green";
+        Assert.Throws<ProjectFormatException>(() =>
+            ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project)));
+
+        project = TestCircuits.ValidProject();
+        net = project.Definitions[0].Nets[0];
+        for (int i = 0; i <= WireAnnotation.MaxRoutePoints; i++)
+        {
+            net.RoutePoints.Add(new NetWaypoint(i, i));
+        }
+
+        Assert.Throws<ProjectFormatException>(() =>
+            ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project)));
     }
 }

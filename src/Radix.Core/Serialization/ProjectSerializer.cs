@@ -16,7 +16,11 @@ public static class ProjectSerializer
 {
     public const string FormatName = "radix-project";
 
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// Version 2 adds optional per-net wire colors and author bendpoints. Version 1
+    /// files load unchanged; both are accepted and saving always writes version 2.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     private const string Extension = ".radix";
 
@@ -320,13 +324,37 @@ public static class ProjectSerializer
     private static Net MapNet(NetDto dto, string definitionId)
     {
         string id = dto.Id ?? throw new ProjectFormatException($"Definition '{definitionId}' has a net without 'id'.");
+        if (!WireAnnotation.TryNormalizeColor(dto.Color, out string? wireColor))
+        {
+            throw new ProjectFormatException(
+                $"Net '{definitionId}.{id}' has invalid wire color '{dto.Color}'; use #RRGGBB or 'auto'.");
+        }
+
         var net = new Net
         {
             Id = id,
             DomainId = dto.Domain ?? throw new ProjectFormatException($"Net '{definitionId}.{id}' is missing 'domain'."),
             Label = dto.Label,
             InitialValue = dto.Initial,
+            WireColor = wireColor,
         };
+
+        foreach (PointDto point in dto.Route ?? [])
+        {
+            var waypoint = new NetWaypoint(point.X, point.Y);
+            if (!waypoint.IsFinite)
+            {
+                throw new ProjectFormatException($"Net '{definitionId}.{id}' has a non-finite or out-of-range route point.");
+            }
+
+            net.RoutePoints.Add(waypoint);
+        }
+
+        if (net.RoutePoints.Count > WireAnnotation.MaxRoutePoints)
+        {
+            throw new ProjectFormatException(
+                $"Net '{definitionId}.{id}' has {net.RoutePoints.Count} route points; the maximum is {WireAnnotation.MaxRoutePoints}.");
+        }
 
         foreach (PinRefDto pin in dto.Pins ?? [])
         {
@@ -412,6 +440,10 @@ public static class ProjectSerializer
             Domain = net.DomainId,
             Label = net.Label,
             Initial = net.InitialValue,
+            Color = net.WireColor,
+            Route = net.RoutePoints.Count == 0
+                ? null
+                : net.RoutePoints.Select(point => new PointDto { X = point.X, Y = point.Y }).ToList(),
             Pins = net.Pins.Select(pin => new PinRefDto { Instance = pin.InstanceId, Pin = pin.PinId }).ToList(),
         }).ToList(),
         Ports = definition.Ports.Select(port => new PortDto { Pin = port.PinId, Net = port.NetId }).ToList(),

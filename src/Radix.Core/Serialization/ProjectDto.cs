@@ -126,7 +126,20 @@ internal sealed class NetDto
 
     public int? Initial { get; set; }
 
+    /// <summary>Optional #RRGGBB wire color; omitted means domain-derived coloring.</summary>
+    public string? Color { get; set; }
+
+    /// <summary>Optional author bendpoints for wire routing.</summary>
+    public List<PointDto>? Route { get; set; }
+
     public List<PinRefDto>? Pins { get; set; }
+}
+
+internal sealed class PointDto
+{
+    public double X { get; set; }
+
+    public double Y { get; set; }
 }
 
 internal sealed class PinRefDto

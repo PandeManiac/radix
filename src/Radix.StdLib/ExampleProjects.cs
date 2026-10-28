@@ -93,7 +93,7 @@ public static class ExampleProjects
         for (int i = 0; i < 4; i++)
         {
             bNets[i] = root.AddNet($"b{i}", StandardDomains.BinaryId);
-            root.AddPrimitive($"const_b{i}", new ConstantSpec(i == 0 ? 1 : 0), 60, 60 + (i * 40));
+            root.AddPrimitive($"const_b{i}", new ConstantSpec(i == 0 ? 1 : 0), 60, 40 + (i * 80));
             root.Connect(bNets[i], root.Pin($"const_b{i}", "out"));
         }
 
@@ -103,7 +103,7 @@ public static class ExampleProjects
             sumNets[i] = root.AddNet($"sum{i}", StandardDomains.BinaryId);
         }
 
-        root.AddInstance("adder", "std.ripple-adder-4", 280, 120);
+        root.AddInstance("adder", "std.ripple-adder-4", 320, 100);
         for (int i = 0; i < 4; i++)
         {
             root.Connect(qNets[i], root.Pin("adder", $"a{i}"));
@@ -113,7 +113,7 @@ public static class ExampleProjects
 
         for (int i = 0; i < 4; i++)
         {
-            root.AddInstance($"ff{i}", StandardLibrary.DFlipFlopId, 560, 60 + (i * 100));
+            root.AddInstance($"ff{i}", StandardLibrary.DFlipFlopId, 600, 60 + (i * 160));
             root.Connect(sumNets[i], root.Pin($"ff{i}", "d"));
             root.Connect(clock, root.Pin($"ff{i}", "clk"));
             root.Connect(qNets[i], root.Pin($"ff{i}", "q"));
@@ -154,24 +154,24 @@ public static class ExampleProjects
         Net clear = root.Rename(root.AddNet("clear", StandardDomains.BinaryId), "clear");
         Net zero = root.Rename(root.AddNet("zero", StandardDomains.BinaryId), "zero");
 
-        root.AddPrimitive("const0", new ConstantSpec(0), 60, 520);
+        root.AddPrimitive("const0", new ConstantSpec(0), 60, 700);
         root.Connect(zero, root.Pin("const0", PrimitiveShapes.OutputPinId));
 
         root.AddInstance("inv_op0", "std.not", 60, 60);
         root.Connect(op0, root.Pin("inv_op0", "a"));
         root.Connect(nOp0, root.Pin("inv_op0", "y"));
 
-        root.AddInstance("and_select", "std.and", 240, 60);
+        root.AddInstance("and_select", "std.and", 280, 60);
         root.Connect(nOp0, root.Pin("and_select", "a"));
         root.Connect(op1, root.Pin("and_select", "b"));
         root.Connect(selectSum, root.Pin("and_select", "y"));
 
-        root.AddInstance("or_enable", "std.or", 240, 160);
+        root.AddInstance("or_enable", "std.or", 280, 200);
         root.Connect(op0, root.Pin("or_enable", "a"));
         root.Connect(op1, root.Pin("or_enable", "b"));
         root.Connect(enable, root.Pin("or_enable", "y"));
 
-        root.AddInstance("and_clear", "std.and", 240, 260);
+        root.AddInstance("and_clear", "std.and", 280, 340);
         root.Connect(op0, root.Pin("and_clear", "a"));
         root.Connect(op1, root.Pin("and_clear", "b"));
         root.Connect(clear, root.Pin("and_clear", "y"));
@@ -182,12 +182,12 @@ public static class ExampleProjects
             sums[i] = root.Rename(root.AddNet($"sum{i}", StandardDomains.BinaryId), $"sum{i}");
         }
 
-        root.AddInstance("adder", "std.ripple-adder-4", 420, 40);
+        root.AddInstance("adder", "std.ripple-adder-4", 540, 40);
         root.Connect(carryNext, root.Pin("adder", "cout"));
 
         // The carry flag is registered alongside the result so it describes the
         // operation that was captured, not whatever the adder is currently evaluating.
-        root.AddInstance("ff_carry", StandardLibrary.DFlipFlopId, 1180, 40);
+        root.AddInstance("ff_carry", StandardLibrary.DFlipFlopId, 1940, 60);
         root.Connect(carryNext, root.Pin("ff_carry", "d"));
         root.Connect(clock, root.Pin("ff_carry", "clk"));
         root.Connect(carry, root.Pin("ff_carry", "q"));
@@ -204,27 +204,27 @@ public static class ExampleProjects
             loadNets[i] = root.Rename(root.AddNet($"load{i}", StandardDomains.BinaryId), $"load{i} value");
             clearedNets[i] = root.AddNet($"cleared{i}", StandardDomains.BinaryId);
             nextNets[i] = root.Rename(root.AddNet($"next{i}", StandardDomains.BinaryId), $"next{i}");
-            double y = 60 + (i * 130);
+            double y = 60 + (i * 160);
 
-            root.AddInstance($"mux_load{i}", "std.mux2", 640, y);
+            root.AddInstance($"mux_load{i}", "std.mux2", 820, y);
             root.Connect(data[i], root.Pin($"mux_load{i}", "a"));
             root.Connect(sums[i], root.Pin($"mux_load{i}", "b"));
             root.Connect(selectSum, root.Pin($"mux_load{i}", "s"));
             root.Connect(loadNets[i], root.Pin($"mux_load{i}", "y"));
 
-            root.AddInstance($"mux_clear{i}", "std.mux2", 820, y);
+            root.AddInstance($"mux_clear{i}", "std.mux2", 1100, y);
             root.Connect(loadNets[i], root.Pin($"mux_clear{i}", "a"));
             root.Connect(zero, root.Pin($"mux_clear{i}", "b"));
             root.Connect(clear, root.Pin($"mux_clear{i}", "s"));
             root.Connect(clearedNets[i], root.Pin($"mux_clear{i}", "y"));
 
-            root.AddInstance($"mux_hold{i}", "std.mux2", 1000, y);
+            root.AddInstance($"mux_hold{i}", "std.mux2", 1380, y);
             root.Connect(q[i], root.Pin($"mux_hold{i}", "a"));
             root.Connect(clearedNets[i], root.Pin($"mux_hold{i}", "b"));
             root.Connect(enable, root.Pin($"mux_hold{i}", "s"));
             root.Connect(nextNets[i], root.Pin($"mux_hold{i}", "y"));
 
-            root.AddInstance($"ff{i}", StandardLibrary.DFlipFlopId, 1180, y);
+            root.AddInstance($"ff{i}", StandardLibrary.DFlipFlopId, 1660, y);
             root.Connect(nextNets[i], root.Pin($"ff{i}", "d"));
             root.Connect(clock, root.Pin($"ff{i}", "clk"));
             root.Connect(q[i], root.Pin($"ff{i}", "q"));
