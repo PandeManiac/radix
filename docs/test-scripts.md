@@ -217,21 +217,40 @@ The runner stops when the engine halts. Unexpected halts fail the current step a
 ## CLI
 
 ```bash
-dotnet run --project src/Radix.Cli -- test <project.radix> <script.radixtest> [--definition <id>]
+dotnet run --project src/Radix.Cli -- test <project.radix> <script-or-directory> [<more>...] [--definition <id>]
 ```
 
-The command prints the script name, project, definition, diagnostics, and either `PASS` with steps/ticks/events or `FAIL` with one line per failure:
+For one script, the command prints the script name, project, definition, diagnostics, and either `PASS` with steps/ticks/events or `FAIL` with one line per failure:
 
 ```text
 FAIL: 1 failure(s) after 3 step(s).
   step 3 (t=30): pin 'q': expected 1 (1), got 0 (0).
 ```
 
-Exit codes are `0` for a passing script, `1` for a failed assertion or unexpected halt, and `2` for a malformed script, unknown definition, or I/O error.
+Several script paths, or a directory, run as a suite. Directories are searched recursively for `*.radixtest` files and their results are ordered by full path, so the report is stable. Duplicate paths are removed. Each script gets a numbered block with its path, name, definition, diagnostics, and PASS/FAIL lines; a malformed script or one that cannot compile is reported as an `ERROR` block and the remaining scripts still run:
+
+```text
+project:    D flip-flop demo
+scripts:    2
+
+[1/2] tests/a.radixtest
+test:       D flip-flop captures data on the rising edge
+definition: demo.dff
+PASS: 4 step(s) through t=50; 82 events.
+
+[2/2] tests/b.radixtest
+ERROR: Step 1 'set.d' must be a number, a string, or null.
+
+SUITE ERROR: 1 script(s) could not run, 0 failed, 1 passed.
+```
+
+The suite finish line is `PASS: N script(s), S step(s), E events`, `FAIL: X of N script(s) failed`, or `SUITE ERROR: …`. `--definition` overrides the definition of every script in the run; without it each script uses its own `definition` field or the project root.
+
+Exit codes are `0` when every script passes, `1` for one or more failed assertions or unexpected halts, and `2` for a malformed script, unknown definition, missing file, empty directory, or I/O error. A suite with both errors and failures exits `2`, because not every script ran.
 
 ### From the editor
 
-The Diagnostics tab's **Run script…** button runs the same files against the current in-memory project, including unsaved edits. A result panel lists the PASS/FAIL summary, final tick, event count, and every failed step with its tick; **Clear** removes it, and loading or creating another project clears it automatically. The run compiles and simulates on a separate engine, so it does not reset or advance the live workbench simulation. Each run reads the script from disk, so rerun after editing one.
+The Diagnostics tab's **Run script…** button runs the same files against the current in-memory project, including unsaved edits. A result panel lists the PASS/FAIL summary, final tick, event count, and every failed step with its tick; **Clear** removes it, and loading or creating another project clears it automatically. The run compiles and simulates on a separate engine, so it does not reset or advance the live workbench simulation. Each run reads the script from disk, so rerun after editing one. The workbench runs one script at a time; use the CLI for a recursive folder suite.
 
 ## Shipped scripts
 
@@ -244,6 +263,7 @@ The Diagnostics tab's **Run script…** button runs the same files against the c
 - Relations compare values from one shared domain. There is no cross-domain conversion, arithmetic expression, or comparison against a decoded lane value; assert the lane separately and the signals separately.
 - Assertions sample values at integer ticks. `within`, `stable`, `setup`, `transitions`, `edges`, and `sequence` express convergence, held values, pre-drive setup, total change counts, filtered edge counts, and relative edge order, not continuous time; hold time is expressed as a `stable` window after the edge. Use exact expectations, filtered edge counts, sequences, and engine traces for those properties.
 - A `setup` window cannot observe time that has already been simulated; script steps must leave enough room before the edge for the requested interval.
+- A suite runs its scripts sequentially and starts each from time zero. It has no parallelism, ordering dependencies, or shared state between scripts.
 - A script does not save simulation state. Every run starts from time zero.
 
 These limits keep the format inspectable and deterministic. Extending it should add explicit, typed actions rather than an embedded expression language.

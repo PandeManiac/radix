@@ -102,9 +102,10 @@ internal static class Program
                   [--format <id>]            Decode the bus using a numeric format
                   [--trace]                  Print net transitions (bounded)
                   [--max-changes <n>]        Trace print limit (default 200)
-              test <project.radix> <script.radixtest>
+              test <project.radix> <script-or-directory> [<more>...]
                                              Run scripted drives and assertions
                   [--definition <id>]        Definition to simulate (default: script or root)
+                                             Directories are searched recursively for *.radixtest
               sweep <project.radix>          Exhaustively drive input combinations
                   [--definition <id>]        Definition to sweep (default: project root)
                   [--ticks <n>]              Ticks to settle after each row (default 10)
@@ -302,14 +303,14 @@ internal static class Program
     private static int TestCommand(string[] args)
     {
         (var positional, var options) = Parse(args, ["definition"]);
-        if (positional.Count != 2)
+        if (positional.Count < 2)
         {
-            Console.Error.WriteLine("usage: radix test <project.radix> <script.radixtest> [--definition <id>]");
+            Console.Error.WriteLine(
+                "usage: radix test <project.radix> <script-or-directory> [<more>...] [--definition <id>]");
             return 2;
         }
 
         CircuitProject project = ProjectSerializer.Load(positional[0]);
-        SimulationScript script = SimulationScript.Load(positional[1]);
         string? definitionOverride = GetOption(options, "definition");
         if (definitionOverride is not null && project.FindDefinition(definitionOverride) is null)
         {
@@ -317,6 +318,51 @@ internal static class Program
             return 2;
         }
 
+        if (positional.Count == 2 && !Directory.Exists(positional[1]))
+        {
+            return RunSingleTest(project, positional[1], definitionOverride);
+        }
+
+        var paths = new List<string>();
+        bool emptyDirectory = false;
+        foreach (string argument in positional.Skip(1))
+        {
+            if (!Directory.Exists(argument))
+            {
+                paths.Add(argument);
+                continue;
+            }
+
+            IReadOnlyList<string> discovered = SimulationScriptSuiteRunner.Discover(argument);
+            if (discovered.Count == 0)
+            {
+                Console.Error.WriteLine($"script error: no .radixtest scripts found in '{argument}'.");
+                emptyDirectory = true;
+                continue;
+            }
+
+            paths.AddRange(discovered);
+        }
+
+        paths = paths
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (paths.Count == 0)
+        {
+            return 2;
+        }
+
+        if (paths.Count == 1 && !emptyDirectory)
+        {
+            return RunSingleTest(project, paths[0], definitionOverride);
+        }
+
+        return RunTestSuite(project, paths, definitionOverride, emptyDirectory);
+    }
+
+    private static int RunSingleTest(CircuitProject project, string path, string? definitionOverride)
+    {
+        SimulationScript script = SimulationScript.Load(path);
         SimulationScriptResult result = SimulationScriptRunner.Run(project, script, definitionOverride);
         Console.WriteLine($"test:       {result.ScriptName}");
         Console.WriteLine($"project:    {project.Name}");
@@ -343,6 +389,82 @@ internal static class Program
         }
 
         return 1;
+    }
+
+    private static int RunTestSuite(
+        CircuitProject project,
+        IReadOnlyList<string> paths,
+        string? definitionOverride,
+        bool emptyDirectory)
+    {
+        SimulationScriptSuiteResult suite = SimulationScriptSuiteRunner.RunFiles(
+            project,
+            paths,
+            definitionOverride);
+        Console.WriteLine($"project:    {project.Name}");
+        Console.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"scripts:    {suite.Entries.Count}"));
+
+        for (int i = 0; i < suite.Entries.Count; i++)
+        {
+            SimulationScriptSuiteEntry entry = suite.Entries[i];
+            Console.WriteLine();
+            Console.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"[{i + 1}/{suite.Entries.Count}] {entry.Path}"));
+            if (entry.Error is not null)
+            {
+                Console.Error.WriteLine($"ERROR: {entry.Error}");
+                continue;
+            }
+
+            SimulationScriptResult result = entry.Result!;
+            Console.WriteLine($"test:       {result.ScriptName}");
+            Console.WriteLine($"definition: {result.DefinitionId}");
+            PrintDiagnostics(result.Diagnostics, Console.Out);
+            if (result.Passed)
+            {
+                Console.WriteLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"PASS: {result.StepsExecuted} step(s) through t={result.FinalTime}; " +
+                    $"{result.EventsProcessed} events."));
+                continue;
+            }
+
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"FAIL: {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)."));
+            foreach (ScriptFailure failure in result.Failures)
+            {
+                Console.Error.WriteLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"  step {failure.Step} (t={failure.At}): {failure.Message}"));
+            }
+        }
+
+        Console.WriteLine();
+        if (emptyDirectory || suite.HasErrors)
+        {
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"SUITE ERROR: {suite.ErrorCount} script(s) could not run, {suite.FailedCount} failed, {suite.PassedCount} passed.{(emptyDirectory ? " One or more directories contained no scripts." : string.Empty)}"));
+            return 2;
+        }
+
+        if (suite.HasFailures)
+        {
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"FAIL: {suite.FailedCount} of {suite.Entries.Count} script(s) failed."));
+            return 1;
+        }
+
+        Console.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"PASS: {suite.Entries.Count} script(s), {suite.StepsExecuted} step(s), " +
+            $"{suite.EventsProcessed} events."));
+        return 0;
     }
 
     private static void PrintPorts(SimulationEngine engine)
