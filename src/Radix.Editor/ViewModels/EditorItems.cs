@@ -132,6 +132,7 @@ public sealed class NumericLaneListItem : ObservableObject
         string formatName,
         string pinSummary,
         bool canDrive,
+        ICommand editCommand,
         ICommand removeCommand,
         ICommand driveCommand)
     {
@@ -141,6 +142,7 @@ public sealed class NumericLaneListItem : ObservableObject
         FormatName = formatName;
         PinSummary = pinSummary;
         CanDrive = canDrive;
+        EditCommand = editCommand;
         RemoveCommand = removeCommand;
         DriveCommand = driveCommand;
     }
@@ -154,6 +156,8 @@ public sealed class NumericLaneListItem : ObservableObject
     public string FormatName { get; }
 
     public string PinSummary { get; }
+
+    public ICommand EditCommand { get; }
 
     public ICommand RemoveCommand { get; }
 

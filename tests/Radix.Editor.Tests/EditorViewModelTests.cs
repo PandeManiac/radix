@@ -658,6 +658,111 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void EditingNumericLaneKeepsItsIdAndCommitsOneUndoStep()
+    {
+        var viewModel = CreateEmptyEditor();
+        string b0 = AddInputPin(viewModel, "B0");
+        string b1 = AddInputPin(viewModel, "B1");
+        string b2 = AddInputPin(viewModel, "B2");
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = choice.PinId is var id && (id == b0 || id == b1 || id == b2);
+        }
+
+        viewModel.SelectedLaneFormat = viewModel.FormatChoices.Single(option =>
+            option.Format.Id == NumericFormats.UnsignedBinary.Id);
+        viewModel.NewLaneName = "Value";
+        viewModel.AddNumericLane();
+        string laneId = Assert.Single(viewModel.Definition.NumericLanes).Id;
+
+        viewModel.BeginEditNumericLane(laneId);
+        Assert.True(viewModel.IsEditingLane);
+        Assert.Equal("Update numeric lane", viewModel.LaneSaveButtonText);
+        Assert.Equal("Value", viewModel.NewLaneName);
+        Assert.Equal(
+            [b0, b1, b2],
+            viewModel.LanePinChoices.Where(choice => choice.IsSelected).Select(choice => choice.PinId));
+
+        viewModel.NewLaneName = "Count";
+        viewModel.SelectedLaneFormat = viewModel.FormatChoices.Single(option =>
+            option.Format.Id == NumericFormats.TwosComplement.Id);
+        viewModel.LanePinChoices.Single(choice => choice.PinId == b2).IsSelected = false;
+        viewModel.AddNumericLane();
+
+        NumericLane edited = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal(laneId, edited.Id);
+        Assert.Equal("Count", edited.Name);
+        Assert.Equal(NumericFormats.TwosComplement.Id, edited.FormatId);
+        Assert.Equal([b0, b1], edited.PinIds);
+        Assert.False(viewModel.IsEditingLane);
+        Assert.Equal("Add numeric lane", viewModel.LaneSaveButtonText);
+        Assert.DoesNotContain(viewModel.LanePinChoices, choice => choice.IsSelected);
+
+        viewModel.Undo();
+        NumericLane restored = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal(laneId, restored.Id);
+        Assert.Equal("Value", restored.Name);
+        Assert.Equal(NumericFormats.UnsignedBinary.Id, restored.FormatId);
+        Assert.Equal([b0, b1, b2], restored.PinIds);
+    }
+
+    [Fact]
+    public void CancellingOrRemovingAnEditedLaneLeavesNoPendingDraft()
+    {
+        var viewModel = CreateEmptyEditor();
+        string b0 = AddInputPin(viewModel, "B0");
+        string b1 = AddInputPin(viewModel, "B1");
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = choice.PinId is var id && (id == b0 || id == b1);
+        }
+
+        viewModel.NewLaneName = "Pair";
+        viewModel.AddNumericLane();
+        string laneId = Assert.Single(viewModel.Definition.NumericLanes).Id;
+
+        viewModel.BeginEditNumericLane(laneId);
+        viewModel.NewLaneName = "Changed";
+        viewModel.LanePinChoices.Single(choice => choice.PinId == b1).IsSelected = false;
+        viewModel.CancelNumericLaneEdit();
+
+        Assert.False(viewModel.IsEditingLane);
+        Assert.Equal(string.Empty, viewModel.NewLaneName);
+        Assert.DoesNotContain(viewModel.LanePinChoices, choice => choice.IsSelected);
+        NumericLane unchanged = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal("Pair", unchanged.Name);
+        Assert.Equal([b0, b1], unchanged.PinIds);
+
+        viewModel.BeginEditNumericLane(laneId);
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = false;
+        }
+
+        viewModel.AddNumericLane();
+        Assert.True(viewModel.IsEditingLane);
+        Assert.Contains("at least one", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([b0, b1], Assert.Single(viewModel.Definition.NumericLanes).PinIds);
+
+        viewModel.LanePinChoices.Single(choice => choice.PinId == b0).IsSelected = true;
+        viewModel.NewLaneName = "Solo";
+        viewModel.AddNumericLane();
+        NumericLane solo = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal(laneId, solo.Id);
+        Assert.Equal("Solo", solo.Name);
+        Assert.Equal([b0], solo.PinIds);
+        Assert.False(viewModel.IsEditingLane);
+
+        viewModel.BeginEditNumericLane(laneId);
+        viewModel.RemoveNumericLane(laneId);
+        Assert.False(viewModel.IsEditingLane);
+        Assert.Empty(viewModel.Definition.NumericLanes);
+        Assert.Equal("Add numeric lane", viewModel.LaneSaveButtonText);
+    }
+
+    [Fact]
     public void RemovingAnInterfacePinPrunesDanglingParentConnections()
     {
         var viewModel = CreateEmptyEditor();

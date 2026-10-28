@@ -71,6 +71,7 @@ public sealed class EditorViewModel : ObservableObject
     private bool _newFormatLeastSignificantFirst = true;
     private string _newFormatNegativeSign = "1";
     private string? _editingFormatId;
+    private string? _editingLaneId;
     private string _formatPreviewText = string.Empty;
     private bool _refreshingFormatForm;
 
@@ -128,6 +129,7 @@ public sealed class EditorViewModel : ObservableObject
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
         CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
         AddNumericLaneCommand = new RelayCommand(AddNumericLane);
+        CancelLaneEditCommand = new RelayCommand(CancelNumericLaneEdit);
         AddNumericFormatCommand = new RelayCommand(AddCustomNumericFormat);
         CancelFormatEditCommand = new RelayCommand(CancelCustomNumericFormatEdit);
 
@@ -427,6 +429,12 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public ICommand AddNumericLaneCommand { get; }
+
+    public ICommand CancelLaneEditCommand { get; }
+
+    public bool IsEditingLane => _editingLaneId is not null;
+
+    public string LaneSaveButtonText => IsEditingLane ? "Update numeric lane" : "Add numeric lane";
 
     public ICommand AddNumericFormatCommand { get; }
 
@@ -1503,8 +1511,20 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = $"Removed numeric format '{format.Name}'";
     }
 
+    /// <summary>
+    /// Adds a lane, or updates the one currently being edited. Both paths validate the
+    /// full draft first and commit it as a single undo step.
+    /// </summary>
     public void AddNumericLane()
     {
+        NumericLane? editingLane = _editingLaneId is string editingId
+            ? Definition.FindNumericLane(editingId)
+            : null;
+        if (_editingLaneId is not null && editingLane is null)
+        {
+            CancelNumericLaneEdit();
+        }
+
         List<PinDeclaration> selected = Definition.Pins
             .Where(pin => LanePinChoices.Any(choice =>
                 choice.IsSelected && string.Equals(choice.PinId, pin.Id, StringComparison.Ordinal)))
@@ -1521,26 +1541,99 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
-        INumericFormat format = SelectedLaneFormat?.Format ?? NumericFormats.UnsignedBinary;
+        INumericFormat? chosenFormat = SelectedLaneFormat?.Format;
+        string formatId = chosenFormat?.Id ?? editingLane?.FormatId ?? NumericFormats.UnsignedBinary.Id;
+        bool updating = editingLane is not null;
         PushUndo();
-        NumericLane? lane = DefinitionEditor.AddNumericLane(
-            Definition,
-            NewLaneName,
-            format.Id,
-            selected.Select(pin => pin.Id));
+        NumericLane? lane = updating
+            ? (DefinitionEditor.UpdateNumericLane(
+                Definition,
+                editingLane!.Id,
+                NewLaneName,
+                formatId,
+                selected.Select(pin => pin.Id))
+                ? editingLane
+                : null)
+            : DefinitionEditor.AddNumericLane(Definition, NewLaneName, formatId, selected.Select(pin => pin.Id));
         if (lane is null)
         {
             _undo.Pop();
-            StatusText = "Could not add the numeric lane.";
+            StatusText = updating
+                ? "Could not update the numeric lane."
+                : "Could not add the numeric lane.";
             return;
         }
 
-        NewLaneName = string.Empty;
+        if (updating)
+        {
+            _editingLaneId = null;
+            ResetLaneForm();
+            RaisePropertyChanged(nameof(IsEditingLane));
+            RaisePropertyChanged(nameof(LaneSaveButtonText));
+        }
+        else
+        {
+            NewLaneName = string.Empty;
+        }
+
         AfterMutation(structural: true);
-        string note = string.Equals(selected[0].DomainId, format.DomainId, StringComparison.Ordinal)
+        string note = chosenFormat is null ||
+            string.Equals(selected[0].DomainId, chosenFormat.DomainId, StringComparison.Ordinal)
             ? string.Empty
-            : $" · note: {format.Name} is intended for domain '{format.DomainId}'.";
-        StatusText = $"Added numeric lane '{lane.Name}' ({lane.PinIds.Count} pins).{note}";
+            : $" · note: {chosenFormat.Name} is intended for domain '{chosenFormat.DomainId}'.";
+        StatusText = updating
+            ? $"Updated numeric lane '{lane.Name}' ({lane.PinIds.Count} pins).{note}"
+            : $"Added numeric lane '{lane.Name}' ({lane.PinIds.Count} pins).{note}";
+    }
+
+    public void BeginEditNumericLane(string laneId)
+    {
+        if (Definition.FindNumericLane(laneId) is not NumericLane lane)
+        {
+            StatusText = $"Numeric lane '{laneId}' no longer exists.";
+            return;
+        }
+
+        _editingLaneId = lane.Id;
+        NewLaneName = lane.Name;
+        NumericDisplayOption? match = FormatChoices.FirstOrDefault(option =>
+            string.Equals(option.Format.Id, lane.FormatId, StringComparison.Ordinal));
+        SelectedLaneFormat = match;
+        foreach (LanePinChoice choice in LanePinChoices)
+        {
+            choice.IsSelected = lane.PinIds.Contains(choice.PinId, StringComparer.Ordinal);
+        }
+
+        RaisePropertyChanged(nameof(IsEditingLane));
+        RaisePropertyChanged(nameof(LaneSaveButtonText));
+        StatusText = match is null
+            ? $"Editing numeric lane '{lane.Name}' · format '{lane.FormatId}' is unknown; pick a known format to replace it."
+            : $"Editing numeric lane '{lane.Name}'";
+    }
+
+    public void CancelNumericLaneEdit()
+    {
+        if (_editingLaneId is null)
+        {
+            return;
+        }
+
+        _editingLaneId = null;
+        ResetLaneForm();
+        RaisePropertyChanged(nameof(IsEditingLane));
+        RaisePropertyChanged(nameof(LaneSaveButtonText));
+        StatusText = "Lane edit cancelled";
+    }
+
+    private void ResetLaneForm()
+    {
+        NewLaneName = string.Empty;
+        SelectedLaneFormat = FormatChoices.FirstOrDefault(option =>
+            option.Format.Id == NumericFormats.UnsignedBinary.Id) ?? FormatChoices.FirstOrDefault();
+        foreach (LanePinChoice choice in LanePinChoices)
+        {
+            choice.IsSelected = false;
+        }
     }
 
     public void RemoveNumericLane(string laneId)
@@ -1550,11 +1643,20 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
+        bool wasEditing = string.Equals(_editingLaneId, laneId, StringComparison.Ordinal);
         PushUndo();
         if (!DefinitionEditor.RemoveNumericLane(Definition, laneId))
         {
             _undo.Pop();
             return;
+        }
+
+        if (wasEditing)
+        {
+            _editingLaneId = null;
+            ResetLaneForm();
+            RaisePropertyChanged(nameof(IsEditingLane));
+            RaisePropertyChanged(nameof(LaneSaveButtonText));
         }
 
         AfterMutation(structural: true);
@@ -2532,14 +2634,32 @@ public sealed class EditorViewModel : ObservableObject
                 format?.Name ?? $"{lane.FormatId} (unknown)",
                 pins.Length == 0 ? "no pins" : pins,
                 canDrive,
+                new RelayCommand(() => BeginEditNumericLane(laneId)),
                 new RelayCommand(() => RemoveNumericLane(laneId)),
                 new RelayCommand(() => DriveNumericLane(laneId))));
         }
 
         LanePinChoices.Clear();
+        NumericLane? editingLane = _editingLaneId is string editingId
+            ? Definition.FindNumericLane(editingId)
+            : null;
+        var selectedPins = editingLane is null
+            ? null
+            : new HashSet<string>(editingLane.PinIds, StringComparer.Ordinal);
         foreach (PinDeclaration pin in Definition.Pins)
         {
-            LanePinChoices.Add(new LanePinChoice(pin));
+            LanePinChoices.Add(new LanePinChoice(pin)
+            {
+                IsSelected = selectedPins?.Contains(pin.Id) ?? false,
+            });
+        }
+
+        if (_editingLaneId is not null && editingLane is null)
+        {
+            _editingLaneId = null;
+            ResetLaneForm();
+            RaisePropertyChanged(nameof(IsEditingLane));
+            RaisePropertyChanged(nameof(LaneSaveButtonText));
         }
 
         RaisePropertyChanged(nameof(HasNumericLanes));
@@ -3408,6 +3528,7 @@ public sealed class EditorViewModel : ObservableObject
 
     private void Restore(EditorSnapshot snapshot)
     {
+        CancelNumericLaneEdit();
         try
         {
             double? savedScale = _project.View.Scale;

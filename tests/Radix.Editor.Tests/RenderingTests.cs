@@ -182,6 +182,41 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void NumericLaneEditorRendersEditState()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        NumericLaneListItem lane = Assert.Single(viewModel.NumericLanes);
+        viewModel.BeginEditNumericLane(lane.Id);
+        Assert.True(viewModel.IsEditingLane);
+
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        Button update = Assert.Single(
+            window.GetVisualDescendants().OfType<Button>(),
+            button => button.Content is "Update numeric lane");
+        Button cancel = Assert.Single(
+            window.GetVisualDescendants().OfType<Button>(),
+            button => button.Content is "Cancel lane edit");
+        update.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(update.IsVisible);
+        Assert.True(cancel.IsVisible);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-lane-editor.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void EmptyProjectCanvasRendersHint()
     {
         var project = Core.Model.CircuitProject.CreateEmpty("Empty");

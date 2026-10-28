@@ -135,6 +135,47 @@ public static class DefinitionEditor
     }
 
     /// <summary>
+    /// Replaces a lane's name, format, and pin set in place. The lane keeps its ID so
+    /// nothing that refers to it has to be rewritten; callers own undo bookkeeping.
+    /// Returns false when the lane or every selected pin is gone.
+    /// </summary>
+    public static bool UpdateNumericLane(
+        CircuitDefinition definition,
+        string laneId,
+        string name,
+        string formatId,
+        IEnumerable<string> pinIds)
+    {
+        NumericLane? lane = definition.FindNumericLane(laneId);
+        if (lane is null)
+        {
+            return false;
+        }
+
+        var ordered = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string pinId in pinIds)
+        {
+            if (definition.FindPin(pinId) is not null && seen.Add(pinId))
+            {
+                ordered.Add(pinId);
+            }
+        }
+
+        if (ordered.Count == 0)
+        {
+            return false;
+        }
+
+        string trimmed = name.Trim();
+        lane.Name = trimmed.Length == 0 ? $"Bus {ordered.Count}" : trimmed;
+        lane.FormatId = formatId;
+        lane.PinIds.Clear();
+        lane.PinIds.AddRange(ordered);
+        return true;
+    }
+
+    /// <summary>
     /// After an interface pin is removed, deletes net references that pointed at that
     /// pin through instances of the definition. Empty nets with no port binding are
     /// also removed; a bound port net is retained so the broken interface stays visible.
