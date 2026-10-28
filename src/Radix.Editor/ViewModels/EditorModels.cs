@@ -28,7 +28,8 @@ public sealed class DefinitionListItem
         bool isRoot,
         bool isCurrent,
         ICommand openCommand,
-        ICommand placeCommand)
+        ICommand placeCommand,
+        ICommand duplicateCommand)
     {
         Id = definition.Id;
         Name = definition.Name;
@@ -36,6 +37,7 @@ public sealed class DefinitionListItem
         IsCurrent = isCurrent;
         OpenCommand = openCommand;
         PlaceCommand = placeCommand;
+        DuplicateCommand = duplicateCommand;
         Subtitle = $"{(isRoot ? "root · " : string.Empty)}{definition.Pins.Count} pins · {definition.Instances.Count} instances";
         Prefix = isCurrent ? "▸ " : "  ";
     }
@@ -55,6 +57,8 @@ public sealed class DefinitionListItem
     public ICommand OpenCommand { get; }
 
     public ICommand PlaceCommand { get; }
+
+    public ICommand DuplicateCommand { get; }
 }
 
 public sealed class PaletteItem

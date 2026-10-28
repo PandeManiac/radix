@@ -1195,6 +1195,77 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = $"Created component {id}";
     }
 
+    /// <summary>
+    /// Copies the active definition into a new variant. The copy keeps definition-local
+    /// IDs, so it is an independent body that still reuses the same child parts.
+    /// </summary>
+    public void DuplicateDefinition() => DuplicateDefinitionOf(Definition.Id);
+
+    private void DuplicateDefinitionOf(string definitionId)
+    {
+        if (_project.FindDefinition(definitionId) is not CircuitDefinition source)
+        {
+            StatusText = $"Definition '{definitionId}' no longer exists.";
+            return;
+        }
+
+        string id = NextDefinitionCopyId(source);
+        string name = UniqueDefinitionName(source.Name + " copy");
+
+        PushUndo();
+        CircuitDefinition copy = source.Clone(id, name);
+        int index = _project.Definitions.IndexOf(source);
+        _project.Definitions.Insert(index < 0 ? _project.Definitions.Count : index + 1, copy);
+        _definitionId = id;
+        _selectedInstanceIds.Clear();
+        _selectedInstance = null;
+        _selectedNet = null;
+        IsDirty = true;
+        RefreshAll(fit: true);
+        StatusText = $"Duplicated {source.Name} as {copy.Name} ({id})";
+    }
+
+    /// <summary>
+    /// Builds a readable copy ID such as <c>part-copy</c>, reusing the base stem when a
+    /// copy is duplicated again so repeated copies count up instead of nesting suffixes.
+    /// </summary>
+    private string NextDefinitionCopyId(CircuitDefinition source)
+    {
+        int copyIndex = source.Id.IndexOf("-copy", StringComparison.Ordinal);
+        string stem = copyIndex > 0 ? source.Id[..copyIndex] : source.Id;
+        if (stem.Length == 0)
+        {
+            stem = "part";
+        }
+
+        return DefinitionEditor.UniqueId(
+            stem + "-copy",
+            candidate => _project.FindDefinition(candidate) is not null);
+    }
+
+    private string UniqueDefinitionName(string name)
+    {
+        // Reuse the base name when copying a copy, so names count up ("Part copy 2")
+        // instead of nesting ("Part copy copy").
+        const string suffix = " copy";
+        string stem = name;
+        int copyIndex = name.IndexOf(suffix, StringComparison.Ordinal);
+        if (copyIndex > 0)
+        {
+            stem = name[..copyIndex];
+        }
+
+        string candidate = stem + suffix;
+        int index = 1;
+        while (_project.Definitions.Any(definition =>
+            string.Equals(definition.Name, candidate, StringComparison.Ordinal)))
+        {
+            candidate = stem + suffix + " " + (++index).ToString(CultureInfo.InvariantCulture);
+        }
+
+        return candidate;
+    }
+
     public void RemoveDefinition()
     {
         if (Definition.Id == _project.RootDefinitionId)
@@ -2821,7 +2892,8 @@ public sealed class EditorViewModel : ObservableObject
                 definition.Id == _project.RootDefinitionId,
                 definition.Id == Definition.Id,
                 new RelayCommand(() => OpenDefinition(id)),
-                new RelayCommand(() => PlaceDefinition(id))));
+                new RelayCommand(() => PlaceDefinition(id)),
+                new RelayCommand(() => DuplicateDefinitionOf(id))));
         }
     }
 

@@ -86,7 +86,7 @@
               <ItemsControl ItemsSource="{Binding Definitions}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:DefinitionListItem">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                       <Button Classes="list" Command="{Binding OpenCommand}">
                         <StackPanel>
                           <StackPanel Orientation="Horizontal" Spacing="4">
@@ -96,7 +96,8 @@
                           <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="10" />
                         </StackPanel>
                       </Button>
-                      <Button Grid.Column="1" Classes="tool" Content="＋" Command="{Binding PlaceCommand}" ToolTip.Tip="Place an instance of this definition" Padding="6,2" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="tool" Content="⧉" Command="{Binding DuplicateCommand}" ToolTip.Tip="Duplicate this definition as an independent variant" Padding="6,2" VerticalAlignment="Center" />
+                      <Button Grid.Column="2" Classes="tool" Content="＋" Command="{Binding PlaceCommand}" ToolTip.Tip="Place an instance of this definition" Padding="6,2" VerticalAlignment="Center" />
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

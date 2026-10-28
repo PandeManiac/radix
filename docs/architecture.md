@@ -341,6 +341,8 @@ XAML uses `DynamicResource` for those keys. Custom-drawn `CircuitCanvas` and `Wa
 
 ### 10.6 Hierarchy editing and libraries
 
+Forking an existing definition is a plain model copy: `CircuitDefinition.Clone(id, name)` deep-copies pins, instances, nets (including route points and wire colors), port bindings, and numeric lanes. Instance, net, pin, and lane IDs are definition-local, so they are preserved and the copy is independently editable; child definition references and primitive parameters are shared because both are immutable values of the project. The copy is inserted next to its source with a unique `<id>-copy` ID and a counting name, becomes the active definition, and is one undo snapshot. Because it reuses child parts, a fork never duplicates deeper hierarchy.
+
 `HierarchyEditor` owns extraction and promotion as model transformations:
 
 - extraction validates all boundary nets before mutation, creates a new `custom.<slug>` definition, clones internal instances/nets, generates unique pin IDs and human names, replaces selected instances in the parent, and rewires boundary parent nets to the replacement's pins;

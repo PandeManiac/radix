@@ -175,6 +175,8 @@ If counter values differ, record the values and diagnostics; this is a correctne
 5. Trigger a located diagnostic (for example, drive one single-driver net from two outputs, or reopen a project whose Diagnostics lists a located error), switch to **Diagnostics**, and click **Locate** on the message. Expected: the status bar names the code, the owning definition opens when needed, the named instance or net is selected, and the canvas centers on it without changing the circuit. A project-wide message has no **Locate** button.
 6. Save a project and inspect the JSON. Expected: `"version": 5`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
 7. Load a version 1, 2, 3, or 4 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 5.
+8. Duplicate a definition: select a part and click `⧉` in the Definitions list. Expected: a new entry appears directly below with an ID ending `-copy` and a name ending ` copy`; it opens automatically with the same pins, instances, nets, lane, and layout. Edit the copy's wiring or move a part; the original and every existing instance of it must stay unchanged.
+9. Duplicate the copy. Expected: the ID counts up (`part-copy2`, not `part-copy-copy`) and the name counts up (`… copy 2`). Undo once to remove only the second copy, and again to remove the first; the original remains throughout.
 
 ## 12. Unsaved changes and window behavior
 

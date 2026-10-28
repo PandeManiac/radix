@@ -207,6 +207,83 @@ public sealed class CircuitDefinition
         return port is null ? null : FindNet(port.NetId);
     }
 
+    /// <summary>
+    /// Deep-copies this definition's body under a new identity. Instance, net, pin, and
+    /// lane IDs are definition-local, so they carry over unchanged and the copy stays a
+    /// structurally independent variant. Child definition references and primitive
+    /// parameters are shared deliberately: both are immutable values of the project.
+    /// Labels, positions, routes, colors, and lane membership are copied.
+    /// </summary>
+    public CircuitDefinition Clone(string id, string name)
+    {
+        if (!Identifiers.IsValid(id))
+        {
+            throw new ArgumentException($"Invalid definition ID '{id}'. {Identifiers.Rule}", nameof(id));
+        }
+
+        var clone = new CircuitDefinition
+        {
+            Id = id,
+            Name = name,
+            Description = Description,
+        };
+
+        foreach (PinDeclaration pin in Pins)
+        {
+            clone.Pins.Add(new PinDeclaration
+            {
+                Id = pin.Id,
+                Name = pin.Name,
+                Direction = pin.Direction,
+                DomainId = pin.DomainId,
+            });
+        }
+
+        foreach (ComponentInstance instance in Instances)
+        {
+            clone.Instances.Add(new ComponentInstance
+            {
+                Id = instance.Id,
+                DefinitionId = instance.DefinitionId,
+                Primitive = instance.Primitive,
+                Label = instance.Label,
+                X = instance.X,
+                Y = instance.Y,
+            });
+        }
+
+        foreach (Net net in Nets)
+        {
+            var copy = new Net
+            {
+                Id = net.Id,
+                DomainId = net.DomainId,
+                Label = net.Label,
+                InitialValue = net.InitialValue,
+                WireColor = net.WireColor,
+            };
+            copy.RoutePoints.AddRange(net.RoutePoints);
+            copy.Pins.AddRange(net.Pins);
+            clone.Nets.Add(copy);
+        }
+
+        clone.Ports.AddRange(Ports);
+
+        foreach (NumericLane lane in NumericLanes)
+        {
+            var copy = new NumericLane
+            {
+                Id = lane.Id,
+                Name = lane.Name,
+                FormatId = lane.FormatId,
+            };
+            copy.PinIds.AddRange(lane.PinIds);
+            clone.NumericLanes.Add(copy);
+        }
+
+        return clone;
+    }
+
     public override string ToString() => Id;
 }
 

@@ -293,6 +293,85 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void DefinitionCanBeDuplicatedAsAnIndependentVariant()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.AddDefinition();
+        string originalId = viewModel.Definition.Id;
+        AddInputPin(viewModel, "A");
+        viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(c => c.Name == "AND gate"));
+        int instances = viewModel.Definition.Instances.Count;
+        int nets = viewModel.Definition.Nets.Count;
+        string netId = viewModel.Definition.Nets[0].Id;
+
+        viewModel.DuplicateDefinition();
+
+        CircuitDefinition copy = viewModel.Definition;
+        Assert.NotEqual(originalId, copy.Id);
+        Assert.Equal($"{originalId}-copy", copy.Id);
+        Assert.Equal("New component copy", copy.Name);
+        Assert.Equal(instances, copy.Instances.Count);
+        Assert.Equal(nets, copy.Nets.Count);
+        Assert.Single(copy.Pins);
+        Assert.Equal(copy.Id, viewModel.Project.View.ActiveDefinitionId);
+        Assert.False(viewModel.HasSelection);
+        Assert.Contains(viewModel.Definitions, item => item.Id == copy.Id && item.Name == copy.Name);
+        Assert.True(viewModel.IsDirty);
+
+        viewModel.SetNetWireColor(netId, "#123456");
+        CircuitDefinition original = viewModel.Project.FindDefinition(originalId)!;
+        Assert.Null(original.FindNet(netId)!.WireColor);
+
+        viewModel.DuplicateDefinition();
+        Assert.Equal($"{originalId}-copy2", viewModel.Definition.Id);
+        Assert.Equal("New component copy 2", viewModel.Definition.Name);
+
+        viewModel.Undo();
+        Assert.Equal($"{originalId}-copy", viewModel.Definition.Id);
+        Assert.Null(viewModel.Project.FindDefinition($"{originalId}-copy2"));
+        viewModel.Undo();
+        Assert.Equal($"{originalId}-copy", viewModel.Definition.Id);
+        Assert.Null(viewModel.Project.FindDefinition(copy.Id)!.FindNet(netId)!.WireColor);
+        viewModel.Undo();
+        Assert.Equal(originalId, viewModel.Definition.Id);
+        Assert.Null(viewModel.Project.FindDefinition(copy.Id));
+    }
+
+    [Fact]
+    public void DefinitionListItemCanDuplicateANonActiveDefinition()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.AddDefinition();
+        string originalId = viewModel.Definition.Id;
+        viewModel.OpenDefinition("main");
+
+        DefinitionListItem item = viewModel.Definitions.Single(entry => entry.Id == originalId);
+        item.DuplicateCommand.Execute(null);
+
+        CircuitDefinition clone = viewModel.Definition;
+        Assert.Equal($"{originalId}-copy", clone.Id);
+        Assert.NotEqual(originalId, clone.Id);
+        Assert.Equal(clone.Id, viewModel.Project.View.ActiveDefinitionId);
+    }
+
+    [Fact]
+    public void DuplicatingAStandardPartProducesAValidProject()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.OpenDefinition(StandardLibrary.DFlipFlopId);
+        string sourceName = viewModel.Definition.Name;
+
+        viewModel.DuplicateDefinition();
+
+        CircuitDefinition copy = viewModel.Definition;
+        Assert.StartsWith($"{StandardLibrary.DFlipFlopId}-copy", copy.Id, StringComparison.Ordinal);
+        Assert.Equal($"{sourceName} copy", copy.Name);
+        Assert.True(copy.Instances.Count > 0);
+        DiagnosticBag report = CircuitValidator.Validate(viewModel.Project);
+        Assert.False(report.HasErrors, string.Join('\n', report));
+    }
+
+    [Fact]
     public void PinInterfaceCanBeRenamedRetargetedAndFlipped()
     {
         var viewModel = CreateEmptyEditor();
