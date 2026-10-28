@@ -208,6 +208,41 @@ public sealed class NumericLaneListItem : ObservableObject
     }
 }
 
+/// <summary>One row in the inspector's net navigator.</summary>
+public sealed class NetListItem : ObservableObject
+{
+    private string _valueText = "—";
+    private string _valueHint = "Start or advance the simulation to read this net.";
+
+    public NetListItem(Net net, string name, string summary, ICommand selectCommand)
+    {
+        Id = net.Id;
+        Name = name;
+        Summary = summary;
+        SelectCommand = selectCommand;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public string Summary { get; }
+
+    public ICommand SelectCommand { get; }
+
+    public string ValueText
+    {
+        get => _valueText;
+        set => SetField(ref _valueText, value);
+    }
+
+    public string ValueHint
+    {
+        get => _valueHint;
+        set => SetField(ref _valueHint, value);
+    }
+}
+
 public sealed class NumericFormatModeChoice
 {
     public NumericFormatModeChoice(string id, string label)

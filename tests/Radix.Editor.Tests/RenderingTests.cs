@@ -220,6 +220,41 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void NetNavigatorRendersFilteredRowsAndLiveValues()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        viewModel.BeginSimulation();
+        viewModel.AdvanceTicksText = "100";
+        viewModel.AdvanceSimulation();
+        viewModel.NetSearch = "q";
+
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var filter = Assert.IsType<TextBox>(window.FindControl<TextBox>("NetFilterBox"));
+        filter.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(filter.IsVisible);
+        Assert.Contains(
+            window.GetVisualDescendants().OfType<TextBlock>(),
+            block => block.Text == "q0_net");
+        Assert.Contains(viewModel.NetList, item => item.Id == "q0_net" && item.ValueText == "1");
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-net-navigator.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void DomainPolicyEditorRendersPriorityFields()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());

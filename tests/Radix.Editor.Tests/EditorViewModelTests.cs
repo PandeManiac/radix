@@ -853,6 +853,42 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void NetNavigatorFiltersSelectsAndReadsNets()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        Assert.NotEmpty(viewModel.NetList);
+        Assert.True(viewModel.HasNetList);
+
+        Net q0 = viewModel.Definition.Nets.First(net => net.Id == "q0_net");
+        NetListItem q0Item = viewModel.NetList.Single(item => item.Id == q0.Id);
+        Assert.Equal("q0_net", q0Item.Name);
+        Assert.Contains("Binary", q0Item.Summary, StringComparison.Ordinal);
+
+        q0Item.SelectCommand.Execute(null);
+        Assert.Equal(q0.Id, viewModel.SelectedNetId);
+
+        viewModel.BeginSimulation();
+        viewModel.AdvanceTicksText = "100";
+        viewModel.AdvanceSimulation();
+        Assert.Equal("1", viewModel.NetList.Single(item => item.Id == q0.Id).ValueText);
+
+        Net q2 = viewModel.Definition.Nets.First(net => net.Id == "q2_net");
+        viewModel.NetSearch = "Q2";
+        Assert.NotEmpty(viewModel.NetList);
+        Assert.All(viewModel.NetList, item => Assert.Contains("Q2", item.Name, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(viewModel.NetList, item => item.Id == q2.Id);
+        Assert.Contains("matching", viewModel.NetListSummary, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.NetSearch = "zzzz";
+        Assert.Empty(viewModel.NetList);
+        Assert.False(viewModel.HasNetList);
+
+        viewModel.NetSearch = string.Empty;
+        Assert.NotEmpty(viewModel.NetList);
+        Assert.Equal(viewModel.Definition.Nets.Count, viewModel.NetList.Count);
+    }
+
+    [Fact]
     public void DiagnosticsNavigateToDefinitionInstanceAndNet()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateAccumulatorCpuDemo());

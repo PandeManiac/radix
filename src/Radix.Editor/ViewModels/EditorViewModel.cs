@@ -59,6 +59,8 @@ public sealed class EditorViewModel : ObservableObject
     private string _newDomainConflictValue = "0";
     private DriverPolicyChoice? _selectedDriverPolicy;
     private string _librarySearch = string.Empty;
+    private string _netSearch = string.Empty;
+    private string _netListSummary = string.Empty;
     private ClipboardPayload? _clipboard;
     private int _pasteOffset;
     private string? _savedProjectJson;
@@ -191,6 +193,8 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<PinListItem> Pins { get; } = [];
 
     public ObservableCollection<IoPinViewModel> IoPins { get; } = [];
+
+    public ObservableCollection<NetListItem> NetList { get; } = [];
 
     public ObservableCollection<NumericLaneListItem> NumericLanes { get; } = [];
 
@@ -426,6 +430,22 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public bool HasPaletteResults => Palette.Count > 0;
+
+    public string NetSearch
+    {
+        get => _netSearch;
+        set
+        {
+            if (SetField(ref _netSearch, value))
+            {
+                RefreshNetList();
+            }
+        }
+    }
+
+    public string NetListSummary => _netListSummary;
+
+    public bool HasNetList => NetList.Count > 0;
 
     public bool HasNumericLanes => NumericLanes.Count > 0;
 
@@ -2603,6 +2623,7 @@ public sealed class EditorViewModel : ObservableObject
         RefreshPins();
         RefreshIoPins();
         RefreshNumericLanes();
+        RefreshNetList();
         RebuildLayout();
         RefreshInspector();
         RefreshDiagnosticsFromValidator();
@@ -2793,6 +2814,83 @@ public sealed class EditorViewModel : ObservableObject
 
         RaisePropertyChanged(nameof(HasCustomNumericFormats));
         RefreshFormatPreview();
+    }
+
+    private const int MaxNetListRows = 200;
+
+    /// <summary>
+    /// Projects Definition.Nets into a filtered, read-only navigator. Selection only
+    /// changes the editor's current net; connectivity and simulation are untouched.
+    /// </summary>
+    private void RefreshNetList()
+    {
+        NetList.Clear();
+        string query = _netSearch.Trim();
+        int matched = 0;
+        foreach (Net net in Definition.Nets)
+        {
+            SignalDomain? domain = _project.FindDomain(net.DomainId);
+            string name = string.IsNullOrWhiteSpace(net.Label) ? net.Id : net.Label;
+            string summary = string.IsNullOrWhiteSpace(net.Label)
+                ? $"{domain?.Name ?? net.DomainId} · {net.Pins.Count} pin(s)"
+                : $"{net.Id} · {domain?.Name ?? net.DomainId} · {net.Pins.Count} pin(s)";
+            if (query.Length > 0 &&
+                !name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !net.Id.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !net.DomainId.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !(domain?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                continue;
+            }
+
+            matched++;
+            if (NetList.Count >= MaxNetListRows)
+            {
+                continue;
+            }
+
+            string netId = net.Id;
+            NetList.Add(new NetListItem(
+                net,
+                name,
+                summary,
+                new RelayCommand(() => SelectNet(netId))));
+        }
+
+        _netListSummary = query.Length == 0
+            ? (matched > MaxNetListRows
+                ? $"Showing first {MaxNetListRows} of {matched} nets"
+                : $"{matched} net(s)")
+            : $"{NetList.Count} of {matched} matching net(s)";
+        RaisePropertyChanged(nameof(NetListSummary));
+        RaisePropertyChanged(nameof(HasNetList));
+        RefreshNetListValues();
+    }
+
+    private void RefreshNetListValues()
+    {
+        foreach (NetListItem item in NetList)
+        {
+            if (Simulator.Circuit is null || Simulator.Engine is null)
+            {
+                item.ValueText = "—";
+                item.ValueHint = "Start or advance the simulation to read this net.";
+                continue;
+            }
+
+            if (!Simulator.TryNetIndex(item.Id, out int netIndex, out SignalDomain? domain) || domain is null)
+            {
+                item.ValueText = "?";
+                item.ValueHint = "This net is not part of the compiled circuit.";
+                continue;
+            }
+
+            int value = Simulator.Engine.GetNetValue(netIndex);
+            item.ValueText = value < 0 ? "z" : domain.ValueName(value);
+            item.ValueHint = value < 0
+                ? $"Net '{item.Name}' · domain {domain.Name} · undriven"
+                : $"Net '{item.Name}' · domain {domain.Name} · value {domain.ValueName(value)}";
+        }
     }
 
     private void RefreshNumericLanes()
@@ -3316,6 +3414,7 @@ public sealed class EditorViewModel : ObservableObject
             RefreshPins();
             RefreshIoPins();
             RefreshNumericLanes();
+            RefreshNetList();
             RefreshEvents();
         }
         else
@@ -3449,6 +3548,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         RefreshDiagnosticsFromSimulator();
         RefreshIoValues();
+        RefreshNetListValues();
         RefreshWaveform();
         RefreshRecentTransitions();
         RaisePropertyChanged(nameof(SimTimeText));

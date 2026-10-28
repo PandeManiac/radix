@@ -289,6 +289,29 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <TextBlock Text="NETS" Classes="section" />
+                <TextBlock Text="Browse this definition's connectivity. Selecting a row highlights its wire and opens the net inspector; the circuit is unchanged." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,0,0,4" />
+                <TextBox x:Name="NetFilterBox" Watermark="filter nets…" Text="{Binding NetSearch, Mode=TwoWay}" />
+                <TextBlock Text="{Binding NetListSummary}" Classes="muted" FontSize="9" Margin="0,2,0,2" />
+                <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding NetList}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:NetListItem">
+                        <Button Classes="list" Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" ToolTip.Tip="{Binding ValueHint}">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <StackPanel>
+                              <TextBlock Text="{Binding Name}" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+                              <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding ValueText}" FontFamily="monospace" FontSize="11.5" Foreground="{DynamicResource App.Accent}" VerticalAlignment="Center" />
+                          </Grid>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+                <TextBlock Text="No matching nets." Classes="muted" FontSize="9.5" IsVisible="{Binding !HasNetList}" />
+
                 <TextBlock Text="NUMERIC LANES" Classes="section" />
                 <TextBlock Text="Presentation-only ordering of interface pins. The first pin is least significant; nets, drivers, and simulation are untouched." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,0,0,4" />
                 <ItemsControl ItemsSource="{Binding NumericLanes}">

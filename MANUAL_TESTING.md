@@ -19,7 +19,8 @@ The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git
 - `workbench-accumulator-lanes.png` (scrolled numeric-lane inspector with a drive control);
 - `workbench-lane-editor.png` (numeric lane loaded into the edit form);
 - `workbench-domain-policy.png` (signal-domain inspector with a priority table);
-- `workbench-diagnostics-locate.png` (Diagnostics tab with a Locate action).
+- `workbench-diagnostics-locate.png` (Diagnostics tab with a Locate action);
+- `workbench-net-navigator.png` (filtered net list with live values).
 
 Launch the editor only when you are ready to use it:
 
@@ -64,6 +65,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, custom numeric formats, and the active definition/viewport survive (project format v5).
 7. In the net inspector, set **Wire color** to `#38bdf8`, then `auto`. Expected: valid hex applies; invalid text is rejected with a status message; `auto` returns to domain/signal coloring.
 8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
+9. Scroll to **NETS** in the Inspect tab. Expected: every net in the current definition appears with its domain, pin count, and a live value once the simulation has advanced. Type `q` in the filter. Expected: only matching nets remain and the summary reports the match count. Click `q0_net`. Expected: its wire is selected and the net inspector opens, without changing connectivity or simulation state.
 
 ## 4. Editing, selection, and clipboard
 
