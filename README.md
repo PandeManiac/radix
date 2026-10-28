@@ -252,7 +252,7 @@ docs/                    architecture, project format, test scripts, benchmarks
 
 1. Add an incremental compile path: validation and flattening are now close to linear (20,000 synthetic gates compile in ~134 ms), but every structural edit still recompiles the whole project. Measure before optimizing.
 2. Make structural layout incremental: drag, nudges, alignment, and bendpoint edits reuse valid unchanged routes, but placement, deletion, and connection edits still rebuild every box, port, and route. Measure before optimizing.
-3. Extend script assertions beyond sampled levels and change counts: setup/hold constraints would cover properties that the current timing windows deliberately do not. Direction-filtered counts and ordered edge sequences are implemented.
+3. Extend script assertions beyond interface sampling: setup windows, hold windows, direction-filtered counts, and ordered edge sequences are implemented, but scripts still cannot assert internal nets or relate two pins without enumerating steps.
 4. Explore an analog boundary as a separate solver sharing the project and UI, not as a new discrete primitive.
 
 RADIX is intentionally a foundation: the interesting architectures should live in projects, not in this engine.
