@@ -122,6 +122,50 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void WaveformMarkersPinTwoTicksAndRenderADelta()
+    {
+        var snapshot = new WaveformSnapshot(
+            0,
+            50,
+            [
+                new WaveformRow(
+                    "q",
+                    StandardDomains.Binary(),
+                    startValue: 0,
+                    changes: [new WaveValueChange(10, 1), new WaveValueChange(20, 0)]),
+            ]);
+        var waveform = new WaveformView { Snapshot = snapshot };
+        var window = new Window { Content = waveform, Width = 640, Height = 220 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        waveform.SetMarkerA(-10);
+        Assert.Equal(0, waveform.MarkerA);
+        waveform.SetMarkerA(10);
+        waveform.SetMarkerB(500);
+        Assert.Equal(50, waveform.MarkerB);
+        waveform.SetMarkerB(40);
+
+        Assert.Equal(10, waveform.MarkerA);
+        Assert.Equal(40, waveform.MarkerB);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(640, 220), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-waveform-markers.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        waveform.ClearMarkers();
+        Assert.Null(waveform.MarkerA);
+        Assert.Null(waveform.MarkerB);
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 2_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void NumericLaneDriveControlsRenderInInspector()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateAccumulatorCpuDemo());

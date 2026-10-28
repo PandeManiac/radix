@@ -856,12 +856,13 @@
                 <StackPanel>
                   <TextBlock Text="Recorded net transitions" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource App.TextPrimary}" />
                   <TextBlock Text="{Binding WaveformPinSummary}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,2" />
-                  <TextBlock Text="Wheel zooms · drag pans · double-click fits · hover or click reads every net at that tick." Classes="muted" FontSize="9" Margin="0,0,0,5" />
+                  <TextBlock Text="Wheel zooms · drag pans · double-click fits and clears markers." Classes="muted" FontSize="9" Margin="0,0,0,1" />
+                  <TextBlock Text="Click pins A · Shift+click pins B · right-click clears · hover reads every net at that tick." Classes="muted" FontSize="9" Margin="0,0,0,5" TextWrapping="Wrap" />
                 </StackPanel>
                 <Button Grid.Column="1" Content="Clear pins" Command="{Binding ClearWaveformPinsCommand}" IsVisible="{Binding HasWaveformPins}" VerticalAlignment="Top" Margin="0,0,0,5" ToolTip.Tip="Remove every waveform pin for this definition; the net set returns to declaration order" />
               </Grid>
               <Border Grid.Row="1" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
-                <controls:WaveformView Snapshot="{Binding Waveform}" ToolTip.Tip="Wheel zooms around the pointer; drag pans; double-click refits; hover or click pins a time cursor" />
+                <controls:WaveformView Snapshot="{Binding Waveform}" ToolTip.Tip="Wheel zooms; drag pans; click pins marker A, Shift+click pins B, right-click clears; hover reads values at a tick" />
               </Border>
             </Grid>
           </TabItem>

@@ -29,10 +29,15 @@ public sealed class WaveformView : Control
     private IBrush _four = Brushes.MediumVioletRed;
     private IBrush _accent = Brushes.SteelBlue;
     private long? _cursorTime;
+    private long? _markerA;
+    private long? _markerB;
     private bool _followEnd = true;
     private long _lastEnd = 1;
     private Rect _plotRect;
     private bool _panning;
+    private bool _pointerMoved;
+    private bool _pointerAddsB;
+    private Point _pointerDown;
     private Point _panOrigin;
     private long _panStart;
     private long _panEnd;
@@ -44,6 +49,48 @@ public sealed class WaveformView : Control
     {
         get => GetValue(SnapshotProperty);
         set => SetValue(SnapshotProperty, value);
+    }
+
+    /// <summary>First pinned comparison tick, or null when unset.</summary>
+    public long? MarkerA => _markerA;
+
+    /// <summary>Second pinned comparison tick, or null when unset.</summary>
+    public long? MarkerB => _markerB;
+
+    /// <summary>Pins marker A to an absolute tick, clamped to the recorded trace.</summary>
+    public void SetMarkerA(long time) => SetMarker(ref _markerA, time);
+
+    /// <summary>Pins marker B to an absolute tick, clamped to the recorded trace.</summary>
+    public void SetMarkerB(long time) => SetMarker(ref _markerB, time);
+
+    /// <summary>Removes both comparison markers.</summary>
+    public void ClearMarkers()
+    {
+        if (_markerA is null && _markerB is null)
+        {
+            return;
+        }
+
+        _markerA = null;
+        _markerB = null;
+        InvalidateVisual();
+    }
+
+    private void SetMarker(ref long? marker, long time)
+    {
+        if (Snapshot is not { } snapshot)
+        {
+            return;
+        }
+
+        long clamped = Math.Clamp(time, 0, Math.Max(0, snapshot.End));
+        if (marker == clamped)
+        {
+            return;
+        }
+
+        marker = clamped;
+        InvalidateVisual();
     }
 
     static WaveformView()
@@ -164,6 +211,7 @@ public sealed class WaveformView : Control
             }
         }
 
+        DrawMarkers(context, start, end, plot);
         long? cursor = _cursorTime is long rawCursor
             ? Math.Clamp(rawCursor, start, end)
             : null;
@@ -180,21 +228,107 @@ public sealed class WaveformView : Control
             context.DrawText(stamp, new Point(stampX, 2));
         }
 
+        bool compareMarkers = cursor is null && _markerA is not null && _markerB is not null;
         for (int rowIndex = 0; rowIndex < snapshot.Rows.Count; rowIndex++)
         {
             WaveformRow row = snapshot.Rows[rowIndex];
             double center = plot.Top + (rowIndex * rowHeight) + (rowHeight / 2);
-            int value = cursor is long cursorAt
-                ? row.ValueAt(cursorAt)
-                : row.Changes.Count == 0
-                    ? row.StartValue
-                    : row.Changes[^1].Value;
+            string text;
+            IBrush brush;
+            if (cursor is long cursorAt)
+            {
+                int value = row.ValueAt(cursorAt);
+                text = value < 0 ? "z" : Format(value, row.Domain);
+                brush = ValueBrush(row.Domain, value);
+            }
+            else if (compareMarkers)
+            {
+                int first = row.ValueAt(_markerA!.Value);
+                int second = row.ValueAt(_markerB!.Value);
+                text = $"{(first < 0 ? "z" : Format(first, row.Domain))}/{(second < 0 ? "z" : Format(second, row.Domain))}";
+                brush = _ink;
+            }
+            else if (_markerB is long markerB)
+            {
+                int value = row.ValueAt(markerB);
+                text = value < 0 ? "z" : Format(value, row.Domain);
+                brush = ValueBrush(row.Domain, value);
+            }
+            else if (_markerA is long markerA)
+            {
+                int value = row.ValueAt(markerA);
+                text = value < 0 ? "z" : Format(value, row.Domain);
+                brush = ValueBrush(row.Domain, value);
+            }
+            else
+            {
+                int value = row.Changes.Count == 0 ? row.StartValue : row.Changes[^1].Value;
+                text = value < 0 ? "z" : Format(value, row.Domain);
+                brush = ValueBrush(row.Domain, value);
+            }
+
             FormattedText last = Text(
-                value < 0 ? "z" : Format(value, row.Domain),
+                text,
                 Math.Min(10, Math.Max(8, rowHeight * 0.4)),
-                ValueBrush(row.Domain, value));
+                brush);
             context.DrawText(last, new Point(plot.Right + 4, center - (last.Height / 2)));
         }
+    }
+
+    private void DrawMarkers(DrawingContext context, long start, long end, Rect plot)
+    {
+        if (_markerA is null && _markerB is null)
+        {
+            return;
+        }
+
+        if (_markerA is long markerA)
+        {
+            DrawMarker(context, markerA, "A", _accent, 0, start, end, plot);
+        }
+
+        if (_markerB is long markerB)
+        {
+            DrawMarker(context, markerB, "B", _two, 1, start, end, plot);
+        }
+
+        string summary;
+        if (_markerA is long a && _markerB is long b)
+        {
+            long delta = Math.Abs(b - a);
+            summary = $"A={a.ToString(CultureInfo.InvariantCulture)} · B={b.ToString(CultureInfo.InvariantCulture)} · Δ={delta.ToString(CultureInfo.InvariantCulture)}";
+        }
+        else
+        {
+            long value = _markerA ?? _markerB!.Value;
+            summary = $"{(_markerA is null ? "B" : "A")}={value.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        FormattedText text = Text(summary, 9, _ink);
+        context.FillRectangle(_panel, new Rect(6, 1, text.Width + 4, text.Height + 2));
+        context.DrawText(text, new Point(8, 2));
+    }
+
+    private void DrawMarker(
+        DrawingContext context,
+        long time,
+        string label,
+        IBrush brush,
+        int row,
+        long start,
+        long end,
+        Rect plot)
+    {
+        if (time < start || time > end)
+        {
+            return;
+        }
+
+        double x = X(time, start, end, plot);
+        context.DrawLine(new Pen(brush, 1.4), new Point(x, plot.Top), new Point(x, plot.Bottom));
+        FormattedText badge = Text(label, 9, brush, FontWeight.Bold);
+        context.FillRectangle(_panel, new Rect(x + 2, plot.Top + 2 + (row * 12), badge.Width + 4, badge.Height + 1));
+        context.DrawText(badge, new Point(x + 4, plot.Top + 2 + (row * 12)));
     }
 
     /// <summary>
@@ -208,6 +342,8 @@ public sealed class WaveformView : Control
         if (end < _lastEnd)
         {
             _followEnd = true;
+            _markerA = null;
+            _markerB = null;
         }
 
         _lastEnd = end;
@@ -252,23 +388,41 @@ public sealed class WaveformView : Control
             return;
         }
 
+        Point position = e.GetPosition(this);
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        {
+            if (_plotRect.Contains(position))
+            {
+                ClearMarkers();
+                _cursorTime = null;
+                InvalidateVisual();
+                e.Handled = true;
+            }
+
+            return;
+        }
+
         if (e.ClickCount == 2)
         {
             FitAll();
+            ClearMarkers();
             e.Handled = true;
             return;
         }
 
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed ||
             _plotRect.Width <= 0 ||
-            !_plotRect.Contains(e.GetPosition(this)))
+            !_plotRect.Contains(position))
         {
             return;
         }
 
         _cursorTime = null;
+        _pointerMoved = false;
+        _pointerAddsB = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        _pointerDown = position;
         _panning = true;
-        _panOrigin = e.GetPosition(this);
+        _panOrigin = position;
         _panStart = VisibleWindow.Start;
         _panEnd = VisibleWindow.End;
         e.Pointer.Capture(this);
@@ -299,6 +453,14 @@ public sealed class WaveformView : Control
             return;
         }
 
+        if (!_pointerMoved &&
+            Math.Abs(position.X - _pointerDown.X) <= 2 &&
+            Math.Abs(position.Y - _pointerDown.Y) <= 2)
+        {
+            return;
+        }
+
+        _pointerMoved = true;
         double deltaX = position.X - _panOrigin.X;
         long span = Math.Max(1, _panEnd - _panStart);
         long deltaTicks = -(long)Math.Round(deltaX / _plotRect.Width * span);
@@ -316,11 +478,17 @@ public sealed class WaveformView : Control
             return;
         }
 
+        bool activateMarker = !_pointerMoved;
         _panning = false;
         e.Pointer.Capture(null);
-        if (Snapshot is { } snapshot && _plotRect.Contains(e.GetPosition(this)))
+        Point position = e.GetPosition(this);
+        if (Snapshot is { } snapshot && _plotRect.Contains(position))
         {
-            SetCursorAt(e.GetPosition(this).X, snapshot);
+            SetCursorAt(position.X, snapshot);
+            if (activateMarker)
+            {
+                SetMarkerAt(position.X, snapshot);
+            }
         }
 
         e.Handled = true;
@@ -339,11 +507,7 @@ public sealed class WaveformView : Control
     /// <summary>Maps a horizontal plot position to an absolute tick and redraws.</summary>
     private void SetCursorAt(double x, WaveformSnapshot snapshot)
     {
-        long start = VisibleWindow.Start;
-        long end = Math.Max(VisibleWindow.End, start + 1);
-        double fraction = Math.Clamp((x - _plotRect.Left) / _plotRect.Width, 0, 1);
-        long time = start + (long)Math.Round(fraction * (end - start));
-        time = Math.Clamp(time, 0, Math.Max(0, snapshot.End));
+        long time = TickAt(x, snapshot);
         if (_cursorTime == time)
         {
             return;
@@ -351,6 +515,28 @@ public sealed class WaveformView : Control
 
         _cursorTime = time;
         InvalidateVisual();
+    }
+
+    private void SetMarkerAt(double x, WaveformSnapshot snapshot)
+    {
+        long time = TickAt(x, snapshot);
+        if (_pointerAddsB)
+        {
+            SetMarkerB(time);
+        }
+        else
+        {
+            SetMarkerA(time);
+        }
+    }
+
+    private long TickAt(double x, WaveformSnapshot snapshot)
+    {
+        long start = VisibleWindow.Start;
+        long end = Math.Max(VisibleWindow.End, start + 1);
+        double fraction = Math.Clamp((x - _plotRect.Left) / _plotRect.Width, 0, 1);
+        long time = start + (long)Math.Round(fraction * (end - start));
+        return Math.Clamp(time, 0, Math.Max(0, snapshot.End));
     }
 
     private static double X(long time, long start, long end, Rect plot) =>
