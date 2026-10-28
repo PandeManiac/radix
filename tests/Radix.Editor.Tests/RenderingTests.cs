@@ -10,6 +10,7 @@ using Radix.Core.Model;
 using Radix.Core.Signals;
 using Radix.Editor.Controls;
 using Radix.Editor.Rendering;
+using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -453,6 +454,28 @@ public sealed class RenderingTests
         {
             application.RequestedThemeVariant = previous;
         }
+    }
+
+    [AvaloniaFact]
+    public void MainWindowCapturesWorkspacePreferences()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        var window = new MainWindow { DataContext = viewModel, Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        window.InspectorTabIndex = 3;
+        WorkspaceSettings workspace = window.CaptureWorkspace();
+
+        Assert.Equal(3, workspace.InspectorTabIndex);
+        Assert.False(workspace.Maximized);
+        Assert.InRange(workspace.WindowWidth, 1000, 1300);
+        Assert.InRange(workspace.WindowHeight, 700, 900);
+
+        window.InspectorTabIndex = 99;
+        Assert.Equal(WorkspacePreferences.MaxInspectorTabIndex, window.InspectorTabIndex);
+
+        window.Close();
     }
 
     [Fact]

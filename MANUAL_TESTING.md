@@ -185,6 +185,9 @@ If counter values differ, record the values and diagnostics; this is a correctne
 4. Resize to minimum size: left rail and inspector scroll, canvas remains usable.
 5. Zoom/pan, clear selection on empty click, press Escape during a pending wire, and hover pins for tooltips.
 6. `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Ctrl+C/V/D/A`, `Delete`, arrow nudging, and `Ctrl+S/Shift+S` should work without moving the mouse. Shortcuts must not hijack typing in a TextBox.
+7. Resize to about 1200×800, select the **Waveform** tab, and close the app. Relaunch. Expected: the window reopens at the same size with **Waveform** active. Maximize, close, and relaunch; expected: maximized again. Restore the window; expected: it returns to the last normal size.
+8. Preferences live outside projects: `%APPDATA%\Radix\workspace.json` on Windows or `~/.config/Radix/workspace.json` on Linux; the theme remains in `theme.txt` beside it. Delete `workspace.json` and relaunch. Expected: the default 1480×920 window on the **Inspect** tab.
+9. Resize the window or switch tabs, then save a project. Expected: the project JSON and its `view` metadata are unchanged by these preferences, and reopening the project does not alter the window layout.
 
 ## 13. Scripted CLI tests
 

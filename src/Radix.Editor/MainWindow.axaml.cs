@@ -12,10 +12,22 @@ public partial class MainWindow : Window
 {
     private readonly bool _themeReady;
     private bool _closeConfirmed;
+    private double _normalWorkspaceWidth = WorkspaceSettings.DefaultWidth;
+    private double _normalWorkspaceHeight = WorkspaceSettings.DefaultHeight;
 
     public MainWindow()
     {
         InitializeComponent();
+        _normalWorkspaceWidth = double.IsFinite(Width) ? Width : WorkspaceSettings.DefaultWidth;
+        _normalWorkspaceHeight = double.IsFinite(Height) ? Height : WorkspaceSettings.DefaultHeight;
+        SizeChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Normal && Bounds.Width >= MinWidth && Bounds.Height >= MinHeight)
+            {
+                _normalWorkspaceWidth = Bounds.Width;
+                _normalWorkspaceHeight = Bounds.Height;
+            }
+        };
         ThemeBox.SelectedIndex = (int)ThemeService.Current;
         _themeReady = true;
         ThemeService.Changed += ThemeService_Changed;
@@ -62,6 +74,22 @@ public partial class MainWindow : Window
         ThemeBox.SelectedIndex = (int)ThemeService.Current;
         ViewModel?.RefreshTheme();
     }
+
+    /// <summary>Active inspector tab; used to restore and capture workspace state.</summary>
+    public int InspectorTabIndex
+    {
+        get => RightTabs.SelectedIndex;
+        set => RightTabs.SelectedIndex = Math.Clamp(value, 0, RightTabs.ItemCount - 1);
+    }
+
+    /// <summary>Snapshot for per-user preferences; never includes project content.</summary>
+    public WorkspaceSettings CaptureWorkspace() => new()
+    {
+        WindowWidth = _normalWorkspaceWidth,
+        WindowHeight = _normalWorkspaceHeight,
+        Maximized = WindowState == WindowState.Maximized,
+        InspectorTabIndex = RightTabs.SelectedIndex,
+    };
 
     private EditorViewModel? ViewModel => DataContext as EditorViewModel;
 

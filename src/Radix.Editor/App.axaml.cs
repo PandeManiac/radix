@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Radix.Editor.Services;
@@ -16,8 +17,22 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             ThemeService.Initialize();
+            WorkspaceSettings workspace = WorkspacePreferences.Load();
             var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
-            desktop.MainWindow = new MainWindow { DataContext = viewModel };
+            var window = new MainWindow
+            {
+                DataContext = viewModel,
+                Width = workspace.WindowWidth,
+                Height = workspace.WindowHeight,
+                InspectorTabIndex = workspace.InspectorTabIndex,
+            };
+            if (workspace.Maximized)
+            {
+                window.WindowState = WindowState.Maximized;
+            }
+
+            window.Closed += (_, _) => WorkspacePreferences.Save(window.CaptureWorkspace());
+            desktop.MainWindow = window;
         }
 
         base.OnFrameworkInitializationCompleted();
