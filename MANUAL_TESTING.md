@@ -180,7 +180,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 
 1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 6 step(s) through t=50`, exit code 0.
 2. Run `dotnet run --project src/Radix.Cli -- test examples/accumulator-cpu.radix examples/tests/accumulator.radixtest`. Expected: PASS; the signed `Result` lane is `-1` after LOAD 15 and `0` after adding 1, with `CARRY=1`.
-3. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 40 step(s) through t=1280`, exit code 0.
+3. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 37 step(s) through t=1180`, exit code 0.
 4. Copy the DFF script to a scratch file and change the `t=30` expectation for `q` from `1` to `0`. Expected: `FAIL`, one line naming `step 4 (t=30)`, expected and actual values; exit code 1.
 5. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
 6. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
@@ -189,28 +189,27 @@ These steps use a terminal only; they never open a window. Run from the reposito
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
-1. Open `examples/tiny-cpu.radix`. Expected: the canvas shows the ROM, decoder, program counter, accumulator, RAM, and a fixed lane legend; **OPCODE**, **OPERAND**, **INSTRUCTION**, **PC**, **ACC**, and **MEM** appear in the inspector.
-2. Click **Begin**, then drive `CLK = 0` and `RESET = 0`. Expected: `PC = 0`, `ACC = 0`, `MEM = 0`, `ZERO = 1`, `IR = 23` (0x17), opcode 1, operand 7.
+1. Open `examples/tiny-cpu.radix`. Expected: the canvas shows the ROM, decoder, program counter, accumulator, RAM, stack pointer, and a fixed lane legend; **OPCODE**, **OPERAND**, **INSTRUCTION**, **PC**, **ACC**, **SP**, and **MEM** appear in the inspector.
+2. Click **Begin**, then drive `CLK = 0` and `RESET = 0`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `MEM = 0`, `ZERO = 1`, `IR = 21` (0x15), opcode 1, operand 5.
 3. For each rising edge, set `CLK = 1`, click **Settle**, check the row below, then set `CLK = 0`. Expected sequence:
 
-| Edge | PC | IR | Op | Operand | ACC | MEM | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 1 | 51 (0x33) | 3 | 3 | 7 | 0 | LDA 7 done; STA 3 fetched |
-| 2 | 2 | 16 (0x10) | 1 | 0 | 7 | 0 | STA 3 stored 7; MEM now reads address 0 |
-| 3 | 3 | 131 (0x83) | 8 | 3 | 0 | 7 | LDA 0 done; RAM word 3 visible |
-| 4 | 4 | 33 (0x21) | 2 | 1 | 7 | 0 | LDA@ 3 loaded 7 |
-| 5 | 5 | 52 (0x34) | 3 | 4 | 8 | 0 | ADD 1; STA 4 fetched |
-| 6 | 6 | 16 (0x10) | 1 | 0 | 8 | 0 | STA 4 stored 8 |
-| 7 | 7 | 132 (0x84) | 8 | 4 | 0 | 8 | LDA 0 done; RAM word 4 visible |
-| 8 | 8 | 147 (0x93) | 9 | 3 | 8 | 7 | LDA@ 4 loaded 8; ADD@ 3 fetched |
-| 9 | 9 | 53 (0x35) | 3 | 5 | 15 | 0 | ADD@ 3 made 15; STA 5 fetched |
-| 10 | 10 | 16 (0x10) | 1 | 0 | 15 | 0 | STA 5 stored 15 |
-| 11 | 11 | 133 (0x85) | 8 | 5 | 0 | 15 | LDA 0 done; RAM word 5 visible |
-| 12 | 12 | 108 (0x6C) | 6 | 12 | 15 | 0 | LDA@ 5 loaded 15 |
-| 13 | 12 | 108 (0x6C) | 6 | 12 | 15 | 0 | JMP 12 halt loop holds state |
+| Edge | PC | IR | Op | Operand | ACC | SP | MEM | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 56 (0x38) | 3 | 8 | 5 | 0 | 0 | LDA 5 done; STA 8 fetched |
+| 2 | 2 | 25 (0x19) | 1 | 9 | 5 | 0 | 0 | STA 8 stored 5 |
+| 3 | 3 | 160 (0xA0) | 10 | 0 | 9 | 0 | 0 | LDA 9 done; PUSH fetched |
+| 4 | 4 | 16 (0x10) | 1 | 0 | 9 | 1 | 9 | PUSH wrote 9; SP advanced |
+| 5 | 5 | 176 (0xB0) | 11 | 0 | 0 | 1 | 9 | LDA 0 done; stack top visible |
+| 6 | 6 | 57 (0x39) | 3 | 9 | 9 | 0 | 0 | POP restored 9; SP rewound |
+| 7 | 7 | 204 (0xCC) | 12 | 12 | 9 | 0 | 9 | STA 9 stored 9; CALL fetched |
+| 8 | 12 | 136 (0x88) | 8 | 8 | 9 | 1 | 5 | CALL pushed return address 8 |
+| 9 | 13 | 153 (0x99) | 9 | 9 | 5 | 1 | 9 | LDA@ 8 loaded 5 |
+| 10 | 14 | 208 (0xD0) | 13 | 0 | 14 | 1 | 8 | ADD@ 9 made 14; stack top is 8 |
+| 11 | 8 | 104 (0x68) | 6 | 8 | 14 | 0 | 5 | RET returned to PC 8 |
+| 12 | 8 | 104 (0x68) | 6 | 8 | 14 | 0 | 5 | JMP 8 halt loop holds state |
 
-4. Drive `RESET = 1`, raise `CLK`, then lower `CLK`. Expected: `PC = 0`, `ACC = 0`, `CARRY = 0`; RAM contents are retained, and the machine restarts at instruction 0. Drive `RESET = 0` before continuing.
-5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, RAM write enables, IR bits, carry, and zero; no errors or warnings appear.
+4. Drive `RESET = 1`, raise `CLK`, then lower `CLK`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `CARRY = 0`; RAM contents are retained, and the machine restarts at instruction 0. Drive `RESET = 0` before continuing.
+5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, and zero; no errors or warnings appear.
 9. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, IR bits, carry, and zero; no errors or warnings appear.
 
 ## 15. Known limitations to verify as *limitations*

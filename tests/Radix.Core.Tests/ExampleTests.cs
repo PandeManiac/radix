@@ -152,33 +152,34 @@ public sealed class ExampleTests
         engine.Settle(80);
 
         Assert.Equal(0, ReadLane(engine, "pc", 4));
-        Assert.Equal(0x17, ReadLane(engine, "ir", 8));
+        Assert.Equal(0x15, ReadLane(engine, "ir", 8));
+        Assert.Equal(0, ReadLane(engine, "sp", 4));
         Assert.Equal(0, ReadLane(engine, "mem", 4));
         Assert.Equal(1, engine.Read("zero"));
 
-        (int Pc, int Ir, int Acc, int Mem)[] states =
+        (int Pc, int Ir, int Acc, int Sp, int Mem)[] states =
         [
-            (1, 0x33, 7, 0),    // LDA 7 executed; STA 3 fetched
-            (2, 0x10, 7, 0),    // STA 3 stored 7
-            (3, 0x83, 0, 7),    // LDA 0 executed; no store yet at address 3
-            (4, 0x21, 7, 0),    // LDA@ 3 loaded 7
-            (5, 0x34, 8, 0),    // ADD 1 executed; STA 4 fetched
-            (6, 0x10, 8, 0),    // STA 4 stored 8
-            (7, 0x84, 0, 8),    // LDA 0 executed
-            (8, 0x93, 8, 7),    // LDA@ 4 loaded 8
-            (9, 0x35, 15, 0),   // ADD@ 3 added 7
-            (10, 0x10, 15, 0),  // STA 5 stored 15
-            (11, 0x85, 0, 15),  // LDA 0 executed
-            (12, 0x6C, 15, 0),  // LDA@ 5 loaded 15
-            (12, 0x6C, 15, 0),  // JMP 12 loops
+            (1, 0x38, 5, 0, 0),    // LDA 5 executed; STA 8 fetched
+            (2, 0x19, 5, 0, 0),    // STA 8 stored 5
+            (3, 0xA0, 9, 0, 0),    // LDA 9 executed; PUSH fetched
+            (4, 0x10, 9, 1, 9),    // PUSH wrote 9 and advanced SP
+            (5, 0xB0, 0, 1, 9),    // LDA 0 executed; stack top visible
+            (6, 0x39, 9, 0, 0),    // POP restored 9 and rewound SP
+            (7, 0xCC, 9, 0, 9),    // STA 9 stored 9; CALL fetched
+            (12, 0x88, 9, 1, 5),   // CALL pushed return address 8
+            (13, 0x99, 5, 1, 9),   // LDA@ 8 loaded 5
+            (14, 0xD0, 14, 1, 8),  // ADD@ 9 added 9; stack top is return address
+            (8, 0x68, 14, 0, 5),   // RET returned to PC 8
+            (8, 0x68, 14, 0, 5),   // JMP 8 loops
         ];
 
-        foreach ((int pc, int instruction, int accumulator, int memory) in states)
+        foreach ((int pc, int instruction, int accumulator, int sp, int memory) in states)
         {
             PulseClock(engine);
             Assert.Equal(pc, ReadLane(engine, "pc", 4));
             Assert.Equal(instruction, ReadLane(engine, "ir", 8));
             Assert.Equal(accumulator, ReadLane(engine, "acc", 4));
+            Assert.Equal(sp, ReadLane(engine, "sp", 4));
             Assert.Equal(memory, ReadLane(engine, "mem", 4));
             Assert.Equal(0, engine.Read("carry"));
             Assert.False(engine.IsHalted, engine.HaltReason);
@@ -221,6 +222,7 @@ public sealed class ExampleTests
         engine.Settle(80);
         Assert.Equal(0, ReadLane(engine, "pc", 4));
         Assert.Equal(0, ReadLane(engine, "acc", 4));
+        Assert.Equal(0, ReadLane(engine, "sp", 4));
         Assert.Equal(0, engine.Read("carry"));
 
         engine.Drive("reset", 0);
@@ -228,6 +230,48 @@ public sealed class ExampleTests
         engine.Settle(80);
         Assert.Equal(0, ReadLane(engine, "pc", 4));
         Assert.Equal(0x10, ReadLane(engine, "ir", 8));
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void TinyCpuNestedCallsUseTheStack()
+    {
+        int[] program =
+        [
+            0xC8, // 0: CALL 8 (push 1)
+            0x61, // 1: JMP 1 (halt)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0xCC, // 8: CALL 12 (push 9)
+            0xD0, // 9: RET to 1
+            0x00, 0x00,
+            0xD0, // 12: RET to 9
+            0x00, 0x00, 0x00,
+        ];
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(program), "demo.tiny-cpu");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(80);
+
+        PulseClock(engine);
+        Assert.Equal(8, ReadLane(engine, "pc", 4));
+        Assert.Equal(1, ReadLane(engine, "sp", 4));
+
+        PulseClock(engine);
+        Assert.Equal(12, ReadLane(engine, "pc", 4));
+        Assert.Equal(2, ReadLane(engine, "sp", 4));
+
+        PulseClock(engine);
+        Assert.Equal(9, ReadLane(engine, "pc", 4));
+        Assert.Equal(1, ReadLane(engine, "sp", 4));
+
+        PulseClock(engine);
+        Assert.Equal(1, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "sp", 4));
+
+        PulseClock(engine);
+        Assert.Equal(1, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "sp", 4));
+        Assert.False(engine.IsHalted, engine.HaltReason);
         Assert.Empty(engine.RuntimeDiagnostics);
     }
 

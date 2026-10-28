@@ -9796,7 +9796,7 @@
     {
       "id": "demo.tiny-cpu",
       "name": "Tiny CPU",
-      "description": "A 4-bit accumulator CPU with a 16-word instruction ROM and a 16x4 RAM. Opcodes: 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, 5 OR #, 6 JMP, 7 JZ, 8 LDA@ addr, 9 ADD@ addr. CLR is synchronous with the next rising CLK edge; it clears PC, ACC, and CARRY but leaves RAM contents intact. Instructions are opcode(4) | operand(4).",
+      "description": "A 4-bit accumulator CPU with a 16-word instruction ROM and a 16x4 RAM. Opcodes: 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, 5 OR #, 6 JMP, 7 JZ, 8 LDA@ addr, 9 ADD@ addr, 10 PUSH, 11 POP, 12 CALL addr, 13 RET. SP starts at 0 and points to the next free stack slot; PUSH/CALL increment it and POP/RET decrement it. CLR is synchronous with the next rising CLK edge; it clears PC, ACC, CARRY, and SP but leaves RAM contents intact. Instructions are opcode(4) | operand(4).",
       "pins": [
         {
           "id": "clk",
@@ -9823,6 +9823,12 @@
           "domain": "binary"
         },
         {
+          "id": "sp0",
+          "name": "SP0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
           "id": "pc1",
           "name": "PC1",
           "direction": "output",
@@ -9831,6 +9837,12 @@
         {
           "id": "acc1",
           "name": "ACC1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "sp1",
+          "name": "SP1",
           "direction": "output",
           "domain": "binary"
         },
@@ -9847,6 +9859,12 @@
           "domain": "binary"
         },
         {
+          "id": "sp2",
+          "name": "SP2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
           "id": "pc3",
           "name": "PC3",
           "direction": "output",
@@ -9855,6 +9873,12 @@
         {
           "id": "acc3",
           "name": "ACC3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "sp3",
+          "name": "SP3",
           "direction": "output",
           "domain": "binary"
         },
@@ -9969,19 +9993,19 @@
             "inputCount": 4,
             "table": [
               1,
-              1,
-              0,
-              1,
-              1,
-              0,
-              0,
-              0,
-              1,
-              1,
               0,
               1,
               0,
               0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
               0,
               0
             ],
@@ -9996,15 +10020,15 @@
             "kind": "lookup",
             "inputCount": 4,
             "table": [
-              1,
-              1,
-              0,
-              1,
               0,
               0,
               0,
               0,
-              1,
+              0,
+              0,
+              0,
+              0,
+              0,
               0,
               0,
               0,
@@ -10029,14 +10053,14 @@
               0,
               0,
               0,
-              1,
+              0,
               0,
               1,
               0,
-              1,
               0,
-              1,
-              1,
+              0,
+              0,
+              0,
               0,
               0,
               0
@@ -10053,19 +10077,19 @@
             "inputCount": 4,
             "table": [
               0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
+              1,
+              1,
               0,
               0,
               0,
               1,
+              1,
+              1,
               0,
+              0,
+              0,
+              1,
+              1,
               0,
               0
             ],
@@ -10084,10 +10108,6 @@
               1,
               1,
               0,
-              0,
-              1,
-              1,
-              0,
               1,
               1,
               1,
@@ -10095,6 +10115,10 @@
               0,
               0,
               0,
+              0,
+              0,
+              1,
+              1,
               0
             ],
             "delay": 0
@@ -10111,16 +10135,16 @@
               0,
               1,
               0,
+              1,
               0,
               1,
               1,
               0,
-              0,
-              0,
               1,
               0,
               0,
-              1,
+              0,
+              0,
               0,
               0,
               0
@@ -10143,14 +10167,14 @@
               0,
               0,
               0,
+              1,
+              1,
               0,
               0,
               0,
               0,
               0,
               1,
-              0,
-              0,
               0
             ],
             "delay": 0
@@ -10169,16 +10193,16 @@
               0,
               1,
               0,
-              0,
-              0,
               1,
-              1,
-              0,
               0,
               1,
               0,
               0,
               0,
+              0,
+              1,
+              1,
+              1,
               0
             ],
             "delay": 0
@@ -10439,6 +10463,118 @@
           "y": 720
         },
         {
+          "id": "ctl_push",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 800
+        },
+        {
+          "id": "ctl_pop",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 880
+        },
+        {
+          "id": "ctl_call",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 960
+        },
+        {
+          "id": "ctl_ret",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 1040
+        },
+        {
           "id": "zero_flag",
           "primitive": {
             "kind": "lookup",
@@ -10467,10 +10603,34 @@
           "y": 580
         },
         {
-          "id": "ram",
-          "definition": "std.ram-16x4",
-          "x": 2700,
-          "y": 500
+          "id": "or_stack_push_call",
+          "definition": "std.or",
+          "x": 620,
+          "y": 800
+        },
+        {
+          "id": "or_stack_read",
+          "definition": "std.or",
+          "x": 620,
+          "y": 920
+        },
+        {
+          "id": "or_stack_op",
+          "definition": "std.or",
+          "x": 840,
+          "y": 920
+        },
+        {
+          "id": "or_ram_write",
+          "definition": "std.or",
+          "x": 840,
+          "y": 1040
+        },
+        {
+          "id": "or_load_memory",
+          "definition": "std.or",
+          "x": 840,
+          "y": 1160
         },
         {
           "id": "pc_inc",
@@ -10485,9 +10645,15 @@
           "y": 360
         },
         {
-          "id": "or_jump",
+          "id": "or_branch_base",
           "definition": "std.or",
           "x": 1120,
+          "y": 360
+        },
+        {
+          "id": "or_branch_call",
+          "definition": "std.or",
+          "x": 1340,
           "y": 360
         },
         {
@@ -10499,26 +10665,164 @@
         {
           "id": "mux_pc0",
           "definition": "std.mux2",
-          "x": 1340,
+          "x": 1540,
+          "y": 60
+        },
+        {
+          "id": "mux_pc_ret0",
+          "definition": "std.mux2",
+          "x": 1760,
           "y": 60
         },
         {
           "id": "mux_pc1",
           "definition": "std.mux2",
-          "x": 1340,
+          "x": 1540,
+          "y": 160
+        },
+        {
+          "id": "mux_pc_ret1",
+          "definition": "std.mux2",
+          "x": 1760,
           "y": 160
         },
         {
           "id": "mux_pc2",
           "definition": "std.mux2",
-          "x": 1340,
+          "x": 1540,
+          "y": 260
+        },
+        {
+          "id": "mux_pc_ret2",
+          "definition": "std.mux2",
+          "x": 1760,
           "y": 260
         },
         {
           "id": "mux_pc3",
           "definition": "std.mux2",
-          "x": 1340,
+          "x": 1540,
           "y": 360
+        },
+        {
+          "id": "mux_pc_ret3",
+          "definition": "std.mux2",
+          "x": 1760,
+          "y": 360
+        },
+        {
+          "id": "sp_adder",
+          "definition": "std.ripple-adder-4",
+          "x": 680,
+          "y": 1280
+        },
+        {
+          "id": "sp_reg",
+          "definition": "std.reg-4",
+          "x": 920,
+          "y": 1280
+        },
+        {
+          "id": "mux_sp0",
+          "definition": "std.mux2",
+          "x": 900,
+          "y": 1280
+        },
+        {
+          "id": "mux_sp1",
+          "definition": "std.mux2",
+          "x": 900,
+          "y": 1380
+        },
+        {
+          "id": "mux_sp2",
+          "definition": "std.mux2",
+          "x": 900,
+          "y": 1480
+        },
+        {
+          "id": "mux_sp3",
+          "definition": "std.mux2",
+          "x": 900,
+          "y": 1580
+        },
+        {
+          "id": "ram",
+          "definition": "std.ram-16x4",
+          "x": 2700,
+          "y": 500
+        },
+        {
+          "id": "mux_stack_addr0",
+          "definition": "std.mux2",
+          "x": 1160,
+          "y": 1280
+        },
+        {
+          "id": "mux_ram_addr0",
+          "definition": "std.mux2",
+          "x": 1420,
+          "y": 500
+        },
+        {
+          "id": "mux_ram_data0",
+          "definition": "std.mux2",
+          "x": 1640,
+          "y": 500
+        },
+        {
+          "id": "mux_stack_addr1",
+          "definition": "std.mux2",
+          "x": 1160,
+          "y": 1380
+        },
+        {
+          "id": "mux_ram_addr1",
+          "definition": "std.mux2",
+          "x": 1420,
+          "y": 600
+        },
+        {
+          "id": "mux_ram_data1",
+          "definition": "std.mux2",
+          "x": 1640,
+          "y": 600
+        },
+        {
+          "id": "mux_stack_addr2",
+          "definition": "std.mux2",
+          "x": 1160,
+          "y": 1480
+        },
+        {
+          "id": "mux_ram_addr2",
+          "definition": "std.mux2",
+          "x": 1420,
+          "y": 700
+        },
+        {
+          "id": "mux_ram_data2",
+          "definition": "std.mux2",
+          "x": 1640,
+          "y": 700
+        },
+        {
+          "id": "mux_stack_addr3",
+          "definition": "std.mux2",
+          "x": 1160,
+          "y": 1580
+        },
+        {
+          "id": "mux_ram_addr3",
+          "definition": "std.mux2",
+          "x": 1420,
+          "y": 800
+        },
+        {
+          "id": "mux_ram_data3",
+          "definition": "std.mux2",
+          "x": 1640,
+          "y": 800
         },
         {
           "id": "or_add_active",
@@ -10755,11 +11059,15 @@
           "domain": "binary",
           "pins": [
             {
-              "instance": "ram",
+              "instance": "pc_reg",
               "pin": "clk"
             },
             {
-              "instance": "pc_reg",
+              "instance": "sp_reg",
+              "pin": "clk"
+            },
+            {
+              "instance": "ram",
               "pin": "clk"
             },
             {
@@ -10778,6 +11086,10 @@
           "pins": [
             {
               "instance": "pc_reg",
+              "pin": "clr"
+            },
+            {
+              "instance": "sp_reg",
               "pin": "clr"
             },
             {
@@ -10847,8 +11159,8 @@
               "pin": "in3"
             },
             {
-              "instance": "ram",
-              "pin": "d0"
+              "instance": "mux_ram_data0",
+              "pin": "a"
             },
             {
               "instance": "acc_add",
@@ -10869,6 +11181,29 @@
             {
               "instance": "acc_reg",
               "pin": "q0"
+            }
+          ]
+        },
+        {
+          "id": "sp0_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "a0"
+            },
+            {
+              "instance": "mux_sp0",
+              "pin": "a"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "q0"
+            },
+            {
+              "instance": "mux_stack_addr0",
+              "pin": "a"
             }
           ]
         },
@@ -10929,8 +11264,8 @@
               "pin": "in2"
             },
             {
-              "instance": "ram",
-              "pin": "d1"
+              "instance": "mux_ram_data1",
+              "pin": "a"
             },
             {
               "instance": "acc_add",
@@ -10951,6 +11286,29 @@
             {
               "instance": "acc_reg",
               "pin": "q1"
+            }
+          ]
+        },
+        {
+          "id": "sp1_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "a1"
+            },
+            {
+              "instance": "mux_sp1",
+              "pin": "a"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "q1"
+            },
+            {
+              "instance": "mux_stack_addr1",
+              "pin": "a"
             }
           ]
         },
@@ -11011,8 +11369,8 @@
               "pin": "in1"
             },
             {
-              "instance": "ram",
-              "pin": "d2"
+              "instance": "mux_ram_data2",
+              "pin": "a"
             },
             {
               "instance": "acc_add",
@@ -11033,6 +11391,29 @@
             {
               "instance": "acc_reg",
               "pin": "q2"
+            }
+          ]
+        },
+        {
+          "id": "sp2_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "a2"
+            },
+            {
+              "instance": "mux_sp2",
+              "pin": "a"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "q2"
+            },
+            {
+              "instance": "mux_stack_addr2",
+              "pin": "a"
             }
           ]
         },
@@ -11093,8 +11474,8 @@
               "pin": "in0"
             },
             {
-              "instance": "ram",
-              "pin": "d3"
+              "instance": "mux_ram_data3",
+              "pin": "a"
             },
             {
               "instance": "acc_add",
@@ -11119,6 +11500,29 @@
           ]
         },
         {
+          "id": "sp3_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "a3"
+            },
+            {
+              "instance": "mux_sp3",
+              "pin": "a"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "q3"
+            },
+            {
+              "instance": "mux_stack_addr3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
           "id": "ir0_net",
           "domain": "binary",
           "initial": 0,
@@ -11128,12 +11532,12 @@
               "pin": "out"
             },
             {
-              "instance": "ram",
-              "pin": "addr0"
-            },
-            {
               "instance": "mux_pc0",
               "pin": "b"
+            },
+            {
+              "instance": "mux_ram_addr0",
+              "pin": "a"
             },
             {
               "instance": "mux_add_b0",
@@ -11163,12 +11567,12 @@
               "pin": "out"
             },
             {
-              "instance": "ram",
-              "pin": "addr1"
-            },
-            {
               "instance": "mux_pc1",
               "pin": "b"
+            },
+            {
+              "instance": "mux_ram_addr1",
+              "pin": "a"
             },
             {
               "instance": "mux_add_b1",
@@ -11198,12 +11602,12 @@
               "pin": "out"
             },
             {
-              "instance": "ram",
-              "pin": "addr2"
-            },
-            {
               "instance": "mux_pc2",
               "pin": "b"
+            },
+            {
+              "instance": "mux_ram_addr2",
+              "pin": "a"
             },
             {
               "instance": "mux_add_b2",
@@ -11233,12 +11637,12 @@
               "pin": "out"
             },
             {
-              "instance": "ram",
-              "pin": "addr3"
-            },
-            {
               "instance": "mux_pc3",
               "pin": "b"
+            },
+            {
+              "instance": "mux_ram_addr3",
+              "pin": "a"
             },
             {
               "instance": "mux_add_b3",
@@ -11302,6 +11706,22 @@
             {
               "instance": "ctl_add_mem",
               "pin": "in3"
+            },
+            {
+              "instance": "ctl_push",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_pop",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_call",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_ret",
+              "pin": "in3"
             }
           ]
         },
@@ -11348,6 +11768,22 @@
             },
             {
               "instance": "ctl_add_mem",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_push",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_pop",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_call",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_ret",
               "pin": "in2"
             }
           ]
@@ -11396,6 +11832,22 @@
             {
               "instance": "ctl_add_mem",
               "pin": "in1"
+            },
+            {
+              "instance": "ctl_push",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_pop",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_call",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_ret",
+              "pin": "in1"
             }
           ]
         },
@@ -11443,6 +11895,22 @@
             {
               "instance": "ctl_add_mem",
               "pin": "in0"
+            },
+            {
+              "instance": "ctl_push",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_pop",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_call",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_ret",
+              "pin": "in0"
             }
           ]
         },
@@ -11450,6 +11918,10 @@
           "id": "mem0_net",
           "domain": "binary",
           "pins": [
+            {
+              "instance": "mux_pc_ret0",
+              "pin": "b"
+            },
             {
               "instance": "ram",
               "pin": "q0"
@@ -11469,6 +11941,10 @@
           "domain": "binary",
           "pins": [
             {
+              "instance": "mux_pc_ret1",
+              "pin": "b"
+            },
+            {
               "instance": "ram",
               "pin": "q1"
             },
@@ -11487,6 +11963,10 @@
           "domain": "binary",
           "pins": [
             {
+              "instance": "mux_pc_ret2",
+              "pin": "b"
+            },
+            {
               "instance": "ram",
               "pin": "q2"
             },
@@ -11504,6 +11984,10 @@
           "id": "mem3_net",
           "domain": "binary",
           "pins": [
+            {
+              "instance": "mux_pc_ret3",
+              "pin": "b"
+            },
             {
               "instance": "ram",
               "pin": "q3"
@@ -11591,6 +12075,10 @@
               "pin": "load"
             },
             {
+              "instance": "sp_reg",
+              "pin": "load"
+            },
+            {
               "instance": "acc_reg",
               "pin": "load"
             }
@@ -11645,8 +12133,8 @@
               "pin": "out"
             },
             {
-              "instance": "ram",
-              "pin": "we"
+              "instance": "or_ram_write",
+              "pin": "a"
             }
           ]
         },
@@ -11711,7 +12199,7 @@
               "pin": "out"
             },
             {
-              "instance": "or_jump",
+              "instance": "or_branch_base",
               "pin": "a"
             }
           ]
@@ -11739,20 +12227,8 @@
               "pin": "out"
             },
             {
-              "instance": "mux_acc_load0",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_acc_load1",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_acc_load2",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_acc_load3",
-              "pin": "s"
+              "instance": "or_load_memory",
+              "pin": "a"
             }
           ]
         },
@@ -11787,52 +12263,254 @@
           ]
         },
         {
+          "id": "ctl_push_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_push",
+              "pin": "out"
+            },
+            {
+              "instance": "or_stack_push_call",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "ctl_pop_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_pop",
+              "pin": "out"
+            },
+            {
+              "instance": "or_stack_read",
+              "pin": "a"
+            },
+            {
+              "instance": "or_load_memory",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ctl_call_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_call",
+              "pin": "out"
+            },
+            {
+              "instance": "or_stack_push_call",
+              "pin": "b"
+            },
+            {
+              "instance": "or_branch_call",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_ram_data0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_ram_data1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_ram_data2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_ram_data3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "ctl_ret_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_ret",
+              "pin": "out"
+            },
+            {
+              "instance": "or_stack_read",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_pc_ret0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc_ret1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc_ret2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc_ret3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "stack_push_call",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_stack_push_call",
+              "pin": "y"
+            },
+            {
+              "instance": "or_stack_op",
+              "pin": "a"
+            },
+            {
+              "instance": "or_ram_write",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "stack_read",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_stack_read",
+              "pin": "y"
+            },
+            {
+              "instance": "or_stack_op",
+              "pin": "b"
+            },
+            {
+              "instance": "sp_adder",
+              "pin": "b1"
+            },
+            {
+              "instance": "sp_adder",
+              "pin": "b2"
+            },
+            {
+              "instance": "sp_adder",
+              "pin": "b3"
+            },
+            {
+              "instance": "mux_stack_addr0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_stack_addr1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_stack_addr2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_stack_addr3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "stack_op",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_stack_op",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_adder",
+              "pin": "b0"
+            },
+            {
+              "instance": "mux_sp0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_sp1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_sp2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_sp3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_ram_addr0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_ram_addr1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_ram_addr2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_ram_addr3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "ram_write",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_ram_write",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "we"
+            }
+          ]
+        },
+        {
+          "id": "load_memory",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_load_memory",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_load0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_load1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_load2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_load3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
           "id": "pc_inc_carry",
           "domain": "binary",
           "pins": [
             {
               "instance": "pc_inc",
               "pin": "cout"
-            }
-          ]
-        },
-        {
-          "id": "jz_taken",
-          "domain": "binary",
-          "pins": [
-            {
-              "instance": "and_jz",
-              "pin": "y"
-            },
-            {
-              "instance": "or_jump",
-              "pin": "b"
-            }
-          ]
-        },
-        {
-          "id": "jump",
-          "domain": "binary",
-          "pins": [
-            {
-              "instance": "or_jump",
-              "pin": "y"
-            },
-            {
-              "instance": "mux_pc0",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_pc1",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_pc2",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_pc3",
-              "pin": "s"
             }
           ]
         },
@@ -11847,20 +12525,10 @@
             {
               "instance": "mux_pc0",
               "pin": "a"
-            }
-          ]
-        },
-        {
-          "id": "pc_jump0",
-          "domain": "binary",
-          "pins": [
-            {
-              "instance": "mux_pc0",
-              "pin": "y"
             },
             {
-              "instance": "pc_reg",
-              "pin": "d0"
+              "instance": "mux_ram_data0",
+              "pin": "b"
             }
           ]
         },
@@ -11875,20 +12543,10 @@
             {
               "instance": "mux_pc1",
               "pin": "a"
-            }
-          ]
-        },
-        {
-          "id": "pc_jump1",
-          "domain": "binary",
-          "pins": [
-            {
-              "instance": "mux_pc1",
-              "pin": "y"
             },
             {
-              "instance": "pc_reg",
-              "pin": "d1"
+              "instance": "mux_ram_data1",
+              "pin": "b"
             }
           ]
         },
@@ -11903,20 +12561,10 @@
             {
               "instance": "mux_pc2",
               "pin": "a"
-            }
-          ]
-        },
-        {
-          "id": "pc_jump2",
-          "domain": "binary",
-          "pins": [
-            {
-              "instance": "mux_pc2",
-              "pin": "y"
             },
             {
-              "instance": "pc_reg",
-              "pin": "d2"
+              "instance": "mux_ram_data2",
+              "pin": "b"
             }
           ]
         },
@@ -11931,11 +12579,153 @@
             {
               "instance": "mux_pc3",
               "pin": "a"
+            },
+            {
+              "instance": "mux_ram_data3",
+              "pin": "b"
             }
           ]
         },
         {
-          "id": "pc_jump3",
+          "id": "jz_taken",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_jz",
+              "pin": "y"
+            },
+            {
+              "instance": "or_branch_base",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "branch_base",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_branch_base",
+              "pin": "y"
+            },
+            {
+              "instance": "or_branch_call",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "branch",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_branch_call",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_pc0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "pc_branch0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_pc_ret0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_next0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc_ret0",
+              "pin": "y"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "d0"
+            }
+          ]
+        },
+        {
+          "id": "pc_branch1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_pc_ret1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_next1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc_ret1",
+              "pin": "y"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "pc_branch2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_pc_ret2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_next2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc_ret2",
+              "pin": "y"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "d2"
+            }
+          ]
+        },
+        {
+          "id": "pc_branch3",
           "domain": "binary",
           "pins": [
             {
@@ -11943,7 +12733,327 @@
               "pin": "y"
             },
             {
+              "instance": "mux_pc_ret3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_next3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc_ret3",
+              "pin": "y"
+            },
+            {
               "instance": "pc_reg",
+              "pin": "d3"
+            }
+          ]
+        },
+        {
+          "id": "sp_sum0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "s0"
+            },
+            {
+              "instance": "mux_sp0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_stack_addr0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_sum1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "s1"
+            },
+            {
+              "instance": "mux_sp1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_stack_addr1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_sum2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "s2"
+            },
+            {
+              "instance": "mux_sp2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_stack_addr2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_sum3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "s3"
+            },
+            {
+              "instance": "mux_sp3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_stack_addr3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_carry",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "sp_adder",
+              "pin": "cout"
+            }
+          ]
+        },
+        {
+          "id": "sp_next0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_sp0",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "d0"
+            }
+          ]
+        },
+        {
+          "id": "sp_next1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_sp1",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "sp_next2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_sp2",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "d2"
+            }
+          ]
+        },
+        {
+          "id": "sp_next3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_sp3",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "d3"
+            }
+          ]
+        },
+        {
+          "id": "stack_addr0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_stack_addr0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_ram_addr0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ram_addr0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_addr0",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "addr0"
+            }
+          ]
+        },
+        {
+          "id": "ram_data0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_data0",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "d0"
+            }
+          ]
+        },
+        {
+          "id": "stack_addr1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_stack_addr1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_ram_addr1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ram_addr1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_addr1",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "addr1"
+            }
+          ]
+        },
+        {
+          "id": "ram_data1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_data1",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "stack_addr2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_stack_addr2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_ram_addr2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ram_addr2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_addr2",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "addr2"
+            }
+          ]
+        },
+        {
+          "id": "ram_data2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_data2",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "d2"
+            }
+          ]
+        },
+        {
+          "id": "stack_addr3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_stack_addr3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_ram_addr3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ram_addr3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_addr3",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
+              "pin": "addr3"
+            }
+          ]
+        },
+        {
+          "id": "ram_data3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_ram_data3",
+              "pin": "y"
+            },
+            {
+              "instance": "ram",
               "pin": "d3"
             }
           ]
@@ -12543,12 +13653,20 @@
           "net": "acc0_net"
         },
         {
+          "pin": "sp0",
+          "net": "sp0_net"
+        },
+        {
           "pin": "pc1",
           "net": "pc1_net"
         },
         {
           "pin": "acc1",
           "net": "acc1_net"
+        },
+        {
+          "pin": "sp1",
+          "net": "sp1_net"
         },
         {
           "pin": "pc2",
@@ -12559,12 +13677,20 @@
           "net": "acc2_net"
         },
         {
+          "pin": "sp2",
+          "net": "sp2_net"
+        },
+        {
           "pin": "pc3",
           "net": "pc3_net"
         },
         {
           "pin": "acc3",
           "net": "acc3_net"
+        },
+        {
+          "pin": "sp3",
+          "net": "sp3_net"
         },
         {
           "pin": "ir0",
@@ -12644,6 +13770,17 @@
             "mem1",
             "mem2",
             "mem3"
+          ]
+        },
+        {
+          "id": "sp",
+          "name": "Stack pointer",
+          "format": "unsigned-binary",
+          "pins": [
+            "sp0",
+            "sp1",
+            "sp2",
+            "sp3"
           ]
         },
         {

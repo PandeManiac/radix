@@ -1,105 +1,98 @@
 {
   "format": "radix-test",
   "version": 1,
-  "name": "Tiny CPU stores, loads, and adds through RAM",
-  "description": "Runs the shipped program: STA 3 stores 7, LDA@ 3 reads it back, ADD@ 3 raises the accumulator to 15, and the machine ends in its JMP halt loop.",
+  "name": "Tiny CPU pushes, pops, calls, and returns",
+  "description": "Stores 5 at RAM[8], pushes and pops 9, calls a subroutine that computes 5+9, then returns through the stack to the halt loop.",
   "definition": "demo.tiny-cpu",
   "steps": [
     { "at": 0, "set": { "clk": 0, "reset": 0 } },
     {
       "at": 20,
       "expect": { "carry": 0, "zero": 1 },
-      "expectLane": { "pc": 0, "acc": 0, "mem": 0, "instruction": 23, "opcode": 1, "operand": 7 }
+      "expectLane": { "pc": 0, "sp": 0, "acc": 0, "mem": 0, "instruction": 21, "opcode": 1, "operand": 5 }
     },
     { "at": 30, "set": { "clk": 1 } },
     {
       "at": 80,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 1, "acc": 7, "mem": 0, "instruction": 51, "opcode": 3, "operand": 3 }
+      "expectLane": { "pc": 1, "sp": 0, "acc": 5, "mem": 0, "instruction": 56, "opcode": 3, "operand": 8 }
     },
     { "at": 90, "set": { "clk": 0 } },
     { "at": 130, "set": { "clk": 1 } },
     {
       "at": 180,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 2, "acc": 7, "mem": 0, "instruction": 16, "opcode": 1, "operand": 0 }
+      "expectLane": { "pc": 2, "sp": 0, "acc": 5, "mem": 0, "instruction": 25, "opcode": 1, "operand": 9 }
     },
     { "at": 190, "set": { "clk": 0 } },
     { "at": 230, "set": { "clk": 1 } },
     {
       "at": 280,
-      "expect": { "carry": 0, "zero": 1 },
-      "expectLane": { "pc": 3, "acc": 0, "mem": 7, "instruction": 131, "opcode": 8, "operand": 3 }
+      "expect": { "carry": 0, "zero": 0 },
+      "expectLane": { "pc": 3, "sp": 0, "acc": 9, "mem": 0, "instruction": 160, "opcode": 10, "operand": 0 }
     },
     { "at": 290, "set": { "clk": 0 } },
     { "at": 330, "set": { "clk": 1 } },
     {
       "at": 380,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 4, "acc": 7, "mem": 0, "instruction": 33, "opcode": 2, "operand": 1 }
+      "expectLane": { "pc": 4, "sp": 1, "acc": 9, "mem": 9, "instruction": 16, "opcode": 1, "operand": 0 }
     },
     { "at": 390, "set": { "clk": 0 } },
     { "at": 430, "set": { "clk": 1 } },
     {
       "at": 480,
-      "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 5, "acc": 8, "mem": 0, "instruction": 52, "opcode": 3, "operand": 4 }
+      "expect": { "carry": 0, "zero": 1 },
+      "expectLane": { "pc": 5, "sp": 1, "acc": 0, "mem": 9, "instruction": 176, "opcode": 11, "operand": 0 }
     },
     { "at": 490, "set": { "clk": 0 } },
     { "at": 530, "set": { "clk": 1 } },
     {
       "at": 580,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 6, "acc": 8, "mem": 0, "instruction": 16, "opcode": 1, "operand": 0 }
+      "expectLane": { "pc": 6, "sp": 0, "acc": 9, "mem": 0, "instruction": 57, "opcode": 3, "operand": 9 }
     },
     { "at": 590, "set": { "clk": 0 } },
     { "at": 630, "set": { "clk": 1 } },
     {
       "at": 680,
-      "expect": { "carry": 0, "zero": 1 },
-      "expectLane": { "pc": 7, "acc": 0, "mem": 8, "instruction": 132, "opcode": 8, "operand": 4 }
+      "expect": { "carry": 0, "zero": 0 },
+      "expectLane": { "pc": 7, "sp": 0, "acc": 9, "mem": 9, "instruction": 204, "opcode": 12, "operand": 12 }
     },
     { "at": 690, "set": { "clk": 0 } },
     { "at": 730, "set": { "clk": 1 } },
     {
       "at": 780,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 8, "acc": 8, "mem": 7, "instruction": 147, "opcode": 9, "operand": 3 }
+      "expectLane": { "pc": 12, "sp": 1, "acc": 9, "mem": 5, "instruction": 136, "opcode": 8, "operand": 8 }
     },
     { "at": 790, "set": { "clk": 0 } },
     { "at": 830, "set": { "clk": 1 } },
     {
       "at": 880,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 9, "acc": 15, "mem": 0, "instruction": 53, "opcode": 3, "operand": 5 }
+      "expectLane": { "pc": 13, "sp": 1, "acc": 5, "mem": 9, "instruction": 153, "opcode": 9, "operand": 9 }
     },
     { "at": 890, "set": { "clk": 0 } },
     { "at": 930, "set": { "clk": 1 } },
     {
       "at": 980,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 10, "acc": 15, "mem": 0, "instruction": 16, "opcode": 1, "operand": 0 }
+      "expectLane": { "pc": 14, "sp": 1, "acc": 14, "mem": 8, "instruction": 208, "opcode": 13, "operand": 0 }
     },
     { "at": 990, "set": { "clk": 0 } },
     { "at": 1030, "set": { "clk": 1 } },
     {
       "at": 1080,
-      "expect": { "carry": 0, "zero": 1 },
-      "expectLane": { "pc": 11, "acc": 0, "mem": 15, "instruction": 133, "opcode": 8, "operand": 5 }
+      "expect": { "carry": 0, "zero": 0 },
+      "expectLane": { "pc": 8, "sp": 0, "acc": 14, "mem": 5, "instruction": 104, "opcode": 6, "operand": 8 }
     },
     { "at": 1090, "set": { "clk": 0 } },
     { "at": 1130, "set": { "clk": 1 } },
     {
       "at": 1180,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 12, "acc": 15, "mem": 0, "instruction": 108, "opcode": 6, "operand": 12 }
-    },
-    { "at": 1190, "set": { "clk": 0 } },
-    { "at": 1230, "set": { "clk": 1 } },
-    {
-      "at": 1280,
-      "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 12, "acc": 15, "mem": 0, "instruction": 108, "opcode": 6, "operand": 12 }
+      "expectLane": { "pc": 8, "sp": 0, "acc": 14, "mem": 5, "instruction": 104, "opcode": 6, "operand": 8 }
     }
   ]
 }

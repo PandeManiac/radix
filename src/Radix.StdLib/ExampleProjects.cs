@@ -267,20 +267,22 @@ public static class ExampleProjects
     {
         program ??=
         [
-            0x17, // 0: LDA 7
-            0x33, // 1: STA 3 (memory[3] = 7)
-            0x10, // 2: LDA 0
-            0x83, // 3: LDA@ 3 -> 7
-            0x21, // 4: ADD 1 -> 8
-            0x34, // 5: STA 4 (memory[4] = 8)
-            0x10, // 6: LDA 0
-            0x84, // 7: LDA@ 4 -> 8
-            0x93, // 8: ADD@ 3 -> 15
-            0x35, // 9: STA 5 (memory[5] = 15)
-            0x10, // 10: LDA 0
-            0x85, // 11: LDA@ 5 -> 15
-            0x6C, // 12: JMP 12 (halt loop)
-            0x00, 0x00, 0x00,
+            0x15, // 0: LDA 5
+            0x38, // 1: STA 8 (data[8] = 5)
+            0x19, // 2: LDA 9
+            0xA0, // 3: PUSH 9 onto the stack
+            0x10, // 4: LDA 0
+            0xB0, // 5: POP 9 back into the accumulator
+            0x39, // 6: STA 9 (data[9] = 9)
+            0xCC, // 7: CALL 12 (push return address 8)
+            0x68, // 8: JMP 8 (halt loop after RET)
+            0x00, // 9
+            0x00, // 10
+            0x00, // 11
+            0x88, // 12: LDA@ 8 -> 5
+            0x99, // 13: ADD@ 9 -> 14
+            0xD0, // 14: RET to 8
+            0x00, // 15
         ];
         if (program.Length > 16)
         {
@@ -293,8 +295,10 @@ public static class ExampleProjects
         root.Definition.Description =
             "A 4-bit accumulator CPU with a 16-word instruction ROM and a 16x4 RAM. " +
             "Opcodes: 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, 5 OR #, 6 JMP, 7 JZ, " +
-            "8 LDA@ addr, 9 ADD@ addr. CLR is synchronous with the next rising CLK edge; " +
-            "it clears PC, ACC, and CARRY but leaves RAM contents intact. " +
+            "8 LDA@ addr, 9 ADD@ addr, 10 PUSH, 11 POP, 12 CALL addr, 13 RET. " +
+            "SP starts at 0 and points to the next free stack slot; PUSH/CALL increment it " +
+            "and POP/RET decrement it. CLR is synchronous with the next rising CLK edge; " +
+            "it clears PC, ACC, CARRY, and SP but leaves RAM contents intact. " +
             "Instructions are opcode(4) | operand(4).";
 
         Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BinaryId);
@@ -302,6 +306,7 @@ public static class ExampleProjects
 
         var pc = new Net[4];
         var acc = new Net[4];
+        var sp = new Net[4];
         var instruction = new Net[8];
         for (int i = 0; i < 4; i++)
         {
@@ -310,6 +315,9 @@ public static class ExampleProjects
                 0);
             acc[i] = root.SetInitial(
                 root.AddPin($"acc{i}", $"ACC{i}", PinDirection.Output, StandardDomains.BinaryId),
+                0);
+            sp[i] = root.SetInitial(
+                root.AddPin($"sp{i}", $"SP{i}", PinDirection.Output, StandardDomains.BinaryId),
                 0);
         }
 
@@ -335,6 +343,7 @@ public static class ExampleProjects
 
         root.AddNumericLane("acc", "Accumulator", NumericFormats.UnsignedBinary.Id, "acc0", "acc1", "acc2", "acc3");
         root.AddNumericLane("mem", "Memory read", NumericFormats.UnsignedBinary.Id, "mem0", "mem1", "mem2", "mem3");
+        root.AddNumericLane("sp", "Stack pointer", NumericFormats.UnsignedBinary.Id, "sp0", "sp1", "sp2", "sp3");
         root.AddNumericLane("pc", "Program counter", NumericFormats.UnsignedBinary.Id, "pc0", "pc1", "pc2", "pc3");
         root.AddNumericLane("opcode", "Opcode", NumericFormats.UnsignedBinary.Id, "ir4", "ir5", "ir6", "ir7");
         root.AddNumericLane("operand", "Operand", NumericFormats.UnsignedBinary.Id, "ir0", "ir1", "ir2", "ir3");
@@ -398,6 +407,10 @@ public static class ExampleProjects
         Net ctlJz = Decode("ctl_jz", 7, 560);
         Net ctlLdaMem = Decode("ctl_lda_mem", 8, 640);
         Net ctlAddMem = Decode("ctl_add_mem", 9, 720);
+        Net ctlPush = Decode("ctl_push", 10, 800);
+        Net ctlPop = Decode("ctl_pop", 11, 880);
+        Net ctlCall = Decode("ctl_call", 12, 960);
+        Net ctlRet = Decode("ctl_ret", 13, 1040);
 
         int[] zeroTable = new int[16];
         zeroTable[0] = 1;
@@ -409,23 +422,47 @@ public static class ExampleProjects
 
         root.Connect(zero, root.Pin("zero_flag", PrimitiveShapes.OutputPinId));
 
-        root.AddInstance("ram", StandardLibrary.Ram16x4Id, 2700, 500);
-        for (int i = 0; i < 4; i++)
-        {
-            root.Connect(instruction[i], root.Pin("ram", $"addr{i}"));
-            root.Connect(acc[i], root.Pin("ram", $"d{i}"));
-            root.Connect(memory[i], root.Pin("ram", $"q{i}"));
-        }
+        Net stackPushCall = root.AddNet("stack_push_call", StandardDomains.BinaryId);
+        root.AddInstance("or_stack_push_call", "std.or", 620, 800);
+        root.Connect(ctlPush, root.Pin("or_stack_push_call", "a"));
+        root.Connect(ctlCall, root.Pin("or_stack_push_call", "b"));
+        root.Connect(stackPushCall, root.Pin("or_stack_push_call", "y"));
 
-        root.Connect(ctlSta, root.Pin("ram", "we"));
-        root.Connect(clk, root.Pin("ram", "clk"));
+        Net stackRead = root.AddNet("stack_read", StandardDomains.BinaryId);
+        root.AddInstance("or_stack_read", "std.or", 620, 920);
+        root.Connect(ctlPop, root.Pin("or_stack_read", "a"));
+        root.Connect(ctlRet, root.Pin("or_stack_read", "b"));
+        root.Connect(stackRead, root.Pin("or_stack_read", "y"));
 
+        Net stackOp = root.AddNet("stack_op", StandardDomains.BinaryId);
+        root.AddInstance("or_stack_op", "std.or", 840, 920);
+        root.Connect(stackPushCall, root.Pin("or_stack_op", "a"));
+        root.Connect(stackRead, root.Pin("or_stack_op", "b"));
+        root.Connect(stackOp, root.Pin("or_stack_op", "y"));
+
+        Net ramWrite = root.AddNet("ram_write", StandardDomains.BinaryId);
+        root.AddInstance("or_ram_write", "std.or", 840, 1040);
+        root.Connect(ctlSta, root.Pin("or_ram_write", "a"));
+        root.Connect(stackPushCall, root.Pin("or_ram_write", "b"));
+        root.Connect(ramWrite, root.Pin("or_ram_write", "y"));
+
+        Net loadMemory = root.AddNet("load_memory", StandardDomains.BinaryId);
+        root.AddInstance("or_load_memory", "std.or", 840, 1160);
+        root.Connect(ctlLdaMem, root.Pin("or_load_memory", "a"));
+        root.Connect(ctlPop, root.Pin("or_load_memory", "b"));
+        root.Connect(loadMemory, root.Pin("or_load_memory", "y"));
+
+        // PC increments every cycle. Calls and jumps replace it with the operand;
+        // RET replaces it with the word popped from the stack.
         Net pcIncrementCarry = root.AddNet("pc_inc_carry", StandardDomains.BinaryId);
         root.AddInstance("pc_inc", "std.ripple-adder-4", 900, 60);
+        var pcSum = new Net[4];
         for (int i = 0; i < 4; i++)
         {
             root.Connect(pc[i], root.Pin("pc_inc", $"a{i}"));
             root.Connect(i == 0 ? constOne : constZero, root.Pin("pc_inc", $"b{i}"));
+            pcSum[i] = root.AddNet($"pc_inc{i}", StandardDomains.BinaryId);
+            root.Connect(pcSum[i], root.Pin("pc_inc", $"s{i}"));
         }
 
         root.Connect(pcIncrementCarry, root.Pin("pc_inc", "cout"));
@@ -436,32 +473,106 @@ public static class ExampleProjects
         root.Connect(zero, root.Pin("and_jz", "b"));
         root.Connect(jzTaken, root.Pin("and_jz", "y"));
 
-        Net jump = root.AddNet("jump", StandardDomains.BinaryId);
-        root.AddInstance("or_jump", "std.or", 1120, 360);
-        root.Connect(ctlJmp, root.Pin("or_jump", "a"));
-        root.Connect(jzTaken, root.Pin("or_jump", "b"));
-        root.Connect(jump, root.Pin("or_jump", "y"));
+        Net branchBase = root.AddNet("branch_base", StandardDomains.BinaryId);
+        root.AddInstance("or_branch_base", "std.or", 1120, 360);
+        root.Connect(ctlJmp, root.Pin("or_branch_base", "a"));
+        root.Connect(jzTaken, root.Pin("or_branch_base", "b"));
+        root.Connect(branchBase, root.Pin("or_branch_base", "y"));
+
+        Net branch = root.AddNet("branch", StandardDomains.BinaryId);
+        root.AddInstance("or_branch_call", "std.or", 1340, 360);
+        root.Connect(branchBase, root.Pin("or_branch_call", "a"));
+        root.Connect(ctlCall, root.Pin("or_branch_call", "b"));
+        root.Connect(branch, root.Pin("or_branch_call", "y"));
 
         root.AddInstance("pc_reg", "std.reg-4", 1640, 60);
         for (int i = 0; i < 4; i++)
         {
-            Net incBit = root.AddNet($"pc_inc{i}", StandardDomains.BinaryId);
-            root.Connect(incBit, root.Pin("pc_inc", $"s{i}"));
-
-            Net jumpBit = root.AddNet($"pc_jump{i}", StandardDomains.BinaryId);
-            root.AddInstance($"mux_pc{i}", "std.mux2", 1340, 60 + (i * 100));
-            root.Connect(incBit, root.Pin($"mux_pc{i}", "a"));
+            Net branchBit = root.AddNet($"pc_branch{i}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_pc{i}", "std.mux2", 1540, 60 + (i * 100));
+            root.Connect(pcSum[i], root.Pin($"mux_pc{i}", "a"));
             root.Connect(instruction[i], root.Pin($"mux_pc{i}", "b"));
-            root.Connect(jump, root.Pin($"mux_pc{i}", "s"));
-            root.Connect(jumpBit, root.Pin($"mux_pc{i}", "y"));
+            root.Connect(branch, root.Pin($"mux_pc{i}", "s"));
+            root.Connect(branchBit, root.Pin($"mux_pc{i}", "y"));
 
-            root.Connect(jumpBit, root.Pin("pc_reg", $"d{i}"));
+            Net nextBit = root.AddNet($"pc_next{i}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_pc_ret{i}", "std.mux2", 1760, 60 + (i * 100));
+            root.Connect(branchBit, root.Pin($"mux_pc_ret{i}", "a"));
+            root.Connect(memory[i], root.Pin($"mux_pc_ret{i}", "b"));
+            root.Connect(ctlRet, root.Pin($"mux_pc_ret{i}", "s"));
+            root.Connect(nextBit, root.Pin($"mux_pc_ret{i}", "y"));
+
+            root.Connect(nextBit, root.Pin("pc_reg", $"d{i}"));
             root.Connect(pc[i], root.Pin("pc_reg", $"q{i}"));
         }
 
         root.Connect(constOne, root.Pin("pc_reg", "load"));
         root.Connect(reset, root.Pin("pc_reg", "clr"));
         root.Connect(clk, root.Pin("pc_reg", "clk"));
+
+        // The stack pointer is a 4-bit register. Adding 0001 advances to the next
+        // slot; adding 1111 (SP + 15 mod 16) moves back one slot.
+        root.AddInstance("sp_adder", "std.ripple-adder-4", 680, 1280);
+        var spSum = new Net[4];
+        for (int i = 0; i < 4; i++)
+        {
+            root.Connect(sp[i], root.Pin("sp_adder", $"a{i}"));
+            root.Connect(i == 0 ? stackOp : stackRead, root.Pin("sp_adder", $"b{i}"));
+            spSum[i] = root.AddNet($"sp_sum{i}", StandardDomains.BinaryId);
+            root.Connect(spSum[i], root.Pin("sp_adder", $"s{i}"));
+        }
+
+        Net spCarry = root.AddNet("sp_carry", StandardDomains.BinaryId);
+        root.Connect(spCarry, root.Pin("sp_adder", "cout"));
+
+        root.AddInstance("sp_reg", "std.reg-4", 920, 1280);
+        for (int i = 0; i < 4; i++)
+        {
+            Net spNext = root.AddNet($"sp_next{i}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_sp{i}", "std.mux2", 900, 1280 + (i * 100));
+            root.Connect(sp[i], root.Pin($"mux_sp{i}", "a"));
+            root.Connect(spSum[i], root.Pin($"mux_sp{i}", "b"));
+            root.Connect(stackOp, root.Pin($"mux_sp{i}", "s"));
+            root.Connect(spNext, root.Pin($"mux_sp{i}", "y"));
+
+            root.Connect(spNext, root.Pin("sp_reg", $"d{i}"));
+            root.Connect(sp[i], root.Pin("sp_reg", $"q{i}"));
+        }
+
+        root.Connect(constOne, root.Pin("sp_reg", "load"));
+        root.Connect(reset, root.Pin("sp_reg", "clr"));
+        root.Connect(clk, root.Pin("sp_reg", "clk"));
+
+        root.AddInstance("ram", StandardLibrary.Ram16x4Id, 2700, 500);
+        for (int i = 0; i < 4; i++)
+        {
+            Net stackAddress = root.AddNet($"stack_addr{i}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_stack_addr{i}", "std.mux2", 1160, 1280 + (i * 100));
+            root.Connect(sp[i], root.Pin($"mux_stack_addr{i}", "a"));
+            root.Connect(spSum[i], root.Pin($"mux_stack_addr{i}", "b"));
+            root.Connect(stackRead, root.Pin($"mux_stack_addr{i}", "s"));
+            root.Connect(stackAddress, root.Pin($"mux_stack_addr{i}", "y"));
+
+            Net ramAddress = root.AddNet($"ram_addr{i}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_ram_addr{i}", "std.mux2", 1420, 500 + (i * 100));
+            root.Connect(instruction[i], root.Pin($"mux_ram_addr{i}", "a"));
+            root.Connect(stackAddress, root.Pin($"mux_ram_addr{i}", "b"));
+            root.Connect(stackOp, root.Pin($"mux_ram_addr{i}", "s"));
+            root.Connect(ramAddress, root.Pin($"mux_ram_addr{i}", "y"));
+            root.Connect(ramAddress, root.Pin("ram", $"addr{i}"));
+
+            Net ramData = root.AddNet($"ram_data{i}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_ram_data{i}", "std.mux2", 1640, 500 + (i * 100));
+            root.Connect(acc[i], root.Pin($"mux_ram_data{i}", "a"));
+            root.Connect(pcSum[i], root.Pin($"mux_ram_data{i}", "b"));
+            root.Connect(ctlCall, root.Pin($"mux_ram_data{i}", "s"));
+            root.Connect(ramData, root.Pin($"mux_ram_data{i}", "y"));
+            root.Connect(ramData, root.Pin("ram", $"d{i}"));
+            root.Connect(memory[i], root.Pin("ram", $"q{i}"));
+        }
+
+        root.Connect(ramWrite, root.Pin("ram", "we"));
+        root.Connect(clk, root.Pin("ram", "clk"));
 
         Net addActive = root.AddNet("add_active", StandardDomains.BinaryId);
         root.AddInstance("or_add_active", "std.or", 1120, 520);
@@ -509,7 +620,7 @@ public static class ExampleProjects
             root.AddInstance($"mux_acc_load{i}", "std.mux2", 1120, y);
             root.Connect(acc[i], root.Pin($"mux_acc_load{i}", "a"));
             root.Connect(memory[i], root.Pin($"mux_acc_load{i}", "b"));
-            root.Connect(ctlLdaMem, root.Pin($"mux_acc_load{i}", "s"));
+            root.Connect(loadMemory, root.Pin($"mux_acc_load{i}", "s"));
             root.Connect(loadSource, root.Pin($"mux_acc_load{i}", "y"));
 
             Net loadedBit = root.AddNet($"acc_loaded{i}", StandardDomains.BinaryId);
