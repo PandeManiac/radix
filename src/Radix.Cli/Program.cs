@@ -105,6 +105,7 @@ internal static class Program
               test <project.radix> <script-or-directory> [<more>...]
                                              Run scripted drives and assertions
                   [--definition <id>]        Definition to simulate (default: script or root)
+                  [--json]                   Emit one machine-readable JSON report
                                              Directories are searched recursively for *.radixtest
               sweep <project.radix>          Exhaustively drive input combinations
                   [--definition <id>]        Definition to sweep (default: project root)
@@ -302,7 +303,8 @@ internal static class Program
 
     private static int TestCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["definition"]);
+        (var positional, var options) = Parse(args, ["definition"], ["json"]);
+        bool json = options.ContainsKey("json");
         if (positional.Count < 2)
         {
             Console.Error.WriteLine(
@@ -320,7 +322,7 @@ internal static class Program
 
         if (positional.Count == 2 && !Directory.Exists(positional[1]))
         {
-            return RunSingleTest(project, positional[1], definitionOverride);
+            return RunSingleTest(project, positional[1], definitionOverride, json);
         }
 
         var paths = new List<string>();
@@ -354,16 +356,26 @@ internal static class Program
 
         if (paths.Count == 1 && !emptyDirectory)
         {
-            return RunSingleTest(project, paths[0], definitionOverride);
+            return RunSingleTest(project, paths[0], definitionOverride, json);
         }
 
-        return RunTestSuite(project, paths, definitionOverride, emptyDirectory);
+        return RunTestSuite(project, paths, definitionOverride, emptyDirectory, json);
     }
 
-    private static int RunSingleTest(CircuitProject project, string path, string? definitionOverride)
+    private static int RunSingleTest(
+        CircuitProject project,
+        string path,
+        string? definitionOverride,
+        bool json = false)
     {
         SimulationScript script = SimulationScript.Load(path);
         SimulationScriptResult result = SimulationScriptRunner.Run(project, script, definitionOverride);
+        if (json)
+        {
+            Console.WriteLine(SimulationScriptReport.ToJson(project, result, path));
+            return result.Passed ? 0 : 1;
+        }
+
         Console.WriteLine($"test:       {result.ScriptName}");
         Console.WriteLine($"project:    {project.Name}");
         Console.WriteLine($"definition: {result.DefinitionId}");
@@ -395,12 +407,19 @@ internal static class Program
         CircuitProject project,
         IReadOnlyList<string> paths,
         string? definitionOverride,
-        bool emptyDirectory)
+        bool emptyDirectory,
+        bool json = false)
     {
         SimulationScriptSuiteResult suite = SimulationScriptSuiteRunner.RunFiles(
             project,
             paths,
             definitionOverride);
+        if (json)
+        {
+            Console.WriteLine(SimulationScriptReport.ToJson(project, suite, emptyDirectory));
+            return emptyDirectory || suite.HasErrors ? 2 : suite.HasFailures ? 1 : 0;
+        }
+
         Console.WriteLine($"project:    {project.Name}");
         Console.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
@@ -819,7 +838,10 @@ internal static class Program
         return builder.Build();
     }
 
-    private static (List<string> Positional, Dictionary<string, List<string>> Options) Parse(string[] args, string[] knownOptions)
+    private static (List<string> Positional, Dictionary<string, List<string>> Options) Parse(
+        string[] args,
+        string[] knownOptions,
+        string[]? flagOptions = null)
     {
         var positional = new List<string>();
         var options = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -833,13 +855,14 @@ internal static class Program
             }
 
             string key = argument[2..];
-            if (!knownOptions.Contains(key, StringComparer.OrdinalIgnoreCase))
+            bool flag = flagOptions?.Contains(key, StringComparer.OrdinalIgnoreCase) == true;
+            if (!flag && !knownOptions.Contains(key, StringComparer.OrdinalIgnoreCase))
             {
                 throw new ProjectFormatException($"unknown option '--{key}'.");
             }
 
             string? value = null;
-            if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+            if (!flag && i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
                 value = args[++i];
             }
