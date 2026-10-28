@@ -242,6 +242,28 @@ public sealed class SerializationTests
     }
 
     [Fact]
+    public void WaveformPinsRoundTripAndSanitize()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        string netId = project.Definitions[0].Nets[0].Id;
+        project.View.WaveformPins["main"] = [netId, netId, " "];
+        project.View.WaveformPins["empty"] = [];
+
+        string json = ProjectSerializer.SaveToString(project);
+        CircuitProject loaded = ProjectSerializer.LoadFromString(json);
+
+        Assert.Equal([netId], loaded.View.WaveformPins["main"]);
+        Assert.False(loaded.View.WaveformPins.ContainsKey("empty"));
+        Assert.DoesNotContain("empty", json, StringComparison.Ordinal);
+
+        JsonObject old = Json(TestCircuits.ValidProject());
+        old["version"] = 5;
+        old.Remove("view");
+        CircuitProject oldLoaded = ProjectSerializer.LoadFromString(old.ToJsonString());
+        Assert.Empty(oldLoaded.View.WaveformPins);
+    }
+
+    [Fact]
     public void VersionOneFilesStillLoad()
     {
         JsonObject json = Json(TestCircuits.ValidProject());

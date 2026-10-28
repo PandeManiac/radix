@@ -21,10 +21,11 @@ public static class ProjectSerializer
     /// Version 2 adds optional per-net wire colors and author bendpoints. Version 3
     /// adds optional definition-scoped numeric lanes. Version 4 adds optional custom
     /// numeric-format descriptors. Version 5 adds optional editor view metadata.
+    /// Version 6 adds optional per-definition waveform pin selections inside that view.
     /// Older files load unchanged; every version up to <see cref="CurrentVersion"/> is
     /// accepted, and saving always writes the current version.
     /// </summary>
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = CircuitProject.CurrentFormatVersion;
 
     private const string Extension = ".radix";
 
@@ -165,6 +166,32 @@ public static class ProjectSerializer
             project.View.Scale = view.Scale;
             project.View.OffsetX = view.OffsetX;
             project.View.OffsetY = view.OffsetY;
+
+            if (view.WaveformPins is not null)
+            {
+                foreach ((string definitionId, List<string>? netIds) in view.WaveformPins)
+                {
+                    if (string.IsNullOrWhiteSpace(definitionId) || netIds is null)
+                    {
+                        continue;
+                    }
+
+                    var pins = new List<string>();
+                    foreach (string netId in netIds)
+                    {
+                        if (!string.IsNullOrWhiteSpace(netId) &&
+                            !pins.Contains(netId, StringComparer.Ordinal))
+                        {
+                            pins.Add(netId);
+                        }
+                    }
+
+                    if (pins.Count > 0)
+                    {
+                        project.View.WaveformPins[definitionId] = pins;
+                    }
+                }
+            }
         }
 
         foreach (DomainDto domainDto in dto.Domains ?? [])
@@ -475,6 +502,14 @@ public static class ProjectSerializer
                     Scale = project.View.Scale,
                     OffsetX = project.View.OffsetX,
                     OffsetY = project.View.OffsetY,
+                    WaveformPins = project.View.WaveformPins.Any(entry => entry.Value.Count > 0)
+                        ? project.View.WaveformPins
+                            .Where(entry => entry.Value.Count > 0)
+                            .ToDictionary(
+                                entry => entry.Key,
+                                entry => entry.Value.ToList(),
+                                StringComparer.Ordinal)
+                        : null,
                 }
                 : null,
             Domains = project.Domains.Select(MapDomainDto).ToList(),

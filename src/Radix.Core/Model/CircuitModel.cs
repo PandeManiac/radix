@@ -130,6 +130,12 @@ public sealed class ProjectView
 
     public double? OffsetY { get; set; }
 
+    /// <summary>
+    /// Net IDs pinned to the waveform panel, keyed by definition ID. Pins are
+    /// presentation only and never affect compilation or simulation.
+    /// </summary>
+    public Dictionary<string, List<string>> WaveformPins { get; set; } = new(StringComparer.Ordinal);
+
     public bool HasViewport =>
         Scale is double scale &&
         OffsetX is double x &&
@@ -294,7 +300,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 5;
+    public const int CurrentFormatVersion = 6;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 

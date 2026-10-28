@@ -1,4 +1,4 @@
-# RADIX project format, version 5
+# RADIX project format, version 6
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -24,12 +24,12 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `5`. Versions 1–5 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `6`. Versions 1–6 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
 | `settings` | no | Simulation defaults; omitted fields use defaults |
-| `view` | no | Presentation-only saved viewport and active definition |
+| `view` | no | Presentation-only saved viewport, active definition, and waveform pins |
 | `domains` | yes | At least one domain required for a valid project |
 | `customNumericFormats` | no | Project-owned display formats; omitted when none exist |
 | `definitions` | yes | One or more definitions; root must be present |
@@ -59,14 +59,16 @@ Property names are camelCase. JSON comments and trailing commas are accepted whe
   "definition": "main",
   "scale": 0.75,
   "offsetX": 132.5,
-  "offsetY": -48
+  "offsetY": -48,
+  "waveformPins": { "main": ["q0", "clk"] }
 }
 ```
 
 - `definition`: definition that was open in the editor. It is ignored if it no longer exists, and never changes the simulation root.
 - `scale`, `offsetX`, `offsetY`: canvas zoom and pan. The editor clamps the scale to its supported range and ignores non-finite values.
+- `waveformPins`: net IDs pinned to the waveform panel, keyed by definition ID. Order is significant and is preserved. Blank or duplicate IDs are dropped on load; a definition with no pins is omitted when saving. Stale definitions or nets are ignored and pruned by the editor, so a pin can never create a phantom waveform row.
 - All fields are optional. A project without usable viewport fields opens with the usual fit-to-content view.
-- View metadata is presentation only. It does not affect validation, compilation, simulation, or dirty-state checks; panning and zooming never mark a project as modified.
+- View metadata is presentation only. It does not affect validation, compilation, simulation, or dirty-state checks; panning, zooming, and changing waveform pins never mark a project as modified.
 
 ## Domains
 
@@ -327,7 +329,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 
 ## Versioning and migration
 
-Versions 1 through 5 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 6 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.
@@ -363,4 +365,4 @@ Because libraries are ordinary projects, they can also be opened directly as pro
 - external input event history;
 - simulation runtime state (projects save topology and initial configuration only).
 
-Instance `x`/`y` coordinates, the active definition, and viewport pan/zoom are persisted. The `view` object is presentation only and never changes circuit semantics.
+Instance `x`/`y` coordinates, the active definition, viewport pan/zoom, and waveform pin sets are persisted. The `view` object is presentation only and never changes circuit semantics.

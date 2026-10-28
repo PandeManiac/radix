@@ -483,6 +483,34 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void WaveformPinsAreSavedWithTheProjectViewButDoNotDirtyIt()
+    {
+        EditorViewModel viewModel = new(WideNetProject(18));
+        viewModel.SelectNet("n17");
+        viewModel.ToggleSelectedNetWaveformPin();
+        Assert.False(viewModel.IsDirty);
+
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            Assert.True(viewModel.SaveProject(path));
+
+            var opened = new EditorViewModel(WideNetProject(2));
+            Assert.True(opened.LoadProject(path));
+            opened.BeginSimulation();
+
+            Assert.Equal(1, opened.WaveformPinCount);
+            Assert.True(opened.HasWaveformPins);
+            Assert.Equal("n17", opened.Waveform.Rows[0].Label);
+            Assert.False(opened.IsDirty);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void PinInterfaceCanBeRenamedRetargetedAndFlipped()
     {
         var viewModel = CreateEmptyEditor();

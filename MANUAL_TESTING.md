@@ -42,7 +42,7 @@ Expected first screen: the light workbench (or your saved theme), the **4-bit bi
    - `Q3 = 0`
    - Header shows `t = 100`, zero errors/warnings.
 4. Click **Waveform**. Expected: rows for `Q0`…`Q3`, `clk`, constants and adder sums over a 0–100 tick axis; the clock has 10-tick phases; the header describes up to 16 nets in declaration order.
-5. In **Inspect**, select a late net in **NETS** (for example `sum3` or `carry`) and click **Show in waveform**. Expected: the button becomes **Hide from waveform**, the net row's summary gains `· waveform`, the Waveform tab lists that net first with the header reporting one pinned net, and simulation values are unchanged. Click again to unpin; the rows return to declaration order. Pins belong to the current definition and are not saved with the project.
+5. In **Inspect**, select a late net in **NETS** (for example `sum3` or `carry`) and click **Show in waveform**. Expected: the button becomes **Hide from waveform**, the net row's summary gains `· waveform`, the Waveform tab lists that net first with the header reporting one pinned net, and simulation values are unchanged. Click again to unpin; the rows return to declaration order. Pins belong to the current definition and are saved with the project view: save, close, and reopen the project, and the pinned net is still listed first. Delete that net instead and the pin disappears rather than leaving a phantom row.
 6. Click **Trace**. Expected: recent net changes newest first, formatted `t=<time>  <net> → <value>`.
 7. Return to **Waveform**. Wheel over the plot to zoom around the pointer. Expected: the tick labels narrow to the chosen range (for example `t=60`…`t=120`), the clock edges stay aligned with the narrower labels, and the header hint names the controls. Drag left or right to pan; the range must stop at tick 0 and at the simulation end. Click **Advance** while zoomed: the window must stay where it is. Double-click the plot: the full 0…current trace returns and later advances follow the end again. Click **Begin** (simulation reset) while zoomed: the whole new trace must be shown.
 
@@ -65,7 +65,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 3. Drag the handle. Expected: the wire follows orthogonally; the rest of the net stays connected. Undo restores the previous route.
 4. Alt+click a handle. Expected: that bendpoint is removed.
 5. Select a routed net and click **Reset wire route** in the net inspector. Expected: automatic routing resumes.
-6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, custom numeric formats, and the active definition/viewport survive (project format v5).
+6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, custom numeric formats, waveform pins, and the active definition/viewport survive (project format v6).
 7. In the net inspector, set **Wire color** to `#38bdf8`, then `auto`. Expected: valid hex applies; invalid text is rejected with a status message; `auto` returns to domain/signal coloring.
 8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
 9. Scroll to **NETS** in the Inspect tab. Expected: every net in the current definition appears with its domain, pin count, and a live value once the simulation has advanced. Type `q` in the filter. Expected: only matching nets remain and the summary reports the match count. Click `q0_net`. Expected: its wire is selected and the net inspector opens, without changing connectivity or simulation state.
@@ -186,7 +186,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 5. Open a deliberately malformed file (change `"version": 5` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
 6. Trigger a located diagnostic (for example, drive one single-driver net from two outputs, or reopen a project whose Diagnostics lists a located error), switch to **Diagnostics**, and click **Locate** on the message. Expected: the status bar names the code, the owning definition opens when needed, the named instance or net is selected, and the canvas centers on it without changing the circuit. A project-wide message has no **Locate** button.
 7. Save a project and inspect the JSON. Expected: `"version": 5`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
-8. Load a version 1, 2, 3, or 4 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 5.
+8. Load a version 1, 2, 3, 4, or 5 project. Expected: it opens normally, missing metadata (including waveform pins) is empty, and the next save writes version 6.
 9. Duplicate a definition: select a part and click `⧉` in the Definitions list. Expected: a new entry appears directly below with an ID ending `-copy` and a name ending ` copy`; it opens automatically with the same pins, instances, nets, lane, and layout. Edit the copy's wiring or move a part; the original and every existing instance of it must stay unchanged.
 10. Duplicate the copy. Expected: the ID counts up (`part-copy2`, not `part-copy-copy`) and the name counts up (`… copy 2`). Undo once to remove only the second copy, and again to remove the first; the original remains throughout.
 
@@ -430,7 +430,7 @@ Do not file these as new failures until they change in the README:
 - auto-routing is heuristic; dense circuits may need bendpoints, and components are not collision-moved automatically;
 - extraction refuses nets with drivers on both sides because there is no inout pin direction;
 - library equivalence ignores labels/layout and numeric-lane presentation; conflicting IDs are renamed rather than offering a merge dialog;
-- selection, external drive history, and waveform history are not saved; viewport and active definition are saved;
+- selection, external drive history, waveform history, and the waveform time range are not saved; viewport, active definition, and waveform pins are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
 - the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack holds nine returns with a two-trit pointer and latches a stack-error flag for call overflow or return underflow, but still overwrites the oldest return address on overflow and does not detect collisions with data;

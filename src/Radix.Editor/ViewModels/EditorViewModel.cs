@@ -72,8 +72,6 @@ public sealed class EditorViewModel : ObservableObject
     private DriverPolicyChoice? _selectedDriverPolicy;
     private string? _editingDomainId;
 
-    /// <summary>Net IDs pinned for the waveform, keyed by definition ID.</summary>
-    private readonly Dictionary<string, List<string>> _waveformPins = new(StringComparer.Ordinal);
     private readonly List<string> _recentProjectPaths = [];
     private string _librarySearch = string.Empty;
     private string _netSearch = string.Empty;
@@ -1187,7 +1185,6 @@ public sealed class EditorViewModel : ObservableObject
     {
         CancelDomainEdit();
         ClearTestScriptResult();
-        _waveformPins.Clear();
         var project = CircuitProject.CreateEmpty("Untitled");
         var root = new CircuitDefinition { Id = "main", Name = "Main", Description = "Root circuit" };
         project.Definitions.Add(root);
@@ -1221,7 +1218,6 @@ public sealed class EditorViewModel : ObservableObject
             CircuitProject loaded = ProjectSerializer.Load(path);
             CancelDomainEdit();
             ClearTestScriptResult();
-            _waveformPins.Clear();
             _project = loaded;
             EnsureProjectShape();
             _definitionId = loaded.FindDefinition(loaded.View.ActiveDefinitionId)?.Id ?? loaded.RootDefinitionId;
@@ -1467,7 +1463,6 @@ public sealed class EditorViewModel : ObservableObject
         {
             CancelDomainEdit();
             ClearTestScriptResult();
-            _waveformPins.Clear();
             _project = snapshot.Project;
             EnsureProjectShape();
             _definitionId = _project.FindDefinition(_project.View.ActiveDefinitionId)?.Id ?? _project.RootDefinitionId;
@@ -2809,7 +2804,7 @@ public sealed class EditorViewModel : ObservableObject
 
     public void ClearWaveformPins()
     {
-        if (!_waveformPins.TryGetValue(Definition.Id, out List<string>? pins) || pins.Count == 0)
+        if (!_project.View.WaveformPins.TryGetValue(Definition.Id, out List<string>? pins) || pins.Count == 0)
         {
             return;
         }
@@ -2821,7 +2816,7 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public bool IsWaveformPinned(string netId) =>
-        _waveformPins.TryGetValue(Definition.Id, out List<string>? pins) && pins.Contains(netId);
+        _project.View.WaveformPins.TryGetValue(Definition.Id, out List<string>? pins) && pins.Contains(netId);
 
     /// <summary>
     /// Pinned nets that still exist in the current definition, in pin order. Stale IDs
@@ -2829,10 +2824,10 @@ public sealed class EditorViewModel : ObservableObject
     /// </summary>
     private List<string> PinnedWaveformNetIds()
     {
-        if (!_waveformPins.TryGetValue(Definition.Id, out List<string>? pins))
+        if (!_project.View.WaveformPins.TryGetValue(Definition.Id, out List<string>? pins))
         {
             pins = [];
-            _waveformPins[Definition.Id] = pins;
+            _project.View.WaveformPins[Definition.Id] = pins;
         }
 
         pins.RemoveAll(id => Definition.FindNet(id) is null);
@@ -3576,6 +3571,11 @@ public sealed class EditorViewModel : ObservableObject
         {
             _project.Domains.Add(StandardDomains.Binary());
         }
+
+        _project.View.WaveformPins.Keys
+            .Where(definitionId => _project.FindDefinition(definitionId) is null)
+            .ToList()
+            .ForEach(definitionId => _project.View.WaveformPins.Remove(definitionId));
     }
 
     private void RefreshAll(bool fit)
@@ -5051,11 +5051,13 @@ public sealed class EditorViewModel : ObservableObject
             double? savedScale = _project.View.Scale;
             double? savedOffsetX = _project.View.OffsetX;
             double? savedOffsetY = _project.View.OffsetY;
+            Dictionary<string, List<string>> savedPins = _project.View.WaveformPins;
             _project = ProjectSerializer.LoadFromString(snapshot.Json, validate: false);
             EnsureProjectShape();
             _project.View.Scale = savedScale;
             _project.View.OffsetX = savedOffsetX;
             _project.View.OffsetY = savedOffsetY;
+            _project.View.WaveformPins = savedPins;
             _definitionId = _project.FindDefinition(snapshot.DefinitionId)?.Id ?? _project.RootDefinitionId;
             _selectedInstanceIds.Clear();
             CircuitDefinition? restored = _project.FindDefinition(_definitionId);

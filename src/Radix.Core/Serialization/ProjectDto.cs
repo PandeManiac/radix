@@ -53,6 +53,8 @@ internal sealed class ViewDto
     public double? OffsetX { get; set; }
 
     public double? OffsetY { get; set; }
+
+    public Dictionary<string, List<string>>? WaveformPins { get; set; }
 }
 
 internal sealed class SettingsDto
