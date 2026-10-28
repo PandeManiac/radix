@@ -269,6 +269,28 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <StackPanel IsVisible="{Binding HasNetEndpoints}" Margin="0,6,0,0">
+                  <TextBlock Text="CONNECTED PINS" Classes="section" Margin="4,8,4,4" />
+                  <ItemsControl ItemsSource="{Binding NetEndpoints}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:NetEndpointItem">
+                        <Button
+                            Command="{Binding SelectCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="7,3"
+                            Margin="0,1"
+                            ToolTip.Tip="Select this part in the inspector">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                          </Grid>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+
                 <StackPanel IsVisible="{Binding HasDefinitionUsages}" Margin="0,6,0,0">
                   <TextBlock Text="USED BY" Classes="section" Margin="4,8,4,4" />
                   <ItemsControl ItemsSource="{Binding DefinitionUsages}">

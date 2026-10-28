@@ -709,6 +709,38 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void NetEndpointsListEveryInstancePinAndNavigateToThePart()
+    {
+        var builder = new ProjectBuilder("net endpoints");
+        DefinitionBuilder root = builder.Define("root", "Root");
+        Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("g1", new LookupSpec(1, [0, 1]));
+        root.AddPrimitive("g2", new LookupSpec(1, [0, 1]));
+        root.AddPrimitive("or", new LookupSpec(2, [0, 1, 1, 1]));
+        Net first = root.AddNet("n1", StandardDomains.BinaryId);
+        Net second = root.AddNet("n2", StandardDomains.BinaryId);
+        root.Connect(a, root.Pin("g1", "in0"), root.Pin("g2", "in0"));
+        root.Connect(first, root.Pin("g1", "out"), root.Pin("or", "in0"));
+        root.Connect(second, root.Pin("g2", "out"), root.Pin("or", "in1"));
+        root.Connect(y, root.Pin("or", "out"));
+
+        var viewModel = new EditorViewModel(builder.Build("root"));
+        viewModel.SelectNet("a_net");
+
+        Assert.True(viewModel.HasNetEndpoints);
+        Assert.Equal(["g1", "g2"], viewModel.NetEndpoints.Select(endpoint => endpoint.InstanceId));
+        Assert.All(viewModel.NetEndpoints, endpoint =>
+            Assert.Contains("in0 · in", endpoint.Detail, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(viewModel.Fields, field => field.Label == "Ports" && field.Value.Contains("A (in)"));
+
+        viewModel.NetEndpoints[0].SelectCommand.Execute(null);
+
+        Assert.Equal("g1", viewModel.SelectedInstanceId);
+        Assert.False(viewModel.HasNetEndpoints);
+    }
+
+    [Fact]
     public void DefinitionUsagesOpenTheParentAndSelectEveryInstance()
     {
         var builder = new ProjectBuilder("usages");

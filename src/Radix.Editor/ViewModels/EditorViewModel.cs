@@ -285,6 +285,11 @@ public sealed class EditorViewModel : ObservableObject
 
     public bool HasDefinitionUsages => DefinitionUsages.Count > 0;
 
+    /// <summary>Instance pins on the selected net, in authored pin order.</summary>
+    public ObservableCollection<NetEndpointItem> NetEndpoints { get; } = [];
+
+    public bool HasNetEndpoints => NetEndpoints.Count > 0;
+
     public ObservableCollection<PaletteItem> Palette { get; } = [];
 
     public ObservableCollection<PinListItem> Pins { get; } = [];
@@ -4364,6 +4369,41 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Projects the selected net's instance pins into a navigable list. Selecting a
+    /// row opens that part's inspector, which is the fastest way from a wire to the
+    /// component driving or reading it. Purely a read projection of authored pins.
+    /// </summary>
+    private void RefreshNetEndpoints(Net? net)
+    {
+        NetEndpoints.Clear();
+        if (net is not null)
+        {
+            foreach (PinRef reference in net.Pins)
+            {
+                ComponentInstance? instance = Definition.FindInstance(reference.InstanceId);
+                if (instance is null)
+                {
+                    continue;
+                }
+
+                PinDescriptor? descriptor = _project.FindInstancePin(instance, reference.PinId);
+                string label = instance.Label ?? instance.Id;
+                string detail = descriptor is PinDescriptor pin
+                    ? $"{pin.Name} · {(pin.Direction == PinDirection.Input ? "in" : "out")}"
+                    : reference.PinId;
+                string instanceId = instance.Id;
+                NetEndpoints.Add(new NetEndpointItem(
+                    instanceId,
+                    label,
+                    detail,
+                    new RelayCommand(() => SelectInstance(instanceId))));
+            }
+        }
+
+        RaisePropertyChanged(nameof(HasNetEndpoints));
+    }
+
+    /// <summary>
     /// Projects direct parent instances of the current definition. A row opens its
     /// parent and selects every matching instance, so hierarchy navigation is one
     /// click instead of a manual search. No compilation or simulation is involved.
@@ -4867,6 +4907,7 @@ public sealed class EditorViewModel : ObservableObject
         Fields.Clear();
         RefreshLookupTable(_selectedInstanceIds.Count == 1 ? _selectedInstance : null);
         RefreshDefinitionUsages();
+        RefreshNetEndpoints(_selectedNet);
 
         if (_selectedInstanceIds.Count > 1)
         {
@@ -4954,6 +4995,20 @@ public sealed class EditorViewModel : ObservableObject
                 "Pins",
                 net.Pins.Count == 0 ? "none" : string.Join(", ", net.Pins.Select(p => p.ToString())),
                 isReadOnly: true));
+            var portNames = new List<string>();
+            foreach (PortBinding binding in Definition.Ports)
+            {
+                if (string.Equals(binding.NetId, net.Id, StringComparison.Ordinal) &&
+                    Definition.FindPin(binding.PinId) is PinDeclaration pin)
+                {
+                    portNames.Add($"{pin.Name} ({(pin.Direction == PinDirection.Input ? "in" : "out")})");
+                }
+            }
+
+            if (portNames.Count > 0)
+            {
+                Fields.Add(new EditableField("Ports", string.Join(", ", portNames), isReadOnly: true));
+            }
         }
         else
         {

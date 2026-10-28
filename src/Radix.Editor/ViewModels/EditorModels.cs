@@ -63,6 +63,26 @@ public sealed class DefinitionListItem
     public ICommand DuplicateCommand { get; }
 }
 
+/// <summary>One instance pin on the currently selected net.</summary>
+public sealed class NetEndpointItem
+{
+    public NetEndpointItem(string instanceId, string label, string detail, ICommand selectCommand)
+    {
+        InstanceId = instanceId;
+        Label = label;
+        Detail = detail;
+        SelectCommand = selectCommand;
+    }
+
+    public string InstanceId { get; }
+
+    public string Label { get; }
+
+    public string Detail { get; }
+
+    public ICommand SelectCommand { get; }
+}
+
 /// <summary>
 /// One parent definition that instantiates the definition being edited. Selecting
 /// the row opens that parent and selects every matching instance there.
