@@ -23,6 +23,7 @@ public static class ExampleProjects
     public const string TernaryCallMachineFile = "ternary-call-machine.radix";
     public const string TernaryMemoryFile = "ternary-memory.radix";
     public const string TernaryStackMachineFile = "ternary-stack-machine.radix";
+    public const string FourStateBusFile = "four-state-bus.radix";
     public const string BalancedTernaryAccumulatorFile = "balanced-ternary-accumulator.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
@@ -42,6 +43,7 @@ public static class ExampleProjects
         new(TernaryCallMachineFile, "Ternary call machine", "A ternary machine with CALL/RET, using the 3×2 trit RAM part as a three-deep return stack.", CreateTernaryCallMachineDemo()),
         new(TernaryMemoryFile, "Ternary 9 × 2 RAM", "A standalone 9-word, 2-trit memory. Drive ADDR, D, WE, and CLK, then read any word from the asynchronous port.", CreateTernaryMemoryDemo()),
         new(TernaryStackMachineFile, "Ternary stack machine", "A stack computer: a 2-trit TOS register, a 9-word stack RAM, PUSH/POP/ADD/DUP/SWAP/OUT/JMP/BZ, and latched stack faults.", CreateTernaryStackMachineDemo()),
+        new(FourStateBusFile, "Four-state bus", "Two tri-state drivers share one bus on the 0/1/X/Z domain; conflicting drivers resolve to X and raise a conflict diagnostic.", CreateFourStateBusDemo()),
         new(BalancedTernaryAccumulatorFile, "Balanced ternary accumulator", "A signed trit register with LOAD/ADD/HOLD control, built from balanced min/max/mux gates and a balanced register.", CreateBalancedTernaryAccumulatorDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
@@ -1910,6 +1912,54 @@ public static class ExampleProjects
         root.Connect(clk, root.Pin("sp_reg", "clk"));
 
         return builder.Build("demo.t-stack");
+    }
+
+    public static CircuitProject CreateFourStateBusDemo()
+    {
+        var builder = new ProjectBuilder("Four-state bus demo");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.four-state-bus", "Four-state bus");
+        root.Definition.Description =
+            "Two tri-state drivers share one bus on the four-state domain (0, 1, X, Z). A disabled " +
+            "driver outputs Z; the priority policy resolves Z with a driven value to that value, two " +
+            "different values to X, and X against anything to X. CONFLICT is a binary observation of X. " +
+            "The engine emits RAD101 when the drivers disagree.";
+
+        Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.FourStateId);
+        Net b = root.AddPin("b", "B", PinDirection.Input, StandardDomains.FourStateId);
+        Net enableA = root.AddPin("ena", "EN A", PinDirection.Input, StandardDomains.BinaryId);
+        Net enableB = root.AddPin("enb", "EN B", PinDirection.Input, StandardDomains.BinaryId);
+        Net bus = root.SetInitial(
+            root.AddPin("bus", "BUS", PinDirection.Output, StandardDomains.FourStateId),
+            3);
+        Net alert = root.SetInitial(
+            root.AddPin("alert", "CONFLICT", PinDirection.Output, StandardDomains.BinaryId),
+            0);
+
+        int[] driveTable = new int[8];
+        for (int enable = 0; enable < 2; enable++)
+        {
+            for (int data = 0; data < 4; data++)
+            {
+                driveTable[(enable * 4) + data] = enable == 1 ? data : 3;
+            }
+        }
+
+        root.AddPrimitive("drive_a", new LookupSpec(2, driveTable, 1), 300, 120);
+        root.Connect(enableA, root.Pin("drive_a", "in0"));
+        root.Connect(a, root.Pin("drive_a", "in1"));
+        root.Connect(bus, root.Pin("drive_a", PrimitiveShapes.OutputPinId));
+
+        root.AddPrimitive("drive_b", new LookupSpec(2, driveTable, 1), 300, 320);
+        root.Connect(enableB, root.Pin("drive_b", "in0"));
+        root.Connect(b, root.Pin("drive_b", "in1"));
+        root.Connect(bus, root.Pin("drive_b", PrimitiveShapes.OutputPinId));
+
+        root.AddPrimitive("conflict", new LookupSpec(1, [0, 0, 1, 0], 1), 620, 220);
+        root.Connect(bus, root.Pin("conflict", "in0"));
+        root.Connect(alert, root.Pin("conflict", PrimitiveShapes.OutputPinId));
+
+        return builder.Build("demo.four-state-bus");
     }
 
     public static CircuitProject CreateTernaryCallMachineDemo()

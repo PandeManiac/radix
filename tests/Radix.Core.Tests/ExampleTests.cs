@@ -133,6 +133,55 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void FourStateBusResolvesZValuesAndConflicts()
+    {
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateFourStateBusDemo(), "demo.four-state-bus");
+        engine.Drive("ena", 0);
+        engine.Drive("enb", 0);
+        engine.AdvanceTo(40);
+        Assert.Equal(3, engine.Read("bus"));
+        Assert.Equal(0, engine.Read("alert"));
+        Assert.Empty(engine.RuntimeDiagnostics);
+
+        engine.Drive("a", 0);
+        engine.Drive("ena", 1);
+        engine.AdvanceTo(engine.Now + 20);
+        Assert.Equal(0, engine.Read("bus"));
+        Assert.Equal(0, engine.Read("alert"));
+
+        // Two different driven values tie on priority and resolve to X.
+        engine.Drive("b", 1);
+        engine.Drive("enb", 1);
+        engine.AdvanceTo(engine.Now + 20);
+        Assert.Equal(2, engine.Read("bus"));
+        Assert.Equal(1, engine.Read("alert"));
+        Assert.Contains(
+            engine.RuntimeDiagnostics,
+            diagnostic => diagnostic.Code == SimulationEngine.DriverConflictCode);
+
+        // Agreement is not a conflict.
+        engine.Drive("b", 0);
+        engine.AdvanceTo(engine.Now + 20);
+        Assert.Equal(0, engine.Read("bus"));
+        Assert.Equal(0, engine.Read("alert"));
+
+        // Z yields to the other driver.
+        engine.Drive("enb", 0);
+        engine.Drive("b", 2);
+        engine.Drive("a", 2);
+        engine.AdvanceTo(engine.Now + 20);
+        Assert.Equal(2, engine.Read("bus"));
+        Assert.Equal(1, engine.Read("alert"));
+
+        engine.Drive("ena", 0);
+        engine.Drive("enb", 1);
+        engine.Drive("b", 1);
+        engine.AdvanceTo(engine.Now + 20);
+        Assert.Equal(1, engine.Read("bus"));
+        Assert.Equal(0, engine.Read("alert"));
+    }
+
+    [Fact]
     public void AccumulatorExecutesLoadAddClearAndHold()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateAccumulatorCpuDemo(), "demo.accumulator");

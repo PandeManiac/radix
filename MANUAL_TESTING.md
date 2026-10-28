@@ -227,6 +227,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 18. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-call-machine.radix examples/tests/ternary-call-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; SP walks 0 → 1 → 2 → 1 → 0 and both RETs return to the instruction after their CALL.
 19. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-memory.radix examples/tests/ternary-memory.radixtest`. Expected: `PASS: 10 step(s) through t=680`, exit code 0; word 5 holds 8, word 0 holds 3, and WE=1 leaves word 5 intact while D changes.
 20. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-stack-machine.radix examples/tests/ternary-stack-machine.radixtest`. Expected: `PASS: 30 step(s) through t=3480`, exit code 0; TOS goes 0 → 2 → 3 → 2 → 5 → 5 → 5 → 5 → 0, SP returns to 0, and OUT becomes 5.
+21. Run `dotnet run --project src/Radix.Cli -- test examples/four-state-bus.radix examples/tests/four-state-bus.radixtest`. Expected: `PASS: 14 step(s) through t=122`, exit code 0, plus one `WARNING RAD101` for the bus net on the first run; the warning does not fail the script.
 
 ## 14. Ternary multi-trit addition
 
@@ -380,7 +381,20 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 25. Known limitations to verify as *limitations*
+## 25. Four-state bus resolution
+
+This uses the GUI. Both data inputs and the bus are on the four-state domain; indices 0 and 1 are logic values, 2 is X, and 3 is Z. The enable pins are binary.
+
+1. Open `examples/four-state-bus.radix` and click **Begin**. Set `EN A = 0`, `EN B = 0`. Expected: **BUS** = Z and **CONFLICT** = 0; no RAD101 diagnostic appears.
+2. Set `EN A = 1`, `A = 0`. Expected: **BUS** = 0; the disabled B driver's Z yields.
+3. Set `EN B = 1`, `B = 1`. Expected: **BUS** = X and **CONFLICT** = 1; the Diagnostics tab shows exactly one `RAD101` warning for the bus net, even if you keep changing disagreeing values.
+4. Set `B = 0`. Expected: **BUS** = 0 and **CONFLICT** = 0; agreement is not a conflict, and the earlier warning remains in the diagnostic list.
+5. Set `EN B = 0`, `B = 2` (X). Expected: **BUS** stays 0 because the disabled driver outputs Z, not X.
+6. Set `EN A = 0`, `EN B = 1`, `B = 1`. Expected: **BUS** = 1 and **CONFLICT** = 0.
+7. Set `EN A = 1`, `A = 2`. Expected: **BUS** = X and **CONFLICT** = 1; X has higher priority than 1 in this domain.
+8. Expected limitation: the resolution policy is the domain's one priority table; there is no wired-AND/open-drain option, and the diagnostic reports a conflict per net once, not per transition.
+
+## 26. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -393,6 +407,7 @@ Do not file these as new failures until they change in the README:
 - the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack holds nine returns with a two-trit pointer and latches a stack-error flag for call overflow or return underflow, but still overwrites the oldest return address on overflow and does not detect collisions with data;
 - the ternary RAMs are fixed at 3×2 and 9×2 words; there is no runtime-sized memory, byte-lane view, or protection between program and data;
 - the ternary stack machine has a 9-word stack and a 2-trit pointer: eight pushes are safe, a ninth wraps and latches the fault; ADD is modulo 9 because the 2-trit adder carry is dropped, and BZ does not pop its condition;
+- the four-state bus uses only the domain's single priority table: there is no open-drain/wired-AND policy, and RAD101 is reported once per net per run rather than per transition;
 - the balanced accumulator is also 2 trits wide and drops the adder carry, so it wraps in −4..4 instead of overflowing; its third trit is not stored;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
