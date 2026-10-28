@@ -315,7 +315,10 @@ XAML uses `DynamicResource` for those keys. Custom-drawn `CircuitCanvas` and `Wa
 `HierarchyEditor` owns extraction and promotion as model transformations:
 
 - extraction validates all boundary nets before mutation, creates a new `custom.<slug>` definition, clones internal instances/nets, generates unique pin IDs and human names, replaces selected instances in the parent, and rewires boundary parent nets to the replacement's pins;
-- promotion binds an existing unbound net to a new pin and leaves the net's identity and internal connectivity untouched.
+- promotion binds an existing unbound net to a new pin and leaves the net's identity and internal connectivity untouched;
+- removing a pin prunes every parent net reference that addressed that pin through an instance of the edited definition. Empty unbound nets are removed, bound nets stay so a broken parent interface remains visible, and the whole edit is one undo snapshot.
+
+Numeric lanes are definition presentation, not hierarchy structure. They are cloned by library export, validated on load, and ignored when two definitions are compared for reuse.
 
 `ComponentLibraryService` exports a definition's transitive dependency closure using the ordinary project serializer, so exported libraries are validated by the same strict loader. Import merges domains only when their values and driver policy match. Definitions are compared structurally (pins, ports, instance primitives, net membership/initial values) while ignoring labels, coordinates, colors, and routes; equivalent definitions are reused, conflicting IDs are renamed, and newly introduced validation errors roll the whole merge back.
 

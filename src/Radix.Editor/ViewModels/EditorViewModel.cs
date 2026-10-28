@@ -1093,12 +1093,20 @@ public sealed class EditorViewModel : ObservableObject
 
     public void RemovePin(string pinId)
     {
+        string name = Definition.FindPin(pinId)?.Name ?? pinId;
         PushUndo();
-        if (DefinitionEditor.RemovePin(Definition, pinId))
+        if (!DefinitionEditor.RemovePin(Definition, pinId))
         {
-            AfterMutation(structural: true);
-            StatusText = $"Removed pin {pinId}";
+            _undo.Pop();
+            return;
         }
+
+        (int references, int nets) = DefinitionEditor.PruneInstancePinReferences(_project, Definition.Id, pinId);
+        AfterMutation(structural: true);
+        string extra = references == 0
+            ? string.Empty
+            : $" · removed {references} dangling connection(s)" + (nets > 0 ? $" and {nets} empty net(s)" : string.Empty);
+        StatusText = $"Removed pin {name}{extra}";
     }
 
     public void ChangeNetDomain(string domainId)

@@ -134,6 +134,36 @@ public static class DefinitionEditor
         return lane;
     }
 
+    /// <summary>
+    /// After an interface pin is removed, deletes net references that pointed at that
+    /// pin through instances of the definition. Empty nets with no port binding are
+    /// also removed; a bound port net is retained so the broken interface stays visible.
+    /// Returns the number of pin references and nets removed.
+    /// </summary>
+    public static (int PinReferences, int Nets) PruneInstancePinReferences(
+        CircuitProject project,
+        string definitionId,
+        string pinId)
+    {
+        int pinReferences = 0;
+        int nets = 0;
+        foreach (CircuitDefinition owner in project.Definitions)
+        {
+            foreach (Net net in owner.Nets)
+            {
+                pinReferences += net.Pins.RemoveAll(pinRef =>
+                    string.Equals(pinRef.PinId, pinId, StringComparison.Ordinal) &&
+                    string.Equals(owner.FindInstance(pinRef.InstanceId)?.DefinitionId, definitionId, StringComparison.Ordinal));
+            }
+
+            nets += owner.Nets.RemoveAll(net =>
+                net.Pins.Count == 0 &&
+                !owner.Ports.Any(port => string.Equals(port.NetId, net.Id, StringComparison.Ordinal)));
+        }
+
+        return (pinReferences, nets);
+    }
+
     public static bool RemoveNumericLane(CircuitDefinition definition, string laneId)
     {
         NumericLane? lane = definition.FindNumericLane(laneId);

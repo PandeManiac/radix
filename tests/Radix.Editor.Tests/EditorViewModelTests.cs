@@ -1,4 +1,5 @@
 using Avalonia;
+using Radix.Core;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
@@ -509,6 +510,44 @@ public sealed class EditorViewModelTests
         NumericLane restored = Assert.Single(viewModel.Definition.NumericLanes);
         Assert.Equal(laneId, restored.Id);
         Assert.Equal([binary], restored.PinIds);
+    }
+
+    [Fact]
+    public void RemovingAnInterfacePinPrunesDanglingParentConnections()
+    {
+        var viewModel = CreateEmptyEditor();
+        string rootId = viewModel.Definition.Id;
+        viewModel.AddDefinition();
+        string childId = viewModel.Definition.Id;
+        viewModel.NewPinName = "Y";
+        viewModel.NewPinIsInput = false;
+        viewModel.NewPinDomain = viewModel.Domains.Single(domain => domain.Id == StandardDomains.BinaryId);
+        viewModel.AddPin();
+        string childPin = viewModel.Definition.Pins.Single().Id;
+
+        viewModel.OpenDefinition(rootId);
+        viewModel.NewPinName = "OUT";
+        viewModel.NewPinIsInput = false;
+        viewModel.AddPin();
+        string rootPin = viewModel.Definition.Pins.Single().Id;
+        viewModel.PlaceDefinition(childId);
+        ComponentInstance child = Assert.Single(viewModel.Definition.Instances);
+        viewModel.Connect(EditorPin.ForInstance(child.Id, childPin), EditorPin.ForPort(rootPin));
+        Assert.Contains(viewModel.Definition.FindPortNet(rootPin)!.Pins, p => p.InstanceId == child.Id && p.PinId == childPin);
+
+        viewModel.OpenDefinition(childId);
+        viewModel.RemovePin(childPin);
+
+        Assert.Contains("dangling", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(viewModel.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        viewModel.OpenDefinition(rootId);
+        Net parentNet = viewModel.Definition.FindPortNet(rootPin)!;
+        Assert.DoesNotContain(parentNet.Pins, p => p.InstanceId == child.Id);
+
+        viewModel.Undo();
+        Assert.NotNull(viewModel.Project.RequireDefinition(childId).FindPin(childPin));
+        Net restoredNet = viewModel.Project.RequireDefinition(rootId).FindPortNet(rootPin)!;
+        Assert.Contains(restoredNet.Pins, p => p.InstanceId == child.Id && p.PinId == childPin);
     }
 
     [Fact]

@@ -52,7 +52,7 @@ The editor opens the 4-bit counter example. It is a normal desktop application w
 - **Inspect** by selecting a component or net. Primitive parameters, labels, positions, net initial values, wire colors, and route controls are editable. Commit a field by pressing Enter or clicking elsewhere.
 - **Extract a reusable part** by selecting components, entering a name in **Reusable part**, and clicking **Extract selection**. Boundary nets become input/output pins, internal nets move into the new definition, and the parent keeps one replacement instance.
 - **Expose a net** as an input or output pin from the net inspector. Give it a name first if desired; leave the name blank to use the net label.
-- **Edit an interface in place** in the Interface list: rename a pin, flip its direction with `⇄`, or change its domain. The bound net follows the pin, and each edit is one undo step.
+- **Edit an interface in place** in the Interface list: rename a pin, flip its direction with `⇄`, or change its domain. The bound net follows the pin, and each edit is one undo step. Removing a pin also prunes parent connections that pointed at it, so existing instances do not leave dangling references.
 - **Read a group of pins as a number** in **NUMERIC LANES**: choose a format, tick the interface pins (first pin is least significant), and add the lane. Its decoded value updates during simulation. If every pin is an input, type a number and press Enter or click **Drive** to encode it and drive all pins together. Lanes are saved with the definition and copied by library export; they never change nets or signal values.
 - **Navigate hierarchy** by double-clicking a composite part, or selecting it in Definitions. Edited definitions propagate to every instance.
 - **Share parts** with **Export part…** (current definition and dependencies) and **Import library…** (`.radixlib`). Equivalent definitions are reused; conflicting IDs are renamed instead of overwritten.
@@ -183,7 +183,7 @@ docs/                    architecture, format, benchmarks
 ## Testing summary
 
 - Kernel and library tests: **147 passing**.
-- Editor tests: **44 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, and numeric-lane inspector.
+- Editor tests: **45 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, and numeric-lane inspector.
 - Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, numeric formats and lanes, exhaustive built-in encode/decode ranges, determinism, and randomized differential comparison against a reference evaluator.
 - Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 

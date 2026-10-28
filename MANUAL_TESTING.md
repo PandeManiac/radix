@@ -99,7 +99,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 4. Undo. Expected: pin, binding, and generated net label are removed together.
 5. In the Interface list, edit a pin's name and press Enter. Expected: the name updates, its bound net label follows when the net was using the old name, and one undo restores both.
 6. Click `⇄` on a pin. Expected: its direction flips in the Interface list, I/O PINS, and any instance of this definition. Change its domain with the picker. Expected: the pin's port net adopts the same domain and an incompatible existing connection is reported in Diagnostics rather than silently rewritten.
-7. Remove a pin, then undo. Expected: the pin, binding, generated net, and its wire all return in one step.
+7. Remove a pin, then undo. Expected: the pin, binding, generated net, and its wire all return in one step. If the definition has instances elsewhere, their nets lose references to that pin (and empty unbound nets disappear); the status bar reports how many dangling connections were pruned, and undo restores everything.
 
 ## 7. Numeric lanes
 
