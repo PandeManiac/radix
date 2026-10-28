@@ -651,13 +651,21 @@
                 MaxHeight="190">
                 <Grid RowDefinitions="Auto,*">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
-                    <TextBlock
-                      Text="{Binding TestScriptSummary}"
-                      Classes="diag"
-                      Classes.error="{Binding HasTestScriptFailures}"
-                      FontSize="10.5"
-                      TextWrapping="Wrap"
-                      ToolTip.Tip="{Binding TestScriptPath}" />
+                    <StackPanel Spacing="1">
+                      <TextBlock
+                        Text="{Binding TestScriptSummary}"
+                        Classes="diag"
+                        Classes.error="{Binding HasTestScriptFailures}"
+                        FontSize="10.5"
+                        TextWrapping="Wrap"
+                        ToolTip.Tip="{Binding TestScriptPath}" />
+                      <TextBlock
+                        Text="STALE · the circuit changed after this run; rerun for a current verdict"
+                        Classes="diag warning"
+                        FontSize="9.5"
+                        TextWrapping="Wrap"
+                        IsVisible="{Binding IsTestScriptResultStale}" />
+                    </StackPanel>
                     <Button
                       Grid.Column="1"
                       Classes="tool"

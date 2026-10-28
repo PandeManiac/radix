@@ -1718,6 +1718,45 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void TestScriptResultIsMarkedStaleByCircuitEditsButNotByMovingParts()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "definition": "demo.dff",
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 1 }, "expect": { "q": 0 } } ]
+                }
+                """);
+
+            Assert.True(viewModel.RunTestScript(path));
+            Assert.False(viewModel.IsTestScriptResultStale);
+
+            ComponentInstance instance = viewModel.Definition.FindInstance("ff")!;
+            viewModel.SetInstanceState(instance.Id, instance.X + 20, instance.Y + 10);
+            Assert.False(viewModel.IsTestScriptResultStale);
+
+            viewModel.SelectInstance(instance.Id);
+            viewModel.DeleteSelection();
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.True(viewModel.IsTestScriptResultStale);
+
+            viewModel.ClearTestScriptResult();
+            Assert.False(viewModel.IsTestScriptResultStale);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void TestScriptFailureIsListedAndMarked()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
@@ -1893,6 +1932,39 @@ public sealed class EditorViewModelTests
             Assert.Equal(2, progress.Reports[0].Total);
             Assert.Equal(1d, progress.Reports[1].Fraction);
             Assert.False(viewModel.IsDirty);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TestScriptSuiteAgainstASnapshotIsStaleWhenTheProjectChangesDuringTheRun()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string directory = Path.Combine(Path.GetTempPath(), "radix-editor-suite-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(directory, "slow.radixtest"),
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "definition": "demo.dff",
+                  "steps": [ { "at": 0, "stable": { "ticks": 20000, "expect": { "q": 0 } } } ]
+                }
+                """);
+
+            Task<bool> run = viewModel.RunTestScriptSuiteAsync(directory);
+            viewModel.SelectInstance("ff");
+            viewModel.DeleteSelection();
+
+            Assert.True(await run);
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.True(viewModel.IsTestScriptResultStale);
         }
         finally
         {

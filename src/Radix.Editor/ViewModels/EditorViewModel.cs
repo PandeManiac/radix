@@ -99,6 +99,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _formatPreviewText = string.Empty;
     private bool _refreshingFormatForm;
     private bool _hasTestScriptResult;
+    private bool _isTestScriptResultStale;
     private bool _testScriptPassed;
     private string _testScriptSummary = string.Empty;
     private string _testScriptPath = string.Empty;
@@ -106,6 +107,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _testScriptSuiteProgressText = string.Empty;
     private double _testScriptSuiteProgressValue;
     private int _testScriptSuiteGeneration;
+    private int _semanticRevision;
     private CancellationTokenSource? _testScriptSuiteCancellation;
     private readonly RelayCommand _cancelTestScriptSuiteCommand;
     private string _sweepSettleTicksText = "10";
@@ -521,6 +523,17 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasTestScriptResult;
         private set => SetField(ref _hasTestScriptResult, value);
+    }
+
+    /// <summary>
+    /// True when the circuit, its interface, or its interpretation changed after the
+    /// displayed result ran. The result stays visible for reference but must not be
+    /// mistaken for a current verdict.
+    /// </summary>
+    public bool IsTestScriptResultStale
+    {
+        get => _isTestScriptResultStale;
+        private set => SetField(ref _isTestScriptResultStale, value);
     }
 
     /// <summary>True while a folder suite runs against a project snapshot.</summary>
@@ -1507,6 +1520,7 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         int generation = _testScriptSuiteGeneration;
+        int startRevision = _semanticRevision;
         SynchronizationContext? progressContext = SynchronizationContext.Current;
         var sink = new InlineProgress<SimulationScriptSuiteProgress>(report =>
         {
@@ -1548,7 +1562,16 @@ public sealed class EditorViewModel : ObservableObject
                 return false;
             }
 
-            return ApplyTestScriptSuiteResult(suite);
+            bool passed = ApplyTestScriptSuiteResult(suite);
+            if (startRevision != _semanticRevision)
+            {
+                // The suite ran against a consistent snapshot, but the live project
+                // changed while it was running. Keep the result and flag it so a PASS
+                // is not mistaken for a verdict on the edited project.
+                IsTestScriptResultStale = true;
+            }
+
+            return passed;
         }
         catch (OperationCanceledException)
         {
@@ -1666,6 +1689,7 @@ public sealed class EditorViewModel : ObservableObject
         IsTestScriptSuiteRunning = false;
         TestScriptSuiteProgressText = string.Empty;
         TestScriptSuiteProgressValue = 0;
+        IsTestScriptResultStale = false;
         TestScriptFailures.Clear();
         TestScriptPath = string.Empty;
         TestScriptSummary = string.Empty;
@@ -5091,6 +5115,18 @@ public sealed class EditorViewModel : ObservableObject
         // body or port, and reroutes only the nets that fail. A structural edit no
         // longer throws away hundreds of still-valid routes.
         IsDirty = true;
+        if (structural || invalidateSimulation)
+        {
+            _semanticRevision++;
+            if (HasTestScriptResult)
+            {
+                // The result remains as a record, but a structural or behaviour-affecting
+                // edit means it no longer describes the current project. Presentation-only
+                // moves, labels, colors, and routes do not invalidate scripted semantics.
+                IsTestScriptResultStale = true;
+            }
+        }
+
         if (invalidateSimulation)
         {
             ClearSweepResult();
