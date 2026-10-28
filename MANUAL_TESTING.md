@@ -217,6 +217,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 11. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-counter.radix examples/tests/ternary-counter.radixtest`. Expected: `PASS: 28 step(s) through t=700`, exit code 0; the script walks all nine counts and checks the wrap to 0.
 12. Run `dotnet run --project src/Radix.Cli -- simulate examples/ternary-counter.radix --ticks 100 --schedule 0:clk=0 --schedule 20:clk=2 --schedule 60:clk=0 --bus t0,t1 --format unsigned-ternary`. Expected: the decoded bus prints `1`; the two flip-flops sample the increment only on the 0→2 clock edge.
 13. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-adder-2.radix examples/tests/ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0, covering sums 16, 9, 8, and 0.
+14. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-accumulator.radix examples/tests/ternary-accumulator.radixtest`. Expected: `PASS: 17 step(s) through t=410`, exit code 0; the `Result` lane goes 5 → 8 → 3 (wrap) → 3 (hold) → 8.
 
 ## 14. Ternary multi-trit addition
 
@@ -242,7 +243,19 @@ This uses the GUI.
 5. Double-click `ff0`, then its `slave` latch. Expected: two `std.t-latch` instances, a Kleene NOT for the clock, and inside the latch two cross-coupled NOT/min pairs. The definitions use `std.t-lognot`, not the mod-3 `std.t-not`.
 6. Check **Trace**: the clock, `next T0`, `T0 carry`, `next T1`, and both stored trits should transition only around edges; no warnings or errors appear.
 
-## 16. Tiny program-driven CPU
+## 16. Ternary accumulator
+
+This uses the GUI. The accumulator is two trit flip-flops plus a ternary adder and four trit muxes; `LOAD` and `ADD` use the trit value 2 as active, 0 as inactive.
+
+1. Open `examples/ternary-accumulator.radix`, click **Begin**, and drive `CLK = 0`, `LOAD = 0`, `ADD = 0`. Expected: the inspector lists **Data** and **Result** lanes, `Q0 = Q1 = 0`, `Result = 0`.
+2. Set `D0 = 2`, `D1 = 1` (`Data = 5`), set `LOAD = 2`, click **Settle**, then set `CLK = 2` and settle. Expected: `Q0 = 2`, `Q1 = 1`, `Result = 5`. Lower `CLK` to 0.
+3. Set `LOAD = 0`, `ADD = 2`, `D0 = 0`, `D1 = 1` (`Data = 3`), settle, then raise `CLK`. Expected: `Result = 8`.
+4. Change `Data` to 4 and pulse `CLK` again. Expected: `Result = 3`, because 8 + 4 wraps modulo 9.
+5. Set `ADD = 0`, leave `LOAD = 0`, set `Data = 8`, and pulse `CLK`. Expected: `Result` stays 3; the data lane shows 8 but the register holds.
+6. Set `LOAD = 2` and pulse `CLK`. Expected: `Result = 8`.
+7. Double-click `mux_add0`, then `ff0`, then its `slave` latch. Expected: a single lookup primitive in the mux, and the latch/flip-flop structure from section 15. No errors or warnings appear.
+
+## 17. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -269,7 +282,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 17. Known limitations to verify as *limitations*
+## 18. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 

@@ -17,6 +17,7 @@ public static class ExampleProjects
     public const string BalancedTernaryAdder2File = "balanced-ternary-adder-2.radix";
     public const string TernaryCounterFile = "ternary-counter.radix";
     public const string TernaryAdder2File = "ternary-adder-2.radix";
+    public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
 
@@ -29,6 +30,7 @@ public static class ExampleProjects
         new(BalancedTernaryAdder2File, "Balanced ternary 2-trit adder", "Two-stage trit addition with numeric lanes and a ninth-valued result.", CreateBalancedTernaryAdder2Demo()),
         new(TernaryCounterFile, "Ternary counter", "A two-trit sequential machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane.", CreateTernaryCounterDemo()),
         new(TernaryAdder2File, "Ternary 2-trit adder", "Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane.", CreateTernaryAdder2Demo()),
+        new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
@@ -915,5 +917,64 @@ public static class ExampleProjects
         root.AddNumericLane("sum", "A + B", NumericFormats.UnsignedTernary.Id, "s0", "s1", "cout");
 
         return builder.Build("demo.t-adder-2");
+    }
+
+    public static CircuitProject CreateTernaryAccumulatorDemo()
+    {
+        var builder = new ProjectBuilder("Ternary accumulator");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.t-accumulator", "Ternary accumulator");
+        root.Definition.Description =
+            "Two-trit ternary accumulator. LOAD=2 captures D, ADD=2 adds D, and both inactive holds Q. " +
+            "ADD takes precedence when both are 2. The result wraps modulo 9; the adder carry is unused.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+        Net load = root.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.TernaryId);
+        Net add = root.AddPin("add", "ADD", PinDirection.Input, StandardDomains.TernaryId);
+
+        var data = new Net[2];
+        var q = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            data[i] = root.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.TernaryId);
+            q[i] = root.SetInitial(
+                root.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        root.AddNumericLane("data", "Data", NumericFormats.UnsignedTernary.Id, "d0", "d1");
+        root.AddNumericLane("result", "Result", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+
+        var sum = new Net[2];
+        var held = new Net[2];
+        var next = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            sum[i] = root.Rename(root.AddNet($"sum{i}", StandardDomains.TernaryId), $"D + Q trit {i}");
+            held[i] = root.Rename(root.AddNet($"held{i}", StandardDomains.TernaryId), $"load stage {i}");
+            next[i] = root.Rename(root.AddNet($"next{i}", StandardDomains.TernaryId), $"next Q{i}");
+        }
+
+        root.AddInstance("adder", StandardLibrary.TernaryAdder2Id, 300, 40);
+        for (int i = 0; i < 2; i++)
+        {
+            root.AddInstance($"mux_load{i}", "std.t-mux", 560, 40 + (i * 180));
+            root.AddInstance($"mux_add{i}", "std.t-mux", 800, 40 + (i * 180));
+            root.AddInstance($"ff{i}", StandardLibrary.TernaryDFlipFlopId, 1040, 40 + (i * 180));
+        }
+
+        for (int i = 0; i < 2; i++)
+        {
+            root.Connect(q[i], root.Pin("adder", $"a{i}"), root.Pin($"mux_load{i}", "a"), root.Pin($"ff{i}", "q"));
+            root.Connect(data[i], root.Pin("adder", $"b{i}"), root.Pin($"mux_load{i}", "b"));
+            root.Connect(sum[i], root.Pin("adder", $"s{i}"), root.Pin($"mux_add{i}", "b"));
+            root.Connect(held[i], root.Pin($"mux_load{i}", "y"), root.Pin($"mux_add{i}", "a"));
+            root.Connect(next[i], root.Pin($"mux_add{i}", "y"), root.Pin($"ff{i}", "d"));
+            root.Connect(load, root.Pin($"mux_load{i}", "s"));
+            root.Connect(add, root.Pin($"mux_add{i}", "s"));
+            root.Connect(clk, root.Pin($"ff{i}", "clk"));
+        }
+
+        return builder.Build("demo.t-accumulator");
     }
 }

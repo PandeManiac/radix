@@ -384,6 +384,65 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryMuxSelectsOnTheSelectTrit()
+    {
+        SimulationEngine engine = Engine("std.t-mux");
+        for (int a = 0; a < 3; a++)
+        {
+            for (int b = 0; b < 3; b++)
+            {
+                for (int s = 0; s < 3; s++)
+                {
+                    engine.Drive("a", a);
+                    engine.Drive("b", b);
+                    engine.Drive("s", s);
+                    Settle(engine, 20);
+
+                    int expected = s == 0 ? a : s == 2 ? b : 1;
+                    Assert.Equal(expected, engine.Read("y"));
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void TernaryAccumulatorLoadsAddsHoldsAndWraps()
+    {
+        CircuitProject project = ExampleProjects.CreateTernaryAccumulatorDemo();
+        SimulationEngine engine = Engine("demo.t-accumulator", project);
+        engine.Drive("clk", 0);
+        engine.Drive("load", 0);
+        engine.Drive("add", 0);
+
+        LoadTernaryPair(engine, "d", 5);
+        engine.Drive("load", 2);
+        PulseTernaryClock(engine);
+        Assert.Equal(5, ReadTernaryPair(engine, "q"));
+
+        engine.Drive("load", 0);
+        engine.Drive("add", 2);
+        LoadTernaryPair(engine, "d", 3);
+        PulseTernaryClock(engine);
+        Assert.Equal(8, ReadTernaryPair(engine, "q"));
+
+        LoadTernaryPair(engine, "d", 4);
+        PulseTernaryClock(engine);
+        Assert.Equal(3, ReadTernaryPair(engine, "q"));
+
+        engine.Drive("add", 0);
+        LoadTernaryPair(engine, "d", 8);
+        PulseTernaryClock(engine);
+        Assert.Equal(3, ReadTernaryPair(engine, "q"));
+
+        engine.Drive("load", 2);
+        PulseTernaryClock(engine);
+        Assert.Equal(8, ReadTernaryPair(engine, "q"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryFullAdderCoversAllDigitTriples()
     {
         SimulationEngine engine = Engine(StandardLibrary.TernaryFullAdderId);
@@ -538,6 +597,25 @@ public sealed class StdLibTests
 
     private static int ReadTernaryCounter(SimulationEngine engine) =>
         engine.Read("t0") + (3 * engine.Read("t1"));
+
+    private static int ReadTernaryPair(SimulationEngine engine, string prefix) =>
+        engine.Read($"{prefix}0") + (3 * engine.Read($"{prefix}1"));
+
+    private static void LoadTernaryPair(SimulationEngine engine, string prefix, int value)
+    {
+        engine.Drive($"{prefix}0", value % 3);
+        engine.Drive($"{prefix}1", value / 3);
+    }
+
+    private static void PulseTernaryClock(SimulationEngine engine, long settle = 80)
+    {
+        // Setup time: the mux and adder chain must settle while the master latch is open.
+        Settle(engine, settle);
+        engine.Drive("clk", 2);
+        Settle(engine, settle);
+        engine.Drive("clk", 0);
+        Settle(engine, settle);
+    }
 
     private static int ReadBus(SimulationEngine engine, params string[] pins)
     {

@@ -10526,6 +10526,138 @@
       ]
     },
     {
+      "id": "std.t-mux",
+      "name": "Ternary 2:1 multiplexer",
+      "description": "Select 0 returns A, select 2 returns B, and select 1 returns the unknown trit.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "s",
+          "name": "Select",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              1,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              2,
+              1,
+              1,
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2,
+              2,
+              1,
+              0,
+              2,
+              1,
+              1,
+              2,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
       "id": "std.t-full-adder",
       "name": "Ternary full adder",
       "description": "Adds three 0/1/2 digits: A\u002BB\u002BCIN = 3*COUT \u002B S. COUT is a full trit (0..2), not a Boolean flag.",

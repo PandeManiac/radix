@@ -593,6 +593,31 @@ public static class StandardLibrary
             added.Add("std.t-add");
         }
 
+        if (project.FindDefinition("std.t-mux") is null)
+        {
+            int[] muxTable = new int[27];
+            for (int a = 0; a < 3; a++)
+            {
+                for (int b = 0; b < 3; b++)
+                {
+                    muxTable[((a * 3) + b) * 3] = a;
+                    muxTable[(((a * 3) + b) * 3) + 1] = 1;
+                    muxTable[(((a * 3) + b) * 3) + 2] = b;
+                }
+            }
+
+            AddLookupDefinition(
+                project,
+                "std.t-mux",
+                "Ternary 2:1 multiplexer",
+                StandardDomains.TernaryId,
+                ["a", "b", "s"],
+                ["A", "B", "Select"],
+                muxTable,
+                description: "Select 0 returns A, select 2 returns B, and select 1 returns the unknown trit.");
+            added.Add("std.t-mux");
+        }
+
         if (project.FindDefinition(TernaryFullAdderId) is null)
         {
             AddTernaryFullAdder(project);
