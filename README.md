@@ -126,7 +126,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 | [ternary-accumulator.radix](examples/ternary-accumulator.radix) | A trit register with LOAD/ADD/HOLD control built from muxes, a ternary adder, and trit flip-flops |
 | [ternary-machine.radix](examples/ternary-machine.radix) | A stored-program ternary machine: 2-trit PC, two 9-entry lookup ROMs, a trit decoder, and the accumulator |
 | [ternary-branch-machine.radix](examples/ternary-branch-machine.radix) | A branch-capable ternary machine: 2-trit opcode, a reusable 3×2 trit RAM, and JMP/BZ control |
-| [ternary-call-machine.radix](examples/ternary-call-machine.radix) | Subroutine control flow in ternary: CALL/RET over the same 3×2 RAM used as a three-deep return stack |
+| [ternary-call-machine.radix](examples/ternary-call-machine.radix) | Subroutine control flow in ternary: CALL/RET over a nine-word RAM with a two-trit stack pointer and latched stack faults |
 | [ternary-memory.radix](examples/ternary-memory.radix) | A standalone 9-word × 2-trit RAM with a two-trit address and a two-level 3:1 selector read tree |
 | [balanced-ternary-accumulator.radix](examples/balanced-ternary-accumulator.radix) | A signed −/0/+ accumulator with LOAD/ADD/HOLD control, built from balanced-ternary gates and a balanced register |
 | [ternary-counter.radix](examples/ternary-counter.radix) | A sequential ternary machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane |

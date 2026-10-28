@@ -669,14 +669,14 @@ public sealed class StdLibTests
         CircuitProject project = ExampleProjects.CreateTernaryCallMachineDemo();
         Assert.Contains(
             project.RequireDefinition("demo.t-machine-3").Instances,
-            instance => instance.DefinitionId == StandardLibrary.TernaryRam3x2Id);
+            instance => instance.DefinitionId == StandardLibrary.TernaryRam9x2Id);
         SimulationEngine engine = Engine("demo.t-machine-3", project);
         engine.Drive("clk", 0);
         Settle(engine, 120);
 
         Assert.Equal(0, ReadTernaryPair(engine, "pc"));
         Assert.Equal(0, ReadTernaryPair(engine, "q"));
-        Assert.Equal(0, engine.Read("sp"));
+        Assert.Equal(0, ReadTernaryPair(engine, "sp"));
         Assert.Equal(5, ReadTernaryPair(engine, "op"));
         Assert.Equal(4, ReadTernaryPair(engine, "arg"));
         Assert.Equal(0, ReadTernaryPair(engine, "read"));
@@ -694,7 +694,7 @@ public sealed class StdLibTests
             PulseTernaryClock(engine, settle: 120);
             Assert.Equal(pc, ReadTernaryPair(engine, "pc"));
             Assert.Equal(accumulator, ReadTernaryPair(engine, "q"));
-            Assert.Equal(stackPointer, engine.Read("sp"));
+            Assert.Equal(stackPointer, ReadTernaryPair(engine, "sp"));
             Assert.Equal(read, ReadTernaryPair(engine, "read"));
         }
 
@@ -706,22 +706,25 @@ public sealed class StdLibTests
     [Fact]
     public void TernaryCallMachineLatchesStackOverflowAndUnderflow()
     {
+        // CALL 0 recurses forever, pushing PC+1 each time. SP walks 1..8 and the
+        // ninth call writes the last word, wraps SP to 0, and raises the fault.
         CircuitProject overflowProject = ExampleProjects.CreateTernaryCallMachineDemo();
-        SetCallMachineProgram(overflowProject, [5, 5, 5, 0, 0, 0, 0, 0, 0], [1, 2, 3, 0, 0, 0, 0, 0, 0]);
+        SetCallMachineProgram(overflowProject, [5, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0]);
         SimulationEngine overflow = Engine("demo.t-machine-3", overflowProject);
         overflow.Drive("clk", 0);
         Settle(overflow, 120);
         Assert.Equal(0, overflow.Read("stack_error"));
 
-        for (int depth = 1; depth <= 3; depth++)
+        for (int depth = 1; depth <= 9; depth++)
         {
             PulseTernaryClock(overflow, settle: 120);
-            Assert.Equal(depth % 3, overflow.Read("sp"));
-            Assert.Equal(depth < 3 ? 0 : 2, overflow.Read("stack_error"));
+            Assert.Equal(depth % 9, ReadTernaryPair(overflow, "sp"));
+            Assert.Equal(depth < 9 ? 0 : 2, overflow.Read("stack_error"));
         }
 
-        // The flag is latched: a following NOP does not clear it.
+        // The flag is latched: another recursive CALL does not clear it.
         PulseTernaryClock(overflow, settle: 120);
+        Assert.Equal(1, ReadTernaryPair(overflow, "sp"));
         Assert.Equal(2, overflow.Read("stack_error"));
         Assert.Empty(overflow.RuntimeDiagnostics);
 
@@ -734,7 +737,7 @@ public sealed class StdLibTests
 
         PulseTernaryClock(underflow, settle: 120);
         Assert.Equal(2, underflow.Read("stack_error"));
-        Assert.Equal(2, underflow.Read("sp"));
+        Assert.Equal(8, ReadTernaryPair(underflow, "sp"));
         Assert.Empty(underflow.RuntimeDiagnostics);
     }
 

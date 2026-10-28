@@ -14752,7 +14752,7 @@
     {
       "id": "demo.t-machine-3",
       "name": "Ternary call machine",
-      "description": "A ternary machine with subroutine calls. CALL target pushes the following PC onto a three-word stack (std.t-ram-3x2) and jumps; RET pops that address back into PC. The stack pointer is one trit, so nesting deeper than three wraps; a latched STACK ERROR reports a CALL with SP=2 or a RET with SP=0 until the simulation restarts. Opcodes: 0 NOP, 1 LOAD arg, 2 ADD arg (mod 9), 3 JMP target, 4 BZ target, 5 CALL target, 6 RET. The shipped program calls a routine that calls a second routine before returning through both levels to the instruction after the first call.",
+      "description": "A ternary machine with subroutine calls. CALL target pushes the following PC onto a nine-word stack (std.t-ram-9x2) and jumps; RET pops that address back into PC. The stack pointer is two trits, so it reaches SP=8; a CALL there writes the last word and a latched STACK ERROR reports it, as it reports a RET with SP=0, until the simulation restarts. Opcodes: 0 NOP, 1 LOAD arg, 2 ADD arg (mod 9), 3 JMP target, 4 BZ target, 5 CALL target, 6 RET. The shipped program calls a routine that calls a second routine before returning through both levels to the instruction after the first call.",
       "pins": [
         {
           "id": "clk",
@@ -14809,8 +14809,14 @@
           "domain": "ternary"
         },
         {
-          "id": "sp",
-          "name": "SP",
+          "id": "sp0",
+          "name": "SP0",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "sp1",
+          "name": "SP1",
           "direction": "output",
           "domain": "ternary"
         },
@@ -15180,11 +15186,17 @@
           "y": 820
         },
         {
-          "id": "sp_inc",
+          "id": "sp_inc0",
           "primitive": {
             "kind": "lookup",
-            "inputCount": 1,
+            "inputCount": 2,
             "table": [
+              1,
+              2,
+              0,
+              1,
+              2,
+              0,
               1,
               2,
               0
@@ -15195,11 +15207,17 @@
           "y": 1520
         },
         {
-          "id": "sp_dec",
+          "id": "sp_dec0",
           "primitive": {
             "kind": "lookup",
-            "inputCount": 1,
+            "inputCount": 2,
             "table": [
+              2,
+              0,
+              1,
+              2,
+              0,
+              1,
               2,
               0,
               1
@@ -15210,41 +15228,119 @@
           "y": 1660
         },
         {
-          "id": "sp_mux_call",
+          "id": "sp_mux_call0",
           "definition": "std.t-mux",
           "x": 860,
           "y": 1520
         },
         {
-          "id": "sp_mux_return",
+          "id": "sp_mux_return0",
           "definition": "std.t-mux",
           "x": 1100,
           "y": 1520
+        },
+        {
+          "id": "sp_mux_hold0",
+          "definition": "std.t-mux",
+          "x": 1340,
+          "y": 1700
+        },
+        {
+          "id": "sp_inc1",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              0,
+              1,
+              1,
+              1,
+              2,
+              2,
+              2,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 620,
+          "y": 1650
+        },
+        {
+          "id": "sp_dec1",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              2,
+              0,
+              0,
+              0,
+              1,
+              1,
+              1,
+              2,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 620,
+          "y": 1790
+        },
+        {
+          "id": "sp_mux_call1",
+          "definition": "std.t-mux",
+          "x": 860,
+          "y": 1650
+        },
+        {
+          "id": "sp_mux_return1",
+          "definition": "std.t-mux",
+          "x": 1100,
+          "y": 1650
+        },
+        {
+          "id": "sp_mux_hold1",
+          "definition": "std.t-mux",
+          "x": 1340,
+          "y": 1830
         },
         {
           "id": "write_sp",
           "definition": "std.t-max",
           "x": 860,
-          "y": 1700
+          "y": 1860
         },
         {
-          "id": "sp_mux_hold",
-          "definition": "std.t-mux",
-          "x": 1100,
-          "y": 1700
-        },
-        {
-          "id": "sp_ff",
-          "definition": "std.t-dff",
-          "x": 1340,
+          "id": "sp_reg",
+          "definition": "std.t-reg-2",
+          "x": 1600,
           "y": 1520
         },
         {
           "id": "check_overflow",
           "primitive": {
             "kind": "lookup",
-            "inputCount": 2,
+            "inputCount": 3,
             "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
               0,
               0,
               0,
@@ -15264,7 +15360,7 @@
           "id": "check_underflow",
           "primitive": {
             "kind": "lookup",
-            "inputCount": 2,
+            "inputCount": 3,
             "table": [
               0,
               0,
@@ -15272,7 +15368,25 @@
               0,
               0,
               0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
               2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
               0,
               0
             ],
@@ -15300,14 +15414,20 @@
           "y": 2100
         },
         {
-          "id": "stack_addr_mux",
+          "id": "stack_addr_mux0",
           "definition": "std.t-mux",
           "x": 1100,
           "y": 1900
         },
         {
+          "id": "stack_addr_mux1",
+          "definition": "std.t-mux",
+          "x": 1100,
+          "y": 2030
+        },
+        {
           "id": "stack",
-          "definition": "std.t-ram-3x2",
+          "definition": "std.t-ram-9x2",
           "x": 1600,
           "y": 700
         },
@@ -15330,7 +15450,7 @@
           "domain": "ternary",
           "pins": [
             {
-              "instance": "sp_ff",
+              "instance": "sp_reg",
               "pin": "clk"
             },
             {
@@ -15560,29 +15680,84 @@
           ]
         },
         {
-          "id": "sp_net",
+          "id": "sp0_net",
           "domain": "ternary",
           "initial": 0,
           "pins": [
             {
-              "instance": "sp_inc",
-              "pin": "in0"
+              "instance": "sp_inc0",
+              "pin": "in1"
             },
             {
-              "instance": "sp_dec",
-              "pin": "in0"
+              "instance": "sp_dec0",
+              "pin": "in1"
             },
             {
-              "instance": "sp_mux_call",
+              "instance": "sp_mux_call0",
               "pin": "a"
             },
             {
-              "instance": "sp_mux_hold",
+              "instance": "sp_mux_hold0",
               "pin": "a"
             },
             {
-              "instance": "sp_ff",
-              "pin": "q"
+              "instance": "sp_inc1",
+              "pin": "in1"
+            },
+            {
+              "instance": "sp_dec1",
+              "pin": "in1"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "q0"
+            },
+            {
+              "instance": "check_overflow",
+              "pin": "in2"
+            },
+            {
+              "instance": "check_underflow",
+              "pin": "in2"
+            },
+            {
+              "instance": "stack_addr_mux0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "sp1_net",
+          "domain": "ternary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "sp_inc0",
+              "pin": "in0"
+            },
+            {
+              "instance": "sp_dec0",
+              "pin": "in0"
+            },
+            {
+              "instance": "sp_inc1",
+              "pin": "in0"
+            },
+            {
+              "instance": "sp_dec1",
+              "pin": "in0"
+            },
+            {
+              "instance": "sp_mux_call1",
+              "pin": "a"
+            },
+            {
+              "instance": "sp_mux_hold1",
+              "pin": "a"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "q1"
             },
             {
               "instance": "check_overflow",
@@ -15593,7 +15768,7 @@
               "pin": "in1"
             },
             {
-              "instance": "stack_addr_mux",
+              "instance": "stack_addr_mux1",
               "pin": "a"
             }
           ]
@@ -15691,102 +15866,12 @@
               "pin": "out"
             },
             {
+              "instance": "sp_reg",
+              "pin": "load"
+            },
+            {
               "instance": "pc_reg",
               "pin": "load"
-            }
-          ]
-        },
-        {
-          "id": "sp_inc",
-          "domain": "ternary",
-          "label": "SP \u002B 1",
-          "pins": [
-            {
-              "instance": "sp_inc",
-              "pin": "out"
-            },
-            {
-              "instance": "sp_mux_call",
-              "pin": "b"
-            }
-          ]
-        },
-        {
-          "id": "sp_dec",
-          "domain": "ternary",
-          "label": "SP - 1",
-          "pins": [
-            {
-              "instance": "sp_dec",
-              "pin": "out"
-            },
-            {
-              "instance": "sp_mux_return",
-              "pin": "b"
-            },
-            {
-              "instance": "stack_addr_mux",
-              "pin": "b"
-            }
-          ]
-        },
-        {
-          "id": "sp_call",
-          "domain": "ternary",
-          "label": "call or hold",
-          "pins": [
-            {
-              "instance": "sp_mux_call",
-              "pin": "y"
-            },
-            {
-              "instance": "sp_mux_return",
-              "pin": "a"
-            }
-          ]
-        },
-        {
-          "id": "sp_next",
-          "domain": "ternary",
-          "label": "return or call",
-          "pins": [
-            {
-              "instance": "sp_mux_return",
-              "pin": "y"
-            },
-            {
-              "instance": "sp_mux_hold",
-              "pin": "b"
-            }
-          ]
-        },
-        {
-          "id": "sp_in",
-          "domain": "ternary",
-          "label": "SP register",
-          "pins": [
-            {
-              "instance": "sp_mux_hold",
-              "pin": "y"
-            },
-            {
-              "instance": "sp_ff",
-              "pin": "d"
-            }
-          ]
-        },
-        {
-          "id": "stack_addr",
-          "domain": "ternary",
-          "label": "stack address",
-          "pins": [
-            {
-              "instance": "stack_addr_mux",
-              "pin": "y"
-            },
-            {
-              "instance": "stack",
-              "pin": "addr"
             }
           ]
         },
@@ -15870,6 +15955,100 @@
           ]
         },
         {
+          "id": "sp_inc0",
+          "domain": "ternary",
+          "label": "SP \u002B 1 lane 0",
+          "pins": [
+            {
+              "instance": "sp_inc0",
+              "pin": "out"
+            },
+            {
+              "instance": "sp_mux_call0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_dec0",
+          "domain": "ternary",
+          "label": "SP - 1 lane 0",
+          "pins": [
+            {
+              "instance": "sp_dec0",
+              "pin": "out"
+            },
+            {
+              "instance": "sp_mux_return0",
+              "pin": "b"
+            },
+            {
+              "instance": "stack_addr_mux0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_call0",
+          "domain": "ternary",
+          "label": "call or hold lane 0",
+          "pins": [
+            {
+              "instance": "sp_mux_call0",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_mux_return0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "sp_next0",
+          "domain": "ternary",
+          "label": "return or call lane 0",
+          "pins": [
+            {
+              "instance": "sp_mux_return0",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_mux_hold0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_in0",
+          "domain": "ternary",
+          "label": "SP register lane 0",
+          "pins": [
+            {
+              "instance": "sp_mux_hold0",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "d0"
+            }
+          ]
+        },
+        {
+          "id": "stack_addr0",
+          "domain": "ternary",
+          "label": "stack address lane 0",
+          "pins": [
+            {
+              "instance": "stack_addr_mux0",
+              "pin": "y"
+            },
+            {
+              "instance": "stack",
+              "pin": "addr0"
+            }
+          ]
+        },
+        {
           "id": "next_pc1",
           "domain": "ternary",
           "label": "next PC lane 1",
@@ -15945,6 +16124,100 @@
             {
               "instance": "acc_reg",
               "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "sp_inc1",
+          "domain": "ternary",
+          "label": "SP \u002B 1 lane 1",
+          "pins": [
+            {
+              "instance": "sp_inc1",
+              "pin": "out"
+            },
+            {
+              "instance": "sp_mux_call1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_dec1",
+          "domain": "ternary",
+          "label": "SP - 1 lane 1",
+          "pins": [
+            {
+              "instance": "sp_dec1",
+              "pin": "out"
+            },
+            {
+              "instance": "sp_mux_return1",
+              "pin": "b"
+            },
+            {
+              "instance": "stack_addr_mux1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_call1",
+          "domain": "ternary",
+          "label": "call or hold lane 1",
+          "pins": [
+            {
+              "instance": "sp_mux_call1",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_mux_return1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "sp_next1",
+          "domain": "ternary",
+          "label": "return or call lane 1",
+          "pins": [
+            {
+              "instance": "sp_mux_return1",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_mux_hold1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_in1",
+          "domain": "ternary",
+          "label": "SP register lane 1",
+          "pins": [
+            {
+              "instance": "sp_mux_hold1",
+              "pin": "y"
+            },
+            {
+              "instance": "sp_reg",
+              "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "stack_addr1",
+          "domain": "ternary",
+          "label": "stack address lane 1",
+          "pins": [
+            {
+              "instance": "stack_addr_mux1",
+              "pin": "y"
+            },
+            {
+              "instance": "stack",
+              "pin": "addr1"
             }
           ]
         },
@@ -16030,7 +16303,11 @@
               "pin": "b"
             },
             {
-              "instance": "sp_mux_call",
+              "instance": "sp_mux_call0",
+              "pin": "s"
+            },
+            {
+              "instance": "sp_mux_call1",
               "pin": "s"
             },
             {
@@ -16065,7 +16342,11 @@
               "pin": "s"
             },
             {
-              "instance": "sp_mux_return",
+              "instance": "sp_mux_return0",
+              "pin": "s"
+            },
+            {
+              "instance": "sp_mux_return1",
               "pin": "s"
             },
             {
@@ -16077,7 +16358,11 @@
               "pin": "in0"
             },
             {
-              "instance": "stack_addr_mux",
+              "instance": "stack_addr_mux0",
+              "pin": "s"
+            },
+            {
+              "instance": "stack_addr_mux1",
               "pin": "s"
             }
           ]
@@ -16103,12 +16388,16 @@
           "label": "push or pop",
           "pins": [
             {
-              "instance": "write_sp",
-              "pin": "y"
+              "instance": "sp_mux_hold0",
+              "pin": "s"
             },
             {
-              "instance": "sp_mux_hold",
+              "instance": "sp_mux_hold1",
               "pin": "s"
+            },
+            {
+              "instance": "write_sp",
+              "pin": "y"
             }
           ]
         },
@@ -16209,7 +16498,7 @@
         {
           "id": "stack_overflow",
           "domain": "ternary",
-          "label": "CALL at SP 2",
+          "label": "CALL at SP 8",
           "pins": [
             {
               "instance": "check_overflow",
@@ -16305,8 +16594,12 @@
           "net": "arg1_net"
         },
         {
-          "pin": "sp",
-          "net": "sp_net"
+          "pin": "sp0",
+          "net": "sp0_net"
+        },
+        {
+          "pin": "sp1",
+          "net": "sp1_net"
         },
         {
           "pin": "stack_error",
@@ -16363,7 +16656,8 @@
           "name": "SP",
           "format": "unsigned-ternary",
           "pins": [
-            "sp"
+            "sp0",
+            "sp1"
           ]
         },
         {

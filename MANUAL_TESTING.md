@@ -299,7 +299,7 @@ This uses the GUI. The machine has a 2-trit opcode, a 2-trit argument, three wor
 
 ## 20. Ternary call machine
 
-This uses the GUI. CALL/RET use the `std.t-ram-3x2` part as a three-word return stack, and SP is a single trit.
+This uses the GUI. CALL/RET use the `std.t-ram-9x2` part as a nine-word return stack, and SP is a two-trit counter. CALL at SP=8 writes the last word and raises the latched fault; nesting up to eight levels is safe.
 
 1. Open `examples/ternary-call-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: **PC** = 0, **ACC** = 0, **SP** = 0, **Stack read** = 0, **Opcode** = 5, **Argument** = 4 (CALL 4).
 2. Pulse `CLK` 0 → 2 → 0. Expected: **PC** = 4, **SP** = 1, ACC stays 0; opcode 5, argument 7 (the routine's own CALL).
@@ -309,9 +309,9 @@ This uses the GUI. CALL/RET use the `std.t-ram-3x2` part as a three-word return 
 6. Pulse again. Expected: **PC** = 6, ACC = 2, SP = 1; **Stack read** = 1 and opcode 6 (RET).
 7. Pulse again. Expected: **PC** = 1, ACC = 2, **SP** = 0; opcode 1, argument 1. The outer RET popped 1, returning to the instruction after CALL 4.
 8. Pulse twice. Expected: (PC 2, ACC 1), then (PC 3, ACC 3, opcode 3, argument 3). Pulse again: PC stays 3 because `JMP 3` loops with the stack empty.
-9. Double-click `stack`. Expected: the `std.t-ram-3x2` body with three word registers, three write-decode lookups, and two read lookups. Double-click `sp_ff` and `sp_mux_hold`: the one-trit SP is a trit flip-flop fed by a hold mux, so it changes only on CALL and RET. No errors or warnings appear.
-10. Drive `STACK ERROR` behavior with the core test `TernaryCallMachineLatchesStackOverflowAndUnderflow`, which rewrites the four instruction ROMs: four nested CALLs latch `STACK ERROR = 2` while SP stays at 2, a RET with SP = 0 latches it too, and the latch survives later NOPs until the simulation restarts. In the editor the shipped program never faults, so `STACK ERROR` stays 0; it appears in the inspector's pin values and the waveform, not as a numeric lane.
-11. Expected limitation: the stack holds three entries. A fourth nested CALL latches the error but still overwrites the oldest return address (SP stays 2), so recovery requires restarting the simulation; the flag also ignores a software stack colliding with data, which belongs to a future memory model.
+9. Double-click `stack`. Expected: the `std.t-ram-9x2` body with nine word registers, nine write-decode lookups, and a two-level read tree of `std.t-mux3` selectors per lane. Double-click `sp_reg` and `sp_mux_hold0`: the two-trit SP is a `std.t-reg-2` fed by hold muxes, so it changes only on CALL and RET. No errors or warnings appear.
+10. Drive `STACK ERROR` behavior with the core test `TernaryCallMachineLatchesStackOverflowAndUnderflow`, which rewrites the instruction ROMs to make the machine recurse: the ninth CALL at SP=8 latches `STACK ERROR = 2` and wraps SP to 0, a RET with SP = 0 latches it and wraps SP to 8, and the latch survives later CALLs until the simulation restarts. In the editor the shipped program never faults, so `STACK ERROR` stays 0; it appears in the inspector's pin values and the waveform, not as a numeric lane.
+11. Expected limitation: the pointer wraps on overflow and underflow, so a fault is reported but not prevented; the ninth push overwrites the oldest saved address, and recovery requires restarting the simulation. The flag also ignores a software stack colliding with data, which belongs to a future memory model.
 
 ## 21. Ternary 9 × 2 memory
 
@@ -373,7 +373,7 @@ Do not file these as new failures until they change in the README:
 - selection, external drive history, and waveform history are not saved; viewport and active definition are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
-- the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack is three deep and latches a stack-error flag for call overflow or return underflow, but still overwrites the oldest return address on overflow and does not detect collisions with data;
+- the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack holds nine returns with a two-trit pointer and latches a stack-error flag for call overflow or return underflow, but still overwrites the oldest return address on overflow and does not detect collisions with data;
 - the ternary RAMs are fixed at 3×2 and 9×2 words; there is no runtime-sized memory, byte-lane view, or protection between program and data;
 - the balanced accumulator is also 2 trits wide and drops the adder carry, so it wraps in −4..4 instead of overflowing; its third trit is not stored;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
