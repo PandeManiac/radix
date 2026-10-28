@@ -28,7 +28,7 @@ public sealed record Diagnostic(
         get
         {
             var parts = new List<string>(5);
-            if (Path is not null)
+            if (!string.IsNullOrEmpty(Path))
             {
                 parts.Add($"path '{Path}'");
             }

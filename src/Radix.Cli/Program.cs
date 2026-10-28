@@ -92,6 +92,7 @@ internal static class Program
             Commands:
               validate <project.radix>       Validate structure and compile the project
                   [--all]                    Also compile every definition as a root
+                  [--json]                   Emit one machine-readable JSON report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -132,17 +133,21 @@ internal static class Program
 
     private static int ValidateCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["all"]);
+        (var positional, var options) = Parse(args, ["all", "json"]);
         if (positional.Count != 1)
         {
-            Console.Error.WriteLine("usage: radix validate <project.radix> [--all]");
+            Console.Error.WriteLine("usage: radix validate <project.radix> [--all] [--json]");
             return 2;
         }
 
+        bool json = options.ContainsKey("json");
         CircuitProject project = ProjectSerializer.Load(positional[0], validate: false);
-        Console.WriteLine(
-            $"project '{project.Name}' — {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
-            $"{project.Domains.Count.ToString(CultureInfo.InvariantCulture)} domains, root '{project.RootDefinitionId}'");
+        if (!json)
+        {
+            Console.WriteLine(
+                $"project '{project.Name}' — {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
+                $"{project.Domains.Count.ToString(CultureInfo.InvariantCulture)} domains, root '{project.RootDefinitionId}'");
+        }
 
         bool validateAll = options.ContainsKey("all");
         CompiledCircuit? circuit = null;
@@ -154,27 +159,53 @@ internal static class Program
                 project.RootDefinitionId,
                 out circuit,
                 out report);
-        PrintDiagnostics(report, Console.Out);
+
+        if (json)
+        {
+            Console.WriteLine(ValidationReport.ToJson(
+                project,
+                project.RootDefinitionId,
+                validateAll,
+                compiled,
+                report,
+                circuit));
+        }
+        else
+        {
+            PrintDiagnostics(report, Console.Out);
+        }
 
         if (!compiled || report.HasErrors)
         {
-            Console.Error.WriteLine(
-                $"INVALID: {report.ErrorCount.ToString(CultureInfo.InvariantCulture)} error(s), " +
-                $"{report.WarningCount.ToString(CultureInfo.InvariantCulture)} warning(s).");
+            if (!json)
+            {
+                Console.Error.WriteLine(
+                    $"INVALID: {report.ErrorCount.ToString(CultureInfo.InvariantCulture)} error(s), " +
+                    $"{report.WarningCount.ToString(CultureInfo.InvariantCulture)} warning(s).");
+            }
+
             return 1;
         }
 
         if (validateAll)
         {
-            Console.WriteLine(
-                $"OK: {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions compile as roots.");
+            if (!json)
+            {
+                Console.WriteLine(
+                    $"OK: {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions compile as roots.");
+            }
+
             return 0;
         }
 
-        Console.WriteLine(
-            $"OK: {circuit!.Components.Count.ToString(CultureInfo.InvariantCulture)} primitive components, " +
-            $"{circuit.Nets.Count.ToString(CultureInfo.InvariantCulture)} nets, " +
-            $"{circuit.Pins.Count.ToString(CultureInfo.InvariantCulture)} pins.");
+        if (!json)
+        {
+            Console.WriteLine(
+                $"OK: {circuit!.Components.Count.ToString(CultureInfo.InvariantCulture)} primitive components, " +
+                $"{circuit.Nets.Count.ToString(CultureInfo.InvariantCulture)} nets, " +
+                $"{circuit.Pins.Count.ToString(CultureInfo.InvariantCulture)} pins.");
+        }
+
         return 0;
     }
 
