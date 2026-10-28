@@ -342,7 +342,6 @@ Because libraries are ordinary projects, they can also be opened directly as pro
 ## What is not persisted yet
 
 - viewport pan/zoom, active tab, and selection;
-- in-place edits to a saved numeric format (remove and re-add today);
 - external input event history;
 - simulation runtime state (projects save topology and initial configuration only).
 

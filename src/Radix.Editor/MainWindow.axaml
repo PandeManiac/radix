@@ -355,7 +355,10 @@
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" />
                             <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
                           </StackPanel>
-                          <Button Grid.Column="1" Classes="tool" Content="×" Command="{Binding RemoveCommand}" Padding="5,1" ToolTip.Tip="Remove this format (refused while a lane uses it)" />
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+                            <Button Classes="tool" Content="Edit" Command="{Binding EditCommand}" Padding="5,1" ToolTip.Tip="Load this format into the editor below" />
+                            <Button Classes="tool" Content="×" Command="{Binding RemoveCommand}" Padding="5,1" ToolTip.Tip="Remove this format (refused while a lane uses it)" />
+                          </StackPanel>
                         </Grid>
                       </Border>
                     </DataTemplate>
@@ -386,7 +389,11 @@
                       <CheckBox Content="LSB first" IsChecked="{Binding NewFormatLeastSignificantFirst, Mode=TwoWay}" FontSize="10.5" ToolTip.Tip="Place the least significant digit at the first pin" />
                       <TextBox Grid.Column="1" Watermark="negative sign index" Text="{Binding NewFormatNegativeSign, Mode=TwoWay}" ToolTip.Tip="Sign-magnitude only: digit index that means negative" />
                     </Grid>
-                    <Button Content="Add numeric format" Command="{Binding AddNumericFormatCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding FormatPreviewText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="{Binding FormatSaveButtonText}" Command="{Binding AddNumericFormatCommand}" />
+                      <Button Content="Cancel edit" Command="{Binding CancelFormatEditCommand}" IsVisible="{Binding IsEditingFormat}" />
+                    </StackPanel>
                     <TextBlock Text="Digits are mapped by list position, not by value. A format's nominal domain is informational and is checked by lane warnings." Classes="muted" FontSize="9" TextWrapping="Wrap" />
                   </StackPanel>
                 </Border>

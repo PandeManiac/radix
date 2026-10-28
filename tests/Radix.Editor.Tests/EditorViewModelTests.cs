@@ -527,6 +527,100 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void EditingCustomNumericFormatKeepsItsIdAndLaneReferences()
+    {
+        var viewModel = CreateEmptyEditor();
+        string t0 = AddInputPin(viewModel, "T0", StandardDomains.TernaryId);
+        string t1 = AddInputPin(viewModel, "T1", StandardDomains.TernaryId);
+        string t2 = AddInputPin(viewModel, "T2", StandardDomains.TernaryId);
+
+        viewModel.NewFormatName = "Custom balanced";
+        viewModel.NewFormatDomain = viewModel.Domains.Single(domain => domain.Id == StandardDomains.TernaryId);
+        viewModel.NewFormatDigits = "-1 0 1";
+        viewModel.NewFormatRadix = "3";
+        viewModel.SelectedFormatMode = viewModel.FormatModes.Single(mode => mode.Id == "standard");
+        viewModel.AddCustomNumericFormat();
+        NumericFormatDefinition format = Assert.Single(viewModel.Project.CustomNumericFormats);
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = choice.PinId is var id && (id == t0 || id == t1 || id == t2);
+        }
+
+        viewModel.SelectedLaneFormat = viewModel.FormatChoices.Single(option => option.Format.Id == format.Id);
+        viewModel.NewLaneName = "Balanced";
+        viewModel.AddNumericLane();
+        NumericLane lane = Assert.Single(viewModel.Definition.NumericLanes);
+
+        viewModel.BeginSimulation();
+        NumericLaneListItem card = Assert.Single(viewModel.NumericLanes);
+        card.DriveText = "-4";
+        viewModel.DriveNumericLane(lane.Id);
+        Assert.Equal("-4", card.ValueText);
+
+        viewModel.BeginEditCustomNumericFormat(format.Id);
+        Assert.True(viewModel.IsEditingFormat);
+        Assert.Equal("Update numeric format", viewModel.FormatSaveButtonText);
+        Assert.Equal("Custom balanced", viewModel.NewFormatName);
+        Assert.Equal("-1 0 1", viewModel.NewFormatDigits);
+        Assert.Equal("3", viewModel.NewFormatRadix);
+        Assert.Equal("standard", viewModel.SelectedFormatMode?.Id);
+        Assert.Contains("Preview", viewModel.FormatPreviewText, StringComparison.Ordinal);
+        Assert.Contains("-4", viewModel.FormatPreviewText, StringComparison.Ordinal);
+
+        viewModel.NewFormatName = "Balanced renamed";
+        viewModel.AddCustomNumericFormat();
+
+        Assert.False(viewModel.IsEditingFormat);
+        Assert.Equal("Add numeric format", viewModel.FormatSaveButtonText);
+        NumericFormatDefinition updated = Assert.Single(viewModel.Project.CustomNumericFormats);
+        Assert.Equal(format.Id, updated.Id);
+        Assert.Equal("Balanced renamed", updated.Name);
+        Assert.Equal(format.Id, Assert.Single(viewModel.Definition.NumericLanes).FormatId);
+        Assert.Contains(viewModel.FormatChoices, option =>
+            option.Format.Id == format.Id && option.Format.Name == "Balanced renamed");
+
+        viewModel.Undo();
+        NumericFormatDefinition restored = Assert.Single(viewModel.Project.CustomNumericFormats);
+        Assert.Equal("Custom balanced", restored.Name);
+        Assert.Equal(format.Id, Assert.Single(viewModel.Definition.NumericLanes).FormatId);
+    }
+
+    [Fact]
+    public void CancellingFormatEditLeavesTheProjectUnchanged()
+    {
+        var viewModel = CreateEmptyEditor();
+        AddInputPin(viewModel, "B0");
+        viewModel.NewFormatName = "Keep";
+        viewModel.NewFormatDomain = viewModel.Domains.Single(domain => domain.Id == StandardDomains.BinaryId);
+        viewModel.NewFormatDigits = "0 1";
+        viewModel.NewFormatRadix = "2";
+        viewModel.SelectedFormatMode = viewModel.FormatModes.Single(mode => mode.Id == "standard");
+        viewModel.AddCustomNumericFormat();
+        NumericFormatDefinition format = Assert.Single(viewModel.Project.CustomNumericFormats);
+
+        viewModel.BeginEditCustomNumericFormat(format.Id);
+        viewModel.NewFormatName = "Discarded";
+        viewModel.NewFormatDigits = "0 0 1";
+        viewModel.NewFormatRadix = "3";
+        viewModel.AddCustomNumericFormat();
+        Assert.True(viewModel.IsEditingFormat);
+        Assert.Contains("distinct", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Keep", Assert.Single(viewModel.Project.CustomNumericFormats).Name);
+
+        viewModel.NewFormatDigits = "0 1 2";
+        viewModel.CancelCustomNumericFormatEdit();
+
+        Assert.False(viewModel.IsEditingFormat);
+        Assert.Equal("Add numeric format", viewModel.FormatSaveButtonText);
+        Assert.Equal(string.Empty, viewModel.NewFormatName);
+        NumericFormatDefinition unchanged = Assert.Single(viewModel.Project.CustomNumericFormats);
+        Assert.Equal("Keep", unchanged.Name);
+        Assert.Equal([0L, 1L], unchanged.DigitValues);
+        Assert.Equal(2, unchanged.Radix);
+    }
+
+    [Fact]
     public void NumericLaneRejectsMixedDomainsAndPrunesRemovedPins()
     {
         var viewModel = CreateEmptyEditor();

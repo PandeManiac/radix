@@ -201,11 +201,13 @@ public sealed class CustomNumericFormatListItem
     public CustomNumericFormatListItem(
         NumericFormatDefinition definition,
         string summary,
+        ICommand editCommand,
         ICommand removeCommand)
     {
         Id = definition.Id;
         Name = definition.Name;
         Summary = summary;
+        EditCommand = editCommand;
         RemoveCommand = removeCommand;
     }
 
@@ -214,6 +216,8 @@ public sealed class CustomNumericFormatListItem
     public string Name { get; }
 
     public string Summary { get; }
+
+    public ICommand EditCommand { get; }
 
     public ICommand RemoveCommand { get; }
 }

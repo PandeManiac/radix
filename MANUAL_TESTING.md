@@ -127,6 +127,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 6. Enter invalid format data: duplicate digits (`0 0 1`), radix `1`, or a sign index outside the digit list. Expected: a clear status message, no format added, project unchanged.
 7. Save, reopen, and export/import the part as a `.radixlib`. Expected: used custom formats travel with the library. If the target has a different custom format with the same ID, the imported format is renamed and the lane still resolves; the local format is not overwritten.
 8. Expected non-behavior: custom formats are not signal domains. Removing an unused format never changes net values, compilation, or simulation results.
+9. Click **Edit** on `Custom unsigned`, change its name and digits, and click **Update numeric format**. Expected: the form enters edit mode, the preview line decodes the lane's live value, the format keeps its ID, the lane still resolves, and one undo restores the previous format. Repeat, change fields, then click **Cancel edit**. Expected: the project is unchanged and the form returns to add mode.
 
 ## 9. Library export and import
 
@@ -192,7 +193,7 @@ Do not file these as new failures until they change in the README:
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;
-- numeric formats can be added and removed but not edited in place; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
+- the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, random drives, or waveform-window assertions;
 - undo snapshots whole projects and is capped at 80 entries;
 - the editor does not auto-save or recover crash state.

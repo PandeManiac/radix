@@ -54,7 +54,7 @@ The editor opens the 4-bit counter example. It is a normal desktop application w
 - **Expose a net** as an input or output pin from the net inspector. Give it a name first if desired; leave the name blank to use the net label.
 - **Edit an interface in place** in the Interface list: rename a pin, flip its direction with `⇄`, or change its domain. The bound net follows the pin, and each edit is one undo step. Removing a pin also prunes parent connections that pointed at it, so existing instances do not leave dangling references.
 - **Read a group of pins as a number** in **NUMERIC LANES**: choose a format, tick the interface pins (first pin is least significant), and add the lane. Its decoded value updates during simulation and appears both in the inspector and in a fixed legend at the lower-left of the canvas. If every pin is an input, type a number and press Enter or click **Drive** to encode it and drive all pins together. Lanes are saved with the definition and copied by library export; they never change nets or signal values.
-- **Author a numeric format** under **CUSTOM NUMERIC FORMATS**: name it, choose a domain, enter digit values and radix, select standard/complement/sign-magnitude weighting, and add it. The format immediately joins the lane picker. Removing a format is refused while a lane still uses it. The bundled accumulator includes a signed two's-complement result lane as an example.
+- **Author or edit a numeric format** under **CUSTOM NUMERIC FORMATS**: name it, choose a domain, enter digit values and radix, select standard/complement/sign-magnitude weighting, and add it. **Edit** loads a saved format back into the form with a live decode preview; updating keeps its stable ID so lanes keep resolving, and the whole edit is one undo step. Removing a format is refused while a lane still uses it. The bundled accumulator includes a signed two's-complement result lane as an example.
 - **Navigate hierarchy** by double-clicking a composite part, or selecting it in Definitions. Edited definitions propagate to every instance.
 - **Share parts** with **Export part…** (current definition and dependencies) and **Import library…** (`.radixlib`). Equivalent definitions are reused; conflicting IDs are renamed instead of overwritten.
 - **Simulate** with Begin, Advance, Event, Clock, and Settle. The current definition is compiled as the simulation root, so a reusable component can be tested in isolation.
@@ -168,7 +168,7 @@ These are deliberate current boundaries, not hidden behavior:
 - Extraction refuses boundary nets driven from both sides, because the interface model has only input/output pins and no inout direction. Split the net or adjust the selection.
 - Library import compares electrical structure, not layout. A local part with the same ID but different labels or positions is reused; genuinely different structure is imported under a new ID.
 - Editor pan/zoom, active tab, and selection are not persisted in the project yet; instance positions, wire routes, and colors are.
-- Numeric formats can be added and removed but not edited in place yet. The format authoring form covers positional, complement, and sign-magnitude layouts. Lanes appear in the inspector and in a fixed canvas legend capped at seven rows; the legend does not move with the circuit.
+- Numeric formats can be authored and edited in place; the preview decodes the first lane in the current definition that uses the format, not an arbitrary draft pin set. Lanes appear in the inspector and in a fixed canvas legend capped at seven rows; the legend does not move with the circuit.
 - `--set` drives static initial values; `--schedule <tick>:<pin>=<value>` drives timed edges. There is no script/assertion file format yet.
 - Domain creation in the editor uses a single-driver policy. Projects loaded from JSON can still declare priority/conflict policies, but the GUI does not edit those policies yet.
 - Undo snapshots the whole project and retains up to 80 states. This is simple and reliable, not asymptotically optimal for very large designs.
@@ -191,16 +191,15 @@ docs/                    architecture, project format, test scripts, benchmarks
 ## Testing summary
 
 - Kernel and library tests: **164 passing**.
-- Editor tests: **49 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, and canvas lane legend.
+- Editor tests: **52 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, canvas lane legend, and custom-format editor.
 - Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, built-in and custom numeric formats, exhaustive encode/decode ranges, scripted drive/assert runs, determinism, and randomized differential comparison against a reference evaluator.
-- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, custom-format authoring, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
+- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, custom-format authoring and in-place editing, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 
 ## Near-term roadmap
 
-1. Let custom numeric formats be edited in place with a live decode preview.
-2. Persist viewport, active tab, and editor preferences with the project or user settings.
-3. Add a faster incremental compile path for large projects; measure before optimizing.
-4. Extend the accumulator into an instruction-driven processor example with a small custom ISA and scripted program tests.
-5. Explore an analog boundary as a separate solver sharing the project and UI, not as a new discrete primitive.
+1. Persist viewport, active tab, and editor preferences with the project or user settings.
+2. Add a faster incremental compile path for large projects; measure before optimizing.
+3. Extend the accumulator into an instruction-driven processor example with a small custom ISA and scripted program tests.
+4. Explore an analog boundary as a separate solver sharing the project and UI, not as a new discrete primitive.
 
 RADIX is intentionally a foundation: the interesting architectures should live in projects, not in this engine.
