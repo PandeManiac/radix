@@ -32,6 +32,9 @@ public static class StandardLibrary
     public const string TernaryRam3x2Id = "std.t-ram-3x2";
     public const string TernaryRam9x2Id = "std.t-ram-9x2";
     public const string Ram16x4Id = "std.ram-16x4";
+    public const string Adder8Id = "std.adder-8";
+    public const string Register8Id = "std.reg-8";
+    public const string Alu8Id = "std.alu-8";
 
     private static readonly (string Id, string Name, int Inputs, int[] Table)[] BinaryGates =
     [
@@ -109,6 +112,12 @@ public static class StandardLibrary
             added.Add("std.ripple-adder-4");
         }
 
+        if (project.FindDefinition(Adder8Id) is null)
+        {
+            AddAdder8(project);
+            added.Add(Adder8Id);
+        }
+
         if (project.FindDefinition("std.mux2") is null)
         {
             AddLookupDefinition(
@@ -126,6 +135,18 @@ public static class StandardLibrary
         {
             AddRegister4(project);
             added.Add("std.reg-4");
+        }
+
+        if (project.FindDefinition(Register8Id) is null)
+        {
+            AddRegister8(project);
+            added.Add(Register8Id);
+        }
+
+        if (project.FindDefinition(Alu8Id) is null)
+        {
+            AddAlu8(project);
+            added.Add(Alu8Id);
         }
 
         if (project.FindDefinition(Ram16x4Id) is null)
@@ -319,6 +340,46 @@ public static class StandardLibrary
         }
     }
 
+    /// <summary>Eight full adders chained by carry, with an exposed carry-in and carry-out.</summary>
+    private static void AddAdder8(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, Adder8Id, "8-bit ripple-carry adder");
+        builder.Definition.Description =
+            "Eight full adders in a carry chain, exposing CIN and COUT so wider adders can be " +
+            "composed without changing the engine.";
+
+        var a = new Net[8];
+        var b = new Net[8];
+        var s = new Net[8];
+        for (int i = 0; i < 8; i++)
+        {
+            a[i] = builder.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.BinaryId);
+            b[i] = builder.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.BinaryId);
+            s[i] = builder.AddPin($"s{i}", $"S{i}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        Net cin = builder.AddPin("cin", "CIN", PinDirection.Input, StandardDomains.BinaryId);
+        Net cout = builder.AddPin("cout", "COUT", PinDirection.Output, StandardDomains.BinaryId);
+        var carries = new Net[9];
+        carries[0] = cin;
+        for (int i = 1; i < 8; i++)
+        {
+            carries[i] = builder.AddNet($"c{i}", StandardDomains.BinaryId);
+        }
+
+        carries[8] = cout;
+
+        for (int i = 0; i < 8; i++)
+        {
+            builder.AddInstance($"fa{i}", "std.full-adder", 80 + (i * 240), 100);
+            builder.Connect(a[i], builder.Pin($"fa{i}", "a"));
+            builder.Connect(b[i], builder.Pin($"fa{i}", "b"));
+            builder.Connect(carries[i], builder.Pin($"fa{i}", "cin"));
+            builder.Connect(s[i], builder.Pin($"fa{i}", "s"));
+            builder.Connect(carries[i + 1], builder.Pin($"fa{i}", "cout"));
+        }
+    }
+
     private static void AddRegister4(CircuitProject project)
     {
         var builder = new DefinitionBuilder(project, "std.reg-4", "4-bit register");
@@ -366,6 +427,194 @@ public static class StandardLibrary
             builder.Connect(clk, builder.Pin($"ff{i}", "clk"));
             builder.Connect(output[i], builder.Pin($"ff{i}", "q"));
         }
+    }
+
+    /// <summary>Two 4-bit registers sharing clock, load, and clear.</summary>
+    private static void AddRegister8(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, Register8Id, "8-bit register");
+        builder.Definition.Description =
+            "Two 4-bit registers sharing LOAD, CLR, and CLK. CLR wins over LOAD; all bits " +
+            "update on the rising clock edge and power up at 0.";
+
+        Net load = builder.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.BinaryId);
+        Net clr = builder.AddPin("clr", "CLR", PinDirection.Input, StandardDomains.BinaryId);
+        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BinaryId);
+        var data = new Net[8];
+        var output = new Net[8];
+        for (int i = 0; i < 8; i++)
+        {
+            data[i] = builder.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.BinaryId);
+            output[i] = builder.SetInitial(
+                builder.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.BinaryId),
+                0);
+        }
+
+        builder.AddInstance("lo", "std.reg-4", 80, 100);
+        builder.AddInstance("hi", "std.reg-4", 460, 100);
+        foreach (string half in new[] { "lo", "hi" })
+        {
+            builder.Connect(load, builder.Pin(half, "load"));
+            builder.Connect(clr, builder.Pin(half, "clr"));
+            builder.Connect(clk, builder.Pin(half, "clk"));
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            string half = i < 4 ? "lo" : "hi";
+            int offset = i < 4 ? i : i - 4;
+            builder.Connect(data[i], builder.Pin(half, $"d{offset}"));
+            builder.Connect(output[i], builder.Pin(half, $"q{offset}"));
+        }
+    }
+
+    /// <summary>
+    /// Eight-bit ALU: add, AND, OR, and XOR selected by OP1:OP0, with carry and zero flags.
+    /// </summary>
+    private static void AddAlu8(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, Alu8Id, "8-bit ALU");
+        builder.Definition.Description =
+            "Eight-bit arithmetic/logic unit. OP1:OP0 selects ADD (00), AND (01), OR (10), " +
+            "XOR (11). CARRY is the adder carry for ADD and 0 for logic operations; ZERO is " +
+            "asserted when every result bit is 0. Built from the 8-bit adder, gates, and muxes.";
+
+        var a = new Net[8];
+        var b = new Net[8];
+        var y = new Net[8];
+        for (int i = 0; i < 8; i++)
+        {
+            a[i] = builder.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.BinaryId);
+            b[i] = builder.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.BinaryId);
+            y[i] = builder.AddPin($"y{i}", $"Y{i}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        Net op0 = builder.AddPin("op0", "OP0", PinDirection.Input, StandardDomains.BinaryId);
+        Net op1 = builder.AddPin("op1", "OP1", PinDirection.Input, StandardDomains.BinaryId);
+        Net carry = builder.AddPin("carry", "CARRY", PinDirection.Output, StandardDomains.BinaryId);
+        Net zero = builder.AddPin("zero", "ZERO", PinDirection.Output, StandardDomains.BinaryId);
+
+        Net constZero = builder.AddNet("const_zero", StandardDomains.BinaryId);
+        builder.AddPrimitive("const0", new ConstantSpec(0), 60, 1560);
+        builder.Connect(constZero, builder.Pin("const0", PrimitiveShapes.OutputPinId));
+
+        builder.AddInstance("add", Adder8Id, 80, 60);
+        var sum = new Net[8];
+        for (int i = 0; i < 8; i++)
+        {
+            sum[i] = builder.AddNet($"sum{i}", StandardDomains.BinaryId);
+            builder.Connect(a[i], builder.Pin("add", $"a{i}"));
+            builder.Connect(b[i], builder.Pin("add", $"b{i}"));
+            builder.Connect(sum[i], builder.Pin("add", $"s{i}"));
+        }
+
+        Net addCarry = builder.AddNet("add_carry", StandardDomains.BinaryId);
+        builder.Connect(constZero, builder.Pin("add", "cin"));
+        builder.Connect(addCarry, builder.Pin("add", "cout"));
+
+        var andNets = new Net[8];
+        var orNets = new Net[8];
+        var xorNets = new Net[8];
+        var lowNets = new Net[8];
+        var highNets = new Net[8];
+        for (int i = 0; i < 8; i++)
+        {
+            double x = 80 + (i * 220);
+            andNets[i] = builder.AddNet($"and{i}", StandardDomains.BinaryId);
+            orNets[i] = builder.AddNet($"or{i}", StandardDomains.BinaryId);
+            xorNets[i] = builder.AddNet($"xor{i}", StandardDomains.BinaryId);
+            lowNets[i] = builder.AddNet($"low{i}", StandardDomains.BinaryId);
+            highNets[i] = builder.AddNet($"high{i}", StandardDomains.BinaryId);
+
+            builder.AddInstance($"and{i}", "std.and", x, 380);
+            builder.AddInstance($"or{i}", "std.or", x, 520);
+            builder.AddInstance($"xor{i}", "std.xor", x, 660);
+            foreach (string gate in new[] { $"and{i}", $"or{i}", $"xor{i}" })
+            {
+                builder.Connect(a[i], builder.Pin(gate, "a"));
+                builder.Connect(b[i], builder.Pin(gate, "b"));
+            }
+
+            builder.Connect(andNets[i], builder.Pin($"and{i}", "y"));
+            builder.Connect(orNets[i], builder.Pin($"or{i}", "y"));
+            builder.Connect(xorNets[i], builder.Pin($"xor{i}", "y"));
+
+            builder.AddInstance($"mux_low{i}", "std.mux2", x, 800);
+            builder.Connect(sum[i], builder.Pin($"mux_low{i}", "a"));
+            builder.Connect(andNets[i], builder.Pin($"mux_low{i}", "b"));
+            builder.Connect(op0, builder.Pin($"mux_low{i}", "s"));
+            builder.Connect(lowNets[i], builder.Pin($"mux_low{i}", "y"));
+
+            builder.AddInstance($"mux_high{i}", "std.mux2", x, 940);
+            builder.Connect(orNets[i], builder.Pin($"mux_high{i}", "a"));
+            builder.Connect(xorNets[i], builder.Pin($"mux_high{i}", "b"));
+            builder.Connect(op0, builder.Pin($"mux_high{i}", "s"));
+            builder.Connect(highNets[i], builder.Pin($"mux_high{i}", "y"));
+
+            builder.AddInstance($"mux_out{i}", "std.mux2", x, 1080);
+            builder.Connect(lowNets[i], builder.Pin($"mux_out{i}", "a"));
+            builder.Connect(highNets[i], builder.Pin($"mux_out{i}", "b"));
+            builder.Connect(op1, builder.Pin($"mux_out{i}", "s"));
+            builder.Connect(y[i], builder.Pin($"mux_out{i}", "y"));
+        }
+
+        Net addOnly = builder.AddNet("add_only", StandardDomains.BinaryId);
+        builder.AddInstance("carry_select", "std.nor", 1880, 800);
+        builder.Connect(op0, builder.Pin("carry_select", "a"));
+        builder.Connect(op1, builder.Pin("carry_select", "b"));
+        builder.Connect(addOnly, builder.Pin("carry_select", "y"));
+
+        builder.AddInstance("carry_and", "std.and", 2140, 800);
+        builder.Connect(addCarry, builder.Pin("carry_and", "a"));
+        builder.Connect(addOnly, builder.Pin("carry_and", "b"));
+        builder.Connect(carry, builder.Pin("carry_and", "y"));
+
+        var or01 = builder.AddNet("zero_n01", StandardDomains.BinaryId);
+        var or23 = builder.AddNet("zero_n23", StandardDomains.BinaryId);
+        var or45 = builder.AddNet("zero_n45", StandardDomains.BinaryId);
+        var or67 = builder.AddNet("zero_n67", StandardDomains.BinaryId);
+        var or0123 = builder.AddNet("zero_n0123", StandardDomains.BinaryId);
+        var or4567 = builder.AddNet("zero_n4567", StandardDomains.BinaryId);
+        var any = builder.AddNet("zero_nany", StandardDomains.BinaryId);
+
+        builder.AddInstance("zero_or01", "std.or", 80, 1240);
+        builder.Connect(y[0], builder.Pin("zero_or01", "a"));
+        builder.Connect(y[1], builder.Pin("zero_or01", "b"));
+        builder.Connect(or01, builder.Pin("zero_or01", "y"));
+
+        builder.AddInstance("zero_or23", "std.or", 320, 1240);
+        builder.Connect(y[2], builder.Pin("zero_or23", "a"));
+        builder.Connect(y[3], builder.Pin("zero_or23", "b"));
+        builder.Connect(or23, builder.Pin("zero_or23", "y"));
+
+        builder.AddInstance("zero_or45", "std.or", 560, 1240);
+        builder.Connect(y[4], builder.Pin("zero_or45", "a"));
+        builder.Connect(y[5], builder.Pin("zero_or45", "b"));
+        builder.Connect(or45, builder.Pin("zero_or45", "y"));
+
+        builder.AddInstance("zero_or67", "std.or", 800, 1240);
+        builder.Connect(y[6], builder.Pin("zero_or67", "a"));
+        builder.Connect(y[7], builder.Pin("zero_or67", "b"));
+        builder.Connect(or67, builder.Pin("zero_or67", "y"));
+
+        builder.AddInstance("zero_or0123", "std.or", 200, 1380);
+        builder.Connect(or01, builder.Pin("zero_or0123", "a"));
+        builder.Connect(or23, builder.Pin("zero_or0123", "b"));
+        builder.Connect(or0123, builder.Pin("zero_or0123", "y"));
+
+        builder.AddInstance("zero_or4567", "std.or", 680, 1380);
+        builder.Connect(or45, builder.Pin("zero_or4567", "a"));
+        builder.Connect(or67, builder.Pin("zero_or4567", "b"));
+        builder.Connect(or4567, builder.Pin("zero_or4567", "y"));
+
+        builder.AddInstance("zero_or_any", "std.or", 440, 1520);
+        builder.Connect(or0123, builder.Pin("zero_or_any", "a"));
+        builder.Connect(or4567, builder.Pin("zero_or_any", "b"));
+        builder.Connect(any, builder.Pin("zero_or_any", "y"));
+
+        builder.AddInstance("zero_not", "std.not", 700, 1520);
+        builder.Connect(any, builder.Pin("zero_not", "a"));
+        builder.Connect(zero, builder.Pin("zero_not", "y"));
     }
 
     /// <summary>

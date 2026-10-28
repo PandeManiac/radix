@@ -77,6 +77,63 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void EightBitAluAddsAndSelectsLogicOperations()
+    {
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateEightBitAluDemo(), "demo.alu-8");
+        engine.Drive("op0", 0);
+        engine.Drive("op1", 0);
+        DriveByte(engine, "a", 200);
+        DriveByte(engine, "b", 100);
+        engine.Settle(40);
+
+        Assert.Equal(44, ReadByte(engine, "y"));
+        Assert.Equal(1, engine.Read("carry"));
+        Assert.Equal(0, engine.Read("zero"));
+
+        engine.Drive("op0", 1);
+        engine.Settle(40);
+        Assert.Equal(64, ReadByte(engine, "y"));
+        Assert.Equal(0, engine.Read("carry"));
+
+        engine.Drive("op0", 0);
+        engine.Drive("op1", 1);
+        engine.Settle(40);
+        Assert.Equal(236, ReadByte(engine, "y"));
+
+        engine.Drive("op0", 1);
+        engine.Settle(40);
+        Assert.Equal(172, ReadByte(engine, "y"));
+
+        engine.Drive("op0", 0);
+        engine.Drive("op1", 0);
+        DriveByte(engine, "a", 0);
+        DriveByte(engine, "b", 0);
+        engine.Settle(40);
+        Assert.Equal(0, ReadByte(engine, "y"));
+        Assert.Equal(0, engine.Read("carry"));
+        Assert.Equal(1, engine.Read("zero"));
+    }
+
+    private static void DriveByte(SimulationEngine engine, string prefix, int value)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            engine.Drive($"{prefix}{i}", (value >> i) & 1);
+        }
+    }
+
+    private static int ReadByte(SimulationEngine engine, string prefix)
+    {
+        int value = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            value |= engine.Read($"{prefix}{i}") << i;
+        }
+
+        return value;
+    }
+
+    [Fact]
     public void TernaryExampleCoversAllDigitPairs()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateBalancedTernaryHalfAdderDemo(), "demo.bt-half-adder");

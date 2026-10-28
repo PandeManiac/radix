@@ -1,0 +1,42 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "8-bit ALU computes add and logic operations",
+  "description": "OP1:OP0 selects ADD, AND, OR, and XOR; the numeric lanes check 8-bit operands and results, and CARRY/ZERO are checked as flags.",
+  "definition": "demo.alu-8",
+  "steps": [
+    {
+      "at": 0,
+      "set": {
+        "a0": 0, "a1": 0, "a2": 0, "a3": 1, "a4": 0, "a5": 0, "a6": 1, "a7": 1,
+        "b0": 0, "b1": 0, "b2": 1, "b3": 0, "b4": 0, "b5": 1, "b6": 1, "b7": 0,
+        "op0": 0, "op1": 0
+      },
+      "within": { "ticks": 40, "expect": { "carry": 1, "zero": 0 }, "expectLane": { "a": 200, "b": 100, "y": 44 } }
+    },
+    {
+      "at": 80,
+      "set": { "op0": 1, "op1": 0 },
+      "within": { "ticks": 40, "expect": { "carry": 0, "zero": 0 }, "expectLane": { "y": 64 } }
+    },
+    {
+      "at": 160,
+      "set": { "op0": 0, "op1": 1 },
+      "within": { "ticks": 40, "expectLane": { "y": 236 } }
+    },
+    {
+      "at": 240,
+      "set": { "op0": 1, "op1": 1 },
+      "within": { "ticks": 40, "expectLane": { "y": 172 } }
+    },
+    {
+      "at": 320,
+      "set": {
+        "a0": 0, "a1": 0, "a2": 0, "a3": 0, "a4": 0, "a5": 0, "a6": 0, "a7": 0,
+        "b0": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0, "b5": 0, "b6": 0, "b7": 0,
+        "op0": 0, "op1": 0
+      },
+      "within": { "ticks": 40, "expect": { "carry": 0, "zero": 1 }, "expectLane": { "y": 0 } }
+    }
+  ]
+}

@@ -507,6 +507,55 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void EightBitRegisterLoadsHoldsAndClears()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.Register8Id);
+        engine.Drive("clk", 0);
+        engine.Drive("clr", 0);
+        engine.Drive("load", 1);
+        DriveBinaryByte(engine, "d", 0xAB);
+        Settle(engine, 40);
+        engine.Drive("clk", 1);
+        Settle(engine, 40);
+
+        Assert.Equal(0xAB, ReadBinaryByte(engine, "q"));
+
+        engine.Drive("clk", 0);
+        engine.Drive("load", 0);
+        DriveBinaryByte(engine, "d", 0x12);
+        Settle(engine, 40);
+        engine.Drive("clk", 1);
+        Settle(engine, 40);
+        Assert.Equal(0xAB, ReadBinaryByte(engine, "q"));
+
+        engine.Drive("clk", 0);
+        engine.Drive("clr", 1);
+        Settle(engine, 40);
+        engine.Drive("clk", 1);
+        Settle(engine, 40);
+        Assert.Equal(0, ReadBinaryByte(engine, "q"));
+    }
+
+    private static void DriveBinaryByte(SimulationEngine engine, string prefix, int value)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            engine.Drive($"{prefix}{i}", (value >> i) & 1);
+        }
+    }
+
+    private static int ReadBinaryByte(SimulationEngine engine, string prefix)
+    {
+        int value = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            value |= engine.Read($"{prefix}{i}") << i;
+        }
+
+        return value;
+    }
+
+    [Fact]
     public void BalancedTernaryRegisterLoadsOnTheEdgeAndHoldsWhenDisabled()
     {
         SimulationEngine engine = Engine(StandardLibrary.BalancedTernaryRegister2Id);

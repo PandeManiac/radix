@@ -133,7 +133,8 @@ If counter values differ, record the values and diagnostics; this is a correctne
 11. Change a lane pin's domain in the Interface picker, then inspect Diagnostics. Expected: a warning explains that the format's nominal domain differs; the lane still decodes signal indices if the values are valid.
 12. Remove a pin used by a lane. Expected: the pin disappears from the lane. If it was the last pin, the lane is removed. Undo restores both.
 13. Save, reopen, and export/import the definition as a `.radixlib`. Expected: lane name, format, pin order, and decoded behavior survive.
-14. Expected non-behavior: lanes never merge nets, add wires, affect drivers, or prevent simulation. A lane referencing a missing or unknown format shows `invalid` with a tooltip and a Diagnostics error instead of throwing. Typing a lane value is not undoable; like other external drives, it belongs to the simulation session, and **Clear inputs** resets it.
+14. Open `examples/8-bit-alu.radix`. Expected: `A`, `B`, and `Y` unsigned-binary lanes, `CARRY` and `ZERO` flags, and lanes decode eight bits with the first pin least significant. Begin, drive `A = 200` and `B = 100`, set `OP1 = 0` and `OP0 = 0`, then settle. Expected: `Y = 44`, `CARRY = 1`, `ZERO = 0` (200 + 100 wraps past 8 bits). Set `OP0 = 1` and settle: expected `Y = 64` (200 AND 100), `CARRY = 0`. Set `OP0 = 0` and `OP1 = 1` and settle: expected `Y = 236` (200 OR 100). Set both op inputs to 1 and settle: expected `Y = 172` (200 XOR 100). Double-click the ALU instance and verify the eight-bit adder, per-bit gates, and mux tree are ordinary definitions.
+15. Expected non-behavior: lanes never merge nets, add wires, affect drivers, or prevent simulation. A lane referencing a missing or unknown format shows `invalid` with a tooltip and a Diagnostics error instead of throwing. Typing a lane value is not undoable; like other external drives, it belongs to the simulation session, and **Clear inputs** resets it.
 
 ## 8. Custom numeric formats
 
@@ -234,6 +235,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 21. Run `dotnet run --project src/Radix.Cli -- test examples/four-state-bus.radix examples/tests/four-state-bus.radixtest`. Expected: `PASS: 14 step(s) through t=122`, exit code 0, plus one `WARNING RAD101` for the bus net on the first run; the warning does not fail the script.
 22. Copy the DFF script to a scratch file and change its final `stable` expectation to `"q": 0`. Expected: `FAIL`, one line naming `step 4 (t=40)` with `stable assertion failed at t=40` and `pin 'q': expected 0 (0), got 1 (1)`; exit code 1. This shows a stability window checks its starting tick and every tick through its deadline, not only the end.
 23. Copy the ternary counter script to a scratch file and change `"t0": 1` in its `transitions` block to `"t0": 0`. Expected: `FAIL`, one line naming `step 27 (t=700)` with `pin 't0': expected 0 transition(s) between t=670 and t=700, observed 1`; exit code 1. This shows transition counts cover the whole interval, including the drive at its start.
+24. Run `dotnet run --project src/Radix.Cli -- test examples/8-bit-alu.radix examples/tests/eight-bit-alu.radixtest`. Expected: `PASS: 5 step(s) through t=329`, exit code 0; the script checks ADD with carry (200 + 100 = 44), AND (64), OR (236), XOR (172), and the zero flag when both operands are 0.
 
 ### Editor script runner
 

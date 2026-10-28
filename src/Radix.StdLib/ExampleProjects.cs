@@ -27,6 +27,7 @@ public static class ExampleProjects
     public const string BalancedTernaryAccumulatorFile = "balanced-ternary-accumulator.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
+    public const string EightBitAluFile = "8-bit-alu.radix";
 
     public static IReadOnlyList<ExampleProject> All() =>
     [
@@ -46,8 +47,66 @@ public static class ExampleProjects
         new(FourStateBusFile, "Four-state bus", "Two tri-state drivers share one bus on the 0/1/X/Z domain; conflicting drivers resolve to X and raise a conflict diagnostic.", CreateFourStateBusDemo()),
         new(BalancedTernaryAccumulatorFile, "Balanced ternary accumulator", "A signed trit register with LOAD/ADD/HOLD control, built from balanced min/max/mux gates and a balanced register.", CreateBalancedTernaryAccumulatorDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
+        new(EightBitAluFile, "8-bit ALU", "Eight-bit ADD/AND/OR/XOR selected by two opcode bits, with carry and zero flags and numeric A/B/Y lanes.", CreateEightBitAluDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
+
+    public static CircuitProject CreateEightBitAluDemo()
+    {
+        var builder = new ProjectBuilder("8-bit ALU demo");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.alu-8", "8-bit ALU");
+        root.Definition.Description =
+            "Wraps std.alu-8 with named A, B, and Y numeric lanes. OP1:OP0 selects ADD (00), " +
+            "AND (01), OR (10), and XOR (11). CARRY is the adder carry for ADD and 0 for " +
+            "logic operations; ZERO is 1 when Y is 0.";
+
+        var a = new Net[8];
+        var b = new Net[8];
+        var y = new Net[8];
+        for (int i = 0; i < 8; i++)
+        {
+            a[i] = root.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.BinaryId);
+            b[i] = root.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.BinaryId);
+            y[i] = root.AddPin($"y{i}", $"Y{i}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        Net op0 = root.AddPin("op0", "OP0", PinDirection.Input, StandardDomains.BinaryId);
+        Net op1 = root.AddPin("op1", "OP1", PinDirection.Input, StandardDomains.BinaryId);
+        Net carry = root.AddPin("carry", "CARRY", PinDirection.Output, StandardDomains.BinaryId);
+        Net zero = root.AddPin("zero", "ZERO", PinDirection.Output, StandardDomains.BinaryId);
+
+        root.AddNumericLane(
+            "a",
+            "A",
+            NumericFormats.UnsignedBinary.Id,
+            Enumerable.Range(0, 8).Select(i => $"a{i}").ToArray());
+        root.AddNumericLane(
+            "b",
+            "B",
+            NumericFormats.UnsignedBinary.Id,
+            Enumerable.Range(0, 8).Select(i => $"b{i}").ToArray());
+        root.AddNumericLane(
+            "y",
+            "Y",
+            NumericFormats.UnsignedBinary.Id,
+            Enumerable.Range(0, 8).Select(i => $"y{i}").ToArray());
+
+        root.AddInstance("alu", StandardLibrary.Alu8Id, 360, 120);
+        for (int i = 0; i < 8; i++)
+        {
+            root.Connect(a[i], root.Pin("alu", $"a{i}"));
+            root.Connect(b[i], root.Pin("alu", $"b{i}"));
+            root.Connect(y[i], root.Pin("alu", $"y{i}"));
+        }
+
+        root.Connect(op0, root.Pin("alu", "op0"));
+        root.Connect(op1, root.Pin("alu", "op1"));
+        root.Connect(carry, root.Pin("alu", "carry"));
+        root.Connect(zero, root.Pin("alu", "zero"));
+
+        return builder.Build("demo.alu-8");
+    }
 
     public static CircuitProject CreateDFlipFlopDemo()
     {
