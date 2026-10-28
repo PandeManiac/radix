@@ -664,6 +664,121 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryStackMachinePushesSwapsAddsDuplicatesAndPops()
+    {
+        CircuitProject project = ExampleProjects.CreateTernaryStackMachineDemo();
+        Assert.Contains(
+            project.RequireDefinition("demo.t-stack").Instances,
+            instance => instance.DefinitionId == StandardLibrary.TernaryRam9x2Id);
+        SimulationEngine engine = Engine("demo.t-stack", project);
+        engine.Drive("clk", 0);
+        Settle(engine, 120);
+
+        Assert.Equal(0, ReadTernaryPair(engine, "pc"));
+        Assert.Equal(0, ReadTernaryPair(engine, "top"));
+        Assert.Equal(0, ReadTernaryPair(engine, "sp"));
+        Assert.Equal(0, ReadTernaryPair(engine, "out"));
+        Assert.Equal(1, ReadTernaryPair(engine, "op"));
+        Assert.Equal(2, ReadTernaryPair(engine, "arg"));
+
+        // PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, JMP 0. The stack RAM holds
+        // old TOS values below the top register, so SWAP and ADD read the value written
+        // by the preceding push, and DUP/POP exercise the same path without changing TOS.
+        (int Pc, int Top, int Sp, int Out, int Read)[] expected =
+        [
+            (1, 2, 1, 0, 0), (2, 3, 2, 0, 2), (3, 2, 2, 0, 3), (4, 5, 1, 0, 3),
+            (5, 5, 2, 0, 5), (6, 5, 1, 0, 0), (7, 5, 1, 5, 0), (8, 0, 0, 5, 0),
+            (0, 0, 0, 5, 0),
+        ];
+
+        foreach ((int pc, int top, int sp, int @out, int read) in expected)
+        {
+            PulseTernaryClock(engine, settle: 120);
+            Assert.Equal(pc, ReadTernaryPair(engine, "pc"));
+            Assert.Equal(top, ReadTernaryPair(engine, "top"));
+            Assert.Equal(sp, ReadTernaryPair(engine, "sp"));
+            Assert.Equal(@out, ReadTernaryPair(engine, "out"));
+            Assert.Equal(read, ReadTernaryPair(engine, "read"));
+        }
+
+        Assert.Equal(0, engine.Read("stack_error"));
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void TernaryStackMachineBranchesOnlyWhenTheTopIsZero()
+    {
+        CircuitProject project = ExampleProjects.CreateTernaryStackMachineDemo();
+        SetStackMachineProgram(
+            project,
+            [1, 8, 3, 6, 1, 8, 0, 0, 0],
+            [0, 4, 0, 0, 3, 4, 0, 0, 0]);
+        SimulationEngine engine = Engine("demo.t-stack", project);
+        engine.Drive("clk", 0);
+        Settle(engine, 120);
+
+        // PUSH 0; BZ 4 (taken); PUSH 3; BZ 4 (not taken); then three NOPs.
+        (int Pc, int Top, int Sp)[] expected =
+        [
+            (1, 0, 1), (4, 0, 1), (5, 3, 2), (6, 3, 2), (7, 3, 2), (8, 3, 2), (0, 3, 2),
+        ];
+
+        foreach ((int pc, int top, int sp) in expected)
+        {
+            PulseTernaryClock(engine, settle: 120);
+            Assert.Equal(pc, ReadTernaryPair(engine, "pc"));
+            Assert.Equal(top, ReadTernaryPair(engine, "top"));
+            Assert.Equal(sp, ReadTernaryPair(engine, "sp"));
+        }
+
+        Assert.Equal(0, engine.Read("stack_error"));
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void TernaryStackMachineLatchesOverflowAndUnderflow()
+    {
+        CircuitProject overflowProject = ExampleProjects.CreateTernaryStackMachineDemo();
+        SetStackMachineProgram(
+            overflowProject,
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        SimulationEngine overflow = Engine("demo.t-stack", overflowProject);
+        overflow.Drive("clk", 0);
+        Settle(overflow, 120);
+
+        for (int depth = 1; depth <= 9; depth++)
+        {
+            PulseTernaryClock(overflow, settle: 120);
+            Assert.Equal(depth % 9, ReadTernaryPair(overflow, "sp"));
+            Assert.Equal(depth < 9 ? 0 : 2, overflow.Read("stack_error"));
+        }
+
+        PulseTernaryClock(overflow, settle: 120);
+        Assert.Equal(1, ReadTernaryPair(overflow, "sp"));
+        Assert.Equal(2, overflow.Read("stack_error"));
+
+        CircuitProject underflowProject = ExampleProjects.CreateTernaryStackMachineDemo();
+        SetStackMachineProgram(
+            underflowProject,
+            [2, 2, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        SimulationEngine underflow = Engine("demo.t-stack", underflowProject);
+        underflow.Drive("clk", 0);
+        Settle(underflow, 120);
+
+        PulseTernaryClock(underflow, settle: 120);
+        Assert.Equal(8, ReadTernaryPair(underflow, "sp"));
+        Assert.Equal(2, underflow.Read("stack_error"));
+
+        PulseTernaryClock(underflow, settle: 120);
+        Assert.Equal(7, ReadTernaryPair(underflow, "sp"));
+        Assert.Equal(2, underflow.Read("stack_error"));
+        Assert.Empty(underflow.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryCallMachinePushesAndPopsNestedReturns()
     {
         CircuitProject project = ExampleProjects.CreateTernaryCallMachineDemo();
@@ -963,6 +1078,28 @@ public sealed class StdLibTests
 
     private static int ReadTernaryPair(SimulationEngine engine, string prefix) =>
         engine.Read($"{prefix}0") + (3 * engine.Read($"{prefix}1"));
+
+    /// <summary>Rewrites the stack machine's four instruction ROMs for a scenario test.</summary>
+    private static void SetStackMachineProgram(CircuitProject project, int[] program, int[] operands)
+    {
+        CircuitDefinition root = project.RequireDefinition("demo.t-stack");
+        int[] opcodeLow = new int[9];
+        int[] opcodeHigh = new int[9];
+        int[] argumentLow = new int[9];
+        int[] argumentHigh = new int[9];
+        for (int address = 0; address < 9; address++)
+        {
+            opcodeLow[address] = program[address] % 3;
+            opcodeHigh[address] = program[address] / 3;
+            argumentLow[address] = operands[address] % 3;
+            argumentHigh[address] = operands[address] / 3;
+        }
+
+        SetRom(root, "rom_op_low", opcodeLow);
+        SetRom(root, "rom_op_high", opcodeHigh);
+        SetRom(root, "rom_arg_low", argumentLow);
+        SetRom(root, "rom_arg_high", argumentHigh);
+    }
 
     /// <summary>Rewrites the call machine's four instruction ROMs for a scenario test.</summary>
     private static void SetCallMachineProgram(CircuitProject project, int[] program, int[] operands)

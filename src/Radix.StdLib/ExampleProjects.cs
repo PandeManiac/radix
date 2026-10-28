@@ -22,6 +22,7 @@ public static class ExampleProjects
     public const string TernaryBranchMachineFile = "ternary-branch-machine.radix";
     public const string TernaryCallMachineFile = "ternary-call-machine.radix";
     public const string TernaryMemoryFile = "ternary-memory.radix";
+    public const string TernaryStackMachineFile = "ternary-stack-machine.radix";
     public const string BalancedTernaryAccumulatorFile = "balanced-ternary-accumulator.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
@@ -40,6 +41,7 @@ public static class ExampleProjects
         new(TernaryBranchMachineFile, "Ternary branch machine", "A ternary machine with LOAD/STORE/ADD, three words of trit memory, and conditional JMP/BZ control.", CreateTernaryBranchMachineDemo()),
         new(TernaryCallMachineFile, "Ternary call machine", "A ternary machine with CALL/RET, using the 3×2 trit RAM part as a three-deep return stack.", CreateTernaryCallMachineDemo()),
         new(TernaryMemoryFile, "Ternary 9 × 2 RAM", "A standalone 9-word, 2-trit memory. Drive ADDR, D, WE, and CLK, then read any word from the asynchronous port.", CreateTernaryMemoryDemo()),
+        new(TernaryStackMachineFile, "Ternary stack machine", "A stack computer: a 2-trit TOS register, a 9-word stack RAM, PUSH/POP/ADD/DUP/SWAP/OUT/JMP/BZ, and latched stack faults.", CreateTernaryStackMachineDemo()),
         new(BalancedTernaryAccumulatorFile, "Balanced ternary accumulator", "A signed trit register with LOAD/ADD/HOLD control, built from balanced min/max/mux gates and a balanced register.", CreateBalancedTernaryAccumulatorDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
@@ -1301,7 +1303,7 @@ public static class ExampleProjects
         root.Connect(acc[0], root.Pin("alu", "a0"));
         root.Connect(acc[1], root.Pin("alu", "a1"));
         root.Connect(argument[0], root.Pin("alu", "b0"));
-        root.Connect(zero, root.Pin("alu", "b1"));
+        root.Connect(argument[1], root.Pin("alu", "b1"));
         root.Connect(sum[0], root.Pin("alu", "s0"));
         root.Connect(sum[1], root.Pin("alu", "s1"));
 
@@ -1493,6 +1495,423 @@ public static class ExampleProjects
         return builder.Build("demo.t-memory");
     }
 
+    public static CircuitProject CreateTernaryStackMachineDemo()
+    {
+        var builder = new ProjectBuilder("Ternary stack machine");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.t-stack", "Ternary stack machine");
+        root.Definition.Description =
+            "A ternary stack computer. One 2-trit top-of-stack register holds TOS; a 9-word 2-trit " +
+            "RAM holds the rest below SP. PUSH copies TOS down and loads the argument; POP restores " +
+            "TOS from SP-1; ADD pops the second operand and leaves (TOS + operand) mod 9; DUP pushes " +
+            "a copy; SWAP exchanges TOS with the word at SP-1; OUT latches TOS; JMP jumps and BZ " +
+            "jumps when TOS is zero. Opcodes: 0 NOP, 1 PUSH arg, 2 POP, 3 ADD, 4 DUP, 5 SWAP, " +
+            "6 OUT, 7 JMP target, 8 BZ target. A latched STACK ERROR reports PUSH/DUP at SP=8 or " +
+            "POP/ADD/SWAP at SP=0. The shipped program pushes 2 and 3, swaps and adds them to 5, " +
+            "duplicates and discards the copy, outputs 5, restores the empty stack with POP, and " +
+            "jumps back to instruction 0.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+        var pc = new Net[2];
+        var top = new Net[2];
+        var stackPointer = new Net[2];
+        var output = new Net[2];
+        var read = new Net[2];
+        var opcode = new Net[2];
+        var argument = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            pc[lane] = root.SetInitial(
+                root.AddPin($"pc{lane}", $"PC{lane}", PinDirection.Output, StandardDomains.TernaryId), 0);
+            top[lane] = root.SetInitial(
+                root.AddPin($"top{lane}", $"TOS{lane}", PinDirection.Output, StandardDomains.TernaryId), 0);
+            stackPointer[lane] = root.SetInitial(
+                root.AddPin($"sp{lane}", $"SP{lane}", PinDirection.Output, StandardDomains.TernaryId), 0);
+            output[lane] = root.SetInitial(
+                root.AddPin($"out{lane}", $"OUT{lane}", PinDirection.Output, StandardDomains.TernaryId), 0);
+            read[lane] = root.SetInitial(
+                root.AddPin($"read{lane}", $"READ{lane}", PinDirection.Output, StandardDomains.TernaryId), 0);
+            opcode[lane] = root.SetInitial(
+                root.AddPin($"op{lane}", $"OP{lane}", PinDirection.Output, StandardDomains.TernaryId), 0);
+            argument[lane] = root.SetInitial(
+                root.AddPin($"arg{lane}", $"ARG{lane}", PinDirection.Output, StandardDomains.TernaryId), 0);
+        }
+
+        Net stackError = root.SetInitial(
+            root.AddPin("stack_error", "STACK ERROR", PinDirection.Output, StandardDomains.TernaryId), 0);
+
+        root.AddNumericLane("pc", "PC", NumericFormats.UnsignedTernary.Id, "pc0", "pc1");
+        root.AddNumericLane("top", "TOS", NumericFormats.UnsignedTernary.Id, "top0", "top1");
+        root.AddNumericLane("sp", "SP", NumericFormats.UnsignedTernary.Id, "sp0", "sp1");
+        root.AddNumericLane("out", "Output", NumericFormats.UnsignedTernary.Id, "out0", "out1");
+        root.AddNumericLane("read", "Stack read", NumericFormats.UnsignedTernary.Id, "read0", "read1");
+        root.AddNumericLane("opcode", "Opcode", NumericFormats.UnsignedTernary.Id, "op0", "op1");
+        root.AddNumericLane("argument", "Argument", NumericFormats.UnsignedTernary.Id, "arg0", "arg1");
+
+        Net zero = root.Rename(root.AddNet("zero", StandardDomains.TernaryId), "zero");
+        Net one = root.Rename(root.AddNet("one", StandardDomains.TernaryId), "one");
+        Net always = root.Rename(root.AddNet("always", StandardDomains.TernaryId), "always 2");
+
+        var pcSum = new Net[2];
+        var pcNext = new Net[2];
+        var sum = new Net[2];
+        var topNext = new Net[2];
+        var pushStage = new Net[2];
+        var popStage = new Net[2];
+        var spIncrement = new Net[2];
+        var spDecrement = new Net[2];
+        var spStaged = new Net[2];
+        var spNext = new Net[2];
+        var stackAddress = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            pcSum[lane] = root.Rename(root.AddNet($"pc_sum{lane}", StandardDomains.TernaryId), $"PC + 1 lane {lane}");
+            pcNext[lane] = root.Rename(root.AddNet($"pc_next{lane}", StandardDomains.TernaryId), $"next PC lane {lane}");
+            sum[lane] = root.Rename(root.AddNet($"sum{lane}", StandardDomains.TernaryId), $"TOS + operand lane {lane}");
+            topNext[lane] = root.Rename(root.AddNet($"top_next{lane}", StandardDomains.TernaryId), $"next TOS lane {lane}");
+            pushStage[lane] = root.Rename(root.AddNet($"push_stage{lane}", StandardDomains.TernaryId), $"push or hold lane {lane}");
+            popStage[lane] = root.Rename(root.AddNet($"pop_stage{lane}", StandardDomains.TernaryId), $"pop or push lane {lane}");
+            spIncrement[lane] = root.Rename(root.AddNet($"sp_inc{lane}", StandardDomains.TernaryId), $"SP + 1 lane {lane}");
+            spDecrement[lane] = root.Rename(root.AddNet($"sp_dec{lane}", StandardDomains.TernaryId), $"SP - 1 lane {lane}");
+            spStaged[lane] = root.Rename(root.AddNet($"sp_staged{lane}", StandardDomains.TernaryId), $"SP grow or shrink lane {lane}");
+            spNext[lane] = root.Rename(root.AddNet($"sp_next{lane}", StandardDomains.TernaryId), $"SP next lane {lane}");
+            stackAddress[lane] = root.Rename(root.AddNet($"stack_addr{lane}", StandardDomains.TernaryId), $"stack address lane {lane}");
+        }
+
+        Net isPush = root.Rename(root.AddNet("is_push", StandardDomains.TernaryId), "PUSH");
+        Net isPop = root.Rename(root.AddNet("is_pop", StandardDomains.TernaryId), "POP");
+        Net isAdd = root.Rename(root.AddNet("is_add", StandardDomains.TernaryId), "ADD");
+        Net isDup = root.Rename(root.AddNet("is_dup", StandardDomains.TernaryId), "DUP");
+        Net isSwap = root.Rename(root.AddNet("is_swap", StandardDomains.TernaryId), "SWAP");
+        Net isOut = root.Rename(root.AddNet("is_out", StandardDomains.TernaryId), "OUT");
+        Net isJump = root.Rename(root.AddNet("is_jump", StandardDomains.TernaryId), "JMP");
+        Net isBz = root.Rename(root.AddNet("is_bz", StandardDomains.TernaryId), "BZ");
+        Net pushLike = root.Rename(root.AddNet("push_like", StandardDomains.TernaryId), "PUSH or DUP");
+        Net popOrSwap = root.Rename(root.AddNet("pop_or_swap", StandardDomains.TernaryId), "POP or SWAP");
+        Net popOrAdd = root.Rename(root.AddNet("pop_or_add", StandardDomains.TernaryId), "POP or ADD");
+        Net shrink = root.Rename(root.AddNet("shrink", StandardDomains.TernaryId), "POP, ADD, or SWAP");
+        Net writeTop = root.Rename(root.AddNet("write_top", StandardDomains.TernaryId), "load TOS");
+        Net writeSp = root.Rename(root.AddNet("write_sp", StandardDomains.TernaryId), "move SP");
+        Net writeStack = root.Rename(root.AddNet("write_stack", StandardDomains.TernaryId), "write stack RAM");
+        Net topZeroLow = root.Rename(root.AddNet("top_zero_low", StandardDomains.TernaryId), "TOS lane 0 is zero");
+        Net topZeroHigh = root.Rename(root.AddNet("top_zero_high", StandardDomains.TernaryId), "TOS lane 1 is zero");
+        Net topZero = root.Rename(root.AddNet("top_zero", StandardDomains.TernaryId), "TOS is zero");
+        Net bzTaken = root.Rename(root.AddNet("bz_taken", StandardDomains.TernaryId), "BZ is taken");
+        Net branchTaken = root.Rename(root.AddNet("branch_taken", StandardDomains.TernaryId), "JMP or BZ");
+        Net overflow = root.Rename(root.AddNet("stack_overflow", StandardDomains.TernaryId), "PUSH or DUP at SP 8");
+        Net underflow = root.Rename(root.AddNet("stack_underflow", StandardDomains.TernaryId), "POP, ADD, or SWAP at SP 0");
+        Net errorNext = root.Rename(root.AddNet("stack_error_next", StandardDomains.TernaryId), "new stack fault");
+        Net errorLatched = root.Rename(root.AddNet("stack_error_latched", StandardDomains.TernaryId), "stack fault or latch");
+
+        root.AddPrimitive("const0", new ConstantSpec(0), 60, 1180);
+        root.AddPrimitive("const1", new ConstantSpec(1), 60, 1000);
+        root.AddPrimitive("const2", new ConstantSpec(2), 60, 820);
+        root.Connect(zero, root.Pin("const0", PrimitiveShapes.OutputPinId));
+        root.Connect(one, root.Pin("const1", PrimitiveShapes.OutputPinId));
+        root.Connect(always, root.Pin("const2", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("pc_adder", StandardLibrary.TernaryAdder2Id, 300, 40);
+        root.Connect(pc[0], root.Pin("pc_adder", "a0"));
+        root.Connect(pc[1], root.Pin("pc_adder", "a1"));
+        root.Connect(one, root.Pin("pc_adder", "b0"));
+        root.Connect(zero, root.Pin("pc_adder", "b1"));
+        root.Connect(pcSum[0], root.Pin("pc_adder", "s0"));
+        root.Connect(pcSum[1], root.Pin("pc_adder", "s1"));
+
+        root.AddInstance("alu", StandardLibrary.TernaryAdder2Id, 300, 760);
+        root.Connect(top[0], root.Pin("alu", "a0"));
+        root.Connect(top[1], root.Pin("alu", "a1"));
+        root.Connect(read[0], root.Pin("alu", "b0"));
+        root.Connect(read[1], root.Pin("alu", "b1"));
+        root.Connect(sum[0], root.Pin("alu", "s0"));
+        root.Connect(sum[1], root.Pin("alu", "s1"));
+
+        // Program: PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, JMP 0.
+        int[] program = [1, 1, 5, 3, 4, 2, 6, 2, 7];
+        int[] operands = [2, 3, 0, 0, 0, 0, 0, 0, 0];
+        int[] opcodeLow = new int[9];
+        int[] opcodeHigh = new int[9];
+        int[] argumentLow = new int[9];
+        int[] argumentHigh = new int[9];
+        for (int address = 0; address < 9; address++)
+        {
+            opcodeLow[address] = program[address] % 3;
+            opcodeHigh[address] = program[address] / 3;
+            argumentLow[address] = operands[address] % 3;
+            argumentHigh[address] = operands[address] / 3;
+        }
+
+        void Rom(string id, int[] table, Net outputNet, double y)
+        {
+            root.AddPrimitive(id, new LookupSpec(2, table, 1), 300, y);
+            root.Connect(pc[1], root.Pin(id, "in0"));
+            root.Connect(pc[0], root.Pin(id, "in1"));
+            root.Connect(outputNet, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        Rom("rom_op_low", opcodeLow, opcode[0], 300);
+        Rom("rom_op_high", opcodeHigh, opcode[1], 440);
+        Rom("rom_arg_low", argumentLow, argument[0], 580);
+        Rom("rom_arg_high", argumentHigh, argument[1], 720);
+
+        void Decode(string id, int opcodeValue, Net outputNet, double y)
+        {
+            int[] table = new int[9];
+            table[opcodeValue] = 2;
+            root.AddPrimitive(id, new LookupSpec(2, table, 1), 620, y);
+            root.Connect(opcode[1], root.Pin(id, "in0"));
+            root.Connect(opcode[0], root.Pin(id, "in1"));
+            root.Connect(outputNet, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        Decode("decode_push", 1, isPush, 40);
+        Decode("decode_pop", 2, isPop, 180);
+        Decode("decode_add", 3, isAdd, 320);
+        Decode("decode_dup", 4, isDup, 460);
+        Decode("decode_swap", 5, isSwap, 600);
+        Decode("decode_out", 6, isOut, 740);
+        Decode("decode_jump", 7, isJump, 880);
+        Decode("decode_bz", 8, isBz, 1020);
+
+        // Control combinations used by the data path.
+        root.AddInstance("push_like", "std.t-max", 860, 1520);
+        root.Connect(isPush, root.Pin("push_like", "a"));
+        root.Connect(isDup, root.Pin("push_like", "b"));
+        root.Connect(pushLike, root.Pin("push_like", "y"));
+
+        root.AddInstance("pop_or_swap", "std.t-max", 860, 1640);
+        root.Connect(isPop, root.Pin("pop_or_swap", "a"));
+        root.Connect(isSwap, root.Pin("pop_or_swap", "b"));
+        root.Connect(popOrSwap, root.Pin("pop_or_swap", "y"));
+
+        root.AddInstance("pop_or_add", "std.t-max", 860, 1760);
+        root.Connect(isPop, root.Pin("pop_or_add", "a"));
+        root.Connect(isAdd, root.Pin("pop_or_add", "b"));
+        root.Connect(popOrAdd, root.Pin("pop_or_add", "y"));
+
+        root.AddInstance("shrink", "std.t-max", 1100, 1760);
+        root.Connect(popOrAdd, root.Pin("shrink", "a"));
+        root.Connect(isSwap, root.Pin("shrink", "b"));
+        root.Connect(shrink, root.Pin("shrink", "y"));
+
+        root.AddInstance("write_top1", "std.t-max", 1100, 1520);
+        root.Connect(isPush, root.Pin("write_top1", "a"));
+        root.Connect(isPop, root.Pin("write_top1", "b"));
+        Net writeTopPartial = root.Rename(root.AddNet("write_top_partial", StandardDomains.TernaryId), "PUSH or POP");
+        root.Connect(writeTopPartial, root.Pin("write_top1", "y"));
+
+        root.AddInstance("write_top2", "std.t-max", 1340, 1520);
+        root.Connect(writeTopPartial, root.Pin("write_top2", "a"));
+        root.Connect(isAdd, root.Pin("write_top2", "b"));
+        Net writeTopPartial2 = root.Rename(root.AddNet("write_top_partial2", StandardDomains.TernaryId), "PUSH, POP, or ADD");
+        root.Connect(writeTopPartial2, root.Pin("write_top2", "y"));
+
+        root.AddInstance("write_top3", "std.t-max", 1580, 1520);
+        root.Connect(writeTopPartial2, root.Pin("write_top3", "a"));
+        root.Connect(isSwap, root.Pin("write_top3", "b"));
+        root.Connect(writeTop, root.Pin("write_top3", "y"));
+
+        // SWAP reads below SP and must not move it, so only POP/ADD decrement.
+        root.AddInstance("write_sp", "std.t-max", 1100, 1880);
+        root.Connect(pushLike, root.Pin("write_sp", "a"));
+        root.Connect(popOrAdd, root.Pin("write_sp", "b"));
+        root.Connect(writeSp, root.Pin("write_sp", "y"));
+
+        root.AddInstance("write_stack", "std.t-max", 1340, 1880);
+        root.Connect(pushLike, root.Pin("write_stack", "a"));
+        root.Connect(isSwap, root.Pin("write_stack", "b"));
+        root.Connect(writeStack, root.Pin("write_stack", "y"));
+
+        // TOS next: argument on PUSH, RAM below SP on POP/SWAP, the adder on ADD.
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddInstance($"top_mux_push{lane}", "std.t-mux", 860, 300 + (lane * 170));
+            root.Connect(top[lane], root.Pin($"top_mux_push{lane}", "a"));
+            root.Connect(argument[lane], root.Pin($"top_mux_push{lane}", "b"));
+            root.Connect(isPush, root.Pin($"top_mux_push{lane}", "s"));
+            root.Connect(pushStage[lane], root.Pin($"top_mux_push{lane}", "y"));
+
+            root.AddInstance($"top_mux_pop{lane}", "std.t-mux", 1100, 300 + (lane * 170));
+            root.Connect(pushStage[lane], root.Pin($"top_mux_pop{lane}", "a"));
+            root.Connect(read[lane], root.Pin($"top_mux_pop{lane}", "b"));
+            root.Connect(popOrSwap, root.Pin($"top_mux_pop{lane}", "s"));
+            root.Connect(popStage[lane], root.Pin($"top_mux_pop{lane}", "y"));
+
+            root.AddInstance($"top_mux_add{lane}", "std.t-mux", 1340, 300 + (lane * 170));
+            root.Connect(popStage[lane], root.Pin($"top_mux_add{lane}", "a"));
+            root.Connect(sum[lane], root.Pin($"top_mux_add{lane}", "b"));
+            root.Connect(isAdd, root.Pin($"top_mux_add{lane}", "s"));
+            root.Connect(topNext[lane], root.Pin($"top_mux_add{lane}", "y"));
+        }
+
+        // SP: modulo-9 increment and decrement lookups, gated by push/shrink.
+        var incrementTables = new int[2][];
+        var decrementTables = new int[2][];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            incrementTables[lane] = new int[9];
+            decrementTables[lane] = new int[9];
+        }
+
+        for (int value = 0; value < 9; value++)
+        {
+            int increment = (value + 1) % 9;
+            int decrement = (value + 8) % 9;
+            for (int lane = 0; lane < 2; lane++)
+            {
+                incrementTables[lane][value] = lane == 0 ? increment % 3 : increment / 3;
+                decrementTables[lane][value] = lane == 0 ? decrement % 3 : decrement / 3;
+            }
+        }
+
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddPrimitive($"sp_inc{lane}", new LookupSpec(2, incrementTables[lane], 1), 860, 2100 + (lane * 130));
+            root.AddPrimitive($"sp_dec{lane}", new LookupSpec(2, decrementTables[lane], 1), 860, 2240 + (lane * 130));
+            foreach (string primitive in new[] { $"sp_inc{lane}", $"sp_dec{lane}" })
+            {
+                root.Connect(stackPointer[1], root.Pin(primitive, "in0"));
+                root.Connect(stackPointer[0], root.Pin(primitive, "in1"));
+            }
+
+            root.Connect(spIncrement[lane], root.Pin($"sp_inc{lane}", PrimitiveShapes.OutputPinId));
+            root.Connect(spDecrement[lane], root.Pin($"sp_dec{lane}", PrimitiveShapes.OutputPinId));
+
+            root.AddInstance($"sp_mux_grow{lane}", "std.t-mux", 1100, 2100 + (lane * 130));
+            root.Connect(spDecrement[lane], root.Pin($"sp_mux_grow{lane}", "a"));
+            root.Connect(spIncrement[lane], root.Pin($"sp_mux_grow{lane}", "b"));
+            root.Connect(pushLike, root.Pin($"sp_mux_grow{lane}", "s"));
+            root.Connect(spStaged[lane], root.Pin($"sp_mux_grow{lane}", "y"));
+
+            root.AddInstance($"sp_mux_hold{lane}", "std.t-mux", 1340, 2100 + (lane * 130));
+            root.Connect(stackPointer[lane], root.Pin($"sp_mux_hold{lane}", "a"));
+            root.Connect(spStaged[lane], root.Pin($"sp_mux_hold{lane}", "b"));
+            root.Connect(writeSp, root.Pin($"sp_mux_hold{lane}", "s"));
+            root.Connect(spNext[lane], root.Pin($"sp_mux_hold{lane}", "y"));
+        }
+
+        // Zero test and branch selection.
+        root.AddPrimitive("top_zero_low", new LookupSpec(1, [2, 0, 0], 1), 860, 1180);
+        root.AddPrimitive("top_zero_high", new LookupSpec(1, [2, 0, 0], 1), 860, 1320);
+        root.Connect(top[0], root.Pin("top_zero_low", "in0"));
+        root.Connect(top[1], root.Pin("top_zero_high", "in0"));
+        root.Connect(topZeroLow, root.Pin("top_zero_low", PrimitiveShapes.OutputPinId));
+        root.Connect(topZeroHigh, root.Pin("top_zero_high", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("top_zero", "std.t-min", 1100, 1180);
+        root.Connect(topZeroLow, root.Pin("top_zero", "a"));
+        root.Connect(topZeroHigh, root.Pin("top_zero", "b"));
+        root.Connect(topZero, root.Pin("top_zero", "y"));
+
+        root.AddInstance("bz_taken", "std.t-min", 1340, 1180);
+        root.Connect(topZero, root.Pin("bz_taken", "a"));
+        root.Connect(isBz, root.Pin("bz_taken", "b"));
+        root.Connect(bzTaken, root.Pin("bz_taken", "y"));
+
+        root.AddInstance("branch_taken", "std.t-max", 1580, 1180);
+        root.Connect(bzTaken, root.Pin("branch_taken", "a"));
+        root.Connect(isJump, root.Pin("branch_taken", "b"));
+        root.Connect(branchTaken, root.Pin("branch_taken", "y"));
+
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddInstance($"pc_mux{lane}", "std.t-mux", 1100, 40 + (lane * 170));
+            root.Connect(pcSum[lane], root.Pin($"pc_mux{lane}", "a"));
+            root.Connect(argument[lane], root.Pin($"pc_mux{lane}", "b"));
+            root.Connect(branchTaken, root.Pin($"pc_mux{lane}", "s"));
+            root.Connect(pcNext[lane], root.Pin($"pc_mux{lane}", "y"));
+        }
+
+        // Stack address: SP for PUSH/DUP writes, SP-1 for POP/ADD/SWAP reads.
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddInstance($"stack_addr_mux{lane}", "std.t-mux", 1100, 2000 + (lane * 130));
+            root.Connect(spDecrement[lane], root.Pin($"stack_addr_mux{lane}", "a"));
+            root.Connect(stackPointer[lane], root.Pin($"stack_addr_mux{lane}", "b"));
+            root.Connect(pushLike, root.Pin($"stack_addr_mux{lane}", "s"));
+            root.Connect(stackAddress[lane], root.Pin($"stack_addr_mux{lane}", "y"));
+        }
+
+        // Stack faults latch: PUSH/DUP at SP=8 writes the last word and wraps; a
+        // POP/ADD/SWAP at SP=0 reads a word that was never pushed. Inputs are
+        // [op, sp1, sp0], so the index is op*9 + sp1*3 + sp0.
+        int[] overflowTable = new int[27];
+        overflowTable[(2 * 9) + (2 * 3) + 2] = 2;
+        int[] underflowTable = new int[27];
+        underflowTable[(2 * 9) + (0 * 3) + 0] = 2;
+
+        root.AddPrimitive("check_overflow", new LookupSpec(3, overflowTable, 1), 1580, 2100);
+        root.Connect(pushLike, root.Pin("check_overflow", "in0"));
+        root.Connect(stackPointer[1], root.Pin("check_overflow", "in1"));
+        root.Connect(stackPointer[0], root.Pin("check_overflow", "in2"));
+        root.Connect(overflow, root.Pin("check_overflow", PrimitiveShapes.OutputPinId));
+
+        root.AddPrimitive("check_underflow", new LookupSpec(3, underflowTable, 1), 1580, 2240);
+        root.Connect(shrink, root.Pin("check_underflow", "in0"));
+        root.Connect(stackPointer[1], root.Pin("check_underflow", "in1"));
+        root.Connect(stackPointer[0], root.Pin("check_underflow", "in2"));
+        root.Connect(underflow, root.Pin("check_underflow", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("error_next", "std.t-max", 1820, 2100);
+        root.Connect(overflow, root.Pin("error_next", "a"));
+        root.Connect(underflow, root.Pin("error_next", "b"));
+        root.Connect(errorNext, root.Pin("error_next", "y"));
+
+        root.AddInstance("error_latch", "std.t-max", 2060, 2100);
+        root.Connect(errorNext, root.Pin("error_latch", "a"));
+        root.Connect(stackError, root.Pin("error_latch", "b"));
+        root.Connect(errorLatched, root.Pin("error_latch", "y"));
+
+        root.AddInstance("error_ff", "std.t-dff", 2300, 2100);
+        root.Connect(errorLatched, root.Pin("error_ff", "d"));
+        root.Connect(clk, root.Pin("error_ff", "clk"));
+        root.Connect(stackError, root.Pin("error_ff", "q"));
+
+        root.AddInstance("stack", StandardLibrary.TernaryRam9x2Id, 1900, 900);
+        root.Connect(stackAddress[0], root.Pin("stack", "addr0"));
+        root.Connect(stackAddress[1], root.Pin("stack", "addr1"));
+        root.Connect(top[0], root.Pin("stack", "d0"));
+        root.Connect(top[1], root.Pin("stack", "d1"));
+        root.Connect(writeStack, root.Pin("stack", "we"));
+        root.Connect(clk, root.Pin("stack", "clk"));
+        root.Connect(read[0], root.Pin("stack", "q0"));
+        root.Connect(read[1], root.Pin("stack", "q1"));
+
+        root.AddInstance("pc_reg", StandardLibrary.TernaryRegister2Id, 1900, 40);
+        root.Connect(pc[0], root.Pin("pc_reg", "q0"));
+        root.Connect(pc[1], root.Pin("pc_reg", "q1"));
+        root.Connect(pcNext[0], root.Pin("pc_reg", "d0"));
+        root.Connect(pcNext[1], root.Pin("pc_reg", "d1"));
+        root.Connect(always, root.Pin("pc_reg", "load"));
+        root.Connect(clk, root.Pin("pc_reg", "clk"));
+
+        root.AddInstance("top_reg", StandardLibrary.TernaryRegister2Id, 1900, 300);
+        root.Connect(top[0], root.Pin("top_reg", "q0"));
+        root.Connect(top[1], root.Pin("top_reg", "q1"));
+        root.Connect(topNext[0], root.Pin("top_reg", "d0"));
+        root.Connect(topNext[1], root.Pin("top_reg", "d1"));
+        root.Connect(writeTop, root.Pin("top_reg", "load"));
+        root.Connect(clk, root.Pin("top_reg", "clk"));
+
+        root.AddInstance("out_reg", StandardLibrary.TernaryRegister2Id, 1900, 560);
+        root.Connect(output[0], root.Pin("out_reg", "q0"));
+        root.Connect(output[1], root.Pin("out_reg", "q1"));
+        root.Connect(top[0], root.Pin("out_reg", "d0"));
+        root.Connect(top[1], root.Pin("out_reg", "d1"));
+        root.Connect(isOut, root.Pin("out_reg", "load"));
+        root.Connect(clk, root.Pin("out_reg", "clk"));
+
+        root.AddInstance("sp_reg", StandardLibrary.TernaryRegister2Id, 1900, 2100);
+        root.Connect(stackPointer[0], root.Pin("sp_reg", "q0"));
+        root.Connect(stackPointer[1], root.Pin("sp_reg", "q1"));
+        root.Connect(spNext[0], root.Pin("sp_reg", "d0"));
+        root.Connect(spNext[1], root.Pin("sp_reg", "d1"));
+        root.Connect(writeSp, root.Pin("sp_reg", "load"));
+        root.Connect(clk, root.Pin("sp_reg", "clk"));
+
+        return builder.Build("demo.t-stack");
+    }
+
     public static CircuitProject CreateTernaryCallMachineDemo()
     {
         var builder = new ProjectBuilder("Ternary call machine");
@@ -1622,7 +2041,7 @@ public static class ExampleProjects
         root.Connect(acc[0], root.Pin("alu", "a0"));
         root.Connect(acc[1], root.Pin("alu", "a1"));
         root.Connect(argument[0], root.Pin("alu", "b0"));
-        root.Connect(zero, root.Pin("alu", "b1"));
+        root.Connect(argument[1], root.Pin("alu", "b1"));
         root.Connect(sum[0], root.Pin("alu", "s0"));
         root.Connect(sum[1], root.Pin("alu", "s1"));
 

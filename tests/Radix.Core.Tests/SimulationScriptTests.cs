@@ -21,6 +21,7 @@ public sealed class SimulationScriptTests
         { "ternary-branch-machine.radix", "ternary-branch-machine.radixtest" },
         { "ternary-call-machine.radix", "ternary-call-machine.radixtest" },
         { "ternary-memory.radix", "ternary-memory.radixtest" },
+        { "ternary-stack-machine.radix", "ternary-stack-machine.radixtest" },
         { "balanced-ternary-accumulator.radix", "balanced-ternary-accumulator.radixtest" },
         { "binary-counter.radix", "counter-counts.radixtest" },
         { "accumulator-cpu.radix", "accumulator.radixtest" },

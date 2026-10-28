@@ -226,6 +226,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 17. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-accumulator.radix examples/tests/balanced-ternary-accumulator.radixtest`. Expected: `PASS: 21 step(s) through t=1220`, exit code 0; the `Result` lane goes 0 → 4 → 4 (hold) → −1 (wrap) → 1 → 1.
 18. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-call-machine.radix examples/tests/ternary-call-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; SP walks 0 → 1 → 2 → 1 → 0 and both RETs return to the instruction after their CALL.
 19. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-memory.radix examples/tests/ternary-memory.radixtest`. Expected: `PASS: 10 step(s) through t=680`, exit code 0; word 5 holds 8, word 0 holds 3, and WE=1 leaves word 5 intact while D changes.
+20. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-stack-machine.radix examples/tests/ternary-stack-machine.radixtest`. Expected: `PASS: 30 step(s) through t=3480`, exit code 0; TOS goes 0 → 2 → 3 → 2 → 5 → 5 → 5 → 5 → 0, SP returns to 0, and OUT becomes 5.
 
 ## 14. Ternary multi-trit addition
 
@@ -324,7 +325,23 @@ This uses the GUI. The example is a wrapper around `std.t-ram-9x2`, which has a 
 5. Double-click `memory`. Expected: the `std.t-ram-9x2` body with nine `std.t-reg-2` word instances, nine write-decode lookups, six low `std.t-mux3` selectors inside the read tree, and two high selectors. Double-click `read0_low1` and confirm its 81-entry table selects A/B/C for select 0/1/2. No errors or warnings appear.
 6. Expected limitation: the part is fixed at nine 2-trit words; there is no runtime-sized memory, byte-lane view, or collision checking between a program and its data.
 
-## 22. Balanced ternary accumulator
+## 22. Ternary stack machine
+
+This uses the GUI. A 2-trit TOS register sits over a 9-word stack RAM; SP counts the words below it.
+
+1. Open `examples/ternary-stack-machine.radix` and click **Begin**. Expected: **PC** = 0, **TOS** = 0, **SP** = 0, **Output** = 0, **Opcode** = 1, **Argument** = 2; the project is clean.
+2. Pulse `CLK` 0 → 2 → 0. Expected: **PC** = 1, **TOS** = 2, **SP** = 1. The pushed old TOS (0) is now at stack word 0.
+3. Pulse again. Expected: **PC** = 2, **TOS** = 3, **SP** = 2, **Stack read** = 2.
+4. Pulse again. Expected: **PC** = 3, **TOS** = 2, **SP** = 2, **Stack read** = 3; SWAP exchanged TOS with the word below it without moving SP.
+5. Pulse again. Expected: **PC** = 4, **TOS** = 5, **SP** = 1; ADD consumed the second operand.
+6. Pulse again. Expected: **PC** = 5, **TOS** = 5, **SP** = 2; DUP pushed a copy.
+7. Pulse again. Expected: **PC** = 6, **TOS** = 5, **SP** = 1; POP discarded the copy.
+8. Pulse again. Expected: **PC** = 7, **Output** = 5, TOS and SP unchanged.
+9. Pulse twice. Expected: PC 8 with TOS = 0, SP = 0, then PC 0 with **Output** still 5; the program loops through JMP 0.
+10. Double-click `stack`. Expected: `std.t-ram-9x2` with nine word registers and a selector read tree. Double-click `top_reg`, `sp_reg`, and `out_reg`: each is a `std.t-reg-2`. No errors or warnings appear.
+11. Expected limitation: ADD drops the 2-trit adder carry, so results wrap modulo 9; a push at SP=8 or an operation on an empty stack latches `STACK ERROR` but the pointer still wraps, so recovery requires restarting the simulation.
+
+## 23. Balanced ternary accumulator
 
 This uses the GUI. Control, data, and clock are all balanced trits, so a pin value of `0` means `−`, `1` means `0`, and `2` means `+`.
 
@@ -336,7 +353,7 @@ This uses the GUI. Control, data, and clock are all balanced trits, so a pin val
 6. Set `ADD = 0`, `D0 = 1`, `D1 = 1`, and pulse `CLK`. Expected: **Result** stays `1`; ADD took precedence while it was active, and now both controls hold.
 7. Double-click `register`. Expected: a `std.bt-reg-2` body with two `mux` slices and two `ff` slices, and **Data**/**Result** lanes that decode as balanced ternary. Double-click `ff0`, then `slave`: the balanced latch is the same Kleene cross-coupled structure as the 0/1/2 latch, wired from `std.bt-not` and `std.bt-min` rather than `std.t-lognot`/`std.t-min`. No errors or warnings appear.
 
-## 23. Tiny program-driven CPU
+## 24. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -363,7 +380,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 24. Known limitations to verify as *limitations*
+## 25. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -375,6 +392,7 @@ Do not file these as new failures until they change in the README:
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
 - the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack holds nine returns with a two-trit pointer and latches a stack-error flag for call overflow or return underflow, but still overwrites the oldest return address on overflow and does not detect collisions with data;
 - the ternary RAMs are fixed at 3×2 and 9×2 words; there is no runtime-sized memory, byte-lane view, or protection between program and data;
+- the ternary stack machine has a 9-word stack and a 2-trit pointer: eight pushes are safe, a ninth wraps and latches the fault; ADD is modulo 9 because the 2-trit adder carry is dropped, and BZ does not pop its condition;
 - the balanced accumulator is also 2 trits wide and drops the adder carry, so it wraps in −4..4 instead of overflowing; its third trit is not stored;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
