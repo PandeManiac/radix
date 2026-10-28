@@ -433,7 +433,7 @@ Before the validation index, net pin references and driver counts each scanned t
 
 Measured baseline: 2,000-gate chain at 50 ticks → 200,150 events in ~21 ms (~9.4M events/s); 20,000-gate chain → 2,000,150 events in ~170 ms (~11.8M events/s) on an AMD Ryzen 9 9950X3D with .NET 10.
 
-On the editor side, a synthetic 1,000-gate chain in Release takes ~0.42 s to construct, but ten drag frames take ~17 ms and a committed drag ~0–1 ms when valid routes are reused (versus ~4.4 s with a full rebuild each frame). Ten keyboard nudges take ~63 ms, and ten placements take ~58 ms instead of ~3.64 s when each placement rebuilds canonically. These are interaction latency including view-model refresh, not isolated router time. See [benchmarks.md](benchmarks.md#editor-layout).
+On the editor side, a synthetic 1,000-gate chain in Release takes ~0.42 s to construct, but ten drag frames take ~20 ms and a committed drag ~0–1 ms when valid routes are reused (versus ~4.5 s with a full rebuild each frame). Ten keyboard nudges take ~70 ms, and ten placements take ~43 ms instead of ~3.66 s when each placement rebuilds canonically. These are interaction latency including view-model refresh, not isolated router time. See [benchmarks.md](benchmarks.md#editor-layout).
 
 ## 12. Extension points and non-goals
 

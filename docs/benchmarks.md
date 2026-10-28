@@ -105,15 +105,15 @@ Measured 2026-10-28 on the same machine and .NET 10 runtime as the engine benchm
 
 | Gates | Construct | 10 canonical frames | 10 nudge frames | 10 reused frames | Final rebuild | 10 canonical placements | 10 incremental placements |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 200 | 145 ms | 645 ms | 46 ms | 11 ms | 0 ms | 325 ms | 29 ms |
-| 500 | 105 ms | 1,182 ms | 47 ms | 50 ms | 1 ms | 1,606 ms | 43 ms |
-| 1,000 | 420 ms | 4,404 ms | 63 ms | 17 ms | 0 ms | 3,640 ms | 58 ms |
+| 200 | 145 ms | 552 ms | 45 ms | 11 ms | 0 ms | 337 ms | 31 ms |
+| 500 | 111 ms | 1,206 ms | 48 ms | 49 ms | 1 ms | 1,638 ms | 46 ms |
+| 1,000 | 420 ms | 4,512 ms | 70 ms | 20 ms | 0 ms | 3,661 ms | 43 ms |
 
 These are interaction-latency measurements, not pure router time: they include layout of component boxes and ports, view-model refreshes, and canvas invalidation. Absolute values vary with GC, JIT, and which node is moved, so individual rows are not monotonic; use the orders of magnitude, not adjacent differences. The nudge and incremental-placement columns measure route reuse: all boxes and ports are still rebuilt, but valid cached wires are retained, so the dominant route search runs only for nets whose terminals or obstacles changed.
 
 ### Interpretation
 
-- At 1,000 gates, ten drag frames cost ~17 ms with reuse versus ~4.4 s when every frame rebuilds the layout and routes. Ten arrow-key nudges cost ~63 ms, and ten placements cost ~58 ms instead of ~3.64 s. The first layout still costs roughly 0.42 s; that is the remaining pause on a design of this size.
+- At 1,000 gates, ten drag frames cost ~20 ms with reuse versus ~4.5 s when every frame rebuilds the layout and routes. Ten arrow-key nudges cost ~70 ms, and ten placements cost ~43 ms instead of ~3.66 s. The first layout still costs roughly 0.42 s; that is the remaining pause on a design of this size.
 - Reuse applies to an active drag, its release, keyboard nudges, arrange-selection alignment and spacing, bendpoint edits, and structural placement/deletion/connection edits. Undo/redo and project replacement rebuild canonically. A placed or moved body that intersects a cached segment always invalidates that net.
 - A reused route is valid only while its ordered endpoints, authored bendpoints, and all changed component/port bounds are unchanged. A new or moved body that intersects a cached segment invalidates that net.
 - The router marks blocked grid nodes and edges once per obstacle instead of scanning all obstacles at every A* expansion. That keeps the canonical rebuild practical, but it is not separately timed by this benchmark.
