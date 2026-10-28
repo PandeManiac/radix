@@ -32,6 +32,8 @@ public sealed class EditorViewModel : ObservableObject
     private readonly RelayCommand _duplicateCommand;
     private readonly RelayCommand _selectAllCommand;
     private readonly RelayCommand _extractCommand;
+    private readonly RelayCommand _backCommand;
+    private readonly RelayCommand _forwardCommand;
     private readonly RelayCommand _alignLeftCommand;
     private readonly RelayCommand _alignTopCommand;
     private readonly RelayCommand _distributeHorizontallyCommand;
@@ -39,6 +41,8 @@ public sealed class EditorViewModel : ObservableObject
     private readonly RelayCommand _promoteInputCommand;
     private readonly RelayCommand _promoteOutputCommand;
     private readonly HashSet<string> _selectedInstanceIds = new(StringComparer.Ordinal);
+    private readonly List<string> _definitionHistory = [];
+    private int _definitionHistoryIndex = -1;
     private CircuitProject _project;
     private string _definitionId = string.Empty;
     private ComponentInstance? _selectedInstance;
@@ -131,6 +135,10 @@ public sealed class EditorViewModel : ObservableObject
         SelectAllCommand = _selectAllCommand;
         _extractCommand = new RelayCommand(ExtractSelectionToComponent, () => _selectedInstanceIds.Count > 0);
         ExtractSelectionCommand = _extractCommand;
+        _backCommand = new RelayCommand(NavigateBack, () => CanNavigateBack);
+        BackCommand = _backCommand;
+        _forwardCommand = new RelayCommand(NavigateForward, () => CanNavigateForward);
+        ForwardCommand = _forwardCommand;
         _alignLeftCommand = new RelayCommand(AlignSelectionLeft, () => _selectedInstanceIds.Count > 1);
         AlignLeftCommand = _alignLeftCommand;
         _alignTopCommand = new RelayCommand(AlignSelectionTop, () => _selectedInstanceIds.Count > 1);
@@ -166,6 +174,7 @@ public sealed class EditorViewModel : ObservableObject
         CancelFormatEditCommand = new RelayCommand(CancelCustomNumericFormatEdit);
 
         RefreshAll(fit: false);
+        ResetDefinitionHistory();
     }
 
     public event Action? VisualInvalidated;
@@ -335,6 +344,10 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ExtractSelectionCommand { get; }
 
+    public ICommand BackCommand { get; }
+
+    public ICommand ForwardCommand { get; }
+
     public ICommand AlignLeftCommand { get; }
 
     public ICommand AlignTopCommand { get; }
@@ -443,6 +456,13 @@ public sealed class EditorViewModel : ObservableObject
     public string ZoomText => "100%";
 
     public bool HasSelection => _selectedInstanceIds.Count > 0 || _selectedNet is not null;
+
+    /// <summary>True when an earlier definition is still on the navigation trail.</summary>
+    public bool CanNavigateBack => _definitionHistoryIndex > 0;
+
+    /// <summary>True when navigating forward would not revisit the current definition.</summary>
+    public bool CanNavigateForward =>
+        _definitionHistoryIndex >= 0 && _definitionHistoryIndex < _definitionHistory.Count - 1;
 
     public bool HasSelectedInstance => _selectedInstanceIds.Count > 0;
 
@@ -951,13 +971,105 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
+        SwitchDefinition(definitionId);
+        RecordDefinitionVisit(definitionId);
+        StatusText = $"Editing {Definition.Name}";
+    }
+
+    /// <summary>Returns to the previously edited definition, if any.</summary>
+    public void NavigateBack()
+    {
+        for (int i = _definitionHistoryIndex - 1; i >= 0; i--)
+        {
+            string candidate = _definitionHistory[i];
+            if (_project.FindDefinition(candidate) is null)
+            {
+                continue;
+            }
+
+            _definitionHistoryIndex = i;
+            if (!string.Equals(candidate, _definitionId, StringComparison.Ordinal))
+            {
+                SwitchDefinition(candidate);
+            }
+
+            RaiseDefinitionHistoryChanged();
+            StatusText = $"Editing {Definition.Name}";
+            return;
+        }
+    }
+
+    /// <summary>Re-enters a definition left by <see cref="NavigateBack"/>.</summary>
+    public void NavigateForward()
+    {
+        for (int i = _definitionHistoryIndex + 1; i < _definitionHistory.Count; i++)
+        {
+            string candidate = _definitionHistory[i];
+            if (_project.FindDefinition(candidate) is null)
+            {
+                continue;
+            }
+
+            _definitionHistoryIndex = i;
+            if (!string.Equals(candidate, _definitionId, StringComparison.Ordinal))
+            {
+                SwitchDefinition(candidate);
+            }
+
+            RaiseDefinitionHistoryChanged();
+            StatusText = $"Editing {Definition.Name}";
+            return;
+        }
+    }
+
+    private void SwitchDefinition(string definitionId)
+    {
         _definitionId = definitionId;
         _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
         RefreshAll(fit: true);
-        StatusText = $"Editing {Definition.Name}";
+    }
+
+    private void RecordDefinitionVisit(string definitionId)
+    {
+        if (_definitionHistoryIndex < 0)
+        {
+            _definitionHistory.Clear();
+            _definitionHistory.Add(definitionId);
+            _definitionHistoryIndex = 0;
+            RaiseDefinitionHistoryChanged();
+            return;
+        }
+
+        if (string.Equals(_definitionHistory[_definitionHistoryIndex], definitionId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _definitionHistory.RemoveRange(
+            _definitionHistoryIndex + 1,
+            _definitionHistory.Count - _definitionHistoryIndex - 1);
+        _definitionHistory.Add(definitionId);
+        _definitionHistoryIndex = _definitionHistory.Count - 1;
+        RaiseDefinitionHistoryChanged();
+    }
+
+    private void ResetDefinitionHistory()
+    {
+        _definitionHistory.Clear();
+        _definitionHistory.Add(Definition.Id);
+        _definitionHistoryIndex = 0;
+        RaiseDefinitionHistoryChanged();
+    }
+
+    private void RaiseDefinitionHistoryChanged()
+    {
+        RaisePropertyChanged(nameof(CanNavigateBack));
+        RaisePropertyChanged(nameof(CanNavigateForward));
+        _backCommand.RaiseCanExecuteChanged();
+        _forwardCommand.RaiseCanExecuteChanged();
     }
 
     public void RenameProject(string name)
@@ -997,6 +1109,7 @@ public sealed class EditorViewModel : ObservableObject
         _redo.Clear();
         Simulator = new SimulatorHost(_project, Definition);
         RefreshAll(fit: true);
+        ResetDefinitionHistory();
         AdvanceTicksText = project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         IsDirty = true;
         StatusText = "New project";
@@ -1024,6 +1137,7 @@ public sealed class EditorViewModel : ObservableObject
             _redo.Clear();
             Simulator = new SimulatorHost(_project, Definition);
             RefreshAll(fit: true);
+            ResetDefinitionHistory();
             ViewRestoreRequested?.Invoke();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
             IsDirty = false;
@@ -1145,6 +1259,7 @@ public sealed class EditorViewModel : ObservableObject
             _redo.Clear();
             Simulator = new SimulatorHost(_project, Definition);
             RefreshAll(fit: true);
+            ResetDefinitionHistory();
             ViewRestoreRequested?.Invoke();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
             if (snapshot.ProjectPath is { Length: > 0 } recoveredPath && File.Exists(recoveredPath))
@@ -1208,6 +1323,7 @@ public sealed class EditorViewModel : ObservableObject
             _selectedNet = null;
             Simulator.Retarget(_project, Definition);
             RefreshAll(fit: true);
+            ResetDefinitionHistory();
             IsDirty = true;
             StatusText = result.Message;
             return true;
@@ -1525,6 +1641,7 @@ public sealed class EditorViewModel : ObservableObject
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
         RefreshAll(fit: true);
+        ResetDefinitionHistory();
         IsDirty = true;
         StatusText = $"Created component {id}";
     }
@@ -1556,6 +1673,7 @@ public sealed class EditorViewModel : ObservableObject
         _selectedNet = null;
         IsDirty = true;
         RefreshAll(fit: true);
+        ResetDefinitionHistory();
         StatusText = $"Duplicated {source.Name} as {copy.Name} ({id})";
     }
 
@@ -1630,6 +1748,7 @@ public sealed class EditorViewModel : ObservableObject
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
         RefreshAll(fit: true);
+        ResetDefinitionHistory();
         IsDirty = true;
         StatusText = $"Removed {removed}";
     }
@@ -4547,6 +4666,7 @@ public sealed class EditorViewModel : ObservableObject
             _selectedNet = _project.FindDefinition(_definitionId)?.FindNet(snapshot.SelectedNetId ?? string.Empty);
             Simulator = new SimulatorHost(_project, Definition);
             RefreshAll(fit: false);
+            ResetDefinitionHistory();
             RefreshDirtyFromSaved();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         }
@@ -4560,6 +4680,8 @@ public sealed class EditorViewModel : ObservableObject
     {
         _undoCommand.RaiseCanExecuteChanged();
         _redoCommand.RaiseCanExecuteChanged();
+        _backCommand.RaiseCanExecuteChanged();
+        _forwardCommand.RaiseCanExecuteChanged();
         _deleteCommand.RaiseCanExecuteChanged();
         _copyCommand.RaiseCanExecuteChanged();
         _pasteCommand.RaiseCanExecuteChanged();

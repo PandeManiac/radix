@@ -221,6 +221,9 @@
             </StackPanel>
           </Border>
           <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Orientation="Horizontal" Spacing="3" Margin="12">
+            <Button Classes="tool" Content="←" Command="{Binding BackCommand}" ToolTip.Tip="Back to the previously edited definition" />
+            <Button Classes="tool" Content="→" Command="{Binding ForwardCommand}" ToolTip.Tip="Forward to the definition you came back from" />
+            <Border Width="1" Background="{DynamicResource App.Border}" Margin="3,2" />
             <Button Classes="tool" Content="−" Click="ZoomOut_Click" ToolTip.Tip="Zoom out" />
             <Button Classes="tool" Content="+" Click="ZoomIn_Click" ToolTip.Tip="Zoom in" />
             <Button Classes="tool" Content="100%" Click="ResetZoom_Click" ToolTip.Tip="Reset zoom" />

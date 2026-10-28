@@ -690,6 +690,37 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void DefinitionNavigationBacksUpAndTruncatesTheForwardTrail()
+    {
+        var viewModel = CreateEmptyEditor();
+        string root = viewModel.Definition.Id;
+        Assert.False(viewModel.CanNavigateBack);
+        Assert.False(viewModel.CanNavigateForward);
+
+        viewModel.OpenDefinition(StandardLibrary.TernaryLatchId);
+        viewModel.OpenDefinition(StandardLibrary.TernaryDFlipFlopId);
+        Assert.True(viewModel.CanNavigateBack);
+
+        viewModel.NavigateBack();
+        Assert.Equal(StandardLibrary.TernaryLatchId, viewModel.Definition.Id);
+        Assert.True(viewModel.CanNavigateForward);
+
+        viewModel.NavigateBack();
+        Assert.Equal(root, viewModel.Definition.Id);
+        Assert.False(viewModel.CanNavigateBack);
+
+        viewModel.NavigateForward();
+        Assert.Equal(StandardLibrary.TernaryLatchId, viewModel.Definition.Id);
+
+        // Revisit the latch without moving, then jump elsewhere: the forward trail is dropped.
+        viewModel.OpenDefinition(StandardLibrary.TernaryLatchId);
+        viewModel.OpenDefinition("std.t-min");
+        Assert.False(viewModel.CanNavigateForward);
+        viewModel.NavigateBack();
+        Assert.Equal(StandardLibrary.TernaryLatchId, viewModel.Definition.Id);
+    }
+
+    [Fact]
     public void ExtractSelectionCreatesPinnedReusablePartAndPreservesSimulation()
     {
         var viewModel = CreateEmptyEditor();

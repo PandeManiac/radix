@@ -176,13 +176,14 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 1. Open `examples/binary-counter.radix`. Expected: root counter loads without a modal error.
 2. Double-click the ripple-carry adder, then a full adder, then a half adder. Expected: nested internals render and the definition header identifies the current simulation root.
-3. Return to the root and verify simulation resets for the new root.
-4. Open a deliberately malformed file (change `"version": 5` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
-5. Trigger a located diagnostic (for example, drive one single-driver net from two outputs, or reopen a project whose Diagnostics lists a located error), switch to **Diagnostics**, and click **Locate** on the message. Expected: the status bar names the code, the owning definition opens when needed, the named instance or net is selected, and the canvas centers on it without changing the circuit. A project-wide message has no **Locate** button.
-6. Save a project and inspect the JSON. Expected: `"version": 5`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
-7. Load a version 1, 2, 3, or 4 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 5.
-8. Duplicate a definition: select a part and click `⧉` in the Definitions list. Expected: a new entry appears directly below with an ID ending `-copy` and a name ending ` copy`; it opens automatically with the same pins, instances, nets, lane, and layout. Edit the copy's wiring or move a part; the original and every existing instance of it must stay unchanged.
-9. Duplicate the copy. Expected: the ID counts up (`part-copy2`, not `part-copy-copy`) and the name counts up (`… copy 2`). Undo once to remove only the second copy, and again to remove the first; the original remains throughout.
+3. Click `←` in the canvas top-right control cluster twice. Expected: the full adder and then the ripple-carry adder reopen in reverse order, `→` becomes enabled, and `←` disables at the root. Click `→` once and verify it returns to the full adder. Open a different definition after backing up: `→` disables, so the forward trail was dropped. The simulation root and its reset behavior follow each switch exactly as a double-click navigation does.
+4. Return to the root and verify simulation resets for the new root.
+5. Open a deliberately malformed file (change `"version": 5` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
+6. Trigger a located diagnostic (for example, drive one single-driver net from two outputs, or reopen a project whose Diagnostics lists a located error), switch to **Diagnostics**, and click **Locate** on the message. Expected: the status bar names the code, the owning definition opens when needed, the named instance or net is selected, and the canvas centers on it without changing the circuit. A project-wide message has no **Locate** button.
+7. Save a project and inspect the JSON. Expected: `"version": 5`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
+8. Load a version 1, 2, 3, or 4 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 5.
+9. Duplicate a definition: select a part and click `⧉` in the Definitions list. Expected: a new entry appears directly below with an ID ending `-copy` and a name ending ` copy`; it opens automatically with the same pins, instances, nets, lane, and layout. Edit the copy's wiring or move a part; the original and every existing instance of it must stay unchanged.
+10. Duplicate the copy. Expected: the ID counts up (`part-copy2`, not `part-copy-copy`) and the name counts up (`… copy 2`). Undo once to remove only the second copy, and again to remove the first; the original remains throughout.
 
 ## 12. Unsaved changes and window behavior
 
@@ -351,7 +352,8 @@ Do not file these as new failures until they change in the README:
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, random drives, or waveform-window assertions;
 - undo snapshots whole projects and is capped at 80 entries;
-- crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair.
+- crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
+- the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.
 
 ## Isolation statement
 
