@@ -34,6 +34,37 @@ public sealed class WorkspacePreferencesTests
     }
 
     [Fact]
+    public void RecentProjectsRoundTripAndNormalize()
+    {
+        string path = TemporaryPath();
+        try
+        {
+            WorkspacePreferences.Save(new WorkspaceSettings
+            {
+                RecentProjects = [" /a.radix ", "/a.radix", "", "/b.radix"],
+            }, path);
+
+            WorkspaceSettings loaded = WorkspacePreferences.Load(path);
+            Assert.Equal(["/a.radix", "/b.radix"], loaded.RecentProjects);
+
+            var many = Enumerable.Range(0, WorkspacePreferences.MaxRecentProjects + 4)
+                .Select(index => $"/p{index}.radix")
+                .ToList();
+            WorkspacePreferences.Save(new WorkspaceSettings { RecentProjects = many }, path);
+            loaded = WorkspacePreferences.Load(path);
+            Assert.Equal(WorkspacePreferences.MaxRecentProjects, loaded.RecentProjects.Count);
+            Assert.Equal(many[0], loaded.RecentProjects[0]);
+
+            File.WriteAllText(path, """{"recentProjects":null}""");
+            Assert.Empty(WorkspacePreferences.Load(path).RecentProjects);
+        }
+        finally
+        {
+            Delete(path);
+        }
+    }
+
+    [Fact]
     public void InvalidOrOutOfRangeWorkspaceSettingsFallBackSafely()
     {
         string path = TemporaryPath();

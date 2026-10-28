@@ -12,6 +12,7 @@ public partial class MainWindow : Window
 {
     private readonly bool _themeReady;
     private bool _closeConfirmed;
+    private EditorViewModel? _watchedViewModel;
     private double _normalWorkspaceWidth = WorkspaceSettings.DefaultWidth;
     private double _normalWorkspaceHeight = WorkspaceSettings.DefaultHeight;
 
@@ -34,6 +35,34 @@ public partial class MainWindow : Window
         Closed += (_, _) => ThemeService.Changed -= ThemeService_Changed;
         Closing += Window_Closing;
         AddHandler(KeyDownEvent, Window_KeyDown, RoutingStrategies.Tunnel);
+        DataContextChanged += (_, _) => BindViewModel();
+        BindViewModel();
+    }
+
+    private void BindViewModel()
+    {
+        if (_watchedViewModel is not null)
+        {
+            _watchedViewModel.RecentProjectOpenRequested -= ViewModel_RecentProjectOpenRequested;
+        }
+
+        _watchedViewModel = ViewModel;
+        if (_watchedViewModel is not null)
+        {
+            _watchedViewModel.RecentProjectOpenRequested += ViewModel_RecentProjectOpenRequested;
+        }
+    }
+
+    private void ViewModel_RecentProjectOpenRequested(string path) => _ = OpenRecentProjectAsync(path);
+
+    private async Task OpenRecentProjectAsync(string path)
+    {
+        if (!await ConfirmDiscardAsync())
+        {
+            return;
+        }
+
+        ViewModel?.LoadProject(path);
     }
 
     private async void Window_Closing(object? sender, WindowClosingEventArgs e)
@@ -89,6 +118,7 @@ public partial class MainWindow : Window
         WindowHeight = _normalWorkspaceHeight,
         Maximized = WindowState == WindowState.Maximized,
         InspectorTabIndex = RightTabs.SelectedIndex,
+        RecentProjects = ViewModel?.RecentProjectPaths.ToList() ?? [],
     };
 
     private EditorViewModel? ViewModel => DataContext as EditorViewModel;

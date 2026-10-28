@@ -42,7 +42,13 @@ The editor tests use **Avalonia Headless** with offscreen Skia rendering. They n
 dotnet run --project src/Radix.Editor
 ```
 
-The editor opens the 4-bit counter example. It is a normal desktop application when you launch it yourself.
+The editor opens the 4-bit counter example. Pass a project path to open that file instead:
+
+```bash
+dotnet run --project src/Radix.Editor -- examples/full-adder.radix
+```
+
+It is a normal desktop application when you launch it yourself.
 
 ### Editor basics
 
@@ -67,7 +73,7 @@ The editor opens the 4-bit counter example. It is a normal desktop application w
 - **Undo/redo** uses whole-project snapshots. Structural changes, interface/domain edits, net initial values, and primitive parameters invalidate the running simulation. Presentation-only edits—moving or labeling parts, wire colors and bendpoints, numeric lanes/formats, and project/definition metadata—keep the engine, simulated time, and drive history alive.
 - **Create domains** (for example a five-value logic or a radix-5 digit set) in the Inspect tab. Values are arbitrary labels; no arithmetic semantics are attached. Choose a **Single driver** policy, or a **Priority table** with one priority per value and a conflict index for equal-priority disagreements; the list shows each domain's values and resolution policy.
 - **Choose a theme** with the Auto/Light/Dark selector in the toolbar. Auto follows the operating system; the choice is persisted per user. Canvas, wires, waveform, inspectors, menus, and diagnostics share one semantic token set.
-- **Keep your workspace** across launches: window size, maximized state, and the active inspector tab are saved per user in `workspace.json`, separately from every project. Resizing, maximizing, and switching tabs takes effect on the next launch.
+- **Keep your workspace** across launches: window size, maximized state, the active inspector tab, and the eight most recent projects are saved per user in `workspace.json`, separately from every project. The toolbar's **Recent ▾** menu reopens a project, missing files are dropped from the list, and resizing, maximizing, and switching tabs take effect on the next launch.
 
 Shortcuts: `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` undo and redo; `Ctrl+C` / `Ctrl+V` / `Ctrl+D` copy, paste, and duplicate; `Ctrl+A` selects all parts; `Delete` removes the selection; `F` fits the circuit; arrows nudge selected parts; `Ctrl+wheel` zooms; middle-drag or Alt+drag pans; right-click opens canvas actions; `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+O`, and `Ctrl+N` save, save as, open, and create projects. New, Open, and window close prompt to Save, Discard, or Cancel when there are unsaved changes.
 
@@ -184,7 +190,7 @@ These are deliberate current boundaries, not hidden behavior:
 - Numeric formats and lanes can be authored and edited in place; the preview decodes the first lane in the current definition that uses the format, not an arbitrary draft pin set. Lanes appear in the inspector and in a fixed canvas legend capped at seven rows; the legend does not move with the circuit. A lane edit cannot reorder pins independently of declaration order.
 - `--set` drives static initial values and `--schedule <tick>:<pin>=<value>` adds timed drives for a one-shot run. Multi-step assertions belong in a `.radixtest` script, which can drive, settle, and check pins and numeric lanes at chosen ticks.
 - Domain creation in the editor supports single-driver and priority-table policies, and **Policy** on any listed domain edits that policy in place. In-place edits keep the domain ID, value labels, and value count, so pin and net bindings remain valid; only the resolution policy (and its priority table or conflict index) changes. Undo restores the previous policy.
-- Window size, maximized state, and the active inspector tab persist per user. Window position and panel widths are not persisted, and deleting `workspace.json` resets the layout.
+- Window size, maximized state, the active inspector tab, and up to eight recent project paths persist per user. Window position and panel widths are not persisted, and deleting `workspace.json` resets the layout and the recent list. Recent entries whose files no longer exist are skipped at startup.
 - Undo snapshots the whole project and retains up to 80 states. This is simple and reliable, not asymptotically optimal for very large designs.
 - Very large traces are bounded (default 500,000 net changes); old changes are dropped and the UI shows only a subset of nets.
 

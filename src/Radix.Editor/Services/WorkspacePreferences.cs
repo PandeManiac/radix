@@ -19,6 +19,9 @@ public sealed class WorkspaceSettings
     public bool Maximized { get; set; }
 
     public int InspectorTabIndex { get; set; }
+
+    /// <summary>Most recently opened or saved project paths, newest first.</summary>
+    public List<string> RecentProjects { get; set; } = [];
 }
 
 /// <summary>
@@ -37,6 +40,8 @@ public static class WorkspacePreferences
     public const double MaxWindowHeight = 10000;
 
     public const int MaxInspectorTabIndex = 4;
+
+    public const int MaxRecentProjects = 8;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -103,5 +108,37 @@ public static class WorkspacePreferences
             : WorkspaceSettings.DefaultHeight,
         Maximized = settings.Maximized,
         InspectorTabIndex = Math.Clamp(settings.InspectorTabIndex, 0, MaxInspectorTabIndex),
+        RecentProjects = NormalizeRecentProjects(settings.RecentProjects),
     };
+
+    private static List<string> NormalizeRecentProjects(IEnumerable<string>? paths)
+    {
+        var result = new List<string>();
+        if (paths is null)
+        {
+            return result;
+        }
+
+        foreach (string path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            string trimmed = path.Trim();
+            if (result.Contains(trimmed, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            result.Add(trimmed);
+            if (result.Count == MaxRecentProjects)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
 }

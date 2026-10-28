@@ -24,6 +24,17 @@
 
           <Button Classes="tool" Content="New" Click="NewProject_Click" />
           <Button Classes="tool" Content="Open…" Click="OpenProject_Click" />
+          <Button Classes="tool" Content="Recent ▾" IsEnabled="{Binding HasRecentProjects}" ToolTip.Tip="Projects opened or saved recently">
+            <Button.Flyout>
+              <MenuFlyout ItemsSource="{Binding RecentProjects}">
+                <MenuFlyout.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RecentProjectItem">
+                    <MenuItem Header="{Binding Header}" Command="{Binding OpenCommand}" ToolTip.Tip="{Binding Path}" />
+                  </DataTemplate>
+                </MenuFlyout.ItemTemplate>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
           <Button Classes="tool" Content="Save" Click="SaveProject_Click" />
           <Button Classes="tool" Content="Save as…" Click="SaveProjectAs_Click" />
 

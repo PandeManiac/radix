@@ -1,3 +1,4 @@
+using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -19,6 +20,10 @@ public partial class App : Application
             ThemeService.Initialize();
             WorkspaceSettings workspace = WorkspacePreferences.Load();
             var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+            viewModel.SetRecentProjects(workspace.RecentProjects);
+            string? startupProject = desktop.Args?.FirstOrDefault(
+                argument => argument.EndsWith(".radix", StringComparison.OrdinalIgnoreCase));
+            bool openStartupProject = startupProject is not null && File.Exists(startupProject);
             var window = new MainWindow
             {
                 DataContext = viewModel,
@@ -29,6 +34,12 @@ public partial class App : Application
             if (workspace.Maximized)
             {
                 window.WindowState = WindowState.Maximized;
+            }
+
+            if (openStartupProject)
+            {
+                // Load after the window is attached so the saved viewport can be restored.
+                window.Opened += (_, _) => viewModel.LoadProject(startupProject!);
             }
 
             window.Closed += (_, _) => WorkspacePreferences.Save(window.CaptureWorkspace());

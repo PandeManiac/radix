@@ -256,6 +256,29 @@ public sealed class InspectorField
     public string Value { get; }
 }
 
+/// <summary>One entry in the Recent projects flyout.</summary>
+public sealed class RecentProjectItem
+{
+    public RecentProjectItem(string path, Action<string> open)
+    {
+        Path = path;
+        Header = System.IO.Path.GetFileName(path) is { Length: > 0 } name ? name : path;
+        Directory = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
+        OpenCommand = new RelayCommand(() => open(path));
+    }
+
+    /// <summary>Full path; also the tooltip so long names stay discoverable.</summary>
+    public string Path { get; }
+
+    /// <summary>File name shown in the menu.</summary>
+    public string Header { get; }
+
+    /// <summary>Containing directory, shown as a second line.</summary>
+    public string Directory { get; }
+
+    public ICommand OpenCommand { get; }
+}
+
 public sealed class NumericDisplayOption
 {
     public NumericDisplayOption(INumericFormat format)

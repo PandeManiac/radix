@@ -64,6 +64,7 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Net IDs pinned for the waveform, keyed by definition ID.</summary>
     private readonly Dictionary<string, List<string>> _waveformPins = new(StringComparer.Ordinal);
+    private readonly List<string> _recentProjectPaths = [];
     private string _librarySearch = string.Empty;
     private string _netSearch = string.Empty;
     private string _netListSummary = string.Empty;
@@ -161,6 +162,12 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>Raised with world bounds that should be centered after navigation.</summary>
     public event Action<Rect>? FocusRequested;
 
+    /// <summary>
+    /// Raised when a recent-project entry is chosen. The window handles it so the
+    /// same unsaved-changes prompt as the Open button is used.
+    /// </summary>
+    public event Action<string>? RecentProjectOpenRequested;
+
     public CircuitProject Project => _project;
 
     /// <summary>
@@ -226,6 +233,14 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<EditableField> Fields { get; } = [];
 
     public ObservableCollection<string> RecentTransitions { get; } = [];
+
+    /// <summary>Recently opened or saved projects, newest first; missing files are dropped on load.</summary>
+    public ObservableCollection<RecentProjectItem> RecentProjects { get; } = [];
+
+    public bool HasRecentProjects => RecentProjects.Count > 0;
+
+    /// <summary>Paths captured into workspace settings when the window closes.</summary>
+    public IReadOnlyList<string> RecentProjectPaths => _recentProjectPaths;
 
     public ObservableCollection<DomainChoice> Domains { get; } = [];
 
@@ -980,6 +995,7 @@ public sealed class EditorViewModel : ObservableObject
             ViewRestoreRequested?.Invoke();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
             IsDirty = false;
+            AddRecentProject(path);
             StatusText = $"Opened {Path.GetFileName(path)}";
             return true;
         }
@@ -987,6 +1003,87 @@ public sealed class EditorViewModel : ObservableObject
         {
             StatusText = "Open failed: " + exception.Message;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Seeds the recent list from workspace settings. Entries whose files no longer
+    /// exist are skipped so the flyout never offers a guaranteed failure.
+    /// </summary>
+    public void SetRecentProjects(IEnumerable<string>? paths)
+    {
+        _recentProjectPaths.Clear();
+        if (paths is not null)
+        {
+            foreach (string path in paths)
+            {
+                if (_recentProjectPaths.Count == WorkspacePreferences.MaxRecentProjects)
+                {
+                    break;
+                }
+
+                string? normalized = TryNormalizeProjectPath(path);
+                if (normalized is null || !File.Exists(normalized) ||
+                    _recentProjectPaths.Contains(normalized, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                _recentProjectPaths.Add(normalized);
+            }
+        }
+
+        RefreshRecentProjects();
+    }
+
+    public void OpenRecentProject(string path) => RecentProjectOpenRequested?.Invoke(path);
+
+    private void AddRecentProject(string path)
+    {
+        string? normalized = TryNormalizeProjectPath(path);
+        if (normalized is null)
+        {
+            return;
+        }
+
+        _recentProjectPaths.RemoveAll(candidate =>
+            string.Equals(candidate, normalized, StringComparison.OrdinalIgnoreCase));
+        _recentProjectPaths.Insert(0, normalized);
+        if (_recentProjectPaths.Count > WorkspacePreferences.MaxRecentProjects)
+        {
+            _recentProjectPaths.RemoveRange(
+                WorkspacePreferences.MaxRecentProjects,
+                _recentProjectPaths.Count - WorkspacePreferences.MaxRecentProjects);
+        }
+
+        RefreshRecentProjects();
+    }
+
+    private void RefreshRecentProjects()
+    {
+        RecentProjects.Clear();
+        foreach (string path in _recentProjectPaths)
+        {
+            RecentProjects.Add(new RecentProjectItem(path, OpenRecentProject));
+        }
+
+        RaisePropertyChanged(nameof(HasRecentProjects));
+    }
+
+    private static string? TryNormalizeProjectPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path.Trim());
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
         }
     }
 
@@ -1051,6 +1148,7 @@ public sealed class EditorViewModel : ObservableObject
             _projectPath = path;
             _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
             IsDirty = false;
+            AddRecentProject(path);
             StatusText = $"Saved {Path.GetFileName(path)}";
             return true;
         }

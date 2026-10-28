@@ -196,6 +196,9 @@ If counter values differ, record the values and diagnostics; this is a correctne
 7. Resize to about 1200×800, select the **Waveform** tab, and close the app. Relaunch. Expected: the window reopens at the same size with **Waveform** active. Maximize, close, and relaunch; expected: maximized again. Restore the window; expected: it returns to the last normal size.
 8. Preferences live outside projects: `%APPDATA%\Radix\workspace.json` on Windows or `~/.config/Radix/workspace.json` on Linux; the theme remains in `theme.txt` beside it. Delete `workspace.json` and relaunch. Expected: the default 1480×920 window on the **Inspect** tab.
 9. Resize the window or switch tabs, then save a project. Expected: the project JSON and its `view` metadata are unchanged by these preferences, and reopening the project does not alter the window layout.
+10. Open two different projects with **Open…**, then check **Recent ▾**. Expected: both appear newest first; choosing one opens it, and an unsaved project prompts Save/Discard/Cancel first.
+11. Close and relaunch the editor. Expected: **Recent ▾** still lists both projects. Delete one of the files outside the editor, relaunch again, and reopen the menu: the deleted entry is gone and the other remains.
+12. Launch with a path, for example `dotnet run --project src/Radix.Editor -- examples/tiny-cpu.radix`. Expected: the tiny CPU opens instead of the counter demo, its saved viewport is restored, and it appears in **Recent ▾**. Launching with a missing path opens the counter demo.
 
 ## 13. Scripted CLI tests
 

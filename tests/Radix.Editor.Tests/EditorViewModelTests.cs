@@ -1288,6 +1288,68 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void RecentProjectsTrackLoadsAndSavesAndSkipMissingFiles()
+    {
+        var viewModel = CreateEmptyEditor();
+        string first = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        string second = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            Assert.True(viewModel.SaveProject(first));
+            Assert.Single(viewModel.RecentProjects);
+            Assert.Equal(Path.GetFullPath(first), viewModel.RecentProjects[0].Path);
+            Assert.Equal(Path.GetFileName(first), viewModel.RecentProjects[0].Header);
+
+            Assert.True(viewModel.SaveProject(second));
+            Assert.Equal(2, viewModel.RecentProjects.Count);
+            Assert.Equal(Path.GetFullPath(second), viewModel.RecentProjects[0].Path);
+
+            var opened = CreateEmptyEditor();
+            string missing = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+            opened.SetRecentProjects([second, missing, first]);
+            Assert.Equal(2, opened.RecentProjects.Count);
+            Assert.Equal(Path.GetFullPath(second), opened.RecentProjects[0].Path);
+
+            Assert.True(opened.LoadProject(first));
+            Assert.Equal(2, opened.RecentProjects.Count);
+            Assert.Equal(Path.GetFullPath(first), opened.RecentProjects[0].Path);
+            Assert.Equal(Path.GetFullPath(second), opened.RecentProjects[1].Path);
+        }
+        finally
+        {
+            File.Delete(first);
+            File.Delete(second);
+        }
+    }
+
+    [Fact]
+    public void RecentProjectsKeepNewestEntriesUpToTheLimit()
+    {
+        var viewModel = CreateEmptyEditor();
+        var paths = Enumerable.Range(0, WorkspacePreferences.MaxRecentProjects + 3)
+            .Select(_ => Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix"))
+            .ToList();
+        try
+        {
+            foreach (string path in paths)
+            {
+                Assert.True(viewModel.SaveProject(path));
+            }
+
+            Assert.Equal(WorkspacePreferences.MaxRecentProjects, viewModel.RecentProjects.Count);
+            Assert.Equal(Path.GetFullPath(paths[^1]), viewModel.RecentProjects[0].Path);
+            Assert.DoesNotContain(viewModel.RecentProjects, item => item.Path == Path.GetFullPath(paths[0]));
+        }
+        finally
+        {
+            foreach (string path in paths)
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
     public void ViewMetadataRoundTripsWithoutDirtyingTheProject()
     {
         var viewModel = CreateEmptyEditor();
