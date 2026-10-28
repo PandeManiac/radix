@@ -276,6 +276,9 @@ Editor-side structural rules:
 - Connecting a primitive pin to a different-domain net is allowed if the primitive pin has no declared domain; compile-time validation then decides whether its table fits the actual domains.
 - Removing a component removes its pin references and then removes empty nets that are not bound to ports.
 - A net bound to an interface pin cannot be deleted directly; remove the pin first.
+- Extracting a selection moves wholly-internal nets into the new definition, turns boundary nets into directional pins, and replaces the selected instances with one instance. A boundary net with active drivers on both sides is refused because the interface model has no inout direction.
+- Promoting a net binds the existing net to a new interface pin; it does not create or merge nets.
+- Paste and library import are captured as one undo step. Both operate on deep copies so a refused operation cannot leave half-mutated connectivity.
 
 ### 10.3 Simulation root choice
 
@@ -290,14 +293,35 @@ Automatic layout derives:
 - a fixed-width box whose height grows with the larger of input/output pin counts;
 - title and instance ID in the header;
 - a left input column and right output column;
-- orthogonal wires with a shared vertical trunk for nets with more than two endpoints;
-- interface ports in left input and right output gutters.
+- interface ports in left input and right output gutters;
+- one routed path per authored net, independent of the number of endpoints.
 
-Pin values are rendered as small off-box badges; wire segments carry the current net value as a label at sufficient zoom. Domain-specific colors distinguish binary low/high, ternary values, and other finite domains. These are visual conveniences only.
+Wire routing uses a sparse orthogonal grid with A* search and a bend penalty. Component bodies are inflated obstacles, pin stubs may not run through neighbouring bodies, and the search connects terminals through a Steiner-like incremental tree so multi-terminal nets do not need a single shared trunk. Crossing segments are drawn with small gaps; junction dots are emitted only at real branches. This distinguishes a crossing from an electrical join without relying on color.
+
+Author bendpoints are stored as ordered world coordinates on the net and guide an orthogonal path through the requested points. If no automatic path exists, the router still draws an explicit orthogonal fallback rather than a diagonal or a phantom connection. Wire colors can be domain/signal-derived or overridden per net; both are presentation state and never enter compilation.
+
+Pin values are rendered as small off-box badges; wire segments carry the current net value as a label at sufficient zoom. Domain-specific colors distinguish binary low/high, ternary values, and other finite domains. Selection and hover halos plus junction glyphs mean color is never the sole connection/state cue.
 
 The layout is recomputed after every project mutation. That is simple and adequate for the current designs; it is not an incremental layout engine.
 
-### 10.5 Headless GUI testing
+### 10.5 Theming
+
+`Themes/ThemeTokens.axaml` defines one semantic token set in light and dark theme dictionaries: window/toolbar/panel surfaces, text hierarchy, borders, accent, success/danger, canvas grid and component bodies, pins, badges, tooltips, signal colors, waveform grid/bands, and diagnostic severities.
+
+XAML uses `DynamicResource` for those keys. Custom-drawn `CircuitCanvas` and `WaveformView` resolve the same keys with `ThemeBrushes.Get` at the start of each render, so there is no second hardcoded palette. Both controls subscribe to `ActualThemeVariantChanged` and invalidate. `ThemeService` maps Auto/Light/Dark to `Application.RequestedThemeVariant` and persists the manual choice under the platform application-data directory; Auto delegates to the OS and follows live system changes. Diagnostics use classes plus `DynamicResource` rather than cached brush strings.
+
+### 10.6 Hierarchy editing and libraries
+
+`HierarchyEditor` owns extraction and promotion as model transformations:
+
+- extraction validates all boundary nets before mutation, creates a new `custom.<slug>` definition, clones internal instances/nets, generates unique pin IDs and human names, replaces selected instances in the parent, and rewires boundary parent nets to the replacement's pins;
+- promotion binds an existing unbound net to a new pin and leaves the net's identity and internal connectivity untouched.
+
+`ComponentLibraryService` exports a definition's transitive dependency closure using the ordinary project serializer, so exported libraries are validated by the same strict loader. Import merges domains only when their values and driver policy match. Definitions are compared structurally (pins, ports, instance primitives, net membership/initial values) while ignoring labels, coordinates, colors, and routes; equivalent definitions are reused, conflicting IDs are renamed, and newly introduced validation errors roll the whole merge back.
+
+Both services are independent of Avalonia. The view model supplies selection, undo snapshots, and file paths only.
+
+### 10.7 Headless GUI testing
 
 `tests/Radix.Editor.Tests` uses `Avalonia.Headless` with offscreen Skia. It:
 
@@ -305,7 +329,9 @@ The layout is recomputed after every project mutation. That is simple and adequa
 - runs simulation through the view model;
 - captures a `RenderTargetBitmap` of the entire window;
 - saves screenshots under ignored `artifacts/editor/`;
-- exercises empty-project rendering.
+- exercises empty-project rendering;
+- renders both light and dark variants and samples a background pixel for luminance;
+- checks that no automatic wire segment crosses a component body and that junction dots only appear at real branches.
 
 These tests do not create an OS window. They are the required safe visual test path. See [MANUAL_TESTING.md](../MANUAL_TESTING.md) for interaction checks.
 
@@ -373,6 +399,6 @@ The engine is single-threaded by design so event order remains obvious and repro
 - **Determinism tests**: repeated runs produce identical values and traces.
 - **Differential tests**: randomized combinational designs compare the event engine against a reference evaluator.
 - **Round-trip tests**: projects serialize, reload, validate, and simulate identically; malformed/unknown data is rejected.
-- **Headless GUI tests**: view-model editing plus offscreen render captures.
+- **Headless GUI tests**: view-model editing, wire geometry, clipboard/extraction/library behavior, theme variant switching, and offscreen render captures in both themes.
 
 Tests are the primary correctness evidence. The manual test document covers what automation intentionally cannot: human interaction, visual judgment, and window-manager behavior.

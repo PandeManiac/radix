@@ -1,4 +1,4 @@
-# RADIX project format, version 1
+# RADIX project format, version 2
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,7 +9,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 1,
+  "version": 2,
   "name": "Example",
   "description": "optional",
   "root": "main",
@@ -21,8 +21,8 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `format` | yes | Must be exactly `"radix-project"` |
-| `version` | yes | Currently `1`; newer versions are rejected, not guessed |
+| `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
+| `version` | yes | Currently `2`. Version 1 files load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Definition opened by default and simulated by the CLI unless overridden |
@@ -165,6 +165,8 @@ Instance pins are derived from the referenced definition's interface or from the
   "domain": "binary",
   "label": "Q0",
   "initial": 0,
+  "color": "#38BDF8",
+  "route": [{ "x": 420, "y": 96 }, { "x": 460, "y": 96 }],
   "pins": [
     { "instance": "ff0", "pin": "q" },
     { "instance": "u1", "pin": "in0" }
@@ -177,6 +179,10 @@ Instance pins are derived from the referenced definition's interface or from the
 - A pin may appear on at most one net.
 - `pins` may be empty, but validation warns.
 - Multiple output pins are permitted and resolved by the domain's driver policy.
+
+- `color` is optional editor metadata: `#RRGGBB` (normalized to upper case) or `"auto"`. Omit it for signal-derived coloring. Invalid colors fail the load.
+- `route` is optional editor metadata: up to 64 author bendpoints in world coordinates, in order. Empty or omitted means automatic orthogonal routing. Bendpoints never enter compilation or simulation.
+- Version 1 files have neither field and load unchanged. Saving always writes version 2.
 
 ### Port bindings
 
@@ -196,7 +202,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 ```json
 {
   "format": "radix-project",
-  "version": 1,
+  "version": 2,
   "name": "Inverter",
   "root": "main",
   "domains": [
@@ -256,7 +262,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 
 ## Versioning and migration
 
-Version 1 is the only implemented format. Rules for future revisions:
+Versions 1 and 2 are implemented. Version 2 adds optional per-net `color` and `route`; version 1 input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.
@@ -264,6 +270,17 @@ Version 1 is the only implemented format. Rules for future revisions:
 4. Keep optional display metadata additive within a version only if old builds can still reject unknown properties without data loss; because unknown properties are currently rejected, additive fields still require a version decision.
 5. Preserve domain and definition IDs across migrations where possible so editor selections and external tooling remain meaningful.
 6. Add round-trip and old-file fixtures before changing the current version.
+
+## Component libraries (`.radixlib`)
+
+A `.radixlib` file uses **exactly this project format**. It is a project containing one exported root definition plus its transitive dependency closure and the domains those definitions use. The extension is a hint for file pickers, not a separate schema.
+
+- Exporting a definition writes the closure so the library is self-contained.
+- Importing validates the library first, merges compatible domains by ID, and reuses definitions that are electrically equivalent (ignoring labels, positions, wire colors, and routes).
+- A library definition whose ID collides with a structurally different local definition is imported under a fresh unique ID; existing definitions are never overwritten.
+- Import aborts without partial changes if a domain conflicts or if the merge would introduce new validation errors.
+
+Because libraries are ordinary projects, they can also be opened directly as projects, inspected with the CLI, and validated with the same rules. There is no executable code in a library.
 
 ## Security model
 

@@ -14,10 +14,11 @@ The repository currently contains a working simulation kernel, a hierarchical st
 | Propagation delays and zero-delay convergence guard | Working |
 | Asynchronous feedback and oscillation reporting | Working |
 | Standard library from primitives | Gates, latch, D flip-flop, adders, mux, ternary parts |
-| Project save/load | Versioned JSON, strict validation, atomic writes |
+| Project save/load | Versioned JSON (v2), strict validation, atomic writes |
 | Numeric interpretation | Positional and sign-magnitude formats; display-only |
 | Headless CLI | Validate, simulate, inspect, examples, benchmark |
-| Graphical editor | Canvas, auto-routing, zoom/pan, hierarchy, simulation, I/O, waveform, diagnostics, undo/redo, save/load |
+| Graphical editor | Orthogonal obstacle-aware routing, bendpoints, multi-select, clipboard, search, hierarchy extraction, light/dark themes, simulation, waveform, diagnostics, undo/redo |
+| Reusable parts and libraries | Extract selection to a pinned definition, promote nets to pins, import/export `.radixlib` |
 | Headless GUI tests and screenshots | Working with Avalonia Headless + Skia |
 | Analog/electrical solver | Not implemented; boundary documented |
 | JIT/compiled native evaluation | Not implemented; managed engine benchmarked |
@@ -44,19 +45,23 @@ The editor opens the 4-bit counter example. It is a normal desktop application w
 
 ### Editor basics
 
-- **Place a part** from the Library, or use `＋` beside a definition to instantiate it.
-- **Wire** by dragging from one pin to another pin or to an existing wire. Wires use automatic orthogonal routing; there are no editable bendpoints yet.
-- **Inspect** by selecting a component or net. Primitive parameters, labels, positions, and net initial values are editable. Commit a field by pressing Enter or clicking elsewhere.
-- **Navigate hierarchy** by double-clicking a composite part, or selecting it in Definitions.
+- **Place a part** from the Library, search the library and definitions, or use `＋` beside a definition to instantiate it.
+- **Wire** by dragging from one pin to another pin or to an existing wire. Wires route orthogonally around component bodies, gap at crossings, and show junction dots only at real branches.
+- **Adjust routes** by double-clicking a wire to add a bendpoint, dragging its handle, or Alt+clicking a handle to remove it. Reset a route from the net inspector.
+- **Select multiple parts** with Shift+click or a rubber-band drag. Drag any selected part to move the group; copy, paste, and duplicate carry internal nets as one undo step.
+- **Inspect** by selecting a component or net. Primitive parameters, labels, positions, net initial values, wire colors, and route controls are editable. Commit a field by pressing Enter or clicking elsewhere.
+- **Extract a reusable part** by selecting components, entering a name in **Reusable part**, and clicking **Extract selection**. Boundary nets become input/output pins, internal nets move into the new definition, and the parent keeps one replacement instance.
+- **Expose a net** as an input or output pin from the net inspector. Give it a name first if desired; leave the name blank to use the net label.
+- **Navigate hierarchy** by double-clicking a composite part, or selecting it in Definitions. Edited definitions propagate to every instance.
+- **Share parts** with **Export part…** (current definition and dependencies) and **Import library…** (`.radixlib`). Equivalent definitions are reused; conflicting IDs are renamed instead of overwritten.
 - **Simulate** with Begin, Advance, Event, Clock, and Settle. The current definition is compiled as the simulation root, so a reusable component can be tested in isolation.
 - **Drive inputs** from the I/O PINS section. Each input shows its domain values as buttons.
 - **Inspect signals** on the canvas badges, the I/O section, the Waveform tab, and the Trace tab.
 - **Undo/redo** uses whole-project snapshots. Structural changes invalidate the running simulation, as do parameter changes.
 - **Create domains** (for example a five-value logic or a radix-5 digit set) in the Inspect tab. Values are arbitrary labels; no arithmetic semantics are attached.
+- **Choose a theme** with the Auto/Light/Dark selector in the toolbar. Auto follows the operating system; the choice is persisted per user. Canvas, wires, waveform, inspectors, menus, and diagnostics share one semantic token set.
 
-Shortcuts: `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` undo and redo; `Delete` removes the selection; `F` fits the circuit; arrows nudge a selected instance; `Ctrl+wheel` zooms; middle-drag or Alt+drag pans; `Ctrl+S`, `Ctrl+O`, and `Ctrl+N` save, open, and create projects.
-
-The editor does **not** currently prompt before discarding unsaved work on New, Open, or window close. Save deliberately.
+Shortcuts: `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` undo and redo; `Ctrl+C` / `Ctrl+V` / `Ctrl+D` copy, paste, and duplicate; `Ctrl+A` selects all parts; `Delete` removes the selection; `F` fits the circuit; arrows nudge selected parts; `Ctrl+wheel` zooms; middle-drag or Alt+drag pans; right-click opens canvas actions; `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+O`, and `Ctrl+N` save, save as, open, and create projects. New, Open, and window close prompt to Save, Discard, or Cancel when there are unsaved changes.
 
 ## Headless command line
 
@@ -95,6 +100,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 | [full-adder.radix](examples/full-adder.radix) | Hierarchical half adders combined into a full adder |
 | [binary-counter.radix](examples/binary-counter.radix) | Four DFFs plus a ripple-carry adder and a waveform clock |
 | [balanced-ternary-half-adder.radix](examples/balanced-ternary-half-adder.radix) | Three-valued logic with sum and carry trits |
+| [accumulator-cpu.radix](examples/accumulator-cpu.radix) | Instruction-controlled 4-bit accumulator with registered carry |
 
 The examples are generated by `Radix.StdLib.ExampleProjects` and can be regenerated at any time.
 
@@ -149,11 +155,12 @@ These are deliberate current boundaries, not hidden behavior:
 - Single-threaded deterministic engine. Parallel evaluation is not implemented.
 - No user-supplied executable primitives. The project format never loads code; adding a primitive kind requires a code change and a format-version review.
 - Buses are sequences of individual pins, not a first-class vector type. Lookup tables and hierarchical definitions are the intended construction mechanism.
-- The editor routes wires automatically and cannot drag bendpoints or select multiple components.
-- Editor pan/zoom/selection are not persisted in the project yet; instance positions are.
+- Auto-routing resolves obstacles but cannot guarantee a short route in every dense design; authored bendpoints are the escape hatch. Wires can still be visually busy at low zoom.
+- Extraction refuses boundary nets driven from both sides, because the interface model has only input/output pins and no inout direction. Split the net or adjust the selection.
+- Library import compares electrical structure, not layout. A local part with the same ID but different labels or positions is reused; genuinely different structure is imported under a new ID.
+- Editor pan/zoom, active tab, and selection are not persisted in the project yet; instance positions, wire routes, and colors are.
 - Numeric interpretation is a CLI/reporting feature in this build, not a saved display preference in the editor.
 - `--set` drives only static initial values. Edge sequences require the editor's clock command, a waveform source, or a future timed CLI event option.
-- New/Open/close do not ask to save unsaved changes.
 - Domain creation in the editor uses a single-driver policy. Projects loaded from JSON can still declare priority/conflict policies, but the GUI does not edit those policies yet.
 - Undo snapshots the whole project and retains up to 80 states. This is simple and reliable, not asymptotically optimal for very large designs.
 - Very large traces are bounded (default 500,000 net changes); old changes are dropped and the UI shows only a subset of nets.
@@ -173,18 +180,18 @@ docs/                    architecture, format, benchmarks
 
 ## Testing summary
 
-- Kernel and library tests: **136 passing**.
-- Editor tests: **12 passing**, including offscreen Skia screenshots of the full window and waveform tab.
+- Kernel and library tests: **141 passing**.
+- Editor tests: **35 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, and dark waveform tab.
 - Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, numeric formats, determinism, and randomized differential comparison against a reference evaluator.
-- GUI tests verify initialization and rendering, not human interaction. Use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
+- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 
 ## Near-term roadmap
 
 1. Add a scripted/assertion test harness for timed CLI simulations and edge-triggered circuits.
 2. Add first-class bus/vector construction helpers without baking numeric meaning into signals.
-3. Add multiple selection, copy/paste, wire bendpoints, and persisted viewport state to the editor.
+3. Persist viewport, active tab, and editor preferences with the project or user settings.
 4. Add a faster incremental compile path for large projects; measure before optimizing.
-5. Build a small accumulator or processor example exclusively from standard parts.
+5. Extend the accumulator into an instruction-driven processor example with a small custom ISA.
 6. Explore an analog boundary as a separate solver sharing the project and UI, not as a new discrete primitive.
 
 RADIX is intentionally a foundation: the interesting architectures should live in projects, not in this engine.

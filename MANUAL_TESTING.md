@@ -10,7 +10,12 @@ dotnet test tests/Radix.Core.Tests/Radix.Core.Tests.csproj
 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj
 ```
 
-The editor tests write offscreen render captures to `artifacts/editor/` (ignored by Git). They do not show a window.
+The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git). They do not show a window:
+
+- `workbench-counter.png` (light);
+- `workbench-counter-dark.png`;
+- `workbench-waveform.png` (light);
+- `workbench-waveform-dark.png`.
 
 Launch the editor only when you are ready to use it:
 
@@ -18,93 +23,137 @@ Launch the editor only when you are ready to use it:
 dotnet run --project src/Radix.Editor
 ```
 
-Expected first screen: a light workbench titled **RADIX — circuit workbench**, the **4-bit binary counter** example, t = 0, 0 errors, 0 warnings, and the Library visible on the left. The default window is 1480×920; it can be resized and has a minimum size of 1040×660.
+Expected first screen: the light workbench (or your saved theme), the **4-bit binary counter** example, t = 0, 0 errors, 0 warnings, and the Library visible on the left. The default window is 1480×920; minimum is 1040×660.
 
-## 1. Baseline: open the counter and advance
+## 1. Baseline simulation
 
-1. Click **Begin**. Expected: simulation compiles, status says reset, t remains 0, and no errors appear.
+1. Click **Begin**. Expected: simulation compiles, t remains 0, and no errors appear.
 2. Set the advance box to `100` and click **Advance**.
-3. Check the right **Inspect → I/O PINS** section:
+3. Check **Inspect → I/O PINS**:
    - `Q0 = 1`
    - `Q1 = 0`
    - `Q2 = 1`
    - `Q3 = 0`
-   - The header shows `t = 100` and zero errors/warnings.
-4. Click the **Waveform** tab. Expected: rows for the root nets (`Q0`…`Q3`, `clk`, constant inputs, adder sums) and a 0–100 tick axis. The clock shows ten 10-tick phases; output rows show their transitions.
-5. Click **Trace**. Expected: recent net changes in reverse chronological order, formatted `t=<time>  <net> → <value>`.
+   - Header shows `t = 100`, zero errors/warnings.
+4. Click **Waveform**. Expected: rows for `Q0`…`Q3`, `clk`, constants and adder sums over a 0–100 tick axis; the clock has 10-tick phases.
+5. Click **Trace**. Expected: recent net changes newest first, formatted `t=<time>  <net> → <value>`.
 
-If the counter values differ, record the values and diagnostics; this is a correctness failure, not a cosmetic issue.
+If counter values differ, record the values and diagnostics; this is a correctness failure.
 
-## 2. Definition navigation and subcircuit simulation
+## 2. Themes
 
-1. Click the `D flip-flop` row in **Definitions** (or double-click a D flip-flop on the canvas).
-2. Expected: the canvas changes to the D flip-flop internals, the header identifies a non-root definition, and the Library remains available. Simulation is now rooted at this definition.
-3. Click **Begin**.
-4. In I/O PINS, click `D` value `1`, then `CLK` value `0`.
-5. Set advance to `20` and click **Advance**. Expected: `Q = 0`, `QN = 1` (no rising edge yet).
-6. Click `CLK` value `1`, advance `20`. Expected: `Q = 1`, `QN = 0`.
-7. Click `D` value `0`, advance `20` without changing CLK. Expected: Q remains `1` (level, not edge, does not alter the slave output).
-8. Toggle CLK to `0`, advance `20`; then to `1`, advance `20`. Expected: Q becomes `0`.
-9. Click **Clock** once with a valid D value. Expected: the host advances to the next clock transition over at most a few ticks. It may not settle all logic; follow with **Advance**.
-10. Return to the root counter via Definitions and verify simulation resets for the new root.
+1. Use the toolbar **Auto / Light / Dark** selector.
+2. Expected in Dark: window, toolbars, sidebars, inspectors, tabs, text fields, buttons, menus, canvas grid, component bodies, pin labels, wires, signal badges, waveform, and diagnostic rows all switch together. No light panels or dark-on-dark text should remain.
+3. Expected in Light: the original high-contrast light surfaces return.
+4. Select **Auto** and change the operating system appearance. Expected: the editor follows the system variant while Auto is selected (or after the next window activation, depending on the desktop).
+5. Restart the editor. Expected: the last manual choice is restored from the user application-data directory. The project itself does not store the theme.
+6. Hover a pin and a wire in both themes. Tooltips, selection halos, bendpoint handles, and rubber-band selection should remain legible.
+7. Check that wires are distinguishable without relying on color alone: junction dots appear only at real branches, crossings have visible gaps, and wire labels/selection halos supplement signal color.
 
-Notes:
-- The **Clock** command drives a low-to-high sequence when the clock net has no internal source. If the definition contains a waveform clock, it advances to the next transition of that source instead.
-- Navigating definitions clears the running engine. This is intentional: compiled indices are definition-specific.
+## 3. Wire routing, bendpoints, and readability
 
-## 3. Wiring, editing, and undo
+1. Open the counter and zoom to ~100%. Expected: orthogonal wires avoid component bodies; crossings are gapped; junction dots appear where three or more endpoints share a net.
+2. Double-click a wire segment. Expected: a bendpoint handle appears near that point and the wire reroutes through it.
+3. Drag the handle. Expected: the wire follows orthogonally; the rest of the net stays connected. Undo restores the previous route.
+4. Alt+click a handle. Expected: that bendpoint is removed.
+5. Select a routed net and click **Reset wire route** in the net inspector. Expected: automatic routing resumes.
+6. Save, close, reopen. Expected: bendpoints and custom wire colors survive (project format v2).
+7. In the net inspector, set **Wire color** to `#38bdf8`, then `auto`. Expected: valid hex applies; invalid text is rejected with a status message; `auto` returns to domain/signal coloring.
+8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
 
-1. Click **New** and confirm the starter project appears (Library, empty Main definition, standard definitions). This discards unsaved work without a prompt; verify only after saving anything important.
-2. In **Interface**, add input pins `A` and `B` and output pin `Y`, all on the `binary` domain.
-3. From the Library, click **AND gate**. Expected: a gate appears near the current canvas center and is selected; Inspect shows its table, delay, label, and position.
-4. Drag from the `A` port dot (right side of the left port pill) to the gate’s first input pin. Expected: a wire appears, and the status bar confirms the connection. Repeat for B to the second input, and the gate output to Y.
-5. Click **Begin**. Drive A=0, B=1, then advance 2 ticks. Expected Y=0. Drive A=1, B=1, advance 2 ticks. Expected Y=1.
-6. Select the gate and change its `Delay` to `0` via Inspect, press Enter/leave the field. Expected the wire value may settle without an extra tick; no project corruption.
-7. Press `Delete`. Expected the gate disappears and its wires are removed. Undo restores it.
-8. Drag the gate to a new position. Undo should restore its previous position in **one** undo step, not one per mouse movement.
-9. Try connecting a binary port to a ternary interface pin. Expected: a status-bar rejection naming the domain mismatch; the circuit is unchanged. This is an editor policy, not a kernel error.
+## 4. Editing, selection, and clipboard
 
-Automatic routing: wires use orthogonal segments and a shared trunk for multi-pin nets. There is no bendpoint editing yet; the routing may look busy on dense circuits. That is a known limitation, not a wiring failure.
+1. Click **New**. Expected: a Save/Discard/Cancel prompt appears because the previous project may have edits. Cancel and verify nothing changed.
+2. Add input pins `A` and `B`, output `Y`, and place an **AND gate**.
+3. Wire A and B to the gate inputs, and the output to Y. Begin, drive A=1, B=1, advance 2 ticks. Expected Y=1.
+4. Shift+click two components. Expected: both are selected; the inspector says “2 parts”. Drag one. Expected: the whole group moves in one undo step.
+5. Rubber-band drag across empty canvas. Expected: intersecting parts are selected; Shift adds to the existing selection.
+6. Press `Ctrl+C`, then `Ctrl+V`. Expected: copies appear offset from the originals and remain selected. Press `Ctrl+D`; expected: another duplicate without changing the clipboard.
+7. Delete the duplicates, then undo once. Expected: the whole paste/duplicate returns in one step.
+8. Copy two connected parts (with an internal wire), paste, and verify the pasted pair has its own internal net rather than sharing the original net. Wires to outside pins are intentionally not copied.
+9. Right-click empty canvas, a component, and a wire. Expected: relevant actions (Paste/Select all/Fit, Copy/Duplicate/Open definition/Delete, Add bendpoint/Reset route/Delete wire) and no focus theft.
+10. Type `ternary` in **search parts**. Expected: the Library filters and matching Definitions also filter. Clear the search to restore both lists.
+11. Use arrow keys to nudge a selected part; Shift+arrow moves in 10-unit steps. Press `F` to fit.
 
-## 4. Custom domains and project round trip
+## 5. Extract a reusable component
 
-1. In Inspect, under **SIGNAL DOMAINS**, enter name `five state` and values `lo mid hi X Z`, then click **Add domain**.
-2. Expected: the domain appears in the list, under the new pin domain picker, and in the net domain selector.
+1. New project. Add input `A`, output `Y`, and two **NOT gate** parts.
+2. Wire `A → NOT1.in0`, `NOT1.out → NOT2.in0`, `NOT2.out → Y`.
+3. Select both NOT gates. In **Reusable part**, enter `Double inverter`, click **Extract selection**.
+4. Expected:
+   - the two gates disappear from the root and are replaced by one `Double inverter` instance;
+   - the A and Y port wires now terminate on that instance;
+   - Definitions shows a new `custom.double-inverter` part with 2 pins;
+   - the new definition contains both gates and one internal net;
+   - undo restores the two gates in one step.
+5. Begin, drive A=1, advance 20. Expected Y=1 (double inversion).
+6. Double-click the new instance. Expected: its internal schematic opens with `A`/`Y` port pills; edit a gate position and return to the parent. The instance and simulation wiring remain valid.
+7. Try extracting one of two gates whose outputs are wired together. Expected: extraction is refused with a message about drivers on both sides; the project is unchanged.
+
+## 6. Promote nets and interface organization
+
+1. In a definition, place two NOT gates and wire the first output to the second input.
+2. Select that connecting wire. In **Expose as interface pin**, leave the name blank or enter `MID`, then click **Output**.
+3. Expected: `MID` appears in Interface/I/O PINS, a port pill becomes draggable on the canvas, and the net is bound to it. The promote buttons then disable because the net is already bound.
+4. Undo. Expected: pin, binding, and generated net label are removed together.
+5. Add/rename pins using the existing Interface controls. Expected: names are editable via the definition inspector; duplicate IDs are not created.
+
+## 7. Library export and import
+
+1. Create the `Double inverter` part from section 5. Click **Export part…**.
+2. Save `double-inverter.radixlib` in a scratch directory.
+3. New project, then **Import library…** and choose that file.
+4. Expected:
+   - the imported definition appears under Definitions and opens automatically;
+   - standard definitions referenced by the library are reused, not duplicated;
+   - the project becomes dirty and one undo restores the pre-import state.
+5. Import the same library again. Expected: no additional definition appears.
+6. Create a different local definition with the same ID but different internals, then import. Expected: the existing definition is not overwritten; the imported one gets a renamed ID such as `custom.name2`, and the status message reports the import.
+7. Attempt to import a library whose domain ID exists locally with different values or driver policy. Expected: import is refused with a domain message and the project is completely unchanged.
+8. Export a definition that instantiates other definitions. Expected: the `.radixlib` contains the dependency closure and imports successfully into a project that does not have those dependencies.
+
+## 8. Domains and project round trip
+
+1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, click **Add domain**.
+2. Expected: the domain appears in the list, pin domain picker, and net domain selector.
 3. Add an input pin using the new domain. Expected: the port and its net use `five-state`.
-4. Save As `manual-five-state.radix` outside the repository or in a scratch path.
-5. Close and relaunch the editor, then Open the file. Expected: the custom domain, value labels, pin, current root, and instance positions survive.
-6. Expected non-persistence: viewport pan/zoom, selected tab, selection, external drive history, and waveform history.
+4. Save As in a scratch path. Close and relaunch, then Open. Expected: domain, pin, current root, instance positions, wire colors, and bendpoints survive.
+5. Expected non-persistence: viewport pan/zoom, selection, active tab, external drive history, waveform history.
 
-## 5. Hierarchy and malformed projects
+## 9. Hierarchy and malformed projects
 
-1. Open `examples/binary-counter.radix` with **Open**. Expected: no modal error, root counter loaded, definitions visible.
-2. Double-click the ripple-carry adder. Expected: internal full adders and wires render. Double-click a full adder; expected: half adders. Use the breadcrumb/definition list to return.
-3. Open a deliberately malformed file (for example, change `"version": 1` to `99` or remove `root`). Expected: Open fails with a status-bar error and the previously open project remains. The loader must not partially replace the editor state.
-4. Use **Validate** in the CLI on the same file for the full diagnostic text.
+1. Open `examples/binary-counter.radix`. Expected: root counter loads without a modal error.
+2. Double-click the ripple-carry adder, then a full adder, then a half adder. Expected: nested internals render and the definition header identifies the current simulation root.
+3. Return to the root and verify simulation resets for the new root.
+4. Open a deliberately malformed file (change `"version": 2` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
+5. Save a project and inspect the JSON. Expected: `"version": 2`, with optional net `color` and `route` fields, and no executable content.
 
-## 6. Window and interaction behavior
+## 10. Unsaved changes and window behavior
 
-- Resize the window down to the minimum size: the left rail scrolls, the canvas remains usable, and the right tab content scrolls.
-- Zoom with `Ctrl+wheel`; pan with middle-drag or Alt+drag. Expected cursor-focused zoom; wires and boxes stay aligned.
-- Click empty canvas: selection clears. Press `F`: view fits the circuit.
-- Hover a pin: a tooltip reports pin ID, declared/net domain, and value.
-- Press `Escape` while dragging a wire: the pending wire is cancelled.
-- Keyboard `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Delete`, and arrow-key nudging should operate without moving the mouse.
-- Click New with unsaved changes: expected current behavior is immediate discard. This is listed as a limitation, not a pass criterion.
+1. Modify a project (move a part). Click **New**, **Open…**, and close the window.
+2. Expected each time: a themed Save/Discard/Cancel dialog.
+   - Cancel leaves the project and window untouched.
+   - Discard proceeds without writing.
+   - Save writes to the current path, or opens Save As if untitled; cancelling Save As aborts the New/Open/close action.
+3. Confirm `Ctrl+N`, `Ctrl+O`, and the window close button use the same prompt.
+4. Resize to minimum size: left rail and inspector scroll, canvas remains usable.
+5. Zoom/pan, clear selection on empty click, press Escape during a pending wire, and hover pins for tooltips.
+6. `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Ctrl+C/V/D/A`, `Delete`, arrow nudging, and `Ctrl+S/Shift+S` should work without moving the mouse. Shortcuts must not hijack typing in a TextBox.
 
-## 7. Known limitations to verify as *limitations*
+## 11. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
-- no bendpoint editing, multi-select, copy/paste, or rubber-band selection;
-- no prompt before discarding unsaved New/Open/close;
-- viewport/selection not saved;
-- no assertion or regression mode in the CLI; timed drives exist, but checking expected values is manual;
-- no analog solver, JIT, parallel engine, or first-class buses;
+- auto-routing is heuristic; dense circuits may need bendpoints, and components are not collision-moved automatically;
+- extraction refuses nets with drivers on both sides because there is no inout pin direction;
+- library equivalence ignores labels/layout; conflicting IDs are renamed rather than offering a merge dialog;
+- viewport, selection, and active tab are not saved;
+- no analog solver, JIT, parallel engine, or first-class bus type;
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;
 - numeric display formats are CLI-only in this build;
-- undo snapshots whole projects and is capped at 80 entries.
+- undo snapshots whole projects and is capped at 80 entries;
+- the editor does not auto-save or recover crash state.
 
 ## Isolation statement
 

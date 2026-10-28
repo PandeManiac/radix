@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 1,
+  "version": 2,
   "name": "4-bit binary counter",
   "root": "demo.counter",
   "settings": {
@@ -777,13 +777,13 @@
         {
           "id": "g3",
           "definition": "std.nand",
-          "x": 320,
+          "x": 400,
           "y": 60
         },
         {
           "id": "g4",
           "definition": "std.nand",
-          "x": 320,
+          "x": 400,
           "y": 200
         }
       ],
@@ -928,19 +928,19 @@
         {
           "id": "inv",
           "definition": "std.not",
-          "x": 120,
+          "x": 80,
           "y": 40
         },
         {
           "id": "master",
           "definition": "std.d-latch",
-          "x": 260,
+          "x": 340,
           "y": 40
         },
         {
           "id": "slave",
           "definition": "std.d-latch",
-          "x": 440,
+          "x": 600,
           "y": 160
         }
       ],
@@ -1202,19 +1202,19 @@
         {
           "id": "h1",
           "definition": "std.half-adder",
-          "x": 120,
+          "x": 80,
           "y": 60
         },
         {
           "id": "h2",
           "definition": "std.half-adder",
-          "x": 320,
+          "x": 340,
           "y": 60
         },
         {
           "id": "or",
           "definition": "std.or",
-          "x": 520,
+          "x": 600,
           "y": 200
         }
       ],
@@ -1422,25 +1422,25 @@
         {
           "id": "fa0",
           "definition": "std.full-adder",
-          "x": 150,
+          "x": 80,
           "y": 100
         },
         {
           "id": "fa1",
           "definition": "std.full-adder",
-          "x": 360,
+          "x": 340,
           "y": 100
         },
         {
           "id": "fa2",
           "definition": "std.full-adder",
-          "x": 570,
+          "x": 600,
           "y": 100
         },
         {
           "id": "fa3",
           "definition": "std.full-adder",
-          "x": 780,
+          "x": 860,
           "y": 100
         }
       ],
@@ -2501,7 +2501,7 @@
             "value": 1
           },
           "x": 60,
-          "y": 60
+          "y": 40
         },
         {
           "id": "const_b1",
@@ -2510,7 +2510,7 @@
             "value": 0
           },
           "x": 60,
-          "y": 100
+          "y": 120
         },
         {
           "id": "const_b2",
@@ -2519,7 +2519,7 @@
             "value": 0
           },
           "x": 60,
-          "y": 140
+          "y": 200
         },
         {
           "id": "const_b3",
@@ -2528,37 +2528,37 @@
             "value": 0
           },
           "x": 60,
-          "y": 180
+          "y": 280
         },
         {
           "id": "adder",
           "definition": "std.ripple-adder-4",
-          "x": 280,
-          "y": 120
+          "x": 320,
+          "y": 100
         },
         {
           "id": "ff0",
           "definition": "std.dff",
-          "x": 560,
+          "x": 600,
           "y": 60
         },
         {
           "id": "ff1",
           "definition": "std.dff",
-          "x": 560,
-          "y": 160
+          "x": 600,
+          "y": 220
         },
         {
           "id": "ff2",
           "definition": "std.dff",
-          "x": 560,
-          "y": 260
+          "x": 600,
+          "y": 380
         },
         {
           "id": "ff3",
           "definition": "std.dff",
-          "x": 560,
-          "y": 360
+          "x": 600,
+          "y": 540
         }
       ],
       "nets": [
