@@ -142,6 +142,36 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void PinInterfaceCanBeRenamedRetargetedAndFlipped()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.NewPinName = "A";
+        viewModel.NewPinIsInput = true;
+        viewModel.NewPinDomain = viewModel.Domains.First(d => d.Id == StandardDomains.BinaryId);
+        viewModel.AddPin();
+        PinDeclaration pin = viewModel.Definition.Pins.Single();
+
+        viewModel.RenamePin(pin.Id, "DATA");
+        Assert.Equal("DATA", pin.Name);
+        Assert.Equal("DATA", viewModel.Definition.FindPortNet(pin.Id)!.Label);
+
+        DomainChoice ternary = viewModel.Domains.First(d => d.Id == StandardDomains.TernaryId);
+        viewModel.ChangePinDomain(pin.Id, ternary.Id);
+        Assert.Equal(ternary.Id, pin.DomainId);
+        Assert.Equal(ternary.Id, viewModel.Definition.FindPortNet(pin.Id)!.DomainId);
+
+        viewModel.TogglePinDirection(pin.Id);
+        Assert.Equal(PinDirection.Output, pin.Direction);
+
+        viewModel.Undo();
+        Assert.Equal(PinDirection.Input, viewModel.Definition.FindPin(pin.Id)!.Direction);
+        viewModel.Undo();
+        Assert.Equal(StandardDomains.BinaryId, viewModel.Definition.FindPin(pin.Id)!.DomainId);
+        viewModel.Undo();
+        Assert.Equal("A", viewModel.Definition.FindPin(pin.Id)!.Name);
+    }
+
+    [Fact]
     public void NewProjectContainsStandardDomainAndRoot()
     {
         var viewModel = CreateEmptyEditor();
@@ -255,6 +285,60 @@ public sealed class EditorViewModelTests
         viewModel.Undo();
         Assert.Equal(2, viewModel.Definition.Instances.Count);
         Assert.Equal(definitionsBefore, viewModel.Project.Definitions.Count);
+    }
+
+    [Fact]
+    public void DirtyStateTracksTheLastSavedSnapshotAcrossUndoAndRedo()
+    {
+        var viewModel = CreateEmptyEditor();
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            Assert.True(viewModel.SaveProject(path));
+            Assert.False(viewModel.IsDirty);
+
+            viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(c => c.Name == "NOT gate"));
+            Assert.True(viewModel.IsDirty);
+
+            // Undoing back to the saved content clears the marker, and redoing the
+            // edit marks the project dirty again.
+            viewModel.Undo();
+            Assert.False(viewModel.IsDirty);
+            viewModel.Redo();
+            Assert.True(viewModel.IsDirty);
+
+            // After saving the edited state, undo is dirty and redo is clean.
+            Assert.True(viewModel.SaveProject(path));
+            Assert.False(viewModel.IsDirty);
+            viewModel.Undo();
+            Assert.True(viewModel.IsDirty);
+            viewModel.Redo();
+            Assert.False(viewModel.IsDirty);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void PlacingAnAncestorIntoADescendantIsRejected()
+    {
+        var viewModel = CreateEmptyEditor();
+        string rootId = viewModel.Definition.Id;
+        viewModel.AddDefinition();
+        string partId = viewModel.Definition.Id;
+
+        viewModel.OpenDefinition(rootId);
+        viewModel.PlaceDefinition(partId);
+        Assert.Single(viewModel.Definition.Instances);
+
+        viewModel.OpenDefinition(partId);
+        int before = viewModel.Definition.Instances.Count;
+        viewModel.PlaceDefinition(rootId);
+
+        Assert.Equal(before, viewModel.Definition.Instances.Count);
+        Assert.Contains("recursive", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

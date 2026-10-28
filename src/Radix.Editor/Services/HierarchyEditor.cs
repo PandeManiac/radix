@@ -172,6 +172,52 @@ public static class HierarchyEditor
     }
 
     /// <summary>
+    /// True when placing <paramref name="targetDefinitionId"/> inside
+    /// <paramref name="hostDefinitionId"/> would make the hierarchy recursive. The
+    /// validator catches this too, but the editor should not create the bad edge.
+    /// </summary>
+    public static bool WouldCreateCycle(
+        CircuitProject project,
+        string hostDefinitionId,
+        string targetDefinitionId)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (string.Equals(hostDefinitionId, targetDefinitionId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>();
+        pending.Push(targetDefinitionId);
+        while (pending.Count > 0)
+        {
+            string id = pending.Pop();
+            if (!visited.Add(id) || project.FindDefinition(id) is not CircuitDefinition definition)
+            {
+                continue;
+            }
+
+            foreach (ComponentInstance instance in definition.Instances)
+            {
+                if (instance.DefinitionId is not string dependency)
+                {
+                    continue;
+                }
+
+                if (string.Equals(dependency, hostDefinitionId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                pending.Push(dependency);
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Binds an existing net to a new interface pin. Direction is chosen by the
     /// caller because a net can legitimately be observed or driven at the boundary.
     /// </summary>

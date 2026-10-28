@@ -56,6 +56,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _librarySearch = string.Empty;
     private ClipboardPayload? _clipboard;
     private int _pasteOffset;
+    private string? _savedProjectJson;
     private string _newComponentName = "Component";
     private string _promoteNetName = string.Empty;
 
@@ -64,6 +65,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         _project = project ?? throw new ArgumentNullException(nameof(project));
         EnsureProjectShape();
+        _savedProjectJson = ProjectSerializer.SaveToString(_project);
         _definitionId = _project.RootDefinitionId;
         Simulator = new SimulatorHost(_project, Definition);
         _advanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
@@ -559,6 +561,7 @@ public sealed class EditorViewModel : ObservableObject
         _project = project;
         _definitionId = root.Id;
         _projectPath = null;
+        _savedProjectJson = null;
         _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
@@ -582,6 +585,7 @@ public sealed class EditorViewModel : ObservableObject
             EnsureProjectShape();
             _definitionId = loaded.RootDefinitionId;
             _projectPath = path;
+            _savedProjectJson = ProjectSerializer.SaveToString(_project);
             _selectedInstanceIds.Clear();
             _selectedInstance = null;
             _selectedNet = null;
@@ -662,6 +666,7 @@ public sealed class EditorViewModel : ObservableObject
         {
             ProjectSerializer.Save(path, _project);
             _projectPath = path;
+            _savedProjectJson = ProjectSerializer.SaveToString(_project);
             IsDirty = false;
             StatusText = $"Saved {Path.GetFileName(path)}";
             return true;
@@ -948,6 +953,56 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = pin is null ? "Could not add pin." : $"Added pin {pin.Name}";
     }
 
+    public void RenamePin(string pinId, string name)
+    {
+        PinDeclaration? pin = Definition.FindPin(pinId);
+        string trimmed = name.Trim();
+        if (pin is null || trimmed.Length == 0 || string.Equals(pin.Name, trimmed, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        PushUndo();
+        if (DefinitionEditor.SetPinName(Definition, pinId, trimmed))
+        {
+            AfterMutation(structural: true);
+            StatusText = $"Renamed pin to '{trimmed}'";
+        }
+    }
+
+    public void ChangePinDomain(string pinId, string domainId)
+    {
+        PinDeclaration? pin = Definition.FindPin(pinId);
+        if (pin is null ||
+            string.Equals(pin.DomainId, domainId, StringComparison.Ordinal) ||
+            _project.FindDomain(domainId) is null)
+        {
+            return;
+        }
+
+        PushUndo();
+        if (DefinitionEditor.SetPinDomain(_project, Definition, pinId, domainId))
+        {
+            AfterMutation(structural: true);
+            StatusText = $"Pin '{pin.Name}' now uses {domainId}";
+        }
+    }
+
+    public void TogglePinDirection(string pinId)
+    {
+        PinDeclaration? pin = Definition.FindPin(pinId);
+        if (pin is null)
+        {
+            return;
+        }
+
+        PinDirection direction = pin.Direction == PinDirection.Input ? PinDirection.Output : PinDirection.Input;
+        PushUndo();
+        DefinitionEditor.SetPinDirection(Definition, pinId, direction);
+        AfterMutation(structural: true);
+        StatusText = $"Pin '{pin.Name}' is now {(direction == PinDirection.Input ? "an input" : "an output")}";
+    }
+
     public void RemovePin(string pinId)
     {
         PushUndo();
@@ -1092,15 +1147,15 @@ public sealed class EditorViewModel : ObservableObject
 
     public void PlaceDefinition(string definitionId)
     {
-        if (string.Equals(definitionId, Definition.Id, StringComparison.Ordinal))
-        {
-            StatusText = "A definition cannot contain itself directly.";
-            return;
-        }
-
         CircuitDefinition? target = _project.FindDefinition(definitionId);
         if (target is null)
         {
+            return;
+        }
+
+        if (HierarchyEditor.WouldCreateCycle(_project, Definition.Id, target.Id))
+        {
+            StatusText = $"Placing '{target.Name}' here would create a recursive hierarchy.";
             return;
         }
 
@@ -1791,7 +1846,11 @@ public sealed class EditorViewModel : ObservableObject
         {
             string pinId = pin.Id;
             Net? net = Definition.FindPortNet(pinId);
-            Pins.Add(new PinListItem(pin, net?.Label ?? net?.Id ?? "unbound", new RelayCommand(() => RemovePin(pinId))));
+            Pins.Add(new PinListItem(
+                pin,
+                net?.Label ?? net?.Id ?? "unbound",
+                Domains,
+                new RelayCommand(() => RemovePin(pinId))));
         }
     }
 
@@ -2538,8 +2597,7 @@ public sealed class EditorViewModel : ObservableObject
             ProjectSerializer.SaveToString(_project),
             Definition.Id,
             _selectedInstanceIds.Order(StringComparer.Ordinal).ToArray(),
-            _selectedNet?.Id,
-            IsDirty);
+            _selectedNet?.Id);
     }
 
     private void Restore(EditorSnapshot snapshot)
@@ -2565,8 +2623,8 @@ public sealed class EditorViewModel : ObservableObject
             _selectedInstance = FindSelectedInstance();
             _selectedNet = _project.FindDefinition(_definitionId)?.FindNet(snapshot.SelectedNetId ?? string.Empty);
             Simulator = new SimulatorHost(_project, Definition);
-            IsDirty = snapshot.Dirty;
             RefreshAll(fit: false);
+            RefreshDirtyFromSaved();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         }
         catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException)
@@ -2595,12 +2653,32 @@ public sealed class EditorViewModel : ObservableObject
         IReadOnlyList<ComponentInstance> Instances,
         IReadOnlyList<Net> Nets);
 
+    private void RefreshDirtyFromSaved()
+    {
+        if (_savedProjectJson is null)
+        {
+            IsDirty = true;
+            return;
+        }
+
+        try
+        {
+            IsDirty = !string.Equals(
+                ProjectSerializer.SaveToString(_project),
+                _savedProjectJson,
+                StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (exception is ProjectFormatException or InvalidOperationException)
+        {
+            IsDirty = true;
+        }
+    }
+
     private sealed record EditorSnapshot(
         string Json,
         string DefinitionId,
         string[] SelectedInstanceIds,
-        string? SelectedNetId,
-        bool Dirty);
+        string? SelectedNetId);
 
     private readonly record struct SimulationEngineSnapshot(WaveformSnapshot Waveform);
 }

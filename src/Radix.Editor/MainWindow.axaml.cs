@@ -96,6 +96,43 @@ public partial class MainWindow : Window
         }
     }
 
+    private void PinName_LostFocus(object? sender, RoutedEventArgs e) => CommitPinName(sender);
+
+    private void PinName_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            CommitPinName(sender);
+            e.Handled = true;
+        }
+    }
+
+    private void CommitPinName(object? sender)
+    {
+        if (sender is TextBox { DataContext: PinListItem pin } && ViewModel is EditorViewModel viewModel)
+        {
+            viewModel.RenamePin(pin.Id, pin.Name);
+        }
+    }
+
+    private void PinDomain_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { DataContext: PinListItem pin, SelectedItem: DomainChoice domain } &&
+            ViewModel is EditorViewModel viewModel &&
+            !string.Equals(pin.DomainId, domain.Id, StringComparison.Ordinal))
+        {
+            viewModel.ChangePinDomain(pin.Id, domain.Id);
+        }
+    }
+
+    private void PinDirection_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: PinListItem pin } && ViewModel is EditorViewModel viewModel)
+        {
+            viewModel.TogglePinDirection(pin.Id);
+        }
+    }
+
     private void EventButton_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { DataContext: string description } && ViewModel is EditorViewModel viewModel)

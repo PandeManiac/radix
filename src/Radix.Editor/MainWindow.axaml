@@ -115,14 +115,36 @@
             <ItemsControl ItemsSource="{Binding Pins}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PinListItem">
-                  <Grid ColumnDefinitions="*,Auto" Margin="2,1">
-                    <StackPanel Orientation="Horizontal" Spacing="5">
-                      <TextBlock Text="{Binding DirectionText}" FontSize="9" Foreground="{DynamicResource App.TextSecondary}" Width="24" />
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding DomainId}" Classes="muted" FontSize="10" />
+                  <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="5,3" Margin="0,2">
+                    <StackPanel Spacing="3">
+                      <Grid ColumnDefinitions="24,*,Auto,Auto">
+                        <TextBlock Text="{Binding DirectionText}" FontSize="9" Foreground="{DynamicResource App.TextSecondary}" VerticalAlignment="Center" />
+                        <TextBox
+                            Grid.Column="1"
+                            Text="{Binding Name, Mode=TwoWay}"
+                            FontSize="11"
+                            Padding="5,2"
+                            LostFocus="PinName_LostFocus"
+                            KeyDown="PinName_KeyDown"
+                            ToolTip.Tip="Pin display name; press Enter or leave the field to commit" />
+                        <Button Grid.Column="2" Classes="tool" Content="⇄" Click="PinDirection_Click" Padding="5,1" ToolTip.Tip="Flip input/output direction" />
+                        <Button Grid.Column="3" Classes="tool" Content="×" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove pin and its net" Padding="5,1" />
+                      </Grid>
+                      <ComboBox
+                          ItemsSource="{Binding Domains}"
+                          SelectedItem="{Binding SelectedDomain, Mode=TwoWay}"
+                          SelectionChanged="PinDomain_SelectionChanged"
+                          FontSize="10.5"
+                          MinHeight="24"
+                          ToolTip.Tip="Pin and bound net domain">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:DomainChoice">
+                            <TextBlock Text="{Binding Label}" FontSize="10.5" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
                     </StackPanel>
-                    <Button Grid.Column="1" Classes="tool" Content="×" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove pin and its net" Padding="5,0" />
-                  </Grid>
+                  </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

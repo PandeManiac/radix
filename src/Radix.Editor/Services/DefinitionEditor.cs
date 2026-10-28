@@ -88,6 +88,18 @@ public static class DefinitionEditor
         return true;
     }
 
+    public static bool SetPinDirection(CircuitDefinition definition, string pinId, PinDirection direction)
+    {
+        PinDeclaration? pin = definition.FindPin(pinId);
+        if (pin is null)
+        {
+            return false;
+        }
+
+        pin.Direction = direction;
+        return true;
+    }
+
     public static bool SetPinDomain(
         CircuitProject project,
         CircuitDefinition definition,
@@ -124,9 +136,11 @@ public static class DefinitionEditor
             return false;
         }
 
+        string previous = pin.Name;
         pin.Name = trimmed;
         Net? net = definition.FindPortNet(pinId);
-        if (net is not null && string.IsNullOrWhiteSpace(net.Label))
+        if (net is not null &&
+            (string.IsNullOrWhiteSpace(net.Label) || string.Equals(net.Label, previous, StringComparison.Ordinal)))
         {
             net.Label = trimmed;
         }

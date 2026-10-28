@@ -88,6 +88,33 @@ public sealed class ComponentLibraryTests
     }
 
     [Fact]
+    public void ExportOmitsUnrelatedDomainsThatWouldConflict()
+    {
+        var source = CreateEmptyEditor();
+        string customId = ExtractTwoNotPart(source, "Gadget");
+        source.Project.Domains.Add(new SignalDomain(
+            "unused",
+            "Unused",
+            ["x"],
+            new SingleDriverResolution()));
+        string json = ComponentLibraryService.Export(source.Project, customId);
+
+        var target = CreateEmptyEditor();
+        target.Project.Domains.Add(new SignalDomain(
+            "unused",
+            "Unused locally",
+            ["y"],
+            new SingleDriverResolution()));
+        int before = target.Project.Definitions.Count;
+
+        LibraryImportResult result = ComponentLibraryService.Import(target.Project, json);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(before + 1, target.Project.Definitions.Count);
+        Assert.DoesNotContain(target.Project.Domains, d => d.Id == "unused" && d.ValueNames[0] == "x");
+    }
+
+    [Fact]
     public void DomainConflictAbortsWithoutPartialMerge()
     {
         var builder = new ProjectBuilder("Conflict library");

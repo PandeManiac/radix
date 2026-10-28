@@ -54,6 +54,28 @@ public static class ComponentLibraryService
         }
 
         clone.Definitions.RemoveAll(candidate => !closure.Contains(candidate.Id));
+
+        // Only ship domains the exported closure actually references. An unrelated
+        // custom domain in the source project must not block an otherwise valid import.
+        var usedDomains = new HashSet<string>(StringComparer.Ordinal);
+        foreach (CircuitDefinition part in clone.Definitions)
+        {
+            foreach (PinDeclaration pin in part.Pins)
+            {
+                usedDomains.Add(pin.DomainId);
+            }
+
+            foreach (Net net in part.Nets)
+            {
+                usedDomains.Add(net.DomainId);
+            }
+        }
+
+        if (usedDomains.Count > 0)
+        {
+            clone.Domains.RemoveAll(domain => !usedDomains.Contains(domain.Id));
+        }
+
         clone.RootDefinitionId = definitionId;
         clone.Name = definition.Name;
         clone.Description = $"Reusable component library entry: {definition.Name}.";

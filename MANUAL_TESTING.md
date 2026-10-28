@@ -96,7 +96,9 @@ If counter values differ, record the values and diagnostics; this is a correctne
 2. Select that connecting wire. In **Expose as interface pin**, leave the name blank or enter `MID`, then click **Output**.
 3. Expected: `MID` appears in Interface/I/O PINS, a port pill becomes draggable on the canvas, and the net is bound to it. The promote buttons then disable because the net is already bound.
 4. Undo. Expected: pin, binding, and generated net label are removed together.
-5. Add/rename pins using the existing Interface controls. Expected: names are editable via the definition inspector; duplicate IDs are not created.
+5. In the Interface list, edit a pin's name and press Enter. Expected: the name updates, its bound net label follows when the net was using the old name, and one undo restores both.
+6. Click `⇄` on a pin. Expected: its direction flips in the Interface list, I/O PINS, and any instance of this definition. Change its domain with the picker. Expected: the pin's port net adopts the same domain and an incompatible existing connection is reported in Diagnostics rather than silently rewritten.
+7. Remove a pin, then undo. Expected: the pin, binding, generated net, and its wire all return in one step.
 
 ## 7. Library export and import
 

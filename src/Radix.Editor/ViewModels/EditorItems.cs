@@ -45,25 +45,35 @@ public sealed class EditableField : ObservableObject
 
 public sealed class PinListItem
 {
-    public PinListItem(PinDeclaration pin, string netLabel, ICommand removeCommand)
+    public PinListItem(
+        PinDeclaration pin,
+        string netLabel,
+        IReadOnlyList<DomainChoice> domains,
+        ICommand removeCommand)
     {
         Id = pin.Id;
         Name = pin.Name;
         DirectionText = pin.Direction == Core.Signals.PinDirection.Input ? "IN" : "OUT";
         DomainId = pin.DomainId;
         NetLabel = netLabel;
+        Domains = domains;
+        SelectedDomain = domains.FirstOrDefault(domain => domain.Id == pin.DomainId);
         RemoveCommand = removeCommand;
     }
 
     public string Id { get; }
 
-    public string Name { get; }
+    public string Name { get; set; }
 
     public string DirectionText { get; }
 
     public string DomainId { get; }
 
     public string NetLabel { get; }
+
+    public IReadOnlyList<DomainChoice> Domains { get; }
+
+    public DomainChoice? SelectedDomain { get; set; }
 
     public string Summary => $"{DirectionText} · {DomainId} · {NetLabel}";
 
