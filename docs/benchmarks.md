@@ -17,7 +17,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 dotnet run -c Release --project src/Radix.Cli -- bench --gates 20000 --ticks 50
 ```
 
-The benchmark reports validation separately from flattening so a scaling regression can be attributed to the right phase. `compile (incl. validate)` is the total compile cost the editor pays; `flatten` is the remainder after validation.
+The benchmark reports validation separately from flattening so a scaling regression can be attributed to the right phase. `compile (incl. validate)` is the total compile cost the editor pays; `flatten` is the remainder after validation. Editor layout has a separate opt-in benchmark described under [Editor layout](#editor-layout).
 
 ## Results
 
@@ -76,6 +76,45 @@ Before the validation index change, the same 20,000-gate run took **~2,036 ms to
 Validation now builds one instance lookup per definition and reuses it for pin resolution and driver counting, and nets with fewer than two pin references skip driver counting entirely. Validation at 20,000 gates dropped from ~1,985 ms to ~97 ms (about 20×), and total compile from ~2,036 ms to ~134 ms (about 15×). Warning and error behavior is unchanged; the full test suite covers duplicate connections, unknown instances/pins, domain mismatches, and multi-driver warnings.
 
 At 2,000 and 10,000 gates the earlier runs are not directly comparable because they did not report a separate validation time; the old documented compile times were 65.0 ms and 537.5 ms respectively, versus 34.7 ms and 80.3 ms now on the same machine.
+
+## Editor layout
+
+The editor has an opt-in benchmark for drag responsiveness. It is implemented in `tests/Radix.Editor.Tests/LayoutBenchmarkTests.cs` and does nothing unless `RADIX_LAYOUT_BENCH=1`. It builds a synthetic chain of 200, 500, or 1,000 single-input lookup gates laid out 20 per row, drags the middle gate by 10 increments, and prints:
+
+- **construct**: creating the view model and its first layout;
+- **canonical frames**: 10 frames that each rebuild all geometry and routes, the path used before route reuse;
+- **reused frames**: the same 10 frames inside `BeginDrag`, where unchanged nets keep their routed geometry;
+- **final rebuild**: `EndDrag`, which always re-derives the committed layout canonically.
+
+### Command
+
+```bash
+RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj \
+  -c Release --filter FullyQualifiedName~LayoutBenchmarkTests \
+  --logger "console;verbosity=detailed"
+```
+
+On PowerShell, set `$env:RADIX_LAYOUT_BENCH="1"` for the session first. The benchmark asserts nothing about time; copy its output into any performance discussion.
+
+### Results
+
+Measured 2026-10-28 on the same machine and .NET 10 runtime as the engine benchmark, Release build, after a 50-gate warmup and taking the minimum of repeated runs:
+
+| Gates | Construct | 10 canonical frames | 10 reused frames | Final rebuild |
+| ---: | ---: | ---: | ---: | ---: |
+| 200 | 147 ms | 580 ms | 12 ms | 25 ms |
+| 500 | 101 ms | 1,275 ms | 46 ms | 128 ms |
+| 1,000 | 444 ms | 4,639 ms | 22 ms | 460 ms |
+
+These are interaction-latency measurements, not pure router time: they include layout of component boxes and ports, view-model refreshes, and canvas invalidation. Absolute values vary with GC, JIT, and which node is dragged, so individual rows are not monotonic; use the orders of magnitude, not adjacent differences.
+
+### Interpretation
+
+- At 1,000 gates, ten drag frames cost ~22 ms with reuse versus ~4.64 s when every frame rebuilds the layout and routes. The first layout and the final canonical rebuild each cost roughly 0.45 s; those are the remaining pauses on a design of this size.
+- Reuse is deliberately limited to an active drag. Any other mutation and `EndDrag` take the canonical path, so a saved or subsequently edited project never inherits an approximate route.
+- A reused route is valid only while its ordered endpoints, authored bendpoints, and all changed component/port bounds are unchanged. A new or moved body that intersects a cached segment invalidates that net.
+- The router marks blocked grid nodes and edges once per obstacle instead of scanning all obstacles at every A* expansion. That keeps the canonical rebuild practical, but it is not separately timed by this benchmark.
+- This is still not an incremental layout engine: structural edits rebuild every box, port, and route. The benchmark exists to show when that becomes the dominant cost.
 
 ## Interpretation
 

@@ -208,19 +208,6 @@ internal static class WireRouter
                minY < rect.Bottom - 0.5;
     }
 
-    private static bool CrossesInterior(Rect rect, Point from, Point to)
-    {
-        const double epsilon = 0.2;
-        double minX = Math.Min(from.X, to.X);
-        double maxX = Math.Max(from.X, to.X);
-        double minY = Math.Min(from.Y, to.Y);
-        double maxY = Math.Max(from.Y, to.Y);
-        return maxX > rect.Left + epsilon &&
-               minX < rect.Right - epsilon &&
-               maxY > rect.Top + epsilon &&
-               minY < rect.Bottom - epsilon;
-    }
-
     private static bool Overlaps(Point a1, Point a2, Point b1, Point b2)
     {
         bool aHorizontal = Math.Abs(a1.Y - a2.Y) < 0.5;
@@ -317,11 +304,18 @@ internal static class WireRouter
     /// <summary>Sparse orthogonal grid A* shared by every terminal of one net.</summary>
     private sealed class GridRouter
     {
+        private const double WireCellSize = 120;
+
         private readonly IReadOnlyList<WireTerminal> _terminals;
         private readonly IReadOnlyList<Obstacle> _obstacles;
         private readonly IReadOnlyList<(Point A, Point B)> _otherWires;
         private readonly double[] _xs;
         private readonly double[] _ys;
+        private readonly bool[] _blockedNodes;
+        private readonly bool[] _blockedHorizontalEdges;
+        private readonly bool[] _blockedVerticalEdges;
+        private readonly Dictionary<long, List<int>> _wireCells = [];
+        private readonly HashSet<int> _seenWires = [];
         private readonly HashSet<int> _treeNodes = [];
         private readonly List<(Point A, Point B)> _segments = [];
         private readonly List<Point> _treePoints = [];
@@ -349,6 +343,171 @@ internal static class WireRouter
 
             _xs = BuildAxis(extras.Select(p => p.X), obstacles.Select(o => o.Bounds.Left), obstacles.Select(o => o.Bounds.Right));
             _ys = BuildAxis(extras.Select(p => p.Y), obstacles.Select(o => o.Bounds.Top), obstacles.Select(o => o.Bounds.Bottom));
+
+            int nx = _xs.Length;
+            int ny = _ys.Length;
+            _blockedNodes = new bool[nx * ny];
+            _blockedHorizontalEdges = new bool[Math.Max(0, nx - 1) * ny];
+            _blockedVerticalEdges = new bool[nx * Math.Max(0, ny - 1)];
+            foreach (Obstacle obstacle in obstacles)
+            {
+                MarkObstacle(obstacle.Bounds);
+            }
+
+            BuildWireCells();
+        }
+
+        /// <summary>
+        /// Marks every grid node and edge that crosses an obstacle interior in one
+        /// pass. The previous per-expansion scans over all obstacles made routing
+        /// quadratic in dense layouts.
+        /// </summary>
+        private void MarkObstacle(Rect bounds)
+        {
+            int nx = _xs.Length;
+            int ny = _ys.Length;
+            const double epsilon = 0.2;
+            int x0 = FirstGreater(_xs, bounds.Left + epsilon);
+            int x1 = FirstAtLeast(_xs, bounds.Right - epsilon);
+            int y0 = FirstGreater(_ys, bounds.Top + epsilon);
+            int y1 = FirstAtLeast(_ys, bounds.Bottom - epsilon);
+
+            for (int iy = y0; iy < y1; iy++)
+            {
+                for (int ix = x0; ix < x1; ix++)
+                {
+                    _blockedNodes[(iy * nx) + ix] = true;
+                }
+
+                int edgeStart = Math.Max(0, x0 - 1);
+                int edgeEnd = Math.Min(nx - 2, x1 - 1);
+                for (int ex = edgeStart; ex <= edgeEnd; ex++)
+                {
+                    _blockedHorizontalEdges[(iy * (nx - 1)) + ex] = true;
+                }
+            }
+
+            for (int ix = x0; ix < x1; ix++)
+            {
+                int edgeStart = Math.Max(0, y0 - 1);
+                int edgeEnd = Math.Min(ny - 2, y1 - 1);
+                for (int ey = edgeStart; ey <= edgeEnd; ey++)
+                {
+                    _blockedVerticalEdges[(ix * (ny - 1)) + ey] = true;
+                }
+            }
+        }
+
+        private static int FirstGreater(double[] values, double target)
+        {
+            int lo = 0;
+            int hi = values.Length;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) / 2;
+                if (values[mid] <= target)
+                {
+                    lo = mid + 1;
+                }
+                else
+                {
+                    hi = mid;
+                }
+            }
+
+            return lo;
+        }
+
+        private static int FirstAtLeast(double[] values, double target)
+        {
+            int lo = 0;
+            int hi = values.Length;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) / 2;
+                if (values[mid] < target)
+                {
+                    lo = mid + 1;
+                }
+                else
+                {
+                    hi = mid;
+                }
+            }
+
+            return lo;
+        }
+
+        /// <summary>Indexes existing wire segments so an edge only tests nearby ones.</summary>
+        private void BuildWireCells()
+        {
+            for (int i = 0; i < _otherWires.Count; i++)
+            {
+                (Point a, Point b) = _otherWires[i];
+                int x0 = Cell(Math.Min(a.X, b.X));
+                int x1 = Cell(Math.Max(a.X, b.X));
+                int y0 = Cell(Math.Min(a.Y, b.Y));
+                int y1 = Cell(Math.Max(a.Y, b.Y));
+                for (int cx = x0; cx <= x1; cx++)
+                {
+                    for (int cy = y0; cy <= y1; cy++)
+                    {
+                        long key = CellKey(cx, cy);
+                        if (!_wireCells.TryGetValue(key, out List<int>? segments))
+                        {
+                            segments = [];
+                            _wireCells[key] = segments;
+                        }
+
+                        segments.Add(i);
+                    }
+                }
+            }
+        }
+
+        private static int Cell(double coordinate) =>
+            (int)Math.Floor(coordinate / WireCellSize);
+
+        private static long CellKey(int x, int y) => ((long)x << 32) ^ (uint)y;
+
+        private double WirePenalty(Point from, Point to)
+        {
+            _seenWires.Clear();
+            double penalty = 0;
+            int x0 = Cell(Math.Min(from.X, to.X));
+            int x1 = Cell(Math.Max(from.X, to.X));
+            int y0 = Cell(Math.Min(from.Y, to.Y));
+            int y1 = Cell(Math.Max(from.Y, to.Y));
+            for (int cx = x0; cx <= x1; cx++)
+            {
+                for (int cy = y0; cy <= y1; cy++)
+                {
+                    if (!_wireCells.TryGetValue(CellKey(cx, cy), out List<int>? segments))
+                    {
+                        continue;
+                    }
+
+                    foreach (int index in segments)
+                    {
+                        if (!_seenWires.Add(index))
+                        {
+                            continue;
+                        }
+
+                        (Point a, Point b) = _otherWires[index];
+                        if (Overlaps(from, to, a, b))
+                        {
+                            penalty += 35;
+                        }
+                        else if (Intersects(from, to, a, b, out _))
+                        {
+                            penalty += 1.5;
+                        }
+                    }
+                }
+            }
+
+            return penalty;
         }
 
         public RoutedWire? Route()
@@ -566,32 +725,16 @@ internal static class WireRouter
             }
 
             int neighbor = (iy * nx) + ix;
-            if (Blocked(ix, iy))
+            if (Blocked(ix, iy) || EdgeBlocked(node % nx, node / nx, ix, iy))
             {
                 return;
             }
 
             Point from = new(_xs[node % nx], _ys[node / nx]);
             Point to = new(_xs[ix], _ys[iy]);
-            if (EdgeBlocked(from, to))
-            {
-                return;
-            }
-
             double step = Math.Abs(to.X - from.X) + Math.Abs(to.Y - from.Y);
             double turn = direction != 0 && direction != newDirection ? 7 : 0;
-            double wirePenalty = 0;
-            foreach ((Point a, Point b) in _otherWires)
-            {
-                if (Overlaps(from, to, a, b))
-                {
-                    wirePenalty += 35;
-                }
-                else if (Intersects(from, to, a, b, out _))
-                {
-                    wirePenalty += 1.5;
-                }
-            }
+            double wirePenalty = WirePenalty(from, to);
 
             int nextState = (neighbor * 3) + newDirection;
             double tentative = g[state] + step + turn + wirePenalty;
@@ -615,36 +758,21 @@ internal static class WireRouter
             return dx + dy;
         }
 
-        private bool Blocked(int ix, int iy)
+        private bool Blocked(int ix, int iy) =>
+            _blockedNodes[(iy * _xs.Length) + ix];
+
+        private bool EdgeBlocked(int ix, int iy, int neighborX, int neighborY)
         {
-            Point point = new(_xs[ix], _ys[iy]);
-            foreach (Obstacle obstacle in _obstacles)
+            int nx = _xs.Length;
+            int ny = _ys.Length;
+            if (neighborY == iy)
             {
-                const double epsilon = 0.2;
-                Rect bounds = obstacle.Bounds;
-                if (point.X > bounds.Left + epsilon &&
-                    point.X < bounds.Right - epsilon &&
-                    point.Y > bounds.Top + epsilon &&
-                    point.Y < bounds.Bottom - epsilon)
-                {
-                    return true;
-                }
+                int edge = Math.Min(ix, neighborX);
+                return _blockedHorizontalEdges[(iy * (nx - 1)) + edge];
             }
 
-            return false;
-        }
-
-        private bool EdgeBlocked(Point from, Point to)
-        {
-            foreach (Obstacle obstacle in _obstacles)
-            {
-                if (CrossesInterior(obstacle.Bounds, from, to))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            int vertical = Math.Min(iy, neighborY);
+            return _blockedVerticalEdges[(ix * (ny - 1)) + vertical];
         }
 
         private int NodeIndex(Point point)

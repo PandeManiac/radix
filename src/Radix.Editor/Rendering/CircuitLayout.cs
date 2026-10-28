@@ -194,7 +194,12 @@ public sealed class CircuitLayout
         return nets;
     }
 
-    public static CircuitLayout Build(CircuitDefinition definition, CircuitProject project)
+    /// <summary>
+    /// Builds layout geometry. Passing the previous layout for the same definition
+    /// allows unchanged nets to reuse their routes, which keeps dragging responsive;
+    /// callers that need a canonical route should rebuild without it.
+    /// </summary>
+    public static CircuitLayout Build(CircuitDefinition definition, CircuitProject project, CircuitLayout? previous = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(project);
@@ -253,7 +258,7 @@ public sealed class CircuitLayout
             ports.Add(new PortBox(pin, bounds, net.Id, connector, extend));
         }
 
-        var wires = BuildWires(definition, components, ports);
+        var wires = BuildWires(definition, components, ports, previous);
 
         Rect content = componentBounds;
         foreach (PortBox port in ports)
@@ -307,7 +312,8 @@ public sealed class CircuitLayout
     private static List<NetWire> BuildWires(
         CircuitDefinition definition,
         IReadOnlyList<ComponentBox> components,
-        IReadOnlyList<PortBox> ports)
+        IReadOnlyList<PortBox> ports,
+        CircuitLayout? previous)
     {
         var componentByInstance = components.ToDictionary(c => c.Instance.Id, StringComparer.Ordinal);
         var portsByNet = ports
@@ -316,6 +322,23 @@ public sealed class CircuitLayout
         var wires = new List<NetWire>(definition.Nets.Count);
         var routedSegments = new List<(Point A, Point B)>();
         int ordinal = 0;
+
+        CircuitLayout? reuse = ReferenceEquals(previous?.Definition, definition) ? previous : null;
+        Dictionary<string, NetWire> previousWires = reuse is null
+            ? []
+            : reuse.Wires.ToDictionary(w => w.NetId, StringComparer.Ordinal);
+        Dictionary<string, ComponentBox> previousComponents = reuse is null
+            ? []
+            : reuse.Components.ToDictionary(c => c.Instance.Id, StringComparer.Ordinal);
+        Dictionary<string, PortBox> previousPorts = reuse is null
+            ? []
+            : reuse.Ports.ToDictionary(p => p.Pin.Id, StringComparer.Ordinal);
+        var previousPortsByNet = previousPorts.Values
+            .GroupBy(p => p.NetId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
+        List<Rect> changedObstacles = reuse is null
+            ? []
+            : ChangedObstacles(components, ports, previousComponents, previousPorts);
 
         foreach (Net net in definition.Nets)
         {
@@ -357,6 +380,15 @@ public sealed class CircuitLayout
                 continue;
             }
 
+            if (previousWires.TryGetValue(net.Id, out NetWire? previousWire) &&
+                CanReuseWire(net, previousWire, terminals, editorPins, previousComponents, previousPortsByNet, changedObstacles))
+            {
+                wires.Add(previousWire);
+                routedSegments.AddRange(previousWire.Segments);
+                ordinal++;
+                continue;
+            }
+
             WireRouter.RoutedWire routed = WireRouter.Route(
                 net,
                 ordinal++,
@@ -386,6 +418,153 @@ public sealed class CircuitLayout
         return wires;
     }
 
+    /// <summary>Bounds that changed since the previous layout, including removals.</summary>
+    private static List<Rect> ChangedObstacles(
+        IReadOnlyList<ComponentBox> components,
+        IReadOnlyList<PortBox> ports,
+        Dictionary<string, ComponentBox> previousComponents,
+        Dictionary<string, PortBox> previousPorts)
+    {
+        var changed = new List<Rect>();
+        var currentComponentIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ComponentBox box in components)
+        {
+            currentComponentIds.Add(box.Instance.Id);
+            if (!previousComponents.TryGetValue(box.Instance.Id, out ComponentBox? old))
+            {
+                changed.Add(box.Bounds);
+            }
+            else if (old.Bounds != box.Bounds)
+            {
+                changed.Add(old.Bounds);
+                changed.Add(box.Bounds);
+            }
+        }
+
+        foreach ((string instanceId, ComponentBox old) in previousComponents)
+        {
+            if (!currentComponentIds.Contains(instanceId))
+            {
+                changed.Add(old.Bounds);
+            }
+        }
+
+        var currentPortIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (PortBox port in ports)
+        {
+            currentPortIds.Add(port.Pin.Id);
+            if (!previousPorts.TryGetValue(port.Pin.Id, out PortBox? old))
+            {
+                changed.Add(port.Bounds);
+            }
+            else if (old.Bounds != port.Bounds || old.Connector != port.Connector)
+            {
+                changed.Add(old.Bounds);
+                changed.Add(port.Bounds);
+            }
+        }
+
+        foreach ((string pinId, PortBox old) in previousPorts)
+        {
+            if (!currentPortIds.Contains(pinId))
+            {
+                changed.Add(old.Bounds);
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// True when a cached wire still connects the same endpoints through the same
+    /// authored bendpoints and no moved component body now blocks it.
+    /// </summary>
+    private static bool CanReuseWire(
+        Net net,
+        NetWire wire,
+        List<WireTerminal> terminals,
+        List<EditorPin> editorPins,
+        Dictionary<string, ComponentBox> previousComponents,
+        Dictionary<string, PortBox[]> previousPortsByNet,
+        List<Rect> changedObstacles)
+    {
+        if (!wire.Endpoints.SequenceEqual(editorPins) ||
+            wire.RoutePoints.Count != net.RoutePoints.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < net.RoutePoints.Count; i++)
+        {
+            if (wire.RoutePoints[i] != net.RoutePoints[i])
+            {
+                return false;
+            }
+        }
+
+        var previousTerminals = new List<WireTerminal>(terminals.Count);
+        foreach (PinRef pinRef in net.Pins)
+        {
+            if (!previousComponents.TryGetValue(pinRef.InstanceId, out ComponentBox? box) ||
+                box.FindPin(pinRef.PinId) is not PinVisual pin)
+            {
+                return false;
+            }
+
+            previousTerminals.Add(new WireTerminal(
+                pin.Position,
+                pin.Direction == PinDirection.Input ? -1 : 1,
+                false,
+                pin.Direction));
+        }
+
+        if (previousPortsByNet.TryGetValue(net.Id, out PortBox[]? previousPorts))
+        {
+            foreach (PortBox port in previousPorts)
+            {
+                previousTerminals.Add(new WireTerminal(port.Connector, port.ExtendDirection, true, port.Pin.Direction));
+            }
+        }
+
+        if (previousTerminals.Count != terminals.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < terminals.Count; i++)
+        {
+            if (previousTerminals[i] != terminals[i])
+            {
+                return false;
+            }
+        }
+
+        foreach ((Point a, Point b) in wire.Segments)
+        {
+            foreach (Rect obstacle in changedObstacles)
+            {
+                if (SegmentHits(a, b, obstacle.Inflate(3)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SegmentHits(Point a, Point b, Rect rect)
+    {
+        double minX = Math.Min(a.X, b.X);
+        double maxX = Math.Max(a.X, b.X);
+        double minY = Math.Min(a.Y, b.Y);
+        double maxY = Math.Max(a.Y, b.Y);
+        return maxX >= rect.Left &&
+               minX <= rect.Right &&
+               maxY >= rect.Top &&
+               minY <= rect.Bottom;
+    }
+
     /// <summary>
     /// Marks a visual gap in the lower-priority wire wherever two distinct nets cross.
     /// Junctions are deliberately excluded: a dot always means an electrical connection.
@@ -395,6 +574,11 @@ public sealed class CircuitLayout
         if (wires.Count < 2 || wires.Count > 900)
         {
             return;
+        }
+
+        foreach (NetWire wire in wires)
+        {
+            wire.Breaks = [];
         }
 
         var order = wires.OrderBy(w => w.NetId, StringComparer.Ordinal).ToArray();

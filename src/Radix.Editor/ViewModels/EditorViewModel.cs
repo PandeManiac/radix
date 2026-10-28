@@ -42,6 +42,8 @@ public sealed class EditorViewModel : ObservableObject
     private string? _projectPath;
     private bool _dirty;
     private bool _pendingDragUndo;
+    private bool _dragActive;
+    private bool _dragReusedRoutes;
     private bool _refreshingDomainSelection;
     private Point _placementPoint = new(260, 160);
     private double _placementCascade;
@@ -1062,16 +1064,26 @@ public sealed class EditorViewModel : ObservableObject
     public void BeginDrag()
     {
         _pendingDragUndo = true;
+        _dragActive = true;
     }
 
     public void EndDrag()
     {
+        bool needsCanonicalLayout = _dragReusedRoutes;
+        _dragActive = false;
+        _dragReusedRoutes = false;
         if (!_pendingDragUndo)
         {
             RefreshInspector();
         }
 
         _pendingDragUndo = false;
+        if (needsCanonicalLayout)
+        {
+            // Drag frames reuse unchanged routes for responsiveness; the final frame
+            // rebuilds canonically so the committed layout is never approximate.
+            RebuildLayout();
+        }
     }
 
     public void MoveInstance(string instanceId, double x, double y)
@@ -1092,7 +1104,8 @@ public sealed class EditorViewModel : ObservableObject
         instance.Y = Math.Round(y, 1);
         IsDirty = true;
         Simulator.Invalidate();
-        RebuildLayout();
+        RebuildLayout(reuseRoutes: _dragActive);
+        _dragReusedRoutes |= _dragActive;
         RefreshSimStatus();
         RefreshInspectorPosition(instance);
     }
@@ -3791,9 +3804,12 @@ public sealed class EditorViewModel : ObservableObject
         VisualInvalidated?.Invoke();
     }
 
-    private void RebuildLayout()
+    private void RebuildLayout(bool reuseRoutes = false)
     {
-        Layout = CircuitLayout.Build(Definition, _project);
+        CircuitLayout? previous = reuseRoutes && ReferenceEquals(Layout?.Definition, Definition)
+            ? Layout
+            : null;
+        Layout = CircuitLayout.Build(Definition, _project, previous);
         RaisePropertyChanged(nameof(ProjectSubtitle));
         VisualInvalidated?.Invoke();
     }
