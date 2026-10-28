@@ -140,6 +140,11 @@ public static class SimulationScriptRunner
                 break;
             }
 
+            if (step.Setup is { } setup)
+            {
+                CheckSetup(project, definition, engine, step, setup, stepNumber, failures);
+            }
+
             engine.AdvanceTo(step.At);
             if (observesChanges)
             {
@@ -531,6 +536,70 @@ public static class SimulationScriptRunner
             engine.EventsProcessed,
             engine.IsHalted,
             engine.HaltReason);
+    }
+
+    /// <summary>
+    /// Checks a setup window tick by tick before the step's drives. Values are sampled
+    /// after each tick's events have been processed, so an event anywhere in the window
+    /// fails the assertion. The window cannot reach back into already-simulated time;
+    /// that is a script-spacing error, not a circuit failure.
+    /// </summary>
+    private static void CheckSetup(
+        CircuitProject project,
+        CircuitDefinition definition,
+        SimulationEngine engine,
+        SimulationScriptStep step,
+        ScriptSetup setup,
+        int stepNumber,
+        List<ScriptFailure> failures)
+    {
+        long start = step.At - setup.Ticks;
+        if (start < engine.Now)
+        {
+            failures.Add(new ScriptFailure(
+                stepNumber,
+                engine.Now,
+                $"setup window starts at t={start}, before the current time t={engine.Now}; " +
+                "move the previous step earlier or reduce setup.ticks."));
+            return;
+        }
+
+        engine.AdvanceTo(start);
+        var mismatches = new List<string>();
+        while (true)
+        {
+            if (engine.IsHalted)
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    engine.Now,
+                    $"simulation halted at t={engine.Now} during the setup window: {engine.HaltReason}"));
+                return;
+            }
+
+            CollectMismatches(
+                project,
+                definition,
+                engine,
+                setup.PinExpectations,
+                setup.LaneExpectations,
+                mismatches);
+            if (mismatches.Count > 0)
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    engine.Now,
+                    $"setup assertion failed at t={engine.Now}: {string.Join("; ", mismatches)}."));
+                return;
+            }
+
+            if (engine.Now >= step.At - 1)
+            {
+                return;
+            }
+
+            engine.AdvanceTo(engine.Now + 1);
+        }
     }
 
     private static void CollectMismatches(

@@ -413,6 +413,98 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void SetupWindowChecksEveryTickBeforeTheDrives()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 1 } },
+                { "at": 10, "setup": { "ticks": 5, "expect": { "clk": 0, "d": 1 } }, "set": { "clk": 1 } },
+                { "at": 20, "setup": { "ticks": 5, "expect": { "clk": 1, "d": 1 } }, "expect": { "q": 1 } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(3, result.StepsExecuted);
+        Assert.Equal(20, result.FinalTime);
+    }
+
+    [Fact]
+    public void SetupWindowFailsAtTheFirstTickThatDiverges()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 1 } },
+                { "at": 10, "setup": { "ticks": 5, "expect": { "d": 0 } }, "set": { "clk": 1 } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(5, failure.At);
+        Assert.Contains("setup assertion failed at t=5", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("pin 'd': expected 0 (0), got 1 (1)", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SetupWindowCannotReachIntoAlreadySimulatedTime()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 40, "set": { "clk": 0, "d": 1 } },
+                { "at": 45, "setup": { "ticks": 10, "expect": { "d": 1 } }, "set": { "clk": 1 } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        Assert.Contains("setup window starts at t=35, before the current time t=40", result.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SetupWindowRejectsATickRangeBeforeZero()
+    {
+        SimulationScriptException exception = Assert.Throws<SimulationScriptException>(() =>
+            SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    { "at": 5, "setup": { "ticks": 10, "expect": { "d": 1 } } }
+                  ]
+                }
+                """));
+
+        Assert.Contains("cannot start before t=0", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TransitionWindowCountsTheStartingDriveAndTheEdgeItCauses()
     {
         SimulationScript script = SimulationScript.LoadFromString(

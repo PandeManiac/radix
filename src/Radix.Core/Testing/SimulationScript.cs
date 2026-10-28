@@ -103,6 +103,31 @@ public sealed class ScriptStability
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
 }
 
+/// <summary>
+/// A pre-drive held-value assertion: the expected values must match at every tick
+/// from <c>At - Ticks</c> through <c>At - 1</c>, before this step's drives. Used to
+/// express setup conditions around a clock edge without sampling history.
+/// </summary>
+public sealed class ScriptSetup
+{
+    public ScriptSetup(
+        long ticks,
+        IReadOnlyList<ScriptPinExpectation> pinExpectations,
+        IReadOnlyList<ScriptLaneExpectation> laneExpectations)
+    {
+        Ticks = ticks;
+        PinExpectations = pinExpectations;
+        LaneExpectations = laneExpectations;
+    }
+
+    /// <summary>Number of ticks before the step that the values must hold.</summary>
+    public long Ticks { get; }
+
+    public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
+
+    public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
+}
+
 /// <summary>Expected number of value changes on one interface pin over an interval.</summary>
 public sealed record ScriptTransitionExpectation(string PinId, long Count);
 
@@ -201,7 +226,8 @@ public sealed class SimulationScriptStep
         ScriptStability? stability = null,
         ScriptTransitionWindow? transitions = null,
         ScriptEdgeWindow? edges = null,
-        ScriptEdgeSequenceWindow? sequence = null)
+        ScriptEdgeSequenceWindow? sequence = null,
+        ScriptSetup? setup = null)
     {
         At = at;
         Drives = drives;
@@ -214,6 +240,7 @@ public sealed class SimulationScriptStep
         Transitions = transitions;
         Edges = edges;
         Sequence = sequence;
+        Setup = setup;
     }
 
     /// <summary>Absolute simulated tick. Missing values default to the previous step's tick.</summary>
@@ -229,6 +256,9 @@ public sealed class SimulationScriptStep
     public bool? ExpectHalted { get; }
 
     public string? Description { get; }
+
+    /// <summary>Optional pre-drive held-value assertion in the window ending at At.</summary>
+    public ScriptSetup? Setup { get; }
 
     /// <summary>Optional eventual assertion that may advance simulated time.</summary>
     public ScriptWindow? Window { get; }
@@ -248,7 +278,8 @@ public sealed class SimulationScriptStep
     public bool HasActions =>
         Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
         ExpectHalted is not null || Window is not null || Stability is not null ||
-        Transitions is not null || Edges is not null || Sequence is not null;
+        Transitions is not null || Edges is not null || Sequence is not null ||
+        Setup is not null;
 }
 
 /// <summary>
@@ -393,6 +424,7 @@ public sealed class SimulationScript
                     $"Step {stepNumber} cannot combine a timing window with 'expectHalted: true'; the window needs the simulation to run to its deadline.");
             }
 
+            ScriptSetup? setup = MapSetup(step.Setup, stepNumber, at);
             ScriptWindow? window = MapWindow(step.Within, stepNumber, at);
             ScriptStability? stability = MapStability(step.Stable, stepNumber, at);
             ScriptTransitionWindow? transitions = MapTransitions(step.Transitions, stepNumber, at);
@@ -412,7 +444,8 @@ public sealed class SimulationScript
                 stability,
                 transitions,
                 edges,
-                sequence));
+                sequence,
+                setup));
         }
 
         return new SimulationScript(
@@ -500,6 +533,24 @@ public sealed class SimulationScript
         }
 
         return expectations;
+    }
+
+    private static ScriptSetup? MapSetup(WindowDto? source, int stepNumber, long at)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes) =
+            MapWindowContents(source, stepNumber, at, "setup");
+        if (ticks > at)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'setup.ticks' ({ticks}) cannot start before t=0 for a step at t={at}.");
+        }
+
+        return new ScriptSetup(ticks, pins, lanes);
     }
 
     private static ScriptWindow? MapWindow(WindowDto? source, int stepNumber, long at)
@@ -856,6 +907,8 @@ public sealed class SimulationScript
         public Dictionary<string, JsonElement>? ExpectLane { get; set; }
 
         public bool? ExpectHalted { get; set; }
+
+        public WindowDto? Setup { get; set; }
 
         public WindowDto? Within { get; set; }
 
