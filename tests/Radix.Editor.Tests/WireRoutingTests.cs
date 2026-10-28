@@ -85,14 +85,18 @@ public sealed class WireRoutingTests
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
         NetWire[] before = Assert.IsType<CircuitLayout>(viewModel.Layout).Wires.ToArray();
-        viewModel.SetPlacementPoint(new Point(40, 900));
 
         viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(component => component.Name == "AND gate"));
 
         CircuitLayout placed = Assert.IsType<CircuitLayout>(viewModel.Layout);
+        ComponentInstance added = viewModel.Definition.Instances[^1];
+        ComponentBox addedBox = placed.Components.Single(box => box.Instance.Id == added.Id);
+        Assert.Equal("AND gate", added.Label);
+        Assert.All(
+            placed.Components.Where(box => box.Instance.Id != added.Id),
+            box => Assert.False(box.Bounds.Inflate(12).Intersects(addedBox.Bounds), $"placed part overlaps {box.Instance.Id}"));
         Assert.Contains(placed.Wires, before.Contains);
         AssertWiresClear(placed);
-        Assert.Equal("AND gate", viewModel.Definition.Instances[^1].Label);
     }
 
     [Fact]

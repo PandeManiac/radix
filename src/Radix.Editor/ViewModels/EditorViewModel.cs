@@ -3448,9 +3448,10 @@ public sealed class EditorViewModel : ObservableObject
             Id = id,
             Primitive = component.Spec,
             Label = component.Name,
-            X = NextPlacementX(),
-            Y = NextPlacementY(),
         };
+        Point spot = FindFreePlacement(_project.GetInstancePins(instance));
+        instance.X = spot.X;
+        instance.Y = spot.Y;
         Definition.Instances.Add(instance);
         _selectedInstance = instance;
         _selectedInstanceIds.Clear();
@@ -3482,9 +3483,10 @@ public sealed class EditorViewModel : ObservableObject
             Id = id,
             DefinitionId = target.Id,
             Label = target.Name,
-            X = NextPlacementX(),
-            Y = NextPlacementY(),
         };
+        Point spot = FindFreePlacement(_project.GetInstancePins(instance));
+        instance.X = spot.X;
+        instance.Y = spot.Y;
         Definition.Instances.Add(instance);
         _selectedInstance = instance;
         _selectedInstanceIds.Clear();
@@ -5530,6 +5532,103 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     private double NextPlacementY() => _placementPoint.Y + (_placementCascade * 16);
+
+    /// <summary>
+    /// Picks the nearest free body position around the requested placement point.
+    /// Without this, the default point or a repeated library click could place a part
+    /// inside an existing body; the router then has no legal path and must fall back
+    /// through obstacles. Existing ports count as occupied space as well.
+    /// </summary>
+    private Point FindFreePlacement(IReadOnlyList<PinDescriptor> pins)
+    {
+        double x = NextPlacementX();
+        double y = NextPlacementY();
+        if (Layout is null)
+        {
+            return new Point(x, y);
+        }
+
+        int rows = Math.Max(1, Math.Max(
+            pins.Count(pin => pin.Direction == PinDirection.Input),
+            pins.Count(pin => pin.Direction == PinDirection.Output)));
+        double height = CircuitLayout.HeaderHeight + (rows * CircuitLayout.PinSpacing) + CircuitLayout.BoxBottomPadding;
+        double stepX = CircuitLayout.BoxWidth + 50;
+        double stepY = height + 40;
+
+        for (int radius = 0; radius <= 12; radius++)
+        {
+            foreach ((int dx, int dy) in PlacementRing(radius))
+            {
+                var candidate = new Rect(x + (dx * stepX), y + (dy * stepY), CircuitLayout.BoxWidth, height);
+                if (IsPlacementFree(candidate))
+                {
+                    return candidate.Position;
+                }
+            }
+        }
+
+        // A pathological, densely packed definition: start a new row below the
+        // current content instead of stacking another body on top of it.
+        double fallbackY = Layout.ContentBounds.Bottom + 60;
+        for (int column = 0; column < 32; column++)
+        {
+            var candidate = new Rect(Layout.ContentBounds.Left + (column * stepX), fallbackY, CircuitLayout.BoxWidth, height);
+            if (IsPlacementFree(candidate))
+            {
+                return candidate.Position;
+            }
+        }
+
+        return new Point(x, fallbackY);
+    }
+
+    private bool IsPlacementFree(Rect candidate)
+    {
+        foreach (ComponentBox component in Layout!.Components)
+        {
+            if (component.Bounds.Inflate(12).Intersects(candidate))
+            {
+                return false;
+            }
+        }
+
+        foreach (PortBox port in Layout.Ports)
+        {
+            if (port.Bounds.Inflate(12).Intersects(candidate))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Integer offsets on one square ring, ordered by row for stable placement.</summary>
+    private static IEnumerable<(int DX, int DY)> PlacementRing(int radius)
+    {
+        if (radius == 0)
+        {
+            yield return (0, 0);
+            yield break;
+        }
+
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            bool edgeRow = Math.Abs(dy) == radius;
+            if (edgeRow)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    yield return (dx, dy);
+                }
+            }
+            else
+            {
+                yield return (-radius, dy);
+                yield return (radius, dy);
+            }
+        }
+    }
 
     private void FormatPlacement() => _placementCascade = 0;
 
