@@ -343,7 +343,9 @@ Presentation-only mutations do not call `SimulatorHost.Retarget`. Instance posit
 
 XAML uses `DynamicResource` for those keys. Custom-drawn `CircuitCanvas` and `WaveformView` resolve the same keys with `ThemeBrushes.Get` at the start of each render, so there is no second hardcoded palette. Both controls subscribe to `ActualThemeVariantChanged` and invalidate. `ThemeService` maps Auto/Light/Dark to `Application.RequestedThemeVariant` and persists the manual choice under the platform application-data directory; Auto delegates to the OS and follows live system changes. Diagnostics use classes plus `DynamicResource` rather than cached brush strings.
 
-`WorkspacePreferences` stores window size, maximized state, and the active inspector tab in `workspace.json` beside `theme.txt`. Both files are per-user presentation state, never project data. Missing, malformed, or out-of-range values fall back to defaults or are clamped, and write failures are ignored so a read-only home directory cannot block startup or shutdown.
+`WorkspacePreferences` stores window size, maximized state, the active inspector tab, and recent project paths in `workspace.json` beside `theme.txt`. Both files are per-user presentation state, never project data. Missing, malformed, or out-of-range values fall back to defaults or are clamped, and write failures are ignored so a read-only home directory cannot block startup or shutdown.
+
+`RecoveryService` keeps one crash snapshot (`recovery.radix` plus `recovery.json` for the origin and timestamp) in the same directory. The app lifetime snapshots only dirty projects every 20 seconds; each write goes to a temporary file and is then moved over the previous snapshot, so a crash during autosave cannot leave a truncated project. On launch the snapshot is loaded with validation disabled and presented as a dirty project with its original path, so an intermediate invalid circuit is recoverable and repairable. A successful save clears the snapshot through the `ProjectSaved` event, and an explicit Discard clears it directly; recovery is best-effort and never blocks editing or shutdown.
 
 ### 10.6 Hierarchy editing and libraries
 

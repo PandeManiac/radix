@@ -2,6 +2,7 @@ using Avalonia;
 using Radix.Core;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
+using Radix.Core.Serialization;
 using Radix.Core.Signals;
 using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
@@ -1285,6 +1286,68 @@ public sealed class EditorViewModelTests
 
         Assert.Equal("broken_net", viewModel.SelectedNetId);
         Assert.Contains("Located net", viewModel.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RecoveredProjectOpensDirtyWithItsOriginAndClearsAfterSave()
+    {
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            var original = CreateEmptyEditor();
+            original.PlaceLibraryComponent(ComponentCatalog.Components.First(c => c.Name == "NOT gate"));
+            Assert.True(original.SaveProject(path));
+
+            var recovered = CreateEmptyEditor();
+            bool restoreRequested = false;
+            recovered.ViewRestoreRequested += () => restoreRequested = true;
+
+            bool loaded = recovered.LoadRecoveredProject(new RecoverySnapshot(
+                path,
+                DateTimeOffset.UtcNow,
+                ProjectSerializer.Load(path)));
+
+            Assert.True(loaded);
+            Assert.True(restoreRequested);
+            Assert.True(recovered.IsRecoveredProject);
+            Assert.True(recovered.IsDirty);
+            Assert.Equal(path, recovered.ProjectPath);
+            Assert.Contains("Recovered", recovered.StatusText, StringComparison.Ordinal);
+            Assert.Contains(recovered.Definition.Instances, instance => instance.Primitive is LookupSpec);
+            Assert.Contains(
+                recovered.RecentProjects,
+                item => item.Path == Path.GetFullPath(path));
+
+            Assert.True(recovered.SaveProject(path));
+            Assert.False(recovered.IsRecoveredProject);
+            Assert.False(recovered.IsDirty);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ProjectSavedFiresOnlyForSuccessfulWrites()
+    {
+        var viewModel = CreateEmptyEditor();
+        int saves = 0;
+        viewModel.ProjectSaved += () => saves++;
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            Assert.True(viewModel.SaveProject(path));
+            Assert.Equal(1, saves);
+
+            // Saving onto an existing directory is not a writable project path.
+            Assert.False(viewModel.SaveProject(Path.GetTempPath()));
+            Assert.Equal(1, saves);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]

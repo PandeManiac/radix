@@ -168,6 +168,9 @@ public sealed class EditorViewModel : ObservableObject
     /// </summary>
     public event Action<string>? RecentProjectOpenRequested;
 
+    /// <summary>Raised after a project is written successfully, so recovery can be cleared.</summary>
+    public event Action? ProjectSaved;
+
     public CircuitProject Project => _project;
 
     /// <summary>
@@ -359,6 +362,9 @@ public sealed class EditorViewModel : ObservableObject
         get => _projectPath;
         private set => SetField(ref _projectPath, value);
     }
+
+    /// <summary>True when this session was restored from a crash snapshot and has not been saved.</summary>
+    public bool IsRecoveredProject { get; private set; }
 
     public bool IsDirty
     {
@@ -957,6 +963,7 @@ public sealed class EditorViewModel : ObservableObject
         _definitionId = root.Id;
         _projectPath = null;
         _savedProjectJson = null;
+        IsRecoveredProject = false;
         _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
@@ -983,6 +990,7 @@ public sealed class EditorViewModel : ObservableObject
             _definitionId = loaded.FindDefinition(loaded.View.ActiveDefinitionId)?.Id ?? loaded.RootDefinitionId;
             _projectPath = path;
             _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            IsRecoveredProject = false;
             _selectedInstanceIds.Clear();
             _selectedInstance = null;
             _selectedNet = null;
@@ -1087,6 +1095,53 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Restores a crash-recovery snapshot as an unsaved project. The snapshot already
+    /// passed through the serializer when it was written, so a project left in an
+    /// intermediate state still opens and can be repaired with diagnostics.
+    /// </summary>
+    public bool LoadRecoveredProject(RecoverySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        try
+        {
+            CancelDomainEdit();
+            _waveformPins.Clear();
+            _project = snapshot.Project;
+            EnsureProjectShape();
+            _definitionId = _project.FindDefinition(_project.View.ActiveDefinitionId)?.Id ?? _project.RootDefinitionId;
+            _projectPath = snapshot.ProjectPath;
+            _savedProjectJson = null;
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+            _selectedNet = null;
+            _clipboard = null;
+            _pasteOffset = 0;
+            _undo.Clear();
+            _redo.Clear();
+            Simulator = new SimulatorHost(_project, Definition);
+            RefreshAll(fit: true);
+            ViewRestoreRequested?.Invoke();
+            AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
+            if (snapshot.ProjectPath is { Length: > 0 } recoveredPath && File.Exists(recoveredPath))
+            {
+                AddRecentProject(recoveredPath);
+            }
+
+            IsRecoveredProject = true;
+            IsDirty = true;
+            StatusText = snapshot.ProjectPath is { Length: > 0 } path
+                ? $"Recovered unsaved changes from {Path.GetFileName(path)}"
+                : "Recovered an unsaved project";
+            return true;
+        }
+        catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException)
+        {
+            StatusText = "Recovery failed: " + exception.Message;
+            return false;
+        }
+    }
+
     /// <summary>Exports one definition and its dependency closure as a portable library.</summary>
     public bool ExportDefinition(string path, string definitionId)
     {
@@ -1148,8 +1203,10 @@ public sealed class EditorViewModel : ObservableObject
             _projectPath = path;
             _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
             IsDirty = false;
+            IsRecoveredProject = false;
             AddRecentProject(path);
             StatusText = $"Saved {Path.GetFileName(path)}";
+            ProjectSaved?.Invoke();
             return true;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProjectFormatException)

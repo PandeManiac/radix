@@ -255,7 +255,18 @@ This uses the GUI. The accumulator is two trit flip-flops plus a ternary adder a
 6. Set `LOAD = 2` and pulse `CLK`. Expected: `Result = 8`.
 7. Double-click `register`, then `mux0`, then `ff0` and its `slave` latch. Expected: the register contains two mux/flip-flop trit slices, the mux is a single lookup primitive, and the latch/flip-flop structure matches section 15. Double-click `mux_add0` at the root. Expected: one lookup primitive selecting data or the adder result. No errors or warnings appear.
 
-## 17. Tiny program-driven CPU
+## 17. Crash recovery
+
+Recovery uses a 20-second timer and one snapshot slot. Verify the destructive step with a scratch copy so no real work is at risk.
+
+1. Open `examples/full-adder.radix`, place one extra part on the canvas, and wait at least 25 seconds. Then terminate the editor process without closing the window (for example `kill <pid>` on Linux or Task Manager on Windows).
+2. Relaunch. Expected: the project opens immediately, the title is marked dirty (`*`), the status line says `Recovered unsaved changes from full-adder.radix`, and the extra part is present.
+3. Press `Ctrl+S`. Expected: it writes to the original `examples/full-adder.radix` path (no Save As dialog), the dirty marker clears, and `recovery.radix`/`recovery.json` disappear from `%APPDATA%\Radix` or `~/.config/Radix`.
+4. Relaunch. Expected: the normal full-adder example opens clean; **Recent ▾** lists it first.
+5. Repeat step 1 with another scratch edit, then close the window and choose **Discard**. Relaunch. Expected: no recovery opens and the snapshot files are gone.
+6. Repeat step 1 but kill the process within a few seconds of the edit. Expected, per the limitation below: the previous or no snapshot is restored, showing that at most 20 seconds of edits are protected.
+
+## 18. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -282,7 +293,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 18. Known limitations to verify as *limitations*
+## 19. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -298,7 +309,7 @@ Do not file these as new failures until they change in the README:
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, random drives, or waveform-window assertions;
 - undo snapshots whole projects and is capped at 80 entries;
-- the editor does not auto-save or recover crash state.
+- crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair.
 
 ## Isolation statement
 

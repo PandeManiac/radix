@@ -342,14 +342,17 @@ public partial class MainWindow : Window
         }
 
         UnsavedChangesChoice choice = await UnsavedChangesDialog.AskAsync(this, viewModel.Project.Name);
-        return choice switch
+        if (choice == UnsavedChangesChoice.Discard)
         {
-            UnsavedChangesChoice.Discard => true,
-            UnsavedChangesChoice.Save => string.IsNullOrWhiteSpace(viewModel.ProjectPath)
-                ? await SaveAsAsync(viewModel)
-                : viewModel.SaveProject(viewModel.ProjectPath),
-            _ => false,
-        };
+            // The user explicitly declined these changes, so the crash snapshot is stale.
+            RecoveryService.Clear();
+            return true;
+        }
+
+        return choice == UnsavedChangesChoice.Save &&
+               (string.IsNullOrWhiteSpace(viewModel.ProjectPath)
+                   ? await SaveAsAsync(viewModel)
+                   : viewModel.SaveProject(viewModel.ProjectPath));
     }
 
     private static string SanitizeFileName(string name)
