@@ -79,13 +79,15 @@ At 2,000 and 10,000 gates the earlier runs are not directly comparable because t
 
 ## Editor layout
 
-The editor has an opt-in benchmark for drag responsiveness. It is implemented in `tests/Radix.Editor.Tests/LayoutBenchmarkTests.cs` and does nothing unless `RADIX_LAYOUT_BENCH=1`. It builds a synthetic chain of 200, 500, or 1,000 single-input lookup gates laid out 20 per row, nudges the middle gate 10 times with the arrow-key path, drags it by 10 increments, and prints:
+The editor has an opt-in benchmark for layout and routing responsiveness. It is implemented in `tests/Radix.Editor.Tests/LayoutBenchmarkTests.cs` and does nothing unless `RADIX_LAYOUT_BENCH=1`. It builds a synthetic chain of 200, 500, or 1,000 single-input lookup gates laid out 20 per row, nudges the middle gate 10 times with the arrow-key path, drags it by 10 increments, places ten unconnected gates into empty space, and prints:
 
 - **construct**: creating the view model and its first layout;
 - **canonical frames**: 10 frames through `SetInstanceState`, which each rebuild all geometry and routes, the path used before route reuse;
 - **nudge frames**: 10 arrow-key `NudgeInstance` calls, which take the presentation-only reuse path;
 - **reused frames**: the same 10 frames inside `BeginDrag`, where unchanged nets keep their routed geometry;
-- **final rebuild**: `EndDrag`, which re-derives the committed layout canonically.
+- **final rebuild**: `EndDrag`, which commits the current valid routes (affected connections have already rerouted during the last frame);
+- **canonical placements**: ten direct model additions followed by a full `CircuitLayout.Build`, the comparison path that discards every route;
+- **incremental placements**: ten `PlaceLibraryComponent` calls at empty space, which preserve every still-valid route and reroute only affected nets.
 
 ### Command
 
@@ -99,23 +101,23 @@ On PowerShell, set `$env:RADIX_LAYOUT_BENCH="1"` for the session first. The benc
 
 ### Results
 
-Measured 2026-10-28 on the same machine and .NET 10 runtime as the engine benchmark, Release build, after a 50-gate warmup and taking the minimum of repeated runs:
+Measured 2026-10-28 on the same machine and .NET 10 runtime as the engine benchmark, Release build, after a 50-gate warmup. Construct and drag values take the minimum of repeated runs; the remaining columns are single runs.
 
-| Gates | Construct | 10 canonical frames | 10 nudge frames | 10 reused frames | Final rebuild |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 200 | 149 ms | 538 ms | 53 ms | 12 ms | 34 ms |
-| 500 | 106 ms | 1,249 ms | 45 ms | 49 ms | 121 ms |
-| 1,000 | 410 ms | 4,480 ms | 71 ms | 14 ms | 437 ms |
+| Gates | Construct | 10 canonical frames | 10 nudge frames | 10 reused frames | Final rebuild | 10 canonical placements | 10 incremental placements |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 200 | 145 ms | 645 ms | 46 ms | 11 ms | 0 ms | 325 ms | 29 ms |
+| 500 | 105 ms | 1,182 ms | 47 ms | 50 ms | 1 ms | 1,606 ms | 43 ms |
+| 1,000 | 420 ms | 4,404 ms | 63 ms | 17 ms | 0 ms | 3,640 ms | 58 ms |
 
-These are interaction-latency measurements, not pure router time: they include layout of component boxes and ports, view-model refreshes, and canvas invalidation. Absolute values vary with GC, JIT, and which node is moved, so individual rows are not monotonic; use the orders of magnitude, not adjacent differences. The nudge column measures the new presentation-only path: unchanged routes and all unchanged boxes are still rebuilt, but valid cached wires are retained, so the dominant route search runs only for nets whose terminals or obstacles changed.
+These are interaction-latency measurements, not pure router time: they include layout of component boxes and ports, view-model refreshes, and canvas invalidation. Absolute values vary with GC, JIT, and which node is moved, so individual rows are not monotonic; use the orders of magnitude, not adjacent differences. The nudge and incremental-placement columns measure route reuse: all boxes and ports are still rebuilt, but valid cached wires are retained, so the dominant route search runs only for nets whose terminals or obstacles changed.
 
 ### Interpretation
 
-- At 1,000 gates, ten drag frames cost ~14 ms with reuse versus ~4.48 s when every frame rebuilds the layout and routes. Ten arrow-key nudges now cost ~71 ms instead of ~4.5 s. The first layout and the final canonical rebuild each cost roughly 0.41–0.44 s; those are the remaining pauses on a design of this size.
-- Reuse applies to an active drag, keyboard nudges, arrange-selection alignment and spacing, and bendpoint edits. Structural mutation and `EndDrag` still take the canonical path, so a placed or moved body that intersects a cached segment always invalidates it and a committed structural layout is freshly derived.
+- At 1,000 gates, ten drag frames cost ~17 ms with reuse versus ~4.4 s when every frame rebuilds the layout and routes. Ten arrow-key nudges cost ~63 ms, and ten placements cost ~58 ms instead of ~3.64 s. The first layout still costs roughly 0.42 s; that is the remaining pause on a design of this size.
+- Reuse applies to an active drag, its release, keyboard nudges, arrange-selection alignment and spacing, bendpoint edits, and structural placement/deletion/connection edits. Undo/redo and project replacement rebuild canonically. A placed or moved body that intersects a cached segment always invalidates that net.
 - A reused route is valid only while its ordered endpoints, authored bendpoints, and all changed component/port bounds are unchanged. A new or moved body that intersects a cached segment invalidates that net.
 - The router marks blocked grid nodes and edges once per obstacle instead of scanning all obstacles at every A* expansion. That keeps the canonical rebuild practical, but it is not separately timed by this benchmark.
-- This is still not an incremental layout engine: structural edits rebuild every box, port, and route. The benchmark exists to show when that becomes the dominant cost.
+- This is still not an incremental layout engine: every edit rebuilds all component boxes and ports, and changed-obstacle validation scans every cached route segment. The benchmark exists to show when that becomes the dominant cost.
 
 ## Interpretation
 

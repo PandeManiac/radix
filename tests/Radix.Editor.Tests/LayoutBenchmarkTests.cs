@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using Avalonia;
 using Radix.Core.Model;
 using Radix.Core.Signals;
+using Radix.Editor.Rendering;
+using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -83,9 +86,41 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
                 end = Math.Min(end, endWatch.ElapsedMilliseconds);
             }
 
+            // A placement at empty space should not reroute the existing design. Measure
+            // the same ten additions through a full canonical rebuild for comparison.
+            CircuitProject canonicalPlacementProject = SyntheticChain(count);
+            CircuitDefinition canonicalPlacementDefinition = canonicalPlacementProject.FindDefinition("main")!;
+            var canonicalPlacementWatch = Stopwatch.StartNew();
+            for (int i = 0; i < 10; i++)
+            {
+                canonicalPlacementDefinition.Instances.Add(new ComponentInstance
+                {
+                    Id = $"placed{i}",
+                    Primitive = ComponentCatalog.Components[0].Spec,
+                    Label = "AND gate",
+                    X = 40 + (i * 230),
+                    Y = 2000,
+                });
+                _ = CircuitLayout.Build(canonicalPlacementDefinition, canonicalPlacementProject);
+            }
+
+            canonicalPlacementWatch.Stop();
+
+            var structuralModel = new EditorViewModel(project);
+            structuralModel.SetPlacementPoint(new Point(40, 2000));
+            var structuralWatch = Stopwatch.StartNew();
+            for (int i = 0; i < 10; i++)
+            {
+                structuralModel.PlaceLibraryComponent(ComponentCatalog.Components[0]);
+            }
+
+            structuralWatch.Stop();
+
             output.WriteLine(
                 $"{count} gates: construct {construct} ms, canonical frames {canonical.ElapsedMilliseconds} ms, " +
-                $"nudge frames {nudgeWatch.ElapsedMilliseconds} ms, reused frames {drag} ms, final rebuild {end} ms");
+                $"nudge frames {nudgeWatch.ElapsedMilliseconds} ms, reused frames {drag} ms, final rebuild {end} ms, " +
+                $"10 canonical placements {canonicalPlacementWatch.ElapsedMilliseconds} ms, " +
+                $"10 incremental placements {structuralWatch.ElapsedMilliseconds} ms");
         }
     }
 

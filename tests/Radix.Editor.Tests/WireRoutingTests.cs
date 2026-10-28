@@ -3,6 +3,7 @@ using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
 using Radix.Editor.Rendering;
+using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -56,6 +57,11 @@ public sealed class WireRoutingTests
         CircuitLayout initial = Assert.IsType<CircuitLayout>(viewModel.Layout);
         NetWire[] before = initial.Wires.ToArray();
         ComponentInstance instance = viewModel.Definition.Instances.First(i => i.Id.StartsWith("ff", StringComparison.Ordinal));
+        var movedNetIds = viewModel.Definition.Nets
+            .Where(net => net.Pins.Any(pin => string.Equals(pin.InstanceId, instance.Id, StringComparison.Ordinal)))
+            .Select(net => net.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        NetWire[] movedBefore = before.Where(wire => movedNetIds.Contains(wire.NetId)).ToArray();
         double x = instance.X;
         double y = instance.Y;
 
@@ -68,8 +74,25 @@ public sealed class WireRoutingTests
 
         Assert.Contains(viewModel.Layout!.Wires, before.Contains);
         viewModel.EndDrag();
-        AssertWiresClear(Assert.IsType<CircuitLayout>(viewModel.Layout));
-        Assert.DoesNotContain(viewModel.Layout!.Wires, before.Contains);
+        CircuitLayout committed = Assert.IsType<CircuitLayout>(viewModel.Layout);
+        AssertWiresClear(committed);
+        Assert.Contains(committed.Wires, before.Contains);
+        Assert.DoesNotContain(committed.Wires.Where(wire => movedNetIds.Contains(wire.NetId)), movedBefore.Contains);
+    }
+
+    [Fact]
+    public void PlacingAPartKeepsUnchangedRoutesAndStaysClearOfBodies()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        NetWire[] before = Assert.IsType<CircuitLayout>(viewModel.Layout).Wires.ToArray();
+        viewModel.SetPlacementPoint(new Point(40, 900));
+
+        viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(component => component.Name == "AND gate"));
+
+        CircuitLayout placed = Assert.IsType<CircuitLayout>(viewModel.Layout);
+        Assert.Contains(placed.Wires, before.Contains);
+        AssertWiresClear(placed);
+        Assert.Equal("AND gate", viewModel.Definition.Instances[^1].Label);
     }
 
     [Fact]

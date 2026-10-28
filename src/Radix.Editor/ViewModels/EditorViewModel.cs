@@ -2050,9 +2050,11 @@ public sealed class EditorViewModel : ObservableObject
         _pendingDragUndo = false;
         if (needsCanonicalLayout)
         {
-            // Drag frames reuse unchanged routes for responsiveness; the final frame
-            // rebuilds canonically so the committed layout is never approximate.
-            RebuildLayout();
+            // Drag frames reuse unchanged routes for responsiveness. The committed
+            // frame keeps a route only when its terminals, bendpoints, and changed
+            // obstacles are unchanged; every affected net is still routed afresh, so
+            // the saved layout never keeps a route that a moved body now blocks.
+            RebuildLayout(reuseRoutes: true);
         }
     }
 
@@ -5082,8 +5084,12 @@ public sealed class EditorViewModel : ObservableObject
     private void AfterMutation(
         bool structural,
         bool invalidateSimulation = true,
-        LayoutRefreshMode layoutRefresh = LayoutRefreshMode.Canonical)
+        LayoutRefreshMode layoutRefresh = LayoutRefreshMode.Reuse)
     {
+        // Every mutation defaults to route reuse: the layout builder validates cached
+        // routes against current terminals, authored bendpoints, and every changed
+        // body or port, and reroutes only the nets that fail. A structural edit no
+        // longer throws away hundreds of still-valid routes.
         IsDirty = true;
         if (invalidateSimulation)
         {
