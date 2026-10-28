@@ -28,6 +28,7 @@ public static class StandardLibrary
     public const string TernaryFullAdderId = "std.t-full-adder";
     public const string TernaryAdder2Id = "std.t-adder-2";
     public const string TernaryRegister2Id = "std.t-reg-2";
+    public const string TernaryRam3x2Id = "std.t-ram-3x2";
     public const string Ram16x4Id = "std.ram-16x4";
 
     private static readonly (string Id, string Name, int Inputs, int[] Table)[] BinaryGates =
@@ -668,6 +669,12 @@ public static class StandardLibrary
             added.Add(TernaryRegister2Id);
         }
 
+        if (project.FindDefinition(TernaryRam3x2Id) is null)
+        {
+            AddTernaryRam3x2(project);
+            added.Add(TernaryRam3x2Id);
+        }
+
         if (project.FindDefinition(BalancedTernaryLatchId) is null)
         {
             AddBalancedTernaryLatch(project);
@@ -715,6 +722,100 @@ public static class StandardLibrary
             "Two balanced-ternary flip-flops with a shared level load. LOAD=+ captures D on the rising CLK edge " +
             "(- -> +); LOAD=- holds and LOAD=0 seeds the unknown middle value. Q/QN power up at 0. " +
             "Data and Result lanes decode as balanced ternary.");
+
+    /// <summary>
+    /// Three words of two trits with an asynchronous read port. Every cell is part of a
+    /// reusable register, write enables are decoded from WE and the address trit, and the
+    /// read port is one lookup per lane over the address and the three word trits.
+    /// </summary>
+    private static void AddTernaryRam3x2(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, TernaryRam3x2Id, "Ternary 3 × 2 RAM");
+        builder.Definition.Description =
+            "Three 2-trit words with asynchronous read and synchronous write. WE=2 writes D into the " +
+            "addressed word on the rising CLK edge (0 -> 2); WE=0 holds every word and WE=1, the unknown " +
+            "trit, also holds rather than writing an unknown. The address is one trit, so ADDR 0..2 selects " +
+            "exactly one of the three words.";
+
+        Net address = builder.AddPin("addr", "ADDR", PinDirection.Input, StandardDomains.TernaryId);
+        var data = new Net[2];
+        var output = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            data[lane] = builder.AddPin($"d{lane}", $"D{lane}", PinDirection.Input, StandardDomains.TernaryId);
+            output[lane] = builder.SetInitial(
+                builder.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        Net writeEnable = builder.AddPin("we", "WE", PinDirection.Input, StandardDomains.TernaryId);
+        Net clock = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+
+        builder.AddNumericLane("address", "Address", NumericFormats.UnsignedTernary.Id, "addr");
+        builder.AddNumericLane("data", "Data", NumericFormats.UnsignedTernary.Id, "d0", "d1");
+        builder.AddNumericLane("result", "Read", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+
+        var words = new Net[3][];
+        for (int word = 0; word < 3; word++)
+        {
+            int[] writeTable = new int[9];
+            for (int enable = 0; enable < 3; enable++)
+            {
+                for (int target = 0; target < 3; target++)
+                {
+                    writeTable[(enable * 3) + target] = enable == 2 && target == word ? 2 : 0;
+                }
+            }
+
+            Net write = builder.Rename(
+                builder.AddNet($"write{word}", StandardDomains.TernaryId),
+                $"write word {word}");
+            builder.AddPrimitive($"decode_write{word}", new LookupSpec(2, writeTable, GateDelay), 240, 80 + (word * 220));
+            builder.Connect(writeEnable, builder.Pin($"decode_write{word}", "in0"));
+            builder.Connect(address, builder.Pin($"decode_write{word}", "in1"));
+            builder.Connect(write, builder.Pin($"decode_write{word}", PrimitiveShapes.OutputPinId));
+
+            words[word] = new Net[2];
+            builder.AddInstance($"word{word}", TernaryRegister2Id, 560, 80 + (word * 220));
+            for (int lane = 0; lane < 2; lane++)
+            {
+                words[word][lane] = builder.Rename(
+                    builder.AddNet($"word{word}_{lane}", StandardDomains.TernaryId),
+                    $"word {word} trit {lane}");
+                builder.Connect(data[lane], builder.Pin($"word{word}", $"d{lane}"));
+                builder.Connect(words[word][lane], builder.Pin($"word{word}", $"q{lane}"));
+            }
+
+            builder.Connect(write, builder.Pin($"word{word}", "load"));
+            builder.Connect(clock, builder.Pin($"word{word}", "clk"));
+        }
+
+        for (int lane = 0; lane < 2; lane++)
+        {
+            int[] readTable = new int[81];
+            for (int selected = 0; selected < 3; selected++)
+            {
+                for (int word0 = 0; word0 < 3; word0++)
+                {
+                    for (int word1 = 0; word1 < 3; word1++)
+                    {
+                        for (int word2 = 0; word2 < 3; word2++)
+                        {
+                            int index = (((selected * 3) + word0) * 3 + word1) * 3 + word2;
+                            readTable[index] = selected == 0 ? word0 : selected == 1 ? word1 : word2;
+                        }
+                    }
+                }
+            }
+
+            builder.AddPrimitive($"read{lane}", new LookupSpec(4, readTable, GateDelay), 840, 80 + (lane * 220));
+            builder.Connect(address, builder.Pin($"read{lane}", "in0"));
+            builder.Connect(words[0][lane], builder.Pin($"read{lane}", "in1"));
+            builder.Connect(words[1][lane], builder.Pin($"read{lane}", "in2"));
+            builder.Connect(words[2][lane], builder.Pin($"read{lane}", "in3"));
+            builder.Connect(output[lane], builder.Pin($"read{lane}", PrimitiveShapes.OutputPinId));
+        }
+    }
 
     private static void AddThreeValuedRegister2(
         CircuitProject project,

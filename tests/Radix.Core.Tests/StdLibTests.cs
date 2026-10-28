@@ -512,9 +512,49 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryRamWritesAddressedWordsAndHoldsTheOthers()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryRam3x2Id);
+        engine.Drive("clk", 0);
+        engine.Drive("we", 0);
+        engine.Drive("addr", 0);
+        Settle(engine, 80);
+        Assert.Equal(0, ReadTernaryPair(engine, "q"));
+
+        int[] values = [4, 7, 2];
+        for (int word = 0; word < 3; word++)
+        {
+            engine.Drive("addr", word);
+            LoadTernaryPair(engine, "d", values[word]);
+            engine.Drive("we", 2);
+            PulseTernaryClock(engine, settle: 100);
+            Assert.Equal(values[word], ReadTernaryPair(engine, "q"));
+        }
+
+        engine.Drive("we", 0);
+        for (int word = 0; word < 3; word++)
+        {
+            engine.Drive("addr", word);
+            Settle(engine, 40);
+            Assert.Equal(values[word], ReadTernaryPair(engine, "q"));
+        }
+
+        // WE=0 holds every word even while the data pins change.
+        LoadTernaryPair(engine, "d", 1);
+        PulseTernaryClock(engine, settle: 100);
+        Assert.Equal(values[2], ReadTernaryPair(engine, "q"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryBranchMachineBranchesStoresAndReadsMemory()
     {
         CircuitProject project = ExampleProjects.CreateTernaryBranchMachineDemo();
+        Assert.Contains(
+            project.RequireDefinition("demo.t-machine-2").Instances,
+            instance => instance.DefinitionId == StandardLibrary.TernaryRam3x2Id);
         SimulationEngine engine = Engine("demo.t-machine-2", project);
         engine.Drive("clk", 0);
         Settle(engine, 120);
@@ -523,27 +563,25 @@ public sealed class StdLibTests
         Assert.Equal(0, ReadTernaryPair(engine, "q"));
         Assert.Equal(1, ReadTernaryPair(engine, "op"));
         Assert.Equal(2, ReadTernaryPair(engine, "arg"));
-        for (int word = 0; word < 3; word++)
-        {
-            Assert.Equal(0, ReadTernaryPair(engine, $"m{word}_"));
-        }
+        Assert.Equal(0, ReadTernaryPair(engine, "read"));
 
         // Program: LOAD 2, ADD 2, STORE 1, BZ 8 (not taken), LOAD 0, STORE 2,
         // BZ 8 (taken, skipping the LOAD 1 at 7), LOADM 1, then PC wraps to 0.
-        (int Pc, int Accumulator, int Mem1)[] expected =
+        // The read port shows the word at the argument address of the fetched
+        // instruction, so it exposes the stored value only while LOADM 1 is fetched.
+        (int Pc, int Accumulator, int Read)[] expected =
         [
-            (1, 2, 0), (2, 4, 0), (3, 4, 4), (4, 4, 4), (5, 0, 4),
-            (6, 0, 4), (8, 0, 4), (0, 4, 4), (1, 2, 4),
+            (1, 2, 0), (2, 4, 0), (3, 4, 0), (4, 4, 0), (5, 0, 0),
+            (6, 0, 0), (8, 0, 4), (0, 4, 0), (1, 2, 0),
         ];
 
         for (int step = 0; step < expected.Length; step++)
         {
             PulseTernaryClock(engine, settle: 120);
-            (int pc, int accumulator, int memory) = expected[step];
+            (int pc, int accumulator, int read) = expected[step];
             Assert.Equal(pc, ReadTernaryPair(engine, "pc"));
             Assert.Equal(accumulator, ReadTernaryPair(engine, "q"));
-            Assert.Equal(memory, ReadTernaryPair(engine, "m1_"));
-            Assert.Equal(0, ReadTernaryPair(engine, "m2_"));
+            Assert.Equal(read, ReadTernaryPair(engine, "read"));
         }
 
         // The fetched instruction tracks the new PC immediately: PC 1 fetches ADD 2.

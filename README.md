@@ -13,7 +13,7 @@ The repository currently contains a working simulation kernel, a hierarchical st
 | Hierarchy and reusable definitions | Working, cycle-checked, flattened at compile time |
 | Propagation delays and zero-delay convergence guard | Working |
 | Asynchronous feedback and oscillation reporting | Working |
-| Standard library from primitives | Gates, latch, D flip-flop, register, RAM, adders, mux, ternary parts, balanced-ternary latch/flip-flop/register; complete CPU example |
+| Standard library from primitives | Gates, latch, D flip-flop, register, binary RAM, adders, mux, ternary parts including a 3×2 RAM, balanced-ternary latch/flip-flop/register; complete CPU example |
 | Project save/load | Versioned JSON (v5), strict validation, atomic writes |
 | Numeric interpretation | Built-in and project-authored formats; saved numeric lanes; display-only |
 | Headless CLI | Validate, simulate, scripted tests, inspect, examples, benchmark |
@@ -125,7 +125,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 | [ternary-adder-2.radix](examples/ternary-adder-2.radix) | Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane |
 | [ternary-accumulator.radix](examples/ternary-accumulator.radix) | A trit register with LOAD/ADD/HOLD control built from muxes, a ternary adder, and trit flip-flops |
 | [ternary-machine.radix](examples/ternary-machine.radix) | A stored-program ternary machine: 2-trit PC, two 9-entry lookup ROMs, a trit decoder, and the accumulator |
-| [ternary-branch-machine.radix](examples/ternary-branch-machine.radix) | A branch-capable ternary machine: 2-trit opcode, three words of writable trit memory, and JMP/BZ control |
+| [ternary-branch-machine.radix](examples/ternary-branch-machine.radix) | A branch-capable ternary machine: 2-trit opcode, a reusable 3×2 trit RAM, and JMP/BZ control |
 | [balanced-ternary-accumulator.radix](examples/balanced-ternary-accumulator.radix) | A signed −/0/+ accumulator with LOAD/ADD/HOLD control, built from balanced-ternary gates and a balanced register |
 | [ternary-counter.radix](examples/ternary-counter.radix) | A sequential ternary machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane |
 | [accumulator-cpu.radix](examples/accumulator-cpu.radix) | Instruction-controlled 4-bit accumulator with registered carry |
@@ -218,9 +218,9 @@ docs/                    architecture, project format, test scripts, benchmarks
 
 ## Testing summary
 
-- Kernel and library tests: **205 passing**.
+- Kernel and library tests: **206 passing**.
 - Editor tests: **101 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, zoomed waveform, dark waveform tab, numeric-lane inspector, canvas lane legend, lane editor, custom-format editor, domain-policy editor, diagnostics Locate action, net navigator, and interface reorder controls. An opt-in layout benchmark is included but does no work unless `RADIX_LAYOUT_BENCH=1`.
-- Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, built-in and custom numeric formats, exhaustive encode/decode ranges, scripted drive/assert runs, determinism, randomized differential comparison against a reference evaluator, RAM write/read/hold behavior, and the tiny CPU's fetch/decode/execute loop including direct and indirect memory operations, nested calls, stack underflow/overflow flags, a taken branch, and reset.
+- Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, built-in and custom numeric formats, exhaustive encode/decode ranges, scripted drive/assert runs, determinism, randomized differential comparison against a reference evaluator, binary RAM write/read/hold behavior, ternary RAM writes to every word with the others held, and the tiny CPU's fetch/decode/execute loop including direct and indirect memory operations, nested calls, stack underflow/overflow flags, a taken branch, and reset.
 - Editor tests cover wire geometry (no segments through component bodies), drag-time route reuse with canonical release, simulation survival across presentation edits, bendpoint undo/persistence, theming, workspace preference persistence and clamping, copy/paste internal nets, search, extraction with simulation, net promotion, net navigator filtering/selection/live values, waveform pinning and time-window zoom/pan, interface pin reordering with stable bindings and lane order, numeric-lane decoding and driving, in-place lane editing with stable IDs and cancellation, custom-format authoring and in-place editing, single-driver and priority-domain authoring with validation, in-place driver-policy editing with cancellation and undo, definition duplication with unique IDs and undo, arrange-selection alignment and spacing as a presentation edit, definition back/forward navigation with forward-trail truncation, diagnostic navigation to definitions, instances, and nets, viewport centering, saved viewport restoration, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 
 ## Near-term roadmap

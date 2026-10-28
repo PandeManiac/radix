@@ -287,13 +287,13 @@ This uses the GUI. The machine fetches a two-trit instruction from lookup ROMs a
 
 This uses the GUI. The machine has a 2-trit opcode, a 2-trit argument, three words of writable trit memory, and branch control.
 
-1. Open `examples/ternary-branch-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: **PC** = 0, **ACC** = 0, **MEM0..2** = 0, **Opcode** = 1, **Argument** = 2 (LOAD 2).
+1. Open `examples/ternary-branch-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: **PC** = 0, **ACC** = 0, **Memory read** = 0, **Opcode** = 1, **Argument** = 2 (LOAD 2).
 2. Set `CLK = 2`, settle, then set `CLK = 0`. Expected: **PC** = 1, **ACC** = 2, opcode 2, argument 2 (ADD 2 is next).
-3. Pulse three more times. Expected after each pulse: (PC 2, ACC 4), (PC 3, ACC 4, **MEM1** = 4), (PC 4, ACC 4). The third pulse executed `STORE 1`, and the fourth fetched `BZ 8` and did **not** branch because ACC is 4.
-4. Pulse twice more. Expected: (PC 5, ACC 0) and (PC 6, ACC 0, MEM2 = 0). Then pulse again: **PC** jumps straight to 8, skipping the `LOAD 1` at PC 7, because `BZ 8` sees ACC = 0. Opcode/argument read 4 and 1 (LOADM 1).
-5. Pulse twice more. Expected: **PC** = 0 and **ACC** = 4 — `LOADM 1` read the stored word — then **PC** = 1 with ACC = 2 as the program restarts.
-6. Select `write_mem1` and change its table entry for `(STORE, 1)` from 2 to 0, then commit. Expected: one undo step and no diagnostics; the next `STORE 1` leaves MEM1 unchanged. Undo restores the write.
-7. Double-click `mem_reg1`. Expected: a `std.t-reg-2` instance body, and inside it the same two mux/flip-flop slices as the other registers. Double-click `mem_read_low`. Expected: one 4-input lookup primitive whose 81-entry table is the read mux; no errors or warnings appear.
+3. Pulse three more times. Expected after each pulse: (PC 2, ACC 4), (PC 3, ACC 4), (PC 4, ACC 4). The third pulse executed `STORE 1`, and the fourth fetched `BZ 8` and did **not** branch because ACC is 4. `Memory read` still shows 0 because the address pins carry the next instruction's argument, not the store address.
+4. Pulse twice more. Expected: (PC 5, ACC 0) and (PC 6, ACC 0). Then pulse again: **PC** jumps straight to 8, skipping the `LOAD 1` at PC 7, because `BZ 8` sees ACC = 0. Opcode/argument read 4 and 1 (LOADM 1), and **Memory read** becomes 4 — word 1 now drives the read port.
+5. Pulse twice more. Expected: **PC** = 0 and **ACC** = 4 — `LOADM 1` captured the stored word — then **PC** = 1 with ACC = 2 as the program restarts, and `Memory read` returns to 0.
+6. Double-click `memory`. Expected: the `std.t-ram-3x2` body with three `word` registers, three write-decode lookups, and two 4-input read lookups. Double-click `word1` and then `mux0`. Expected: a `std.t-reg-2` body with two mux/flip-flop slices; `word1` holds 4 after the STORE. Select `decode_write1` and change its table entry for `(WE = 2, ADDR = 1)` from 2 to 0, then commit: one undo step and no diagnostics; the next `STORE 1` leaves word 1 unchanged. Undo restores the write.
+7. With `memory` open as the current definition, click **Begin** to run the part standalone (this starts a fresh simulation, so it does not inherit the machine's word 1). Expected: lanes **Address** over `ADDR`, **Data** over `D0/D1`, and **Read** over `Q0/Q1`; **Read** = 0. Drive `WE = 0`, `ADDR = 1`; set `D0 = 1`, `D1 = 1` (Data = 4) and `WE = 2`; pulse `CLK` 0 → 2 → 0. Expected: **Read** = 4. Set `WE = 0` and step `ADDR` through 0, 1, and 2: expected **Read** = 0, 4, 0. No errors or warnings appear.
 
 ## 20. Balanced ternary accumulator
 
