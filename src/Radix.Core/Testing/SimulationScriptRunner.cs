@@ -96,9 +96,12 @@ public static class SimulationScriptRunner
 
         var transitionCounts = new Dictionary<int, long>();
         var edgeCounts = new Dictionary<(int Net, int OldValue, int NewValue), long>();
+        var sequenceChanges = new List<NetChange>();
         bool observesTransitions = script.Steps.Any(step => step.Transitions is not null);
         bool observesEdges = script.Steps.Any(step => step.Edges is not null);
-        if (observesTransitions || observesEdges)
+        bool observesSequence = script.Steps.Any(step => step.Sequence is not null);
+        bool observesChanges = observesTransitions || observesEdges || observesSequence;
+        if (observesChanges)
         {
             engine.NetChanged += change =>
             {
@@ -113,6 +116,11 @@ public static class SimulationScriptRunner
                     var key = (change.Net, change.OldValue, change.NewValue);
                     edgeCounts.TryGetValue(key, out long count);
                     edgeCounts[key] = count + 1;
+                }
+
+                if (observesSequence)
+                {
+                    sequenceChanges.Add(change);
                 }
             };
         }
@@ -133,12 +141,13 @@ public static class SimulationScriptRunner
             }
 
             engine.AdvanceTo(step.At);
-            if (observesTransitions || observesEdges)
+            if (observesChanges)
             {
                 // The interval starts at this step, including changes caused by its
                 // drives at this tick but excluding earlier activity.
                 transitionCounts.Clear();
                 edgeCounts.Clear();
+                sequenceChanges.Clear();
             }
 
             if (!engine.IsHalted)
@@ -331,36 +340,19 @@ public static class SimulationScriptRunner
                     var filters = new List<ResolvedEdgeFilter>(expectation.Filters.Count);
                     foreach (ScriptEdgeFilter filter in expectation.Filters)
                     {
-                        int? from = null;
-                        int? to = null;
-                        if (filter.From is ScriptValue fromValue)
+                        if (!TryResolveEdgeValues(
+                                expectation.PinId,
+                                port.Domain,
+                                filter.From,
+                                filter.To,
+                                stepNumber,
+                                step.At,
+                                failures,
+                                out int? from,
+                                out int? to))
                         {
-                            if (!TryResolveValue(port.Domain, fromValue, out int resolved, out error))
-                            {
-                                failures.Add(new ScriptFailure(
-                                    stepNumber,
-                                    step.At,
-                                    $"invalid 'from' for pin '{expectation.PinId}': {error}"));
-                                pinsValid = false;
-                                continue;
-                            }
-
-                            from = resolved;
-                        }
-
-                        if (filter.To is ScriptValue toValue)
-                        {
-                            if (!TryResolveValue(port.Domain, toValue, out int resolved, out error))
-                            {
-                                failures.Add(new ScriptFailure(
-                                    stepNumber,
-                                    step.At,
-                                    $"invalid 'to' for pin '{expectation.PinId}': {error}"));
-                                pinsValid = false;
-                                continue;
-                            }
-
-                            to = resolved;
+                            pinsValid = false;
+                            continue;
                         }
 
                         filters.Add(new ResolvedEdgeFilter(from, to, filter.Count));
@@ -416,6 +408,94 @@ public static class SimulationScriptRunner
                                         $"between t={step.At} and t={deadline}, observed " +
                                         $"{actual.ToString(CultureInfo.InvariantCulture)}."));
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (step.Sequence is { } sequence)
+            {
+                long deadline = step.At + sequence.Ticks;
+                var resolved = new List<ResolvedEdgeSequenceItem>();
+                bool itemsValid = true;
+                for (int itemIndex = 0; itemIndex < sequence.Items.Count; itemIndex++)
+                {
+                    ScriptEdgeSequenceItem item = sequence.Items[itemIndex];
+                    if (!TryFindPort(engine, item.PinId, out _, out CompiledPort port, out string error))
+                    {
+                        failures.Add(new ScriptFailure(stepNumber, step.At, error));
+                        itemsValid = false;
+                        continue;
+                    }
+
+                    if (!TryResolveEdgeValues(
+                            item.PinId,
+                            port.Domain,
+                            item.From,
+                            item.To,
+                            stepNumber,
+                            step.At,
+                            failures,
+                            out int? from,
+                            out int? to))
+                    {
+                        itemsValid = false;
+                        continue;
+                    }
+
+                    resolved.Add(new ResolvedEdgeSequenceItem(
+                        itemIndex + 1,
+                        item.PinId,
+                        port.Net,
+                        port.Domain,
+                        from,
+                        to));
+                }
+
+                if (itemsValid)
+                {
+                    if (engine.Now < deadline)
+                    {
+                        engine.AdvanceTo(deadline);
+                    }
+
+                    if (engine.IsHalted)
+                    {
+                        failures.Add(new ScriptFailure(
+                            stepNumber,
+                            engine.Now,
+                            $"edge sequence needs the simulation to keep running through t={deadline}, " +
+                            $"but it halted at t={engine.Now}: {engine.HaltReason}"));
+                    }
+                    else
+                    {
+                        int searchFrom = 0;
+                        foreach (ResolvedEdgeSequenceItem item in resolved)
+                        {
+                            bool found = false;
+                            for (int changeIndex = searchFrom; changeIndex < sequenceChanges.Count; changeIndex++)
+                            {
+                                NetChange change = sequenceChanges[changeIndex];
+                                if (change.Net == item.Net &&
+                                    (item.From is null || item.From == change.OldValue) &&
+                                    (item.To is null || item.To == change.NewValue))
+                                {
+                                    found = true;
+                                    searchFrom = changeIndex + 1;
+                                    break;
+                                }
+                            }
+
+                            if (!found)
+                            {
+                                failures.Add(new ScriptFailure(
+                                    stepNumber,
+                                    deadline,
+                                    $"sequence item {item.Index} (pin '{item.PinId}': " +
+                                    $"{DescribeEdge(item.Domain, item.From, item.To)}) was not observed " +
+                                    $"in order between t={step.At} and t={deadline}."));
+                                break;
                             }
                         }
                     }
@@ -610,6 +690,60 @@ public static class SimulationScriptRunner
         return true;
     }
 
+    private static bool TryResolveEdgeValues(
+        string pinId,
+        SignalDomain domain,
+        ScriptValue? fromValue,
+        ScriptValue? toValue,
+        int stepNumber,
+        long at,
+        List<ScriptFailure> failures,
+        out int? from,
+        out int? to)
+    {
+        from = null;
+        to = null;
+        if (fromValue is ScriptValue fromRaw)
+        {
+            if (!TryResolveValue(domain, fromRaw, out int resolved, out string error))
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    at,
+                    $"invalid 'from' for pin '{pinId}': {error}"));
+                return false;
+            }
+
+            from = resolved;
+        }
+
+        if (toValue is ScriptValue toRaw)
+        {
+            if (!TryResolveValue(domain, toRaw, out int resolved, out string error))
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    at,
+                    $"invalid 'to' for pin '{pinId}': {error}"));
+                return false;
+            }
+
+            to = resolved;
+        }
+
+        if (from is not null && to is not null && from == to)
+        {
+            failures.Add(new ScriptFailure(
+                stepNumber,
+                at,
+                $"edge filter for pin '{pinId}' has the same 'from' and 'to' value " +
+                $"{DescribeValue(domain, from.Value)}; no transition can match."));
+            return false;
+        }
+
+        return true;
+    }
+
     private static bool TryResolveValue(
         SignalDomain domain,
         ScriptValue value,
@@ -668,4 +802,12 @@ public static class SimulationScriptRunner
         int Net,
         SignalDomain Domain,
         IReadOnlyList<ResolvedEdgeFilter> Filters);
+
+    private sealed record ResolvedEdgeSequenceItem(
+        int Index,
+        string PinId,
+        int Net,
+        SignalDomain Domain,
+        int? From,
+        int? To);
 }

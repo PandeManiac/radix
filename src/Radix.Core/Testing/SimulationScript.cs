@@ -157,6 +157,33 @@ public sealed class ScriptEdgeWindow
     public IReadOnlyList<ScriptEdgeExpectation> PinExpectations { get; }
 }
 
+/// <summary>One ordered edge in a sequence assertion.</summary>
+public sealed record ScriptEdgeSequenceItem(
+    string PinId,
+    ScriptValue? From,
+    ScriptValue? To);
+
+/// <summary>
+/// An ordered-edge assertion: the listed transitions must appear within the
+/// interval in the given order. Matches need not be adjacent, so unrelated
+/// activity may occur between them. Each item uses the same filters as a
+/// filtered-edge count, but describes a single occurrence rather than a count.
+/// </summary>
+public sealed class ScriptEdgeSequenceWindow
+{
+    public ScriptEdgeSequenceWindow(
+        long ticks,
+        IReadOnlyList<ScriptEdgeSequenceItem> items)
+    {
+        Ticks = ticks;
+        Items = items;
+    }
+
+    public long Ticks { get; }
+
+    public IReadOnlyList<ScriptEdgeSequenceItem> Items { get; }
+}
+
 /// <summary>
 /// One ordered step. The runner advances to <see cref="At"/>, applies drives, settles
 /// zero-delay events at that timestamp, then checks expectations.
@@ -173,7 +200,8 @@ public sealed class SimulationScriptStep
         ScriptWindow? window = null,
         ScriptStability? stability = null,
         ScriptTransitionWindow? transitions = null,
-        ScriptEdgeWindow? edges = null)
+        ScriptEdgeWindow? edges = null,
+        ScriptEdgeSequenceWindow? sequence = null)
     {
         At = at;
         Drives = drives;
@@ -185,6 +213,7 @@ public sealed class SimulationScriptStep
         Stability = stability;
         Transitions = transitions;
         Edges = edges;
+        Sequence = sequence;
     }
 
     /// <summary>Absolute simulated tick. Missing values default to the previous step's tick.</summary>
@@ -213,10 +242,13 @@ public sealed class SimulationScriptStep
     /// <summary>Optional filtered-edge assertion over an inclusive interval of ticks.</summary>
     public ScriptEdgeWindow? Edges { get; }
 
+    /// <summary>Optional ordered-edge assertion over an inclusive interval of ticks.</summary>
+    public ScriptEdgeSequenceWindow? Sequence { get; }
+
     public bool HasActions =>
         Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
         ExpectHalted is not null || Window is not null || Stability is not null ||
-        Transitions is not null || Edges is not null;
+        Transitions is not null || Edges is not null || Sequence is not null;
 }
 
 /// <summary>
@@ -333,10 +365,18 @@ public sealed class SimulationScript
             }
 
             if (step.Edges is not null &&
+                (step.Within is not null || step.Stable is not null || step.Transitions is not null ||
+                 step.Sequence is not null))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} cannot combine 'edges' with 'within', 'stable', 'transitions', or 'sequence'; only one timing block may advance the step.");
+            }
+
+            if (step.Sequence is not null &&
                 (step.Within is not null || step.Stable is not null || step.Transitions is not null))
             {
                 throw new SimulationScriptException(
-                    $"Step {stepNumber} cannot combine 'edges' with 'within', 'stable', or 'transitions'; only one timing block may advance the step.");
+                    $"Step {stepNumber} cannot combine 'sequence' with 'within', 'stable', or 'transitions'; only one timing block may advance the step.");
             }
 
             if (step.Transitions is not null && (step.Within is not null || step.Stable is not null))
@@ -345,7 +385,8 @@ public sealed class SimulationScript
                     $"Step {stepNumber} cannot combine 'transitions' with 'within' or 'stable'; only one timing block may advance the step.");
             }
 
-            if ((step.Stable is not null || step.Transitions is not null || step.Edges is not null) &&
+            if ((step.Stable is not null || step.Transitions is not null || step.Edges is not null ||
+                 step.Sequence is not null) &&
                 step.ExpectHalted == true)
             {
                 throw new SimulationScriptException(
@@ -356,6 +397,7 @@ public sealed class SimulationScript
             ScriptStability? stability = MapStability(step.Stable, stepNumber, at);
             ScriptTransitionWindow? transitions = MapTransitions(step.Transitions, stepNumber, at);
             ScriptEdgeWindow? edges = MapEdges(step.Edges, stepNumber, at);
+            ScriptEdgeSequenceWindow? sequence = MapSequence(step.Sequence, stepNumber, at);
 
             // A bare step is a deliberate advance-only marker; it is useful for
             // separating phases and lets later steps inherit this tick.
@@ -369,7 +411,8 @@ public sealed class SimulationScript
                 window,
                 stability,
                 transitions,
-                edges));
+                edges,
+                sequence));
         }
 
         return new SimulationScript(
@@ -610,6 +653,72 @@ public sealed class SimulationScript
         return new ScriptEdgeWindow(ticks, expectations);
     }
 
+    private static ScriptEdgeSequenceWindow? MapSequence(SequenceDto? source, int stepNumber, long at)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        if (source.Ticks is null)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'sequence' needs an explicit 'ticks' value.");
+        }
+
+        long ticks = source.Ticks.Value;
+        if (ticks < 0)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'sequence.ticks' must be non-negative.");
+        }
+
+        if (ticks > long.MaxValue - at)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'sequence.ticks' moves the deadline past the maximum simulated time.");
+        }
+
+        if (source.Expect is null || source.Expect.Count == 0)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'sequence' needs at least one 'expect' item.");
+        }
+
+        var items = new List<ScriptEdgeSequenceItem>(source.Expect.Count);
+        for (int i = 0; i < source.Expect.Count; i++)
+        {
+            SequenceItemDto item = source.Expect[i]
+                ?? throw new SimulationScriptException(
+                    $"Step {stepNumber} 'sequence.expect[{i}]' is null.");
+            string field = $"sequence.expect[{i}]";
+            if (string.IsNullOrWhiteSpace(item.Pin))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{field}' needs a non-blank 'pin'.");
+            }
+
+            bool hasFrom = item.From.ValueKind != JsonValueKind.Undefined;
+            bool hasTo = item.To.ValueKind != JsonValueKind.Undefined;
+            if (!hasFrom && !hasTo)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{field}' needs 'from', 'to', or both.");
+            }
+
+            ScriptValue? from = hasFrom
+                ? ReadValue(item.From, stepNumber, $"{field}.from")
+                : null;
+            ScriptValue? to = hasTo
+                ? ReadValue(item.To, stepNumber, $"{field}.to")
+                : null;
+            items.Add(new ScriptEdgeSequenceItem(
+                item.Pin.Trim(),
+                from,
+                to));
+        }
+
+        return new ScriptEdgeSequenceWindow(ticks, items);
+    }
+
     private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes)
         MapWindowContents(WindowDto source, int stepNumber, long at, string field)
     {
@@ -755,6 +864,8 @@ public sealed class SimulationScript
         public TransitionsDto? Transitions { get; set; }
 
         public EdgesDto? Edges { get; set; }
+
+        public SequenceDto? Sequence { get; set; }
     }
 
     private sealed class TransitionsDto
@@ -778,6 +889,22 @@ public sealed class SimulationScript
         public JsonElement To { get; set; }
 
         public long? Count { get; set; }
+    }
+
+    private sealed class SequenceDto
+    {
+        public long? Ticks { get; set; }
+
+        public List<SequenceItemDto?>? Expect { get; set; }
+    }
+
+    private sealed class SequenceItemDto
+    {
+        public string? Pin { get; set; }
+
+        public JsonElement From { get; set; }
+
+        public JsonElement To { get; set; }
     }
 
     private sealed class WindowDto

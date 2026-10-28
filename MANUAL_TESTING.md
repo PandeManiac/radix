@@ -237,6 +237,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 23. Copy the ternary counter script to a scratch file and change `"t0": 1` in its `transitions` block to `"t0": 0`. Expected: `FAIL`, one line naming `step 27 (t=700)` with `pin 't0': expected 0 transition(s) between t=670 and t=700, observed 1`; exit code 1. This shows transition counts cover the whole interval, including the drive at its start.
 24. Run `dotnet run --project src/Radix.Cli -- test examples/8-bit-alu.radix examples/tests/eight-bit-alu.radixtest`. Expected: `PASS: 5 step(s) through t=329`, exit code 0; the script checks ADD with carry (200 + 100 = 44), AND (64), OR (236), XOR (172), and the zero flag when both operands are 0.
 25. Copy `examples/tests/ternary-counter.radixtest` to a scratch file and change the `"clk"` filter in the `edges` block from `"count": 1` to `"count": 0`. Expected: `FAIL`, one line at `step 9 (t=220)` reading `pin 'clk': expected 0 edge(s) 0 (0) -> 2 (2) between t=190 and t=220, observed 1.`; exit code 1. Restore the file and rerun for a pass. This shows filters count only the named direction.
+26. Copy the script again and change the `t0` item in the `sequence` block from `"from": 0` to `"from": 2`, leaving `"to": 1`. Expected: `FAIL`, one line at `step 12 (t=300)` reading `sequence item 2 (pin 't0': 2 (2) -> 1 (1)) was not observed in order between t=270 and t=300.`; exit code 1. Restore and rerun. This shows a sequence requires each filtered edge, not only the first one.
 
 ### Editor script runner
 

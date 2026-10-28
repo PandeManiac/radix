@@ -729,7 +729,7 @@ public sealed class SimulationScriptTests
             StringComparison.Ordinal);
 
         Assert.Contains(
-            "cannot combine 'edges' with 'within', 'stable', or 'transitions'",
+            "cannot combine 'edges' with 'within', 'stable', 'transitions', or 'sequence'",
             Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
                 """
                 {
@@ -754,6 +754,256 @@ public sealed class SimulationScriptTests
                   "version": 1,
                   "steps": [
                     { "edges": { "ticks": 5, "expect": { "q": [ { "to": 1, "count": 1 } ] } }, "expectHalted": true }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SequenceWindowMatchesTransitionsInOrder()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "sequence": {
+                    "ticks": 30,
+                    "expect": [
+                      { "pin": "y", "from": 0, "to": 1 },
+                      { "pin": "y", "from": 1, "to": 0 },
+                      { "pin": "y", "from": 0, "to": 1 }
+                    ]
+                  }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(WaveformProject(), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(30, result.FinalTime);
+    }
+
+    [Fact]
+    public void SequenceWindowRequiresTheDeclaredOrderNotJustExistence()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "sequence": {
+                    "ticks": 30,
+                    "expect": [
+                      { "pin": "y", "from": 0, "to": 1 },
+                      { "pin": "y", "from": 0, "to": 1 },
+                      { "pin": "y", "from": 1, "to": 0 }
+                    ]
+                  }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(WaveformProject(), script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(30, failure.At);
+        Assert.Contains("sequence item 3", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("pin 'y': 1 (1) -> 0 (0)", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("not observed in order", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SequenceWindowResolvesLabelsAndRejectsImpossibleFilters()
+    {
+        var builder = new ProjectBuilder("sequence labels");
+        builder.EnsureDomain(new SignalDomain(
+            "level",
+            "Level",
+            ["low", "high"],
+            new SingleDriverResolution()));
+        DefinitionBuilder definition = builder.Define("labels", "Labels");
+        Net input = definition.AddPin("a", "A", PinDirection.Input, "level");
+        Net output = definition.AddPin("y", "Y", PinDirection.Output, "level");
+        definition.AddPrimitive("buf", new LookupSpec(1, [0, 1], delayTicks: 1));
+        definition.Connect(input, definition.Pin("buf", "in0"));
+        definition.Connect(output, definition.Pin("buf", "out"));
+        CircuitProject project = builder.Build("labels");
+
+        SimulationScript labels = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "a": "low" } },
+                {
+                  "at": 10,
+                  "set": { "a": "high" },
+                  "sequence": {
+                    "ticks": 5,
+                    "expect": [
+                      { "pin": "a", "from": "low", "to": "high" },
+                      { "pin": "y", "from": "low", "to": "high" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """);
+        Assert.True(SimulationScriptRunner.Run(project, labels).Passed);
+
+        SimulationScript impossible = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "sequence": { "ticks": 5, "expect": [ { "pin": "y", "from": 1, "to": 1 } ] } }
+              ]
+            }
+            """);
+        SimulationScriptResult impossibleResult = SimulationScriptRunner.Run(WaveformProject(), impossible);
+        Assert.False(impossibleResult.Passed);
+        Assert.Contains("same 'from' and 'to' value", impossibleResult.Failures[0].Message, StringComparison.Ordinal);
+        Assert.Contains("no transition can match", impossibleResult.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SequenceWindowRejectsUnknownPinsAsFailures()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "sequence": { "ticks": 5, "expect": [ { "pin": "nope", "to": 1 } ] } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        Assert.Contains("unknown interface pin 'nope'", result.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMalformedSequenceWindows()
+    {
+        Assert.Contains(
+            "'sequence' needs an explicit 'ticks' value",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "sequence": { "expect": [ { "pin": "y", "to": 1 } ] } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'sequence.ticks' must be non-negative",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "sequence": { "ticks": -1, "expect": [ { "pin": "y", "to": 1 } ] } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'sequence' needs at least one",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "sequence": { "ticks": 5, "expect": [] } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs a non-blank 'pin'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "sequence": { "ticks": 5, "expect": [ { "to": 1 } ] } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs 'from', 'to', or both",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "sequence": { "ticks": 5, "expect": [ { "pin": "y" } ] } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "must be a number, a string, or null",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "sequence": { "ticks": 5, "expect": [ { "pin": "y", "to": true } ] } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'sequence.expect[0]' is null",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "sequence": { "ticks": 5, "expect": [ null ] } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine 'sequence' with 'within', 'stable', or 'transitions'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    {
+                      "sequence": { "ticks": 5, "expect": [ { "pin": "y", "to": 1 } ] },
+                      "stable": { "ticks": 5, "expect": { "y": 1 } }
+                    }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine 'edges' with 'within', 'stable', 'transitions', or 'sequence'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    {
+                      "edges": { "ticks": 5, "expect": { "y": [ { "to": 1, "count": 1 } ] } },
+                      "sequence": { "ticks": 5, "expect": [ { "pin": "y", "to": 1 } ] }
+                    }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine a timing window with 'expectHalted: true'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    { "sequence": { "ticks": 5, "expect": [ { "pin": "y", "to": 1 } ] }, "expectHalted": true }
                   ]
                 }
                 """)).Message,

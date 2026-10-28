@@ -42,7 +42,8 @@ Unknown fields are rejected so a misspelled assertion cannot silently pass.
 | `within` | Optional eventual assertion: `{ "ticks": N, "expect": {...}, "expectLane": {...} }`. Values must hold together at `at` or at some tick up to `at + N`, inclusive. |
 | `stable` | Optional held-value assertion with the same shape as `within`. The values must match at `at` and at every tick through `at + N`, inclusive. Cannot be combined with `within` or `expectHalted: true`. |
 | `transitions` | Optional change-count assertion: `{ "ticks": N, "expect": { "pin": count } }`. Each pin must change value exactly the given number of times from the step's tick through `at + N`, inclusive. Cannot be combined with `within`, `stable`, `edges`, or `expectHalted: true`. |
-| `edges` | Optional direction-filtered edge assertion: `{ "ticks": N, "expect": { "pin": [ { "from": value, "to": value, "count": N }, ... ] } }`. Each filter counts only transitions that match its `from` and/or `to` value. Cannot be combined with `within`, `stable`, `transitions`, or `expectHalted: true`. |
+| `edges` | Optional direction-filtered edge assertion: `{ "ticks": N, "expect": { "pin": [ { "from": value, "to": value, "count": N }, ... ] } }`. Each filter counts only transitions that match its `from` and/or `to` value. Cannot be combined with `within`, `stable`, `transitions`, `sequence`, or `expectHalted: true`. |
+| `sequence` | Optional ordered-edge assertion: `{ "ticks": N, "expect": [ { "pin": "clk", "to": 1 }, { "pin": "q", "to": 1 } ] }`. Each item must occur in the given order, with unrelated transitions allowed between matches. Cannot be combined with `within`, `stable`, `transitions`, `edges`, or `expectHalted: true`. |
 | `expectHalted` | Optional assertion about the engine's halt state after the step settles. |
 | `description` | Optional note for readers; not interpreted. |
 
@@ -52,7 +53,7 @@ Each step's execution order is fixed:
 2. apply this step's `set` drives;
 3. settle zero-delay consequences at `at`;
 4. check `expect` and `expectLane`;
-5. run the `within` window (searching for a match), the `stable` window (checking every tick through its deadline), the `transitions` window (advancing to its deadline and counting changes), or the `edges` window (advancing to its deadline and counting matching transitions);
+5. run the `within` window (searching for a match), the `stable` window (checking every tick through its deadline), the `transitions` window (advancing to its deadline and counting changes), the `edges` window (advancing to its deadline and counting matching transitions), or the `sequence` window (advancing to its deadline and matching ordered transitions);
 6. check `expectHalted`.
 
 Transport-delayed outputs therefore appear in a later step, not at the edge that caused them. A step with no actions is a pure advance marker and is useful for setup time before a clock edge.
@@ -119,6 +120,28 @@ Each pin maps to an array of filters, and every filter is checked independently.
 
 The interval starts after the step's drives are applied and runs through `at + ticks`, inclusive, exactly like a `transitions` window. A count of zero is useful for proving the absence of a glitch in one direction, for example a falling edge on a line that must only rise. Values are resolved against the pin's domain, so a typo in a label fails the step instead of silently matching nothing.
 
+## Edge sequences
+
+Some properties are about order, not counts: a clock edge must precede a capture, or a request must precede an acknowledge. A `sequence` window asserts that the listed transitions occur in order anywhere inside its interval:
+
+```json
+{
+  "at": 270,
+  "set": { "clk": 2 },
+  "sequence": {
+    "ticks": 30,
+    "expect": [
+      { "pin": "clk", "from": 0, "to": 2 },
+      { "pin": "t0", "from": 0, "to": 1 }
+    ]
+  }
+}
+```
+
+Each item is a single `from`/`to` filter with the same value forms as `edges`; at least one side is required. The runner scans observed transitions in commit order and starts each search after the previous match, so unrelated edges may happen in between. This also means two transitions at the same tick are ordered by the engine's deterministic event order, not by the order of keys in the script. A filter whose `from` and `to` resolve to the same value is rejected because no transition can ever match it.
+
+The interval starts after the step's drives are applied, so a drive at the step's own tick is visible to the sequence. A missing item reports its one-based position, pin, direction, and interval. A sequence advances to its deadline; later steps must be at that tick or later.
+
 ## Values
 
 - An integer is a domain value index (`0`, `1`, `2`, …).
@@ -153,13 +176,13 @@ The Diagnostics tab's **Run script…** button runs the same files against the c
 
 ## Shipped scripts
 
-`examples/tests/` contains regression scripts for the D flip-flop (which asserts its capture with a 10-tick settle window and its low-phase hold with a 10-tick stability window), binary counter, balanced and unsigned ternary 2-trit adders, ternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
+`examples/tests/` contains regression scripts for the D flip-flop (which asserts its capture with a 10-tick settle window and its low-phase hold with a 10-tick stability window), binary counter, balanced and unsigned ternary 2-trit adders, ternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions and an ordered sequence to require the clock edge before the trit update; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
 
 ## Intentional limits
 
 - Scripts are linear. There are no loops, variables, expressions, random drives, or reusable subroutines; generate or copy steps instead.
 - Assertions read top-level interface pins and definition numeric lanes only. Internal nets are available through `--trace` and the waveform UI, not script assertions.
-- Assertions sample values at integer ticks. `within`, `stable`, `transitions`, and `edges` express convergence, held values, total change counts, and filtered edge counts, not continuous time, relative edge order, or minimum setup/hold constraints, and there is no assertion over internal nets. Use exact expectations, filtered edge counts, and engine traces for those properties.
+- Assertions sample values at integer ticks. `within`, `stable`, `transitions`, `edges`, and `sequence` express convergence, held values, total change counts, filtered edge counts, and relative edge order, not continuous time or minimum setup/hold constraints, and there is no assertion over internal nets. Use exact expectations, filtered edge counts, sequences, and engine traces for those properties.
 - A script does not save simulation state. Every run starts from time zero.
 
 These limits keep the format inspectable and deterministic. Extending it should add explicit, typed actions rather than an embedded expression language.

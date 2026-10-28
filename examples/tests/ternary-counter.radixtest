@@ -28,7 +28,18 @@
     },
     { "at": 220, "expectLane": { "count": 3 }, "description": "low trit wraps to 0 and carries into T1" },
     { "at": 230, "set": { "clk": 0 } },
-    { "at": 270, "set": { "clk": 2 } },
+    {
+      "at": 270,
+      "set": { "clk": 2 },
+      "sequence": {
+        "ticks": 30,
+        "expect": [
+          { "pin": "clk", "from": 0, "to": 2 },
+          { "pin": "t0", "from": 0, "to": 1 }
+        ]
+      },
+      "description": "the clock edge is observed before the low trit advances"
+    },
     { "at": 300, "expectLane": { "count": 4 } },
     { "at": 310, "set": { "clk": 0 } },
     { "at": 350, "set": { "clk": 2 } },
