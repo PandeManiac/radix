@@ -72,6 +72,40 @@ public readonly record struct ScriptSignalReference(string Name, ScriptNetRefere
     public override string ToString() => Name;
 }
 
+/// <summary>The operator used by a cross-signal relation assertion.</summary>
+public enum ScriptRelationOperator
+{
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+}
+
+/// <summary>
+/// A typed comparison between two signals at the same tick. Unlike a value
+/// expectation, this states a property that must hold without naming either
+/// signal's exact value, so it survives a domain relabeling as long as both
+/// signals still share that domain.
+/// </summary>
+public sealed record ScriptRelationExpectation(
+    ScriptSignalReference Left,
+    ScriptSignalReference Right,
+    ScriptRelationOperator Operator)
+{
+    public string OperatorText => Operator switch
+    {
+        ScriptRelationOperator.Equal => "eq",
+        ScriptRelationOperator.NotEqual => "ne",
+        ScriptRelationOperator.LessThan => "lt",
+        ScriptRelationOperator.LessThanOrEqual => "le",
+        ScriptRelationOperator.GreaterThan => "gt",
+        ScriptRelationOperator.GreaterThanOrEqual => "ge",
+        _ => throw new InvalidOperationException($"Unknown relation operator '{Operator}'."),
+    };
+}
+
 /// <summary>An expected decoded numeric-lane value at a scripted tick.</summary>
 public sealed class ScriptLaneExpectation
 {
@@ -98,12 +132,14 @@ public sealed class ScriptWindow
         long ticks,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
-        IReadOnlyList<ScriptNetExpectation> netExpectations)
+        IReadOnlyList<ScriptNetExpectation> netExpectations,
+        IReadOnlyList<ScriptRelationExpectation>? relationExpectations = null)
     {
         Ticks = ticks;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
         NetExpectations = netExpectations;
+        RelationExpectations = relationExpectations ?? [];
     }
 
     /// <summary>Maximum ticks after the step's tick, inclusive, to wait for a match.</summary>
@@ -114,6 +150,8 @@ public sealed class ScriptWindow
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
 
     public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
+
+    public IReadOnlyList<ScriptRelationExpectation> RelationExpectations { get; }
 }
 
 /// <summary>
@@ -127,12 +165,14 @@ public sealed class ScriptStability
         long ticks,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
-        IReadOnlyList<ScriptNetExpectation> netExpectations)
+        IReadOnlyList<ScriptNetExpectation> netExpectations,
+        IReadOnlyList<ScriptRelationExpectation>? relationExpectations = null)
     {
         Ticks = ticks;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
         NetExpectations = netExpectations;
+        RelationExpectations = relationExpectations ?? [];
     }
 
     /// <summary>Number of ticks after the step's tick that the values must hold, inclusive.</summary>
@@ -143,6 +183,8 @@ public sealed class ScriptStability
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
 
     public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
+
+    public IReadOnlyList<ScriptRelationExpectation> RelationExpectations { get; }
 }
 
 /// <summary>
@@ -156,12 +198,14 @@ public sealed class ScriptSetup
         long ticks,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
-        IReadOnlyList<ScriptNetExpectation> netExpectations)
+        IReadOnlyList<ScriptNetExpectation> netExpectations,
+        IReadOnlyList<ScriptRelationExpectation>? relationExpectations = null)
     {
         Ticks = ticks;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
         NetExpectations = netExpectations;
+        RelationExpectations = relationExpectations ?? [];
     }
 
     /// <summary>Number of ticks before the step that the values must hold.</summary>
@@ -172,6 +216,8 @@ public sealed class ScriptSetup
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
 
     public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
+
+    public IReadOnlyList<ScriptRelationExpectation> RelationExpectations { get; }
 }
 
 /// <summary>Expected number of value changes on one pin or internal net over an interval.</summary>
@@ -274,7 +320,8 @@ public sealed class SimulationScriptStep
         ScriptTransitionWindow? transitions = null,
         ScriptEdgeWindow? edges = null,
         ScriptEdgeSequenceWindow? sequence = null,
-        ScriptSetup? setup = null)
+        ScriptSetup? setup = null,
+        IReadOnlyList<ScriptRelationExpectation>? relationExpectations = null)
     {
         At = at;
         Drives = drives;
@@ -289,6 +336,7 @@ public sealed class SimulationScriptStep
         Edges = edges;
         Sequence = sequence;
         Setup = setup;
+        RelationExpectations = relationExpectations ?? [];
     }
 
     /// <summary>Absolute simulated tick. Missing values default to the previous step's tick.</summary>
@@ -302,6 +350,9 @@ public sealed class SimulationScriptStep
 
     /// <summary>Expected values on authored nets, addressed by hierarchy path.</summary>
     public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
+
+    /// <summary>Optional typed comparisons between two signals at this step's tick.</summary>
+    public IReadOnlyList<ScriptRelationExpectation> RelationExpectations { get; }
 
     /// <summary>Optional assertion about the engine's halt state after this step settles.</summary>
     public bool? ExpectHalted { get; }
@@ -328,7 +379,8 @@ public sealed class SimulationScriptStep
 
     public bool HasActions =>
         Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
-        NetExpectations.Count > 0 || ExpectHalted is not null || Window is not null || Stability is not null ||
+        NetExpectations.Count > 0 || RelationExpectations.Count > 0 || ExpectHalted is not null ||
+        Window is not null || Stability is not null ||
         Transitions is not null || Edges is not null || Sequence is not null ||
         Setup is not null;
 }
@@ -441,6 +493,7 @@ public sealed class SimulationScript
             var pinExpectations = MapExpectations(step.Expect, stepNumber, "expect");
             var laneExpectations = MapLaneExpectations(step.ExpectLane, stepNumber, "expectLane");
             var netExpectations = MapNetExpectations(step.ExpectNet, stepNumber, "expectNet");
+            var relationExpectations = MapRelations(step.ExpectRelation, stepNumber, "expectRelation");
             if (step.Within is not null && step.Stable is not null)
             {
                 throw new SimulationScriptException(
@@ -498,7 +551,8 @@ public sealed class SimulationScript
                 transitions,
                 edges,
                 sequence,
-                setup));
+                setup,
+                relationExpectations));
         }
 
         return new SimulationScript(
@@ -600,6 +654,95 @@ public sealed class SimulationScript
     private static ScriptSignalReference MapNetSignal(string reference, int stepNumber, string field) =>
         ScriptSignalReference.InternalNet(ParseNetReference(reference, stepNumber, field));
 
+    private static List<ScriptRelationExpectation> MapRelations(
+        List<RelationDto?>? source,
+        int stepNumber,
+        string field)
+    {
+        var relations = new List<ScriptRelationExpectation>();
+        if (source is null)
+        {
+            return relations;
+        }
+
+        if (source.Count == 0)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} has an empty '{field}' array.");
+        }
+
+        for (int i = 0; i < source.Count; i++)
+        {
+            RelationDto relation = source[i]
+                ?? throw new SimulationScriptException($"Step {stepNumber} '{field}[{i}]' is null.");
+            string itemField = $"{field}[{i}]";
+            if (string.IsNullOrWhiteSpace(relation.Left))
+            {
+                throw new SimulationScriptException($"Step {stepNumber} '{itemField}' needs a non-blank 'left' signal.");
+            }
+
+            if (string.IsNullOrWhiteSpace(relation.Right))
+            {
+                throw new SimulationScriptException($"Step {stepNumber} '{itemField}' needs a non-blank 'right' signal.");
+            }
+
+            if (!TryParseSignalReference(relation.Left, out ScriptSignalReference left, out string leftError))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{itemField}.left' is invalid: {leftError}");
+            }
+
+            if (!TryParseSignalReference(relation.Right, out ScriptSignalReference right, out string rightError))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{itemField}.right' is invalid: {rightError}");
+            }
+
+            if (string.IsNullOrWhiteSpace(relation.Op))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{itemField}' needs an 'op' (eq, ne, lt, le, gt, or ge).");
+            }
+
+            if (!TryParseRelationOperator(relation.Op, out ScriptRelationOperator op))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{itemField}.op' must be eq, ne, lt, le, gt, or ge, not '{relation.Op}'.");
+            }
+
+            relations.Add(new ScriptRelationExpectation(left, right, op));
+        }
+
+        return relations;
+    }
+
+    private static bool TryParseRelationOperator(string value, out ScriptRelationOperator op)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "eq":
+                op = ScriptRelationOperator.Equal;
+                return true;
+            case "ne":
+                op = ScriptRelationOperator.NotEqual;
+                return true;
+            case "lt":
+                op = ScriptRelationOperator.LessThan;
+                return true;
+            case "le":
+                op = ScriptRelationOperator.LessThanOrEqual;
+                return true;
+            case "gt":
+                op = ScriptRelationOperator.GreaterThan;
+                return true;
+            case "ge":
+                op = ScriptRelationOperator.GreaterThanOrEqual;
+                return true;
+            default:
+                op = default;
+                return false;
+        }
+    }
+
     private static List<ScriptLaneExpectation> MapLaneExpectations(
         Dictionary<string, JsonElement>? source,
         int stepNumber,
@@ -638,7 +781,7 @@ public sealed class SimulationScript
             return null;
         }
 
-        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets) =
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets, List<ScriptRelationExpectation> relations) =
             MapWindowContents(source, stepNumber, at, "setup");
         if (ticks > at)
         {
@@ -646,7 +789,7 @@ public sealed class SimulationScript
                 $"Step {stepNumber} 'setup.ticks' ({ticks}) cannot start before t=0 for a step at t={at}.");
         }
 
-        return new ScriptSetup(ticks, pins, lanes, nets);
+        return new ScriptSetup(ticks, pins, lanes, nets, relations);
     }
 
     private static ScriptWindow? MapWindow(WindowDto? source, int stepNumber, long at)
@@ -656,9 +799,9 @@ public sealed class SimulationScript
             return null;
         }
 
-        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets) =
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets, List<ScriptRelationExpectation> relations) =
             MapWindowContents(source, stepNumber, at, "within");
-        return new ScriptWindow(ticks, pins, lanes, nets);
+        return new ScriptWindow(ticks, pins, lanes, nets, relations);
     }
 
     private static ScriptStability? MapStability(WindowDto? source, int stepNumber, long at)
@@ -668,9 +811,9 @@ public sealed class SimulationScript
             return null;
         }
 
-        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets) =
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets, List<ScriptRelationExpectation> relations) =
             MapWindowContents(source, stepNumber, at, "stable");
-        return new ScriptStability(ticks, pins, lanes, nets);
+        return new ScriptStability(ticks, pins, lanes, nets, relations);
     }
 
     private static ScriptTransitionWindow? MapTransitions(TransitionsDto? source, int stepNumber, long at)
@@ -919,7 +1062,7 @@ public sealed class SimulationScript
         return new ScriptEdgeSequenceWindow(ticks, items);
     }
 
-    private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes, List<ScriptNetExpectation> Nets)
+    private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes, List<ScriptNetExpectation> Nets, List<ScriptRelationExpectation> Relations)
         MapWindowContents(WindowDto source, int stepNumber, long at, string field)
     {
         if (source.Ticks is null)
@@ -942,13 +1085,60 @@ public sealed class SimulationScript
         var pinExpectations = MapExpectations(source.Expect, stepNumber, $"{field}.expect");
         var laneExpectations = MapLaneExpectations(source.ExpectLane, stepNumber, $"{field}.expectLane");
         var netExpectations = MapNetExpectations(source.ExpectNet, stepNumber, $"{field}.expectNet");
-        if (pinExpectations.Count == 0 && laneExpectations.Count == 0 && netExpectations.Count == 0)
+        var relationExpectations = MapRelations(source.ExpectRelation, stepNumber, $"{field}.expectRelation");
+        if (pinExpectations.Count == 0 && laneExpectations.Count == 0 && netExpectations.Count == 0 &&
+            relationExpectations.Count == 0)
         {
             throw new SimulationScriptException(
-                $"Step {stepNumber} '{field}' needs at least one 'expect', 'expectLane', or 'expectNet' entry.");
+                $"Step {stepNumber} '{field}' needs at least one 'expect', 'expectLane', 'expectNet', or 'expectRelation' entry.");
         }
 
-        return (ticks, pinExpectations, laneExpectations, netExpectations);
+        return (ticks, pinExpectations, laneExpectations, netExpectations, relationExpectations);
+    }
+
+    /// <summary>
+    /// Parses a signal reference used by relation assertions. A bare name or a
+    /// <c>pin:</c> prefix names an interface pin; a <c>net:</c> prefix names an
+    /// authored net, including a hierarchy path such as <c>net:adder/c1</c>.
+    /// </summary>
+    public static bool TryParseSignalReference(
+        string? reference,
+        out ScriptSignalReference result,
+        out string error)
+    {
+        result = default;
+        string text = reference?.Trim() ?? string.Empty;
+        if (text.Length == 0)
+        {
+            error = "a signal reference cannot be blank.";
+            return false;
+        }
+
+        if (text.StartsWith("net:", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseNetReference(text[4..], out ScriptNetReference net, out string netError))
+            {
+                error = $"invalid net reference: {netError}";
+                return false;
+            }
+
+            result = ScriptSignalReference.InternalNet(net);
+            error = string.Empty;
+            return true;
+        }
+
+        string pinId = text.StartsWith("pin:", StringComparison.OrdinalIgnoreCase)
+            ? text[4..].Trim()
+            : text;
+        if (pinId.Length == 0)
+        {
+            error = "a pin reference cannot be blank.";
+            return false;
+        }
+
+        result = ScriptSignalReference.Pin(pinId);
+        error = string.Empty;
+        return true;
     }
 
     /// <summary>
@@ -1106,6 +1296,8 @@ public sealed class SimulationScript
 
         public Dictionary<string, JsonElement>? ExpectNet { get; set; }
 
+        public List<RelationDto?>? ExpectRelation { get; set; }
+
         public bool? ExpectHalted { get; set; }
 
         public WindowDto? Setup { get; set; }
@@ -1175,5 +1367,16 @@ public sealed class SimulationScript
         public Dictionary<string, JsonElement>? ExpectLane { get; set; }
 
         public Dictionary<string, JsonElement>? ExpectNet { get; set; }
+
+        public List<RelationDto?>? ExpectRelation { get; set; }
+    }
+
+    private sealed class RelationDto
+    {
+        public string? Left { get; set; }
+
+        public string? Right { get; set; }
+
+        public string? Op { get; set; }
     }
 }

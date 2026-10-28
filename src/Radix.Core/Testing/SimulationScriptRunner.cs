@@ -203,6 +203,14 @@ public static class SimulationScriptRunner
                 }
             }
 
+            for (int relationIndex = 0; relationIndex < step.RelationExpectations.Count; relationIndex++)
+            {
+                if (CheckRelation(engine, step.RelationExpectations[relationIndex], relationIndex + 1) is { } message)
+                {
+                    failures.Add(new ScriptFailure(stepNumber, step.At, message));
+                }
+            }
+
             if (step.Window is { } window)
             {
                 long deadline = step.At + window.Ticks;
@@ -217,6 +225,7 @@ public static class SimulationScriptRunner
                         window.PinExpectations,
                         window.LaneExpectations,
                         window.NetExpectations,
+                        window.RelationExpectations,
                         mismatches);
                     if (mismatches.Count == 0)
                     {
@@ -259,6 +268,7 @@ public static class SimulationScriptRunner
                         stability.PinExpectations,
                         stability.LaneExpectations,
                         stability.NetExpectations,
+                        stability.RelationExpectations,
                         mismatches);
                     if (mismatches.Count > 0)
                     {
@@ -610,6 +620,7 @@ public static class SimulationScriptRunner
                 setup.PinExpectations,
                 setup.LaneExpectations,
                 setup.NetExpectations,
+                setup.RelationExpectations,
                 mismatches);
             if (mismatches.Count > 0)
             {
@@ -636,6 +647,7 @@ public static class SimulationScriptRunner
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
         IReadOnlyList<ScriptNetExpectation> netExpectations,
+        IReadOnlyList<ScriptRelationExpectation> relationExpectations,
         List<string> mismatches)
     {
         mismatches.Clear();
@@ -658,6 +670,14 @@ public static class SimulationScriptRunner
         foreach (ScriptNetExpectation expectation in netExpectations)
         {
             if (CheckNet(engine, expectation) is { } message)
+            {
+                mismatches.Add(message);
+            }
+        }
+
+        for (int i = 0; i < relationExpectations.Count; i++)
+        {
+            if (CheckRelation(engine, relationExpectations[i], i + 1) is { } message)
             {
                 mismatches.Add(message);
             }
@@ -737,6 +757,78 @@ public static class SimulationScriptRunner
             : $"net '{expectation.Reference}': expected {DescribeValue(net.Domain, expected)}, " +
               $"got {DescribeValue(net.Domain, actual)}";
     }
+
+    /// <summary>
+    /// Returns a failure message, or null when a cross-signal relation holds. Both
+    /// signals are read from their resolved nets, so a pin and an authored net that
+    /// the compiler merged are compared by value rather than by reference identity.
+    /// </summary>
+    private static string? CheckRelation(
+        SimulationEngine engine,
+        ScriptRelationExpectation expectation,
+        int index)
+    {
+        string prefix = $"relation {index} ({expectation.OperatorText})";
+        if (!TryResolveSignal(
+                engine,
+                expectation.Left,
+                out int leftNet,
+                out SignalDomain leftDomain,
+                out string leftError))
+        {
+            return $"{prefix}: {leftError}";
+        }
+
+        if (!TryResolveSignal(
+                engine,
+                expectation.Right,
+                out int rightNet,
+                out SignalDomain rightDomain,
+                out string rightError))
+        {
+            return $"{prefix}: {rightError}";
+        }
+
+        if (!string.Equals(leftDomain.Id, rightDomain.Id, StringComparison.Ordinal))
+        {
+            return $"{prefix}: left {expectation.Left.Kind} '{expectation.Left.Name}' uses domain " +
+                   $"'{leftDomain.Id}' but right {expectation.Right.Kind} '{expectation.Right.Name}' " +
+                   $"uses domain '{rightDomain.Id}'; a relation needs both signals in the same domain.";
+        }
+
+        int leftValue = engine.GetNetValue(leftNet);
+        int rightValue = engine.GetNetValue(rightNet);
+        if (leftValue == SignalValue.UndrivenIndex)
+        {
+            return $"{prefix}: left {expectation.Left.Kind} '{expectation.Left.Name}' is undriven.";
+        }
+
+        if (rightValue == SignalValue.UndrivenIndex)
+        {
+            return $"{prefix}: right {expectation.Right.Kind} '{expectation.Right.Name}' is undriven.";
+        }
+
+        if (Holds(expectation.Operator, leftValue, rightValue))
+        {
+            return null;
+        }
+
+        return $"{prefix}: left {expectation.Left.Kind} '{expectation.Left.Name}' is " +
+               $"{DescribeValue(leftDomain, leftValue)}, right {expectation.Right.Kind} " +
+               $"'{expectation.Right.Name}' is {DescribeValue(rightDomain, rightValue)}; " +
+               $"the relation does not hold.";
+    }
+
+    private static bool Holds(ScriptRelationOperator op, int left, int right) => op switch
+    {
+        ScriptRelationOperator.Equal => left == right,
+        ScriptRelationOperator.NotEqual => left != right,
+        ScriptRelationOperator.LessThan => left < right,
+        ScriptRelationOperator.LessThanOrEqual => left <= right,
+        ScriptRelationOperator.GreaterThan => left > right,
+        ScriptRelationOperator.GreaterThanOrEqual => left >= right,
+        _ => throw new InvalidOperationException($"Unknown relation operator '{op}'."),
+    };
 
     /// <summary>Returns a failure message, or null when the lane matches.</summary>
     private static string? CheckLane(

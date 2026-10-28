@@ -1609,7 +1609,7 @@ public sealed class SimulationScriptTests
             StringComparison.Ordinal);
 
         Assert.Contains(
-            "at least one 'expect', 'expectLane', or 'expectNet'",
+            "at least one 'expect', 'expectLane', 'expectNet', or 'expectRelation'",
             Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
                 """
                 { "format": "radix-test", "version": 1, "steps": [ { "within": { "ticks": 5 } } ] }
@@ -1637,6 +1637,260 @@ public sealed class SimulationScriptTests
 
         Assert.False(result.Passed);
         Assert.Contains("unknown interface pin 'nope'", result.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RelationAssertionsComparePinsAndInternalNets()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "name": "relations",
+              "steps": [
+                {
+                  "at": 0,
+                  "set": { "clk": 0, "d": 1 },
+                  "expectRelation": [
+                    { "left": "pin:q", "right": "qn", "op": "ne" }
+                  ]
+                },
+                {
+                  "at": 20,
+                  "set": { "clk": 1 },
+                  "expectRelation": [
+                    { "left": "q", "right": "qn", "op": "ne" }
+                  ]
+                },
+                {
+                  "at": 30,
+                  "expectRelation": [
+                    { "left": "q", "right": "net:ff/q_net", "op": "eq" },
+                    { "left": "q", "right": "qn", "op": "gt" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(3, result.StepsExecuted);
+        Assert.Equal(30, result.FinalTime);
+    }
+
+    [Fact]
+    public void RelationAssertionsWorkInSetupSettleAndStabilityWindows()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 1 } },
+                {
+                  "at": 20,
+                  "set": { "clk": 1 },
+                  "setup": {
+                    "ticks": 5,
+                    "expectRelation": [ { "left": "q", "right": "qn", "op": "ne" } ]
+                  },
+                  "within": {
+                    "ticks": 10,
+                    "expectRelation": [ { "left": "q", "right": "qn", "op": "gt" } ]
+                  }
+                },
+                {
+                  "at": 40,
+                  "stable": {
+                    "ticks": 5,
+                    "expectRelation": [
+                      { "left": "q", "right": "qn", "op": "gt" },
+                      { "left": "q", "right": "net:ff/q_net", "op": "eq" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(3, result.StepsExecuted);
+        Assert.Equal(45, result.FinalTime);
+    }
+
+    [Fact]
+    public void RelationFailureReportsBothSignalsAndValues()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "set": { "clk": 0, "d": 1 },
+                  "expectRelation": [ { "left": "q", "right": "qn", "op": "eq" } ]
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(1, failure.Step);
+        Assert.Contains("relation 1 (eq)", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("left pin 'q' is 0 (0)", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("right pin 'qn' is 1 (1)", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("the relation does not hold", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RelationRejectsMixedDomainsAndUndrivenSignals()
+    {
+        var builder = new ProjectBuilder("relation domains");
+        DefinitionBuilder definition = builder.Define("root", "Root");
+        definition.AddPin("a", "A", PinDirection.Input, "binary");
+        definition.AddPin("b", "B", PinDirection.Input, "ternary");
+        CircuitProject project = builder.Build("root");
+
+        SimulationScript mixed = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "set": { "a": 0, "b": 0 },
+                  "expectRelation": [ { "left": "a", "right": "b", "op": "eq" } ]
+                }
+              ]
+            }
+            """);
+        SimulationScriptResult mixedResult = SimulationScriptRunner.Run(project, mixed);
+        Assert.False(mixedResult.Passed);
+        Assert.Contains(
+            "a relation needs both signals in the same domain",
+            mixedResult.Failures[0].Message,
+            StringComparison.Ordinal);
+
+        var binaryBuilder = new ProjectBuilder("undriven relations");
+        DefinitionBuilder binaryDefinition = binaryBuilder.Define("root", "Root");
+        binaryDefinition.AddPin("a", "A", PinDirection.Input, "binary");
+        binaryDefinition.AddPin("b", "B", PinDirection.Input, "binary");
+        SimulationScript undriven = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "expectRelation": [ { "left": "a", "right": "b", "op": "eq" } ] }
+              ]
+            }
+            """);
+        SimulationScriptResult undrivenResult = SimulationScriptRunner.Run(
+            binaryBuilder.Build("root"),
+            undriven);
+        Assert.False(undrivenResult.Passed);
+        Assert.Contains("left pin 'a' is undriven", undrivenResult.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RelationReportsUnknownSignalsWithoutThrowing()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "expectRelation": [ { "left": "nope", "right": "q", "op": "eq" } ] }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        Assert.Contains("relation 1 (eq)", result.Failures[0].Message, StringComparison.Ordinal);
+        Assert.Contains("unknown interface pin 'nope'", result.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMalformedRelationAssertions()
+    {
+        Assert.Contains(
+            "empty 'expectRelation' array",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectRelation": [] } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs a non-blank 'left' signal",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectRelation": [ { "right": "q", "op": "eq" } ] } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs a non-blank 'right' signal",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectRelation": [ { "left": "q", "op": "eq" } ] } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs an 'op'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectRelation": [ { "left": "q", "right": "qn" } ] } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "must be eq, ne, lt, le, gt, or ge",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectRelation": [ { "left": "q", "right": "qn", "op": "same" } ] } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'expectRelation[0].left' is invalid",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectRelation": [ { "left": "net:u1//w", "right": "q", "op": "eq" } ] } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs at least one 'expect', 'expectLane', 'expectNet', or 'expectRelation'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "within": { "ticks": 5 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
     }
 
     private static string RepositoryRoot()

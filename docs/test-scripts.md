@@ -1,6 +1,6 @@
 # RADIX test scripts
 
-A `.radixtest` file is a deterministic experiment over a project. It drives top-level input pins at chosen simulated ticks and asserts top-level pin values, decoded numeric lanes, or values on authored internal nets at any hierarchy level. Scripts are JSON data, never executable code, and run through the same compiler and `SimulationEngine` as the editor.
+A `.radixtest` file is a deterministic experiment over a project. It drives top-level input pins at chosen simulated ticks and asserts top-level pin values, decoded numeric lanes, values on authored internal nets at any hierarchy level, or a typed relation between two signals. Scripts are JSON data, never executable code, and run through the same compiler and `SimulationEngine` as the editor.
 
 Scripts stay outside `.radix` projects on purpose: a project describes a circuit, while a script describes one experiment over that circuit. The same project can have many scripts, and a script can target a non-root definition for isolated component tests.
 
@@ -40,7 +40,8 @@ Unknown fields are rejected so a misspelled assertion cannot silently pass.
 | `expect` | Object of interface pin ID to expected value. Both inputs and outputs can be read. |
 | `expectLane` | Object of numeric lane ID to expected decoded integer. The lane's pins, order, and format come from the definition. |
 | `expectNet` | Object of authored-net reference to expected value. A bare ID names a net in the simulated definition; `instance/netId` names a net under a hierarchy path. See [Internal nets](#internal-nets). |
-| `within` | Optional eventual assertion: `{ "ticks": N, "expect": {...}, "expectLane": {...}, "expectNet": {...} }`. Values must hold together at `at` or at some tick up to `at + N`, inclusive. |
+| `expectRelation` | Array of typed comparisons between two signals: `{ "left": "q", "right": "net:ff/q_net", "op": "eq" }`. See [Relations](#relations). |
+| `within` | Optional eventual assertion: `{ "ticks": N, "expect": {...}, "expectLane": {...}, "expectNet": {...}, "expectRelation": [...] }`. Values and relations must hold together at `at` or at some tick up to `at + N`, inclusive. |
 | `setup` | Optional pre-drive held-value assertion with the same shape as `within`. The values must match at every tick from `at - N` through `at - 1`, inclusive, before this step's `set` drives. |
 | `stable` | Optional held-value assertion with the same shape as `within`. The values must match at `at` and at every tick through `at + N`, inclusive. Cannot be combined with `within` or `expectHalted: true`. |
 | `transitions` | Optional change-count assertion: `{ "ticks": N, "expect": { "pin": count }, "expectNet": { "net": count } }`. Each signal must change value exactly the given number of times from the step's tick through `at + N`, inclusive. Cannot be combined with `within`, `stable`, `edges`, or `expectHalted: true`. |
@@ -55,8 +56,8 @@ Each step's execution order is fixed:
 2. advance to `at`;
 3. apply this step's `set` drives;
 4. settle zero-delay consequences at `at`;
-5. check `expect`, `expectLane`, and `expectNet`;
-6. run the `within` window (searching for a match), the `stable` window (checking every tick through its deadline), the `transitions` window (advancing to its deadline and counting changes), the `edges` window (advancing to its deadline and counting matching transitions), or the `sequence` window (advancing to its deadline and matching ordered transitions);
+5. check `expect`, `expectLane`, `expectNet`, and `expectRelation`;
+6. run the `within` window (searching for a match), the `stable` window (checking every tick through its deadline), the `transitions` window (advancing to its deadline and counting changes), the `edges` window (advancing to its deadline and counting matching transitions), or the `sequence` window (advancing to its deadline and matching ordered transitions); a `within`, `stable`, or `setup` block may also contain `expectRelation` entries, which are checked at every sampled tick;
 7. check `expectHalted`.
 
 Transport-delayed outputs therefore appear in a later step, not at the edge that caused them. A step with no actions is a pure advance marker and is useful for setup time before a clock edge.
@@ -73,7 +74,7 @@ Interface pins are the right boundary for a whole-design experiment, but some be
 - `instance/netId` names a net inside an instance. Path segments are instance IDs from the simulated definition, joined with `/`; the last segment is the authored net ID. `"adder/c1"` means instance `adder` of the simulated definition, net `c1` inside it. Deeper paths extend the same way, for example `"cpu/regfile/word0/q_net"`.
 - Each authored net is addressable even when the compiler merges it with other nets or binds it to an interface port. The assertion reads the resolved value of the merged net.
 - Net IDs and path segments follow the normal identifier rule, so a typo or a blank segment is rejected when the script loads rather than silently matching another net.
-- `expectNet` can be used on a step and inside `setup`, `within`, and `stable`. It uses the same value forms and domain checks as `expect`, and a window may contain only `expectNet` entries. `transitions` and `edges` also accept an `expectNet` object, and a `sequence` item may name a `net` instead of a `pin`.
+- `expectNet` can be used on a step and inside `setup`, `within`, and `stable`. It uses the same value forms and domain checks as `expect`, and a window may contain only `expectNet` entries. `transitions` and `edges` also accept an `expectNet` object, and a `sequence` item may name a `net` instead of a `pin`. Relation assertions use the same hierarchy-relative references with a `net:` prefix, for example `{"left":"q","right":"net:adder/c1","op":"eq"}`.
 
 The runner resolves the path against the compiled circuit, not against a display label. A failure names the reference, the expected and observed values, and the net's domain; an unknown reference also lists a bounded sample of the authored nets that do exist. Because the reference is hierarchy-relative, the same script can target a reusable definition directly and keep working when that definition is instantiated elsewhere.
 
@@ -85,13 +86,13 @@ A plain `expect` names one exact tick. Real outputs often settle after a transpo
 { "at": 20, "set": { "clk": 1 }, "within": { "ticks": 10, "expect": { "q": 1, "qn": 0 } } }
 ```
 
-The runner checks the window once per integer tick, which is sufficient because signals change only at integer ticks. A match is reported as a pass even if the values change again later in the window; this is a "settles by" assertion, not a stability interval. Windows are checked after immediate `expect`/`expectLane`/`expectNet` values, so a step can assert the state at the edge and the converged state in one place.
+The runner checks the window once per integer tick, which is sufficient because signals change only at integer ticks. A match is reported as a pass even if the values change again later in the window; this is a "settles by" assertion, not a stability interval. Windows are checked after immediate `expect`/`expectLane`/`expectNet`/`expectRelation` values, so a step can assert the state at the edge and the converged state in one place.
 
-A window advances simulated time. Later steps must be at the tick the window ended on or later; if a window never matches, the failure reports the deadline and the last observed values. A simulation halt during the window fails the window unless the expectations happened to match at the halt tick. Windows require at least one `expect`, `expectLane`, or `expectNet` entry, and `ticks` is required and non-negative.
+A window advances simulated time. Later steps must be at the tick the window ended on or later; if a window never matches, the failure reports the deadline and the last observed values. A simulation halt during the window fails the window unless the expectations happened to match at the halt tick. Windows require at least one `expect`, `expectLane`, `expectNet`, or `expectRelation` entry, and `ticks` is required and non-negative.
 
 ## Setup windows
 
-A setup window describes the ticks immediately *before* a step's drives. It is useful for clocked parts: the data and clock levels must already be correct before the edge, not merely at the tick where the edge is applied. It accepts the same `expect`, `expectLane`, and `expectNet` entries as a settle window.
+A setup window describes the ticks immediately *before* a step's drives. It is useful for clocked parts: the data and clock levels must already be correct before the edge, not merely at the tick where the edge is applied. It accepts the same `expect`, `expectLane`, `expectNet`, and `expectRelation` entries as a settle window.
 
 ```json
 { "at": 20, "set": { "clk": 1 }, "setup": { "ticks": 5, "expect": { "clk": 0, "d": 1 } } }
@@ -109,7 +110,7 @@ A `within` window asks "does this value appear before the deadline?" and stops a
 { "at": 40, "set": { "clk": 0, "d": 0 }, "stable": { "ticks": 10, "expect": { "q": 1, "qn": 0 } } }
 ```
 
-This requires `q=1` and `qn=0` at t=40, 41, …, 50. Use it for hold times, latch behavior, memory persistence, and handshake levels that must not drop. Like `within` and `setup`, it accepts internal nets through `expectNet`. `ticks: 0` checks only the starting tick, which makes a `stable` window with zero duration equivalent to an immediate `expect`.
+This requires `q=1` and `qn=0` at t=40, 41, …, 50. Use it for hold times, latch behavior, memory persistence, and handshake levels that must not drop. Like `within` and `setup`, it accepts internal nets through `expectNet` and typed comparisons through `expectRelation`. `ticks: 0` checks only the starting tick, which makes a `stable` window with zero duration equivalent to an immediate `expect`.
 
 Because the interval must be observed, a simulation halt before the deadline fails the window even if the values matched at the halt tick. Combining `stable` with `expectHalted: true` is rejected at load time for the same reason. A step may use either `within` or `stable`, not both: one waits for convergence, the other requires an already-correct value to remain correct.
 
@@ -173,6 +174,33 @@ Each item names exactly one of `pin` or `net` and is a single `from`/`to` filter
 
 The interval starts after the step's drives are applied, so a drive at the step's own tick is visible to the sequence. A missing item reports its one-based position, signal kind and name, direction, and interval. A sequence advances to its deadline; later steps must be at that tick or later.
 
+## Relations
+
+A value assertion names one expected value. A relation asserts how two signals compare without naming either value, which keeps an invariant readable and lets it survive a domain relabeling. `expectRelation` is an array of typed comparisons:
+
+```json
+{
+  "at": 10,
+  "expectRelation": [
+    { "left": "q", "right": "qn", "op": "ne" },
+    { "left": "q", "right": "net:ff/q_net", "op": "eq" }
+  ]
+}
+```
+
+Each item has exactly three fields:
+
+| Field | Meaning |
+| --- | --- |
+| `left`, `right` | Signal references. A bare name or a `pin:` prefix is an interface pin; `net:` names an authored net, including a hierarchy path such as `net:adder/c1`. |
+| `op` | `eq`, `ne`, `lt`, `le`, `gt`, or `ge`, compared as domain value indices. |
+
+The signals must share one domain. Equality across two different domains is not inferred from labels, because a label such as `1` or `high` does not imply that the two domains have the same meaning. Both signals must also be driven; an undriven interface pin or net fails the relation instead of comparing the kernel's `undriven` marker as if it were a value. Comparisons are ordinal within the shared domain, so `lt` and `gt` follow the domain's declared value order.
+
+Relations read the resolved value of each signal's compiled net, so an interface pin and an authored net merged into the same net compare equal. They can be combined with any other immediate expectation on a step, and they can appear inside `setup`, `within`, or `stable`; a window may contain only relation entries. Inside a window, the relation is evaluated at each tick the window samples, with that window's semantics: `within` searches for a tick where it holds, `stable` requires it at every tick through the deadline, and `setup` requires it at every pre-drive tick. A failed relation reports its one-based position, operator, both signal kinds and names, both domain values, and why it failed.
+
+A relation is one binary comparison. It is deliberately not an expression language: write another array item for another comparison, or use a value assertion when the exact value is what matters.
+
 ## Values
 
 - An integer is a domain value index (`0`, `1`, `2`, …).
@@ -207,12 +235,13 @@ The Diagnostics tab's **Run script…** button runs the same files against the c
 
 ## Shipped scripts
 
-`examples/tests/` contains regression scripts for the D flip-flop (which asserts a 5-tick pre-edge setup window, its capture with a 10-tick settle window, and its low-phase hold with a 10-tick stability window), binary counter (which checks the ripple adder's internal carry levels and an exact one-transition carry count as well as the output bits), balanced and unsigned ternary 2-trit adders, ternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions and an ordered sequence to require the clock edge before the trit update; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
+`examples/tests/` contains regression scripts for the D flip-flop (which asserts a 5-tick pre-edge setup window, its capture with a 10-tick settle window, its low-phase hold with a 10-tick stability window, and the complementary `q`/`qn` invariant plus `q` against its authored internal net through relations), binary counter (which checks the ripple adder's internal carry levels and an exact one-transition carry count as well as the output bits), balanced and unsigned ternary 2-trit adders, ternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions and an ordered sequence to require the clock edge before the trit update; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
 
 ## Intentional limits
 
 - Scripts are linear. There are no loops, variables, expressions, random drives, or reusable subroutines; generate or copy steps instead.
-- Value, transition, edge, and sequence assertions read top-level interface pins and authored internal nets, and value assertions also decode numeric lanes. Internal nets cannot be driven directly; use an interface input or a component instance to affect them.
+- Value, relation, transition, edge, and sequence assertions read top-level interface pins and authored internal nets. Value assertions also decode numeric lanes. Internal nets cannot be driven directly; use an interface input or a component instance to affect them.
+- Relations compare values from one shared domain. There is no cross-domain conversion, arithmetic expression, or comparison against a decoded lane value; assert the lane separately and the signals separately.
 - Assertions sample values at integer ticks. `within`, `stable`, `setup`, `transitions`, `edges`, and `sequence` express convergence, held values, pre-drive setup, total change counts, filtered edge counts, and relative edge order, not continuous time; hold time is expressed as a `stable` window after the edge. Use exact expectations, filtered edge counts, sequences, and engine traces for those properties.
 - A `setup` window cannot observe time that has already been simulated; script steps must leave enough room before the edge for the requested interval.
 - A script does not save simulation state. Every run starts from time zero.
