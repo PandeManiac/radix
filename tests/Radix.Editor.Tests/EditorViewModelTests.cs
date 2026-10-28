@@ -196,6 +196,103 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void DomainDriverPolicyCanBeEditedInPlace()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.NewDomainName = "Wired";
+        viewModel.NewDomainValues = "0 1 X Z";
+        viewModel.AddDomain();
+        SignalDomain original = viewModel.Project.FindDomain("wired")!;
+        Assert.IsType<SingleDriverResolution>(original.Drivers);
+
+        viewModel.BeginEditDomainPolicy("wired");
+        Assert.True(viewModel.IsEditingDomainPolicy);
+        Assert.Equal("Update domain policy", viewModel.DomainSaveButtonText);
+        Assert.False(viewModel.IsDomainValueFieldsEnabled);
+        Assert.Equal("Wired", viewModel.NewDomainName);
+        Assert.Equal("0 1 X Z", viewModel.NewDomainValues);
+        Assert.Equal("1 1 1 1", viewModel.NewDomainPriorities);
+
+        viewModel.SelectedDriverPolicy = viewModel.DriverPolicies.Single(policy => policy.Id == "priority");
+        viewModel.NewDomainPriorities = "1 2 3 0";
+        viewModel.NewDomainConflictValue = "2";
+        viewModel.AddDomain();
+
+        Assert.False(viewModel.IsEditingDomainPolicy);
+        Assert.Equal("Add domain", viewModel.DomainSaveButtonText);
+        Assert.True(viewModel.IsDomainValueFieldsEnabled);
+        Assert.Empty(viewModel.NewDomainName);
+
+        SignalDomain updated = viewModel.Project.FindDomain("wired")!;
+        Assert.Equal(["0", "1", "X", "Z"], updated.ValueNames);
+        var policy = Assert.IsType<PriorityDriverResolution>(updated.Drivers);
+        Assert.Equal([1, 2, 3, 0], policy.Priorities);
+        Assert.Equal(2, policy.ConflictValue);
+        Assert.Contains("Updated driver policy", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.Undo();
+        Assert.IsType<SingleDriverResolution>(viewModel.Project.FindDomain("wired")!.Drivers);
+        viewModel.Redo();
+        Assert.IsType<PriorityDriverResolution>(viewModel.Project.FindDomain("wired")!.Drivers);
+    }
+
+    [Fact]
+    public void DomainDriverPolicyEditRejectsInvalidInputAndCancels()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.NewDomainName = "Wired";
+        viewModel.NewDomainValues = "0 1 X Z";
+        viewModel.AddDomain();
+
+        viewModel.BeginEditDomainPolicy("wired");
+        viewModel.SelectedDriverPolicy = viewModel.DriverPolicies.Single(policy => policy.Id == "priority");
+        viewModel.NewDomainPriorities = "1 1 3";
+        viewModel.AddDomain();
+        Assert.Contains("exactly 4", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.True(viewModel.IsEditingDomainPolicy);
+        Assert.IsType<SingleDriverResolution>(viewModel.Project.FindDomain("wired")!.Drivers);
+
+        viewModel.NewDomainPriorities = "1 1 3 0";
+        viewModel.NewDomainConflictValue = "9";
+        viewModel.AddDomain();
+        Assert.Contains("between 0 and 3", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.True(viewModel.IsEditingDomainPolicy);
+
+        viewModel.CancelDomainEdit();
+        Assert.False(viewModel.IsEditingDomainPolicy);
+        Assert.Equal("Domain policy edit cancelled", viewModel.StatusText);
+        Assert.Empty(viewModel.NewDomainName);
+        Assert.IsType<SingleDriverResolution>(viewModel.Project.FindDomain("wired")!.Drivers);
+
+        viewModel.BeginEditDomainPolicy("missing");
+        Assert.False(viewModel.IsEditingDomainPolicy);
+        Assert.Contains("no longer exists", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DomainDriverPolicyEditSurvivesProjectReplacementAndUndoReset()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.NewDomainName = "Wired";
+        viewModel.NewDomainValues = "0 1";
+        viewModel.AddDomain();
+
+        viewModel.BeginEditDomainPolicy("wired");
+        viewModel.NewProject();
+        Assert.False(viewModel.IsEditingDomainPolicy);
+        Assert.True(viewModel.IsDomainValueFieldsEnabled);
+
+        viewModel.NewDomainName = "Loose";
+        viewModel.NewDomainValues = "0 1";
+        viewModel.AddDomain();
+        viewModel.BeginEditDomainPolicy("loose");
+        Assert.True(viewModel.IsEditingDomainPolicy);
+        viewModel.Undo();
+        Assert.False(viewModel.IsEditingDomainPolicy);
+        Assert.True(viewModel.IsDomainValueFieldsEnabled);
+    }
+
+    [Fact]
     public void PinInterfaceCanBeRenamedRetargetedAndFlipped()
     {
         var viewModel = CreateEmptyEditor();

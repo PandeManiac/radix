@@ -161,8 +161,10 @@ If counter values differ, record the values and diagnostics; this is a correctne
 6. Save As in a scratch path. Close and relaunch, then Open. Expected: domain values and driver policy, pin, current root, instance positions, wire colors, numeric lanes, bendpoints, active definition, viewport zoom, and pan survive.
 7. Open a child definition, zoom to a distinctive level, and pan away from center. Save, close, and reopen. Expected: the same definition is active and the canvas returns to the same scale and offset instead of fitting to content.
 8. Pan and zoom without changing the circuit. Expected: the title does not gain an unsaved-changes marker.
-9. Change an existing domain's policy. Expected: not supported yet in the inspector; the list is display-only. Recreating the domain creates a new ID.
-10. Expected non-persistence: selection, external drive history, and waveform history.
+9. Change an existing domain's policy: click **Policy** on the row for `wired`. Expected: the form loads the domain's name, values, policy, priorities, and conflict index; name and values fields are disabled; the button reads **Update domain policy**; **Cancel policy edit** appears; a hint explains that labels and count stay fixed.
+10. Set priorities `1 2 3 0` and click **Update domain policy**. Expected: the edit ends and the form returns to add mode, the list summary shows `priority [0:1, 1:2, 2:3, 3:0]`, no new domain ID appears, pin/net domain pickers still show the same entry, and undo restores the previous table.
+11. Click **Policy** again and enter a wrong priority count (`1 1 3`) with **Update domain policy**. Expected: the update is refused with a specific message, the edit stays active, and the stored policy is unchanged. **Cancel policy edit** returns to the add-domain form without changing the domain.
+12. Expected non-persistence: selection, external drive history, and waveform history.
 
 ## 11. Hierarchy and malformed projects
 

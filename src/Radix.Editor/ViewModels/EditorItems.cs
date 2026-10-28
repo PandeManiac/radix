@@ -91,12 +91,13 @@ public sealed class PinListItem
 
 public sealed class DomainChoice
 {
-    public DomainChoice(string id, string name, bool isStandard, string summary = "")
+    public DomainChoice(string id, string name, bool isStandard, string summary, ICommand editPolicyCommand)
     {
         Id = id;
         Name = name;
         IsStandard = isStandard;
         Summary = summary;
+        EditPolicyCommand = editPolicyCommand;
     }
 
     public string Id { get; }
@@ -107,6 +108,8 @@ public sealed class DomainChoice
 
     /// <summary>Value symbols and driver policy, shown in the project inspector.</summary>
     public string Summary { get; }
+
+    public ICommand EditPolicyCommand { get; }
 
     public string Label => IsStandard ? $"{Name} ({Id})" : Id;
 

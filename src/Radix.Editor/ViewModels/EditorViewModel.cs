@@ -58,6 +58,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _newDomainPriorities = "1 1 1";
     private string _newDomainConflictValue = "0";
     private DriverPolicyChoice? _selectedDriverPolicy;
+    private string? _editingDomainId;
     private string _librarySearch = string.Empty;
     private string _netSearch = string.Empty;
     private string _netListSummary = string.Empty;
@@ -105,6 +106,7 @@ public sealed class EditorViewModel : ObservableObject
         RemoveDefinitionCommand = new RelayCommand(RemoveDefinition);
         AddPinCommand = new RelayCommand(AddPin);
         AddDomainCommand = new RelayCommand(AddDomain);
+        CancelDomainEditCommand = new RelayCommand(CancelDomainEdit);
         _deleteCommand = new RelayCommand(DeleteSelection, () => _selectedInstanceIds.Count > 0 || _selectedNet is not null);
         DeleteSelectionCommand = _deleteCommand;
         _copyCommand = new RelayCommand(() => CopySelection(), () => _selectedInstanceIds.Count > 0);
@@ -241,6 +243,15 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand AddPinCommand { get; }
 
     public ICommand AddDomainCommand { get; }
+
+    public ICommand CancelDomainEditCommand { get; }
+
+    public bool IsEditingDomainPolicy => _editingDomainId is not null;
+
+    public string DomainSaveButtonText => IsEditingDomainPolicy ? "Update domain policy" : "Add domain";
+
+    /// <summary>Value labels and count stay fixed during a policy edit.</summary>
+    public bool IsDomainValueFieldsEnabled => !IsEditingDomainPolicy;
 
     public ICommand DeleteSelectionCommand { get; }
 
@@ -883,6 +894,7 @@ public sealed class EditorViewModel : ObservableObject
 
     public void NewProject()
     {
+        CancelDomainEdit();
         var project = CircuitProject.CreateEmpty("Untitled");
         var root = new CircuitDefinition { Id = "main", Name = "Main", Description = "Root circuit" };
         project.Definitions.Add(root);
@@ -912,6 +924,7 @@ public sealed class EditorViewModel : ObservableObject
         try
         {
             CircuitProject loaded = ProjectSerializer.Load(path);
+            CancelDomainEdit();
             _project = loaded;
             EnsureProjectShape();
             _definitionId = loaded.FindDefinition(loaded.View.ActiveDefinitionId)?.Id ?? loaded.RootDefinitionId;
@@ -1218,6 +1231,12 @@ public sealed class EditorViewModel : ObservableObject
 
     public void AddDomain()
     {
+        if (_editingDomainId is string editingId)
+        {
+            UpdateDomainPolicy(editingId);
+            return;
+        }
+
         string name = NewDomainName.Trim();
         if (name.Length == 0)
         {
@@ -1238,49 +1257,10 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
-        IDriverResolution drivers;
-        if (IsPriorityDriverPolicy)
+        if (!TryBuildDriverPolicy(values.Length, out IDriverResolution drivers, out string policyError))
         {
-            string[] priorityTokens = NewDomainPriorities.Split(
-                [' ', ',', ';', '\t'],
-                StringSplitOptions.RemoveEmptyEntries);
-            if (priorityTokens.Length != values.Length)
-            {
-                StatusText = $"Enter exactly {values.Length} priority value(s), one per domain value.";
-                return;
-            }
-
-            var priorities = new int[priorityTokens.Length];
-            for (int i = 0; i < priorityTokens.Length; i++)
-            {
-                if (!int.TryParse(priorityTokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out priorities[i]) ||
-                    priorities[i] < 0)
-                {
-                    StatusText = "Priorities must be non-negative whole numbers.";
-                    return;
-                }
-            }
-
-            if (!int.TryParse(NewDomainConflictValue.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int conflictValue) ||
-                conflictValue < 0 || conflictValue >= values.Length)
-            {
-                StatusText = $"Conflict value must be a value index between 0 and {values.Length - 1}.";
-                return;
-            }
-
-            try
-            {
-                drivers = new PriorityDriverResolution(priorities, conflictValue);
-            }
-            catch (ArgumentException exception)
-            {
-                StatusText = "Invalid priority policy: " + exception.Message;
-                return;
-            }
-        }
-        else
-        {
-            drivers = new SingleDriverResolution();
+            StatusText = policyError;
+            return;
         }
 
         string stem = Slug(name);
@@ -1309,6 +1289,163 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = domain.IsMultipleDriverPolicy
             ? $"Added domain {domain.Name} ({domain.ValueCount} values · priority resolution)"
             : $"Added domain {domain.Name} ({domain.ValueCount} values)";
+    }
+
+    /// <summary>
+    /// Loads a domain's driver policy into the form. Value labels and count stay fixed
+    /// so existing signals and pin domains remain valid.
+    /// </summary>
+    public void BeginEditDomainPolicy(string domainId)
+    {
+        if (_project.FindDomain(domainId) is not SignalDomain domain)
+        {
+            StatusText = $"Domain '{domainId}' no longer exists.";
+            return;
+        }
+
+        _editingDomainId = domain.Id;
+        NewDomainName = domain.Name;
+        NewDomainValues = string.Join(" ", domain.ValueNames);
+        if (domain.Drivers is PriorityDriverResolution priority)
+        {
+            SelectedDriverPolicy = DriverPolicies.Single(choice => choice.Id == "priority");
+            NewDomainPriorities = string.Join(" ", priority.Priorities);
+            NewDomainConflictValue = priority.ConflictValue.ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            SelectedDriverPolicy = DriverPolicies.Single(choice => choice.Id == "single");
+            NewDomainPriorities = string.Join(" ", Enumerable.Repeat(1, domain.ValueCount));
+            NewDomainConflictValue = "0";
+        }
+
+        RaiseDomainEditChanged();
+        StatusText = $"Editing driver policy for domain '{domain.Name}'";
+    }
+
+    public void CancelDomainEdit()
+    {
+        if (_editingDomainId is null)
+        {
+            return;
+        }
+
+        _editingDomainId = null;
+        ResetDomainForm();
+        RaiseDomainEditChanged();
+        StatusText = "Domain policy edit cancelled";
+    }
+
+    private void UpdateDomainPolicy(string domainId)
+    {
+        if (_project.FindDomain(domainId) is not SignalDomain existing)
+        {
+            CancelDomainEdit();
+            StatusText = $"Domain '{domainId}' no longer exists.";
+            return;
+        }
+
+        if (!TryBuildDriverPolicy(existing.ValueCount, out IDriverResolution drivers, out string error))
+        {
+            StatusText = error;
+            return;
+        }
+
+        SignalDomain updated;
+        try
+        {
+            updated = new SignalDomain(
+                existing.Id,
+                existing.Name,
+                existing.ValueNames,
+                drivers,
+                existing.Description);
+        }
+        catch (ArgumentException exception)
+        {
+            StatusText = "Invalid driver policy: " + exception.Message;
+            return;
+        }
+
+        int index = _project.Domains.FindIndex(candidate =>
+            string.Equals(candidate.Id, domainId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            CancelDomainEdit();
+            return;
+        }
+
+        PushUndo();
+        _project.Domains[index] = updated;
+        _editingDomainId = null;
+        ResetDomainForm();
+        RaiseDomainEditChanged();
+        AfterMutation(structural: true);
+        StatusText = $"Updated driver policy for domain {updated.Name}: {updated.Drivers.Describe()}";
+    }
+
+    private void ResetDomainForm()
+    {
+        NewDomainName = string.Empty;
+        NewDomainValues = "0 1 2";
+        SelectedDriverPolicy = DriverPolicies[0];
+        NewDomainPriorities = "1 1 1";
+        NewDomainConflictValue = "0";
+    }
+
+    private void RaiseDomainEditChanged()
+    {
+        RaisePropertyChanged(nameof(IsEditingDomainPolicy));
+        RaisePropertyChanged(nameof(DomainSaveButtonText));
+        RaisePropertyChanged(nameof(IsDomainValueFieldsEnabled));
+    }
+
+    private bool TryBuildDriverPolicy(int valueCount, out IDriverResolution drivers, out string error)
+    {
+        drivers = new SingleDriverResolution();
+        error = string.Empty;
+        if (!IsPriorityDriverPolicy)
+        {
+            return true;
+        }
+
+        string[] priorityTokens = NewDomainPriorities.Split(
+            [' ', ',', ';', '\t'],
+            StringSplitOptions.RemoveEmptyEntries);
+        if (priorityTokens.Length != valueCount)
+        {
+            error = $"Enter exactly {valueCount} priority value(s), one per domain value.";
+            return false;
+        }
+
+        var priorities = new int[priorityTokens.Length];
+        for (int i = 0; i < priorityTokens.Length; i++)
+        {
+            if (!int.TryParse(priorityTokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out priorities[i]) ||
+                priorities[i] < 0)
+            {
+                error = "Priorities must be non-negative whole numbers.";
+                return false;
+            }
+        }
+
+        if (!int.TryParse(NewDomainConflictValue.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int conflictValue) ||
+            conflictValue < 0 || conflictValue >= valueCount)
+        {
+            error = $"Conflict value must be a value index between 0 and {valueCount - 1}.";
+            return false;
+        }
+
+        try
+        {
+            drivers = new PriorityDriverResolution(priorities, conflictValue);
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            error = "Invalid priority policy: " + exception.Message;
+            return false;
+        }
     }
 
     public void AddPin()
@@ -2719,8 +2856,20 @@ public sealed class EditorViewModel : ObservableObject
         {
             bool standard = StandardDomains.All().Any(d => string.Equals(d.Id, domain.Id, StringComparison.Ordinal));
             string summary = $"{string.Join(" ", domain.ValueNames)} · {domain.Drivers.Describe()}";
-            var choice = new DomainChoice(domain.Id, domain.Name, standard, summary);
+            var choice = new DomainChoice(
+                domain.Id,
+                domain.Name,
+                standard,
+                summary,
+                new RelayCommand(() => BeginEditDomainPolicy(domain.Id)));
             Domains.Add(choice);
+        }
+
+        if (_editingDomainId is not null && _project.FindDomain(_editingDomainId) is null)
+        {
+            _editingDomainId = null;
+            ResetDomainForm();
+            RaiseDomainEditChanged();
         }
 
         NewPinDomain = Domains.FirstOrDefault(d => d.Id == NewPinDomain?.Id) ?? Domains.FirstOrDefault();
@@ -3837,6 +3986,7 @@ public sealed class EditorViewModel : ObservableObject
     private void Restore(EditorSnapshot snapshot)
     {
         CancelNumericLaneEdit();
+        CancelDomainEdit();
         try
         {
             double? savedScale = _project.View.Scale;

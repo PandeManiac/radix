@@ -439,17 +439,20 @@
                 <ItemsControl ItemsSource="{Binding Domains}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:DomainChoice">
-                      <StackPanel Margin="2,2">
-                        <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" />
-                        <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
-                      </StackPanel>
+                      <Grid ColumnDefinitions="*,Auto" Margin="2,2" ColumnSpacing="4">
+                        <StackPanel>
+                          <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" />
+                          <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="tool" Content="Policy" Command="{Binding EditPolicyCommand}" Padding="5,1" VerticalAlignment="Center" ToolTip.Tip="Edit this domain's driver policy; value labels and count stay fixed" />
+                      </Grid>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
                 <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
                   <StackPanel Spacing="4">
-                    <TextBox Watermark="domain name" Text="{Binding NewDomainName, Mode=TwoWay}" />
-                    <TextBox Watermark="values, e.g. 0 1 2" Text="{Binding NewDomainValues, Mode=TwoWay}" />
+                    <TextBox Watermark="domain name" Text="{Binding NewDomainName, Mode=TwoWay}" IsEnabled="{Binding IsDomainValueFieldsEnabled}" />
+                    <TextBox Watermark="values, e.g. 0 1 2" Text="{Binding NewDomainValues, Mode=TwoWay}" IsEnabled="{Binding IsDomainValueFieldsEnabled}" />
                     <ComboBox x:Name="DomainPolicyBox" ItemsSource="{Binding DriverPolicies}" SelectedItem="{Binding SelectedDriverPolicy, Mode=TwoWay}" ToolTip.Tip="How multiple active drivers on one net are resolved">
                       <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:DriverPolicyChoice">
@@ -462,7 +465,11 @@
                       <TextBox x:Name="DomainPrioritiesBox" Watermark="priorities, one per value" Text="{Binding NewDomainPriorities, Mode=TwoWay}" ToolTip.Tip="Priority for each value index, e.g. 1 1 3 0" />
                       <TextBox x:Name="DomainConflictBox" Grid.Column="1" Watermark="conflict index" Text="{Binding NewDomainConflictValue, Mode=TwoWay}" ToolTip.Tip="Value index produced when equal-priority drivers disagree" />
                     </Grid>
-                    <Button Content="Add domain" Command="{Binding AddDomainCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Text="Editing driver policy only. Value labels and count stay fixed so existing signals remain valid." IsVisible="{Binding IsEditingDomainPolicy}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="{Binding DomainSaveButtonText}" Command="{Binding AddDomainCommand}" HorizontalAlignment="Left" />
+                      <Button Content="Cancel policy edit" Command="{Binding CancelDomainEditCommand}" IsVisible="{Binding IsEditingDomainPolicy}" />
+                    </StackPanel>
                   </StackPanel>
                 </Border>
                 <TextBlock Text="Values are arbitrary symbols. Arithmetic meaning belongs to interpretation tools, never to the kernel. A priority domain lets the highest-priority active driver win; ties between different values produce the conflict value." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,0" />

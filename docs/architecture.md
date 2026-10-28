@@ -67,7 +67,9 @@ Resolution depends only on values and their compiled order, never on wall-clock 
 
 ### 3.2 Domain creation
 
-Projects own complete domain definitions, so loading a project never depends on a global registry. The editor can create a domain with arbitrary unique labels and either a single-driver policy or a priority table: one non-negative priority per value plus a conflict value index. The form validates the table length and conflict range before constructing the immutable domain, and the inspector lists each domain's values and policy. Changing the policy of an already-saved domain is not yet supported in place; recreate the domain or edit the project JSON.
+Projects own complete domain definitions, so loading a project never depends on a global registry. The editor can create a domain with arbitrary unique labels and either a single-driver policy or a priority table: one non-negative priority per value plus a conflict value index. The form validates the table length and conflict range before constructing the immutable domain, and the inspector lists each domain's values and policy.
+
+A saved domain's policy can be edited in place with **Policy**. Because `SignalDomain` is immutable, the edit constructs a new domain with the same ID, value labels, and count, then replaces the entry in `CircuitProject.Domains`; nets, pins, and numeric formats keep referring to the same ID. Value labels and count are locked during the edit, so no existing signal can become invalid. The whole replacement is one undo step, and any project replacement (new/open/undo/redo) cancels an edit in progress. Policy-neutral structure is deliberately untouched: the compiler re-resolves drivers from the domain on the next compile.
 
 ## 4. Hierarchy and flattening
 
