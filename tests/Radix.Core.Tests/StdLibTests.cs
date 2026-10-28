@@ -287,6 +287,45 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void RamWritesOnClockAndReadsAsynchronously()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.Ram16x4Id);
+        engine.Drive("clk", 0);
+        engine.Drive("we", 0);
+        DriveWord(engine, "addr", 3);
+        DriveWord(engine, "d", 5);
+        Settle(engine, 80);
+        Assert.Equal(0, ReadBus(engine, "q0", "q1", "q2", "q3"));
+
+        engine.Drive("we", 1);
+        Settle(engine, 80);
+        Assert.Equal(0, ReadBus(engine, "q0", "q1", "q2", "q3"));
+
+        PulseClock(engine);
+        Assert.Equal(5, ReadBus(engine, "q0", "q1", "q2", "q3"));
+
+        DriveWord(engine, "addr", 9);
+        DriveWord(engine, "d", 10);
+        Settle(engine, 60);
+        PulseClock(engine);
+        Assert.Equal(10, ReadBus(engine, "q0", "q1", "q2", "q3"));
+
+        // A write to another address leaves the first word intact.
+        DriveWord(engine, "addr", 3);
+        Settle(engine, 60);
+        Assert.Equal(5, ReadBus(engine, "q0", "q1", "q2", "q3"));
+
+        // WE low means the clock edge only advances other state.
+        DriveWord(engine, "d", 2);
+        engine.Drive("we", 0);
+        Settle(engine, 60);
+        PulseClock(engine);
+        Assert.Equal(5, ReadBus(engine, "q0", "q1", "q2", "q3"));
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void InstallIsIdempotent()
     {
         CircuitProject project = TestFixtures.WithStandardLibrary();
@@ -319,5 +358,21 @@ public sealed class StdLibTests
         }
 
         return value;
+    }
+
+    private static void DriveWord(SimulationEngine engine, string prefix, int value)
+    {
+        for (int bit = 0; bit < 4; bit++)
+        {
+            engine.Drive($"{prefix}{bit}", (value >> bit) & 1);
+        }
+    }
+
+    private static void PulseClock(SimulationEngine engine, long settle = 80)
+    {
+        engine.Drive("clk", 1);
+        Settle(engine, settle);
+        engine.Drive("clk", 0);
+        Settle(engine, settle);
     }
 }

@@ -17,6 +17,7 @@ public static class StandardLibrary
     public const string NotId = "std.not";
     public const string DFlipFlopId = "std.dff";
     public const string HalfAdderId = "std.half-adder";
+    public const string Ram16x4Id = "std.ram-16x4";
 
     private static readonly (string Id, string Name, int Inputs, int[] Table)[] BinaryGates =
     [
@@ -111,6 +112,12 @@ public static class StandardLibrary
         {
             AddRegister4(project);
             added.Add("std.reg-4");
+        }
+
+        if (project.FindDefinition(Ram16x4Id) is null)
+        {
+            AddRam16x4(project);
+            added.Add(Ram16x4Id);
         }
 
         added.AddRange(AddTernaryDefinitions(project));
@@ -344,6 +351,107 @@ public static class StandardLibrary
             builder.Connect(next, builder.Pin($"ff{i}", "d"));
             builder.Connect(clk, builder.Pin($"ff{i}", "clk"));
             builder.Connect(output[i], builder.Pin($"ff{i}", "q"));
+        }
+    }
+
+    /// <summary>
+    /// A 16-word by 4-bit asynchronous-read, synchronous-write RAM. Every storage
+    /// cell is a D flip-flop; address decoding and the read mux tree are gates. This
+    /// is deliberately a project definition so the engine has no memory concept.
+    /// </summary>
+    private static void AddRam16x4(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, Ram16x4Id, "16 × 4 RAM");
+        builder.Definition.Description =
+            "Sixteen 4-bit words with asynchronous read and synchronous write. WE selects a " +
+            "write on the rising CLK edge. Every cell is a DFF and the read path is a mux tree.";
+
+        var address = new Net[4];
+        var data = new Net[4];
+        var output = new Net[4];
+        for (int i = 0; i < 4; i++)
+        {
+            address[i] = builder.AddPin($"addr{i}", $"ADDR{i}", PinDirection.Input, StandardDomains.BinaryId);
+            data[i] = builder.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.BinaryId);
+            output[i] = builder.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        Net writeEnable = builder.AddPin("we", "WE", PinDirection.Input, StandardDomains.BinaryId);
+        Net clock = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BinaryId);
+
+        var invertedAddress = new Net[4];
+        for (int bit = 0; bit < 4; bit++)
+        {
+            invertedAddress[bit] = builder.AddNet($"addr{bit}_n", StandardDomains.BinaryId);
+            builder.AddInstance($"not_addr{bit}", NotId, 80, 80 + (bit * 120));
+            builder.Connect(address[bit], builder.Pin($"not_addr{bit}", "a"));
+            builder.Connect(invertedAddress[bit], builder.Pin($"not_addr{bit}", "y"));
+        }
+
+        var writeSelect = new Net[16];
+        for (int word = 0; word < 16; word++)
+        {
+            Net match = (word & 1) != 0 ? address[0] : invertedAddress[0];
+            for (int bit = 1; bit < 4; bit++)
+            {
+                Net literal = (word & (1 << bit)) != 0 ? address[bit] : invertedAddress[bit];
+                Net joined = builder.AddNet($"decode{word}_{bit}", StandardDomains.BinaryId);
+                builder.AddInstance($"and_addr{word}_{bit}", "std.and", 300 + (bit * 180), 60 + (word * 90));
+                builder.Connect(match, builder.Pin($"and_addr{word}_{bit}", "a"));
+                builder.Connect(literal, builder.Pin($"and_addr{word}_{bit}", "b"));
+                builder.Connect(joined, builder.Pin($"and_addr{word}_{bit}", "y"));
+                match = joined;
+            }
+
+            writeSelect[word] = builder.AddNet($"write{word}", StandardDomains.BinaryId);
+            builder.AddInstance($"and_write{word}", "std.and", 1080, 60 + (word * 90));
+            builder.Connect(writeEnable, builder.Pin($"and_write{word}", "a"));
+            builder.Connect(match, builder.Pin($"and_write{word}", "b"));
+            builder.Connect(writeSelect[word], builder.Pin($"and_write{word}", "y"));
+        }
+
+        for (int bit = 0; bit < 4; bit++)
+        {
+            var cells = new Net[16];
+            for (int word = 0; word < 16; word++)
+            {
+                cells[word] = builder.AddNet($"cell{bit}_{word}", StandardDomains.BinaryId);
+                Net next = builder.AddNet($"next{bit}_{word}", StandardDomains.BinaryId);
+
+                builder.AddInstance($"mux_write{bit}_{word}", "std.mux2", 1300, 60 + (word * 110));
+                builder.Connect(cells[word], builder.Pin($"mux_write{bit}_{word}", "a"));
+                builder.Connect(data[bit], builder.Pin($"mux_write{bit}_{word}", "b"));
+                builder.Connect(writeSelect[word], builder.Pin($"mux_write{bit}_{word}", "s"));
+                builder.Connect(next, builder.Pin($"mux_write{bit}_{word}", "y"));
+
+                builder.AddInstance($"ff{bit}_{word}", DFlipFlopId, 1580, 60 + (word * 110));
+                builder.Connect(next, builder.Pin($"ff{bit}_{word}", "d"));
+                builder.Connect(clock, builder.Pin($"ff{bit}_{word}", "clk"));
+                builder.Connect(cells[word], builder.Pin($"ff{bit}_{word}", "q"));
+            }
+
+            Net[] level = cells;
+            for (int stage = 0; stage < 4; stage++)
+            {
+                var reduced = new Net[level.Length / 2];
+                for (int pair = 0; pair < reduced.Length; pair++)
+                {
+                    reduced[pair] = stage == 3
+                        ? output[bit]
+                        : builder.AddNet($"read{bit}_{stage}_{pair}", StandardDomains.BinaryId);
+                    builder.AddInstance(
+                        $"mux_read{bit}_{stage}_{pair}",
+                        "std.mux2",
+                        1900 + (stage * 260),
+                        60 + (pair * 120));
+                    builder.Connect(level[pair * 2], builder.Pin($"mux_read{bit}_{stage}_{pair}", "a"));
+                    builder.Connect(level[(pair * 2) + 1], builder.Pin($"mux_read{bit}_{stage}_{pair}", "b"));
+                    builder.Connect(address[stage], builder.Pin($"mux_read{bit}_{stage}_{pair}", "s"));
+                    builder.Connect(reduced[pair], builder.Pin($"mux_read{bit}_{stage}_{pair}", "y"));
+                }
+
+                level = reduced;
+            }
         }
     }
 

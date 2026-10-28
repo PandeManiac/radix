@@ -153,39 +153,37 @@ public sealed class ExampleTests
 
         Assert.Equal(0, ReadLane(engine, "pc", 4));
         Assert.Equal(0x17, ReadLane(engine, "ir", 8));
+        Assert.Equal(0, ReadLane(engine, "mem", 4));
         Assert.Equal(1, engine.Read("zero"));
 
-        PulseClock(engine);                    // LDA 7
-        Assert.Equal(1, ReadLane(engine, "pc", 4));
-        Assert.Equal(0x28, ReadLane(engine, "ir", 8));
-        Assert.Equal(7, ReadLane(engine, "acc", 4));
-        Assert.Equal(0, engine.Read("zero"));
+        (int Pc, int Ir, int Acc, int Mem)[] states =
+        [
+            (1, 0x33, 7, 0),    // LDA 7 executed; STA 3 fetched
+            (2, 0x10, 7, 0),    // STA 3 stored 7
+            (3, 0x83, 0, 7),    // LDA 0 executed; no store yet at address 3
+            (4, 0x21, 7, 0),    // LDA@ 3 loaded 7
+            (5, 0x34, 8, 0),    // ADD 1 executed; STA 4 fetched
+            (6, 0x10, 8, 0),    // STA 4 stored 8
+            (7, 0x84, 0, 8),    // LDA 0 executed
+            (8, 0x93, 8, 7),    // LDA@ 4 loaded 8
+            (9, 0x35, 15, 0),   // ADD@ 3 added 7
+            (10, 0x10, 15, 0),  // STA 5 stored 15
+            (11, 0x85, 0, 15),  // LDA 0 executed
+            (12, 0x6C, 15, 0),  // LDA@ 5 loaded 15
+            (12, 0x6C, 15, 0),  // JMP 12 loops
+        ];
 
-        PulseClock(engine);                    // ADD 8 -> 15
-        Assert.Equal(2, ReadLane(engine, "pc", 4));
-        Assert.Equal(0x75, ReadLane(engine, "ir", 8));
-        Assert.Equal(15, ReadLane(engine, "acc", 4));
-        Assert.Equal(0, engine.Read("carry"));
+        foreach ((int pc, int instruction, int accumulator, int memory) in states)
+        {
+            PulseClock(engine);
+            Assert.Equal(pc, ReadLane(engine, "pc", 4));
+            Assert.Equal(instruction, ReadLane(engine, "ir", 8));
+            Assert.Equal(accumulator, ReadLane(engine, "acc", 4));
+            Assert.Equal(memory, ReadLane(engine, "mem", 4));
+            Assert.Equal(0, engine.Read("carry"));
+            Assert.False(engine.IsHalted, engine.HaltReason);
+        }
 
-        PulseClock(engine);                    // JZ 5, not taken
-        Assert.Equal(3, ReadLane(engine, "pc", 4));
-        Assert.Equal(15, ReadLane(engine, "acc", 4));
-
-        PulseClock(engine);                    // ADD 1 -> 0 with carry
-        Assert.Equal(4, ReadLane(engine, "pc", 4));
-        Assert.Equal(0, ReadLane(engine, "acc", 4));
-        Assert.Equal(1, engine.Read("carry"));
-        Assert.Equal(1, engine.Read("zero"));
-
-        PulseClock(engine);                    // JMP 6
-        Assert.Equal(6, ReadLane(engine, "pc", 4));
-        Assert.Equal(0x66, ReadLane(engine, "ir", 8));
-        Assert.Equal(1, engine.Read("carry"));
-
-        PulseClock(engine);                    // JMP 6 loops on itself
-        Assert.Equal(6, ReadLane(engine, "pc", 4));
-        Assert.Equal(0, ReadLane(engine, "acc", 4));
-        Assert.False(engine.IsHalted, engine.HaltReason);
         Assert.Empty(engine.RuntimeDiagnostics);
     }
 

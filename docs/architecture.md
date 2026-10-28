@@ -143,9 +143,10 @@ This is a **transport-delay, event-driven** model with zero-delay logical evalua
 - one four-input lookup per opcode, decoding instruction bits 7–4 into control lines;
 - a zero flag decoded from the accumulator and combined with `JZ` to select a branch;
 - a 4-bit accumulator with an adder, bitwise AND/OR paths, a four-stage mux network, and `std.reg-4`;
-- a registered carry flag updated by `ADD` and held by other instructions.
+- a registered carry flag updated by the arithmetic instructions and held by other instructions;
+- a 16-word × 4-bit RAM built from 64 D flip-flops, a write-address decoder, and a four-level read mux tree.
 
-Instructions are `opcode(4) | operand(4)`: `0` NOP, `1` LDA, `2` ADD, `4` AND, `5` OR, `6` JMP, `7` JZ. The program is the initializer of the ROM lookups, so a different program produces a different circuit without changing definitions or code. Numeric lanes expose the program counter, accumulator, opcode, operand, and full instruction word for inspection.
+Instructions are `opcode(4) | operand(4)`: `0` NOP, `1` LDA #, `2` ADD #, `3` STA addr, `4` AND #, `5` OR #, `6` JMP, `7` JZ, `8` LDA@ addr, `9` ADD@ addr. The operand supplies either an immediate or a RAM address. The program is the initializer of the ROM lookups, so a different program produces a different circuit without changing definitions or code. Numeric lanes expose the program counter, accumulator, memory-read word, opcode, operand, and full instruction word for inspection. RAM cells, decoders, and muxes are ordinary definitions; neither the compiler nor the engine knows what memory or an instruction is.
 
 This is deliberately a *demonstration*, not an architectural commitment: the definition format, library, and simulator do not privilege x86, binary, fixed-width words, or any particular ISA. A ternary processor or a different instruction encoding is the same kind of project.
 

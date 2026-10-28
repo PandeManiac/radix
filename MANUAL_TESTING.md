@@ -180,7 +180,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 
 1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 6 step(s) through t=50`, exit code 0.
 2. Run `dotnet run --project src/Radix.Cli -- test examples/accumulator-cpu.radix examples/tests/accumulator.radixtest`. Expected: PASS; the signed `Result` lane is `-1` after LOAD 15 and `0` after adding 1, with `CARRY=1`.
-3. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 19 step(s) through t=580`, exit code 0.
+3. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 40 step(s) through t=1280`, exit code 0.
 4. Copy the DFF script to a scratch file and change the `t=30` expectation for `q` from `1` to `0`. Expected: `FAIL`, one line naming `step 4 (t=30)`, expected and actual values; exit code 1.
 5. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
 6. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
@@ -189,14 +189,28 @@ These steps use a terminal only; they never open a window. Run from the reposito
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
-1. Open `examples/tiny-cpu.radix`. Expected: the canvas shows the ROM, decoder, program counter, accumulator, and a fixed lane legend; **OPCODE**, **OPERAND**, **INSTRUCTION**, **PC**, and **ACC** appear in the inspector.
-2. Click **Begin**, then drive `CLK = 0` and `RESET = 0`. Expected: `PC = 0`, `ACC = 0`, `ZERO = 1`, `IR = 23` (0x17), opcode 1, operand 7.
-3. Raise `CLK` to 1 and click **Settle**. Expected: `PC = 1`, `IR = 40` (0x28), opcode 2, operand 8, `ACC = 7`, `ZERO = 0`. Lower `CLK` to 0.
-4. Raise `CLK` again. Expected: `PC = 2`, `IR = 117` (0x75), opcode 7, operand 5, `ACC = 15`, `CARRY = 0`.
-5. Raise `CLK` again. Expected: the `JZ 5` is *not* taken because `ZERO = 0`; `PC = 3`, `IR = 33` (0x21), opcode 2, operand 1.
-6. Raise `CLK` again. Expected: `PC = 4`, `ACC = 0`, `CARRY = 1`, `ZERO = 1`, `IR = 102` (0x66).
-7. Raise `CLK` again. Expected: the `JMP 6` sets `PC = 6`; the next edge keeps `PC = 6` (the halt loop), and `ACC`/`CARRY` hold their values.
-8. Drive `RESET = 1`, raise `CLK`, then lower `CLK`. Expected: `PC = 0`, `ACC = 0`, `CARRY = 0`; the machine restarts at instruction 0. Drive `RESET = 0` before continuing.
+1. Open `examples/tiny-cpu.radix`. Expected: the canvas shows the ROM, decoder, program counter, accumulator, RAM, and a fixed lane legend; **OPCODE**, **OPERAND**, **INSTRUCTION**, **PC**, **ACC**, and **MEM** appear in the inspector.
+2. Click **Begin**, then drive `CLK = 0` and `RESET = 0`. Expected: `PC = 0`, `ACC = 0`, `MEM = 0`, `ZERO = 1`, `IR = 23` (0x17), opcode 1, operand 7.
+3. For each rising edge, set `CLK = 1`, click **Settle**, check the row below, then set `CLK = 0`. Expected sequence:
+
+| Edge | PC | IR | Op | Operand | ACC | MEM | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 51 (0x33) | 3 | 3 | 7 | 0 | LDA 7 done; STA 3 fetched |
+| 2 | 2 | 16 (0x10) | 1 | 0 | 7 | 0 | STA 3 stored 7; MEM now reads address 0 |
+| 3 | 3 | 131 (0x83) | 8 | 3 | 0 | 7 | LDA 0 done; RAM word 3 visible |
+| 4 | 4 | 33 (0x21) | 2 | 1 | 7 | 0 | LDA@ 3 loaded 7 |
+| 5 | 5 | 52 (0x34) | 3 | 4 | 8 | 0 | ADD 1; STA 4 fetched |
+| 6 | 6 | 16 (0x10) | 1 | 0 | 8 | 0 | STA 4 stored 8 |
+| 7 | 7 | 132 (0x84) | 8 | 4 | 0 | 8 | LDA 0 done; RAM word 4 visible |
+| 8 | 8 | 147 (0x93) | 9 | 3 | 8 | 7 | LDA@ 4 loaded 8; ADD@ 3 fetched |
+| 9 | 9 | 53 (0x35) | 3 | 5 | 15 | 0 | ADD@ 3 made 15; STA 5 fetched |
+| 10 | 10 | 16 (0x10) | 1 | 0 | 15 | 0 | STA 5 stored 15 |
+| 11 | 11 | 133 (0x85) | 8 | 5 | 0 | 15 | LDA 0 done; RAM word 5 visible |
+| 12 | 12 | 108 (0x6C) | 6 | 12 | 15 | 0 | LDA@ 5 loaded 15 |
+| 13 | 12 | 108 (0x6C) | 6 | 12 | 15 | 0 | JMP 12 halt loop holds state |
+
+4. Drive `RESET = 1`, raise `CLK`, then lower `CLK`. Expected: `PC = 0`, `ACC = 0`, `CARRY = 0`; RAM contents are retained, and the machine restarts at instruction 0. Drive `RESET = 0` before continuing.
+5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, RAM write enables, IR bits, carry, and zero; no errors or warnings appear.
 9. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, IR bits, carry, and zero; no errors or warnings appear.
 
 ## 15. Known limitations to verify as *limitations*

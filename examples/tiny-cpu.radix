@@ -2306,6 +2306,6843 @@
       ]
     },
     {
+      "id": "std.ram-16x4",
+      "name": "16 \u00D7 4 RAM",
+      "description": "Sixteen 4-bit words with asynchronous read and synchronous write. WE selects a write on the rising CLK edge. Every cell is a DFF and the read path is a mux tree.",
+      "pins": [
+        {
+          "id": "addr0",
+          "name": "ADDR0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "d0",
+          "name": "D0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q0",
+          "name": "Q0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "addr1",
+          "name": "ADDR1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "d1",
+          "name": "D1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q1",
+          "name": "Q1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "addr2",
+          "name": "ADDR2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "d2",
+          "name": "D2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q2",
+          "name": "Q2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "addr3",
+          "name": "ADDR3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "d3",
+          "name": "D3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q3",
+          "name": "Q3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "we",
+          "name": "WE",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "not_addr0",
+          "definition": "std.not",
+          "x": 80,
+          "y": 80
+        },
+        {
+          "id": "not_addr1",
+          "definition": "std.not",
+          "x": 80,
+          "y": 200
+        },
+        {
+          "id": "not_addr2",
+          "definition": "std.not",
+          "x": 80,
+          "y": 320
+        },
+        {
+          "id": "not_addr3",
+          "definition": "std.not",
+          "x": 80,
+          "y": 440
+        },
+        {
+          "id": "and_addr0_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 60
+        },
+        {
+          "id": "and_addr0_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 60
+        },
+        {
+          "id": "and_addr0_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 60
+        },
+        {
+          "id": "and_write0",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 60
+        },
+        {
+          "id": "and_addr1_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 150
+        },
+        {
+          "id": "and_addr1_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 150
+        },
+        {
+          "id": "and_addr1_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 150
+        },
+        {
+          "id": "and_write1",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 150
+        },
+        {
+          "id": "and_addr2_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 240
+        },
+        {
+          "id": "and_addr2_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 240
+        },
+        {
+          "id": "and_addr2_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 240
+        },
+        {
+          "id": "and_write2",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 240
+        },
+        {
+          "id": "and_addr3_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 330
+        },
+        {
+          "id": "and_addr3_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 330
+        },
+        {
+          "id": "and_addr3_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 330
+        },
+        {
+          "id": "and_write3",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 330
+        },
+        {
+          "id": "and_addr4_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 420
+        },
+        {
+          "id": "and_addr4_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 420
+        },
+        {
+          "id": "and_addr4_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 420
+        },
+        {
+          "id": "and_write4",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 420
+        },
+        {
+          "id": "and_addr5_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 510
+        },
+        {
+          "id": "and_addr5_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 510
+        },
+        {
+          "id": "and_addr5_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 510
+        },
+        {
+          "id": "and_write5",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 510
+        },
+        {
+          "id": "and_addr6_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 600
+        },
+        {
+          "id": "and_addr6_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 600
+        },
+        {
+          "id": "and_addr6_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 600
+        },
+        {
+          "id": "and_write6",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 600
+        },
+        {
+          "id": "and_addr7_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 690
+        },
+        {
+          "id": "and_addr7_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 690
+        },
+        {
+          "id": "and_addr7_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 690
+        },
+        {
+          "id": "and_write7",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 690
+        },
+        {
+          "id": "and_addr8_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 780
+        },
+        {
+          "id": "and_addr8_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 780
+        },
+        {
+          "id": "and_addr8_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 780
+        },
+        {
+          "id": "and_write8",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 780
+        },
+        {
+          "id": "and_addr9_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 870
+        },
+        {
+          "id": "and_addr9_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 870
+        },
+        {
+          "id": "and_addr9_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 870
+        },
+        {
+          "id": "and_write9",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 870
+        },
+        {
+          "id": "and_addr10_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 960
+        },
+        {
+          "id": "and_addr10_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 960
+        },
+        {
+          "id": "and_addr10_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 960
+        },
+        {
+          "id": "and_write10",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 960
+        },
+        {
+          "id": "and_addr11_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 1050
+        },
+        {
+          "id": "and_addr11_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 1050
+        },
+        {
+          "id": "and_addr11_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 1050
+        },
+        {
+          "id": "and_write11",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 1050
+        },
+        {
+          "id": "and_addr12_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 1140
+        },
+        {
+          "id": "and_addr12_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 1140
+        },
+        {
+          "id": "and_addr12_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 1140
+        },
+        {
+          "id": "and_write12",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 1140
+        },
+        {
+          "id": "and_addr13_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 1230
+        },
+        {
+          "id": "and_addr13_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 1230
+        },
+        {
+          "id": "and_addr13_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 1230
+        },
+        {
+          "id": "and_write13",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 1230
+        },
+        {
+          "id": "and_addr14_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 1320
+        },
+        {
+          "id": "and_addr14_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 1320
+        },
+        {
+          "id": "and_addr14_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 1320
+        },
+        {
+          "id": "and_write14",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 1320
+        },
+        {
+          "id": "and_addr15_1",
+          "definition": "std.and",
+          "x": 480,
+          "y": 1410
+        },
+        {
+          "id": "and_addr15_2",
+          "definition": "std.and",
+          "x": 660,
+          "y": 1410
+        },
+        {
+          "id": "and_addr15_3",
+          "definition": "std.and",
+          "x": 840,
+          "y": 1410
+        },
+        {
+          "id": "and_write15",
+          "definition": "std.and",
+          "x": 1080,
+          "y": 1410
+        },
+        {
+          "id": "mux_write0_0",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 60
+        },
+        {
+          "id": "ff0_0",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 60
+        },
+        {
+          "id": "mux_write0_1",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 170
+        },
+        {
+          "id": "ff0_1",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 170
+        },
+        {
+          "id": "mux_write0_2",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 280
+        },
+        {
+          "id": "ff0_2",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 280
+        },
+        {
+          "id": "mux_write0_3",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 390
+        },
+        {
+          "id": "ff0_3",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 390
+        },
+        {
+          "id": "mux_write0_4",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 500
+        },
+        {
+          "id": "ff0_4",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 500
+        },
+        {
+          "id": "mux_write0_5",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 610
+        },
+        {
+          "id": "ff0_5",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 610
+        },
+        {
+          "id": "mux_write0_6",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 720
+        },
+        {
+          "id": "ff0_6",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 720
+        },
+        {
+          "id": "mux_write0_7",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 830
+        },
+        {
+          "id": "ff0_7",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 830
+        },
+        {
+          "id": "mux_write0_8",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 940
+        },
+        {
+          "id": "ff0_8",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 940
+        },
+        {
+          "id": "mux_write0_9",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1050
+        },
+        {
+          "id": "ff0_9",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1050
+        },
+        {
+          "id": "mux_write0_10",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1160
+        },
+        {
+          "id": "ff0_10",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1160
+        },
+        {
+          "id": "mux_write0_11",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1270
+        },
+        {
+          "id": "ff0_11",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1270
+        },
+        {
+          "id": "mux_write0_12",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1380
+        },
+        {
+          "id": "ff0_12",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1380
+        },
+        {
+          "id": "mux_write0_13",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1490
+        },
+        {
+          "id": "ff0_13",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1490
+        },
+        {
+          "id": "mux_write0_14",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1600
+        },
+        {
+          "id": "ff0_14",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1600
+        },
+        {
+          "id": "mux_write0_15",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1710
+        },
+        {
+          "id": "ff0_15",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1710
+        },
+        {
+          "id": "mux_read0_0_0",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 60
+        },
+        {
+          "id": "mux_read0_0_1",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 180
+        },
+        {
+          "id": "mux_read0_0_2",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 300
+        },
+        {
+          "id": "mux_read0_0_3",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 420
+        },
+        {
+          "id": "mux_read0_0_4",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 540
+        },
+        {
+          "id": "mux_read0_0_5",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 660
+        },
+        {
+          "id": "mux_read0_0_6",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 780
+        },
+        {
+          "id": "mux_read0_0_7",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 900
+        },
+        {
+          "id": "mux_read0_1_0",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 60
+        },
+        {
+          "id": "mux_read0_1_1",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 180
+        },
+        {
+          "id": "mux_read0_1_2",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 300
+        },
+        {
+          "id": "mux_read0_1_3",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 420
+        },
+        {
+          "id": "mux_read0_2_0",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 60
+        },
+        {
+          "id": "mux_read0_2_1",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 180
+        },
+        {
+          "id": "mux_read0_3_0",
+          "definition": "std.mux2",
+          "x": 2680,
+          "y": 60
+        },
+        {
+          "id": "mux_write1_0",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 60
+        },
+        {
+          "id": "ff1_0",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 60
+        },
+        {
+          "id": "mux_write1_1",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 170
+        },
+        {
+          "id": "ff1_1",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 170
+        },
+        {
+          "id": "mux_write1_2",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 280
+        },
+        {
+          "id": "ff1_2",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 280
+        },
+        {
+          "id": "mux_write1_3",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 390
+        },
+        {
+          "id": "ff1_3",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 390
+        },
+        {
+          "id": "mux_write1_4",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 500
+        },
+        {
+          "id": "ff1_4",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 500
+        },
+        {
+          "id": "mux_write1_5",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 610
+        },
+        {
+          "id": "ff1_5",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 610
+        },
+        {
+          "id": "mux_write1_6",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 720
+        },
+        {
+          "id": "ff1_6",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 720
+        },
+        {
+          "id": "mux_write1_7",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 830
+        },
+        {
+          "id": "ff1_7",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 830
+        },
+        {
+          "id": "mux_write1_8",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 940
+        },
+        {
+          "id": "ff1_8",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 940
+        },
+        {
+          "id": "mux_write1_9",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1050
+        },
+        {
+          "id": "ff1_9",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1050
+        },
+        {
+          "id": "mux_write1_10",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1160
+        },
+        {
+          "id": "ff1_10",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1160
+        },
+        {
+          "id": "mux_write1_11",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1270
+        },
+        {
+          "id": "ff1_11",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1270
+        },
+        {
+          "id": "mux_write1_12",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1380
+        },
+        {
+          "id": "ff1_12",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1380
+        },
+        {
+          "id": "mux_write1_13",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1490
+        },
+        {
+          "id": "ff1_13",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1490
+        },
+        {
+          "id": "mux_write1_14",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1600
+        },
+        {
+          "id": "ff1_14",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1600
+        },
+        {
+          "id": "mux_write1_15",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1710
+        },
+        {
+          "id": "ff1_15",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1710
+        },
+        {
+          "id": "mux_read1_0_0",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 60
+        },
+        {
+          "id": "mux_read1_0_1",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 180
+        },
+        {
+          "id": "mux_read1_0_2",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 300
+        },
+        {
+          "id": "mux_read1_0_3",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 420
+        },
+        {
+          "id": "mux_read1_0_4",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 540
+        },
+        {
+          "id": "mux_read1_0_5",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 660
+        },
+        {
+          "id": "mux_read1_0_6",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 780
+        },
+        {
+          "id": "mux_read1_0_7",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 900
+        },
+        {
+          "id": "mux_read1_1_0",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 60
+        },
+        {
+          "id": "mux_read1_1_1",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 180
+        },
+        {
+          "id": "mux_read1_1_2",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 300
+        },
+        {
+          "id": "mux_read1_1_3",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 420
+        },
+        {
+          "id": "mux_read1_2_0",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 60
+        },
+        {
+          "id": "mux_read1_2_1",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 180
+        },
+        {
+          "id": "mux_read1_3_0",
+          "definition": "std.mux2",
+          "x": 2680,
+          "y": 60
+        },
+        {
+          "id": "mux_write2_0",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 60
+        },
+        {
+          "id": "ff2_0",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 60
+        },
+        {
+          "id": "mux_write2_1",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 170
+        },
+        {
+          "id": "ff2_1",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 170
+        },
+        {
+          "id": "mux_write2_2",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 280
+        },
+        {
+          "id": "ff2_2",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 280
+        },
+        {
+          "id": "mux_write2_3",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 390
+        },
+        {
+          "id": "ff2_3",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 390
+        },
+        {
+          "id": "mux_write2_4",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 500
+        },
+        {
+          "id": "ff2_4",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 500
+        },
+        {
+          "id": "mux_write2_5",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 610
+        },
+        {
+          "id": "ff2_5",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 610
+        },
+        {
+          "id": "mux_write2_6",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 720
+        },
+        {
+          "id": "ff2_6",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 720
+        },
+        {
+          "id": "mux_write2_7",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 830
+        },
+        {
+          "id": "ff2_7",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 830
+        },
+        {
+          "id": "mux_write2_8",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 940
+        },
+        {
+          "id": "ff2_8",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 940
+        },
+        {
+          "id": "mux_write2_9",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1050
+        },
+        {
+          "id": "ff2_9",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1050
+        },
+        {
+          "id": "mux_write2_10",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1160
+        },
+        {
+          "id": "ff2_10",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1160
+        },
+        {
+          "id": "mux_write2_11",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1270
+        },
+        {
+          "id": "ff2_11",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1270
+        },
+        {
+          "id": "mux_write2_12",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1380
+        },
+        {
+          "id": "ff2_12",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1380
+        },
+        {
+          "id": "mux_write2_13",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1490
+        },
+        {
+          "id": "ff2_13",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1490
+        },
+        {
+          "id": "mux_write2_14",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1600
+        },
+        {
+          "id": "ff2_14",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1600
+        },
+        {
+          "id": "mux_write2_15",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1710
+        },
+        {
+          "id": "ff2_15",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1710
+        },
+        {
+          "id": "mux_read2_0_0",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 60
+        },
+        {
+          "id": "mux_read2_0_1",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 180
+        },
+        {
+          "id": "mux_read2_0_2",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 300
+        },
+        {
+          "id": "mux_read2_0_3",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 420
+        },
+        {
+          "id": "mux_read2_0_4",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 540
+        },
+        {
+          "id": "mux_read2_0_5",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 660
+        },
+        {
+          "id": "mux_read2_0_6",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 780
+        },
+        {
+          "id": "mux_read2_0_7",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 900
+        },
+        {
+          "id": "mux_read2_1_0",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 60
+        },
+        {
+          "id": "mux_read2_1_1",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 180
+        },
+        {
+          "id": "mux_read2_1_2",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 300
+        },
+        {
+          "id": "mux_read2_1_3",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 420
+        },
+        {
+          "id": "mux_read2_2_0",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 60
+        },
+        {
+          "id": "mux_read2_2_1",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 180
+        },
+        {
+          "id": "mux_read2_3_0",
+          "definition": "std.mux2",
+          "x": 2680,
+          "y": 60
+        },
+        {
+          "id": "mux_write3_0",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 60
+        },
+        {
+          "id": "ff3_0",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 60
+        },
+        {
+          "id": "mux_write3_1",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 170
+        },
+        {
+          "id": "ff3_1",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 170
+        },
+        {
+          "id": "mux_write3_2",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 280
+        },
+        {
+          "id": "ff3_2",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 280
+        },
+        {
+          "id": "mux_write3_3",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 390
+        },
+        {
+          "id": "ff3_3",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 390
+        },
+        {
+          "id": "mux_write3_4",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 500
+        },
+        {
+          "id": "ff3_4",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 500
+        },
+        {
+          "id": "mux_write3_5",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 610
+        },
+        {
+          "id": "ff3_5",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 610
+        },
+        {
+          "id": "mux_write3_6",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 720
+        },
+        {
+          "id": "ff3_6",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 720
+        },
+        {
+          "id": "mux_write3_7",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 830
+        },
+        {
+          "id": "ff3_7",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 830
+        },
+        {
+          "id": "mux_write3_8",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 940
+        },
+        {
+          "id": "ff3_8",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 940
+        },
+        {
+          "id": "mux_write3_9",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1050
+        },
+        {
+          "id": "ff3_9",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1050
+        },
+        {
+          "id": "mux_write3_10",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1160
+        },
+        {
+          "id": "ff3_10",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1160
+        },
+        {
+          "id": "mux_write3_11",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1270
+        },
+        {
+          "id": "ff3_11",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1270
+        },
+        {
+          "id": "mux_write3_12",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1380
+        },
+        {
+          "id": "ff3_12",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1380
+        },
+        {
+          "id": "mux_write3_13",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1490
+        },
+        {
+          "id": "ff3_13",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1490
+        },
+        {
+          "id": "mux_write3_14",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1600
+        },
+        {
+          "id": "ff3_14",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1600
+        },
+        {
+          "id": "mux_write3_15",
+          "definition": "std.mux2",
+          "x": 1300,
+          "y": 1710
+        },
+        {
+          "id": "ff3_15",
+          "definition": "std.dff",
+          "x": 1580,
+          "y": 1710
+        },
+        {
+          "id": "mux_read3_0_0",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 60
+        },
+        {
+          "id": "mux_read3_0_1",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 180
+        },
+        {
+          "id": "mux_read3_0_2",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 300
+        },
+        {
+          "id": "mux_read3_0_3",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 420
+        },
+        {
+          "id": "mux_read3_0_4",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 540
+        },
+        {
+          "id": "mux_read3_0_5",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 660
+        },
+        {
+          "id": "mux_read3_0_6",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 780
+        },
+        {
+          "id": "mux_read3_0_7",
+          "definition": "std.mux2",
+          "x": 1900,
+          "y": 900
+        },
+        {
+          "id": "mux_read3_1_0",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 60
+        },
+        {
+          "id": "mux_read3_1_1",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 180
+        },
+        {
+          "id": "mux_read3_1_2",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 300
+        },
+        {
+          "id": "mux_read3_1_3",
+          "definition": "std.mux2",
+          "x": 2160,
+          "y": 420
+        },
+        {
+          "id": "mux_read3_2_0",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 60
+        },
+        {
+          "id": "mux_read3_2_1",
+          "definition": "std.mux2",
+          "x": 2420,
+          "y": 180
+        },
+        {
+          "id": "mux_read3_3_0",
+          "definition": "std.mux2",
+          "x": 2680,
+          "y": 60
+        }
+      ],
+      "nets": [
+        {
+          "id": "addr0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr0",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr1_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr3_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr5_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr7_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr9_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr11_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr13_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr15_1",
+              "pin": "a"
+            },
+            {
+              "instance": "mux_read0_0_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_0_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_0_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_0_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_0_4",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_0_5",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_0_6",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_0_7",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_4",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_5",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_6",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_0_7",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_4",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_5",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_6",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_0_7",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_4",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_5",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_6",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_0_7",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "d0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_4",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_5",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_6",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_7",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_8",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_9",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_10",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_11",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_12",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_13",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_14",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write0_15",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_3_0",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "addr1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr2_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr3_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr6_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr7_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr10_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr11_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr14_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr15_1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_read0_1_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_1_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_1_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_1_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_1_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_1_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_1_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_1_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_1_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_1_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_1_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_1_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_1_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_1_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_1_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_1_3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "d1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_4",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_5",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_6",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_7",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_8",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_9",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_10",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_11",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_12",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_13",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_14",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write1_15",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_3_0",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "addr2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr2",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr4_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr5_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr6_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr7_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr12_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr13_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr14_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr15_2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_read0_2_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read0_2_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_2_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_2_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_2_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_2_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_2_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_2_1",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "d2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_4",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_5",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_6",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_7",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_8",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_9",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_10",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_11",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_12",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_13",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_14",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write2_15",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_3_0",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "addr3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr3",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr8_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr9_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr10_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr11_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr12_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr13_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr14_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr15_3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_read0_3_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read1_3_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read2_3_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_read3_3_0",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "d3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_4",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_5",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_6",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_7",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_8",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_9",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_10",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_11",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_12",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_13",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_14",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_write3_15",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_3_0",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "we_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write0",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write2",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write3",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write4",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write5",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write6",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write7",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write8",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write9",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write10",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write11",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write12",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write13",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write14",
+              "pin": "a"
+            },
+            {
+              "instance": "and_write15",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ff0_0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_1",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_2",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_3",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_4",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_5",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_6",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_7",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_8",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_9",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_10",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_11",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_12",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_13",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_14",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff0_15",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_1",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_2",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_3",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_4",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_5",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_6",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_7",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_8",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_9",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_10",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_11",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_12",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_13",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_14",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1_15",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_1",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_2",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_3",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_4",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_5",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_6",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_7",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_8",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_9",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_10",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_11",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_12",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_13",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_14",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2_15",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_1",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_2",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_3",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_4",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_5",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_6",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_7",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_8",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_9",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_10",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_11",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_12",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_13",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_14",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3_15",
+              "pin": "clk"
+            }
+          ]
+        },
+        {
+          "id": "addr0_n",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr0",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr0_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr2_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr4_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr6_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr8_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr10_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr12_1",
+              "pin": "a"
+            },
+            {
+              "instance": "and_addr14_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "addr1_n",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr0_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr1_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr4_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr5_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr8_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr9_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr12_1",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr13_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "addr2_n",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr0_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr1_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr2_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr3_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr8_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr9_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr10_2",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr11_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "addr3_n",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "not_addr3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr0_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr1_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr2_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr3_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr4_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr5_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr6_3",
+              "pin": "b"
+            },
+            {
+              "instance": "and_addr7_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "decode0_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr0_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr0_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode0_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr0_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr0_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode0_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr0_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_0",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode1_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr1_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr1_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode1_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr1_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr1_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode1_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr1_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_1",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode2_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr2_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr2_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode2_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr2_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr2_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode2_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr2_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_2",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode3_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr3_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr3_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode3_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr3_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr3_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode3_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr3_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode4_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr4_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr4_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode4_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr4_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr4_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode4_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr4_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write4",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write4",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_4",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_4",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_4",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_4",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode5_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr5_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr5_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode5_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr5_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr5_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode5_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr5_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write5",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write5",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_5",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_5",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_5",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_5",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode6_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr6_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr6_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode6_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr6_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr6_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode6_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr6_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write6",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write6",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_6",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_6",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_6",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_6",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode7_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr7_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr7_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode7_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr7_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr7_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode7_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr7_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write7",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write7",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_7",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_7",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_7",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_7",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode8_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr8_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr8_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode8_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr8_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr8_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode8_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr8_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write8",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write8",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_8",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_8",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_8",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_8",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode9_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr9_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr9_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode9_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr9_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr9_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode9_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr9_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write9",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write9",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_9",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_9",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_9",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_9",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode10_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr10_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr10_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode10_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr10_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr10_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode10_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr10_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write10",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write10",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_10",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_10",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_10",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_10",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode11_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr11_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr11_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode11_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr11_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr11_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode11_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr11_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write11",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write11",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_11",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_11",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_11",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_11",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode12_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr12_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr12_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode12_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr12_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr12_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode12_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr12_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write12",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write12",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_12",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_12",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_12",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_12",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode13_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr13_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr13_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode13_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr13_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr13_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode13_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr13_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write13",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write13",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_13",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_13",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_13",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_13",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode14_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr14_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr14_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode14_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr14_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr14_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode14_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr14_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write14",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write14",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_14",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_14",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_14",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_14",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "decode15_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr15_1",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr15_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode15_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr15_2",
+              "pin": "y"
+            },
+            {
+              "instance": "and_addr15_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "decode15_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_addr15_3",
+              "pin": "y"
+            },
+            {
+              "instance": "and_write15",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_write15",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_write0_15",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write1_15",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write2_15",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_write3_15",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cell0_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_0",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_1",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_1",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_2",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_2",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_2",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_2",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_3",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_3",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_3",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_3",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_4",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_4",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_4",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_4",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_5",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_5",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_5",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_5",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_6",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_6",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_6",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_6",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_7",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_7",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_7",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_7",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_8",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_8",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_4",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_8",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_8",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_9",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_9",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_4",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_9",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_9",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_10",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_10",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_5",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_10",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_10",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_11",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_11",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_5",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_11",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_11",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_12",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_12",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_6",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_12",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_12",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_13",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_13",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_6",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_13",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_13",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_14",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_14",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_7",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_14",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_14",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell0_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_15",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0_15",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read0_0_7",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next0_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write0_15",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0_15",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_4",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_5",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_6",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_0_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_0_7",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_1_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read0_1_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_1_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_2_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_1_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_1_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_2_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read0_1_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_1_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_2_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_1_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_1_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_2_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read0_2_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_2_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_3_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_2_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read0_2_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read0_3_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "cell1_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_0",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_1",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_1",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_2",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_2",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_2",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_2",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_3",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_3",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_3",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_3",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_4",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_4",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_4",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_4",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_5",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_5",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_5",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_5",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_6",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_6",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_6",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_6",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_7",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_7",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_7",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_7",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_8",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_8",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_4",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_8",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_8",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_9",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_9",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_4",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_9",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_9",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_10",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_10",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_5",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_10",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_10",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_11",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_11",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_5",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_11",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_11",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_12",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_12",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_6",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_12",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_12",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_13",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_13",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_6",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_13",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_13",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_14",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_14",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_7",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_14",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_14",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell1_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_15",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1_15",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read1_0_7",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next1_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write1_15",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1_15",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_4",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_5",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_6",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_0_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_0_7",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_1_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read1_1_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_1_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_2_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_1_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_1_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_2_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read1_1_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_1_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_2_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_1_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_1_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_2_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read1_2_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_2_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_3_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_2_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read1_2_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read1_3_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "cell2_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_0",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_1",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_1",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_2",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_2",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_2",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_2",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_3",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_3",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_3",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_3",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_4",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_4",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_4",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_4",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_5",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_5",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_5",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_5",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_6",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_6",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_6",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_6",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_7",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_7",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_7",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_7",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_8",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_8",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_4",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_8",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_8",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_9",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_9",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_4",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_9",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_9",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_10",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_10",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_5",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_10",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_10",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_11",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_11",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_5",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_11",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_11",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_12",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_12",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_6",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_12",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_12",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_13",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_13",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_6",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_13",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_13",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_14",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_14",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_7",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_14",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_14",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell2_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_15",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2_15",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read2_0_7",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next2_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write2_15",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2_15",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_4",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_5",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_6",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read2_0_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_0_7",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_1_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read2_1_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_1_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_2_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read2_1_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_1_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_2_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read2_1_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_1_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_2_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read2_1_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_1_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_2_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read2_2_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_2_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_3_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read2_2_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read2_2_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read2_3_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "cell3_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_0",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_1",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_1",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_2",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_2",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_2",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_2",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_3",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_3",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_3",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_3",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_4",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_4",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_4",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_4",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_5",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_5",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_5",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_5",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_6",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_6",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_6",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_6",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_7",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_7",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_7",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_7",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_8",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_8",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_4",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_8",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_8",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_8",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_9",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_9",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_4",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_9",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_9",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_9",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_10",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_10",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_5",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_10",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_10",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_10",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_11",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_11",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_5",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_11",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_11",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_11",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_12",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_12",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_6",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_12",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_12",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_12",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_13",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_13",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_6",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_13",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_13",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_13",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_14",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_14",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_7",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3_14",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_14",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_14",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "cell3_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_15",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3_15",
+              "pin": "q"
+            },
+            {
+              "instance": "mux_read3_0_7",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "next3_15",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_write3_15",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3_15",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_4",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_4",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_5",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_5",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_6",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_6",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read3_0_7",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_0_7",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_1_3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read3_1_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_1_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_2_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read3_1_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_1_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_2_0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read3_1_2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_1_2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_2_1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read3_1_3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_1_3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_2_1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read3_2_0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_2_0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_3_0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read3_2_1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_read3_2_1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_read3_3_0",
+              "pin": "b"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "addr0",
+          "net": "addr0_net"
+        },
+        {
+          "pin": "d0",
+          "net": "d0_net"
+        },
+        {
+          "pin": "q0",
+          "net": "q0_net"
+        },
+        {
+          "pin": "addr1",
+          "net": "addr1_net"
+        },
+        {
+          "pin": "d1",
+          "net": "d1_net"
+        },
+        {
+          "pin": "q1",
+          "net": "q1_net"
+        },
+        {
+          "pin": "addr2",
+          "net": "addr2_net"
+        },
+        {
+          "pin": "d2",
+          "net": "d2_net"
+        },
+        {
+          "pin": "q2",
+          "net": "q2_net"
+        },
+        {
+          "pin": "addr3",
+          "net": "addr3_net"
+        },
+        {
+          "pin": "d3",
+          "net": "d3_net"
+        },
+        {
+          "pin": "q3",
+          "net": "q3_net"
+        },
+        {
+          "pin": "we",
+          "net": "we_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        }
+      ]
+    },
+    {
       "id": "std.t-not",
       "name": "Ternary NOT (mod 3)",
       "description": "Digit-wise negation on the unsaturated 0/1/2 ternary domain.",
@@ -2959,7 +9796,7 @@
     {
       "id": "demo.tiny-cpu",
       "name": "Tiny CPU",
-      "description": "A 4-bit accumulator CPU with a 16-word instruction ROM. Opcodes: 0 NOP, 1 LDA, 2 ADD, 4 AND, 5 OR, 6 JMP, 7 JZ. CLR is synchronous with the next rising CLK edge. Instructions are opcode(4) | operand(4); see the shipped program for a loop.",
+      "description": "A 4-bit accumulator CPU with a 16-word instruction ROM and a 16x4 RAM. Opcodes: 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, 5 OR #, 6 JMP, 7 JZ, 8 LDA@ addr, 9 ADD@ addr. CLR is synchronous with the next rising CLK edge; it clears PC, ACC, and CARRY but leaves RAM contents intact. Instructions are opcode(4) | operand(4).",
       "pins": [
         {
           "id": "clk",
@@ -3070,6 +9907,30 @@
           "domain": "binary"
         },
         {
+          "id": "mem0",
+          "name": "MEM0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "mem1",
+          "name": "MEM1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "mem2",
+          "name": "MEM2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "mem3",
+          "name": "MEM3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
           "id": "carry",
           "name": "CARRY",
           "direction": "output",
@@ -3108,17 +9969,17 @@
             "inputCount": 4,
             "table": [
               1,
+              1,
               0,
               1,
               1,
               0,
               0,
               0,
+              1,
+              1,
               0,
-              0,
-              0,
-              0,
-              0,
+              1,
               0,
               0,
               0,
@@ -3136,14 +9997,14 @@
             "inputCount": 4,
             "table": [
               1,
-              0,
-              0,
-              0,
               1,
               0,
               1,
               0,
               0,
+              0,
+              0,
+              1,
               0,
               0,
               0,
@@ -3165,17 +10026,17 @@
             "table": [
               1,
               0,
+              0,
+              0,
+              0,
               1,
               0,
               1,
               0,
               1,
               0,
-              0,
-              0,
-              0,
-              0,
-              0,
+              1,
+              1,
               0,
               0,
               0
@@ -3192,18 +10053,18 @@
             "inputCount": 4,
             "table": [
               0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
               1,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
               0,
               0,
               0
@@ -3220,16 +10081,16 @@
             "inputCount": 4,
             "table": [
               1,
-              0,
+              1,
               1,
               0,
               0,
               1,
+              1,
               0,
-              0,
-              0,
-              0,
-              0,
+              1,
+              1,
+              1,
               0,
               0,
               0,
@@ -3249,17 +10110,17 @@
             "table": [
               0,
               1,
+              0,
+              0,
               1,
               1,
+              0,
+              0,
+              0,
               1,
               0,
+              0,
               1,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
               0,
               0,
               0
@@ -3277,17 +10138,17 @@
             "table": [
               0,
               0,
-              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
               0,
               1,
-              0,
-              1,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
               0,
               0,
               0
@@ -3306,15 +10167,15 @@
               0,
               0,
               0,
+              1,
               0,
               0,
               0,
+              1,
+              1,
               0,
               0,
-              0,
-              0,
-              0,
-              0,
+              1,
               0,
               0,
               0,
@@ -3382,6 +10243,34 @@
           "y": 160
         },
         {
+          "id": "ctl_sta",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 240
+        },
+        {
           "id": "ctl_and",
           "primitive": {
             "kind": "lookup",
@@ -3407,7 +10296,7 @@
             "delay": 0
           },
           "x": 560,
-          "y": 240
+          "y": 320
         },
         {
           "id": "ctl_or",
@@ -3435,7 +10324,7 @@
             "delay": 0
           },
           "x": 560,
-          "y": 320
+          "y": 400
         },
         {
           "id": "ctl_jmp",
@@ -3463,7 +10352,7 @@
             "delay": 0
           },
           "x": 560,
-          "y": 400
+          "y": 480
         },
         {
           "id": "ctl_jz",
@@ -3491,7 +10380,63 @@
             "delay": 0
           },
           "x": 560,
-          "y": 480
+          "y": 560
+        },
+        {
+          "id": "ctl_lda_mem",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 640
+        },
+        {
+          "id": "ctl_add_mem",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 720
         },
         {
           "id": "zero_flag",
@@ -3520,6 +10465,12 @@
           },
           "x": 560,
           "y": 580
+        },
+        {
+          "id": "ram",
+          "definition": "std.ram-16x4",
+          "x": 2700,
+          "y": 500
         },
         {
           "id": "pc_inc",
@@ -3570,10 +10521,40 @@
           "y": 360
         },
         {
+          "id": "or_add_active",
+          "definition": "std.or",
+          "x": 1120,
+          "y": 520
+        },
+        {
           "id": "acc_add",
           "definition": "std.ripple-adder-4",
           "x": 900,
           "y": 620
+        },
+        {
+          "id": "mux_add_b0",
+          "definition": "std.mux2",
+          "x": 680,
+          "y": 620
+        },
+        {
+          "id": "mux_add_b1",
+          "definition": "std.mux2",
+          "x": 680,
+          "y": 740
+        },
+        {
+          "id": "mux_add_b2",
+          "definition": "std.mux2",
+          "x": 680,
+          "y": 860
+        },
+        {
+          "id": "mux_add_b3",
+          "definition": "std.mux2",
+          "x": 680,
+          "y": 980
         },
         {
           "id": "acc_reg",
@@ -3592,6 +10573,12 @@
           "definition": "std.or",
           "x": 1120,
           "y": 860
+        },
+        {
+          "id": "mux_acc_load0",
+          "definition": "std.mux2",
+          "x": 1120,
+          "y": 60
         },
         {
           "id": "mux_acc_lda0",
@@ -3630,6 +10617,12 @@
           "y": 960
         },
         {
+          "id": "mux_acc_load1",
+          "definition": "std.mux2",
+          "x": 1120,
+          "y": 180
+        },
+        {
           "id": "mux_acc_lda1",
           "definition": "std.mux2",
           "x": 1340,
@@ -3666,6 +10659,12 @@
           "y": 1060
         },
         {
+          "id": "mux_acc_load2",
+          "definition": "std.mux2",
+          "x": 1120,
+          "y": 300
+        },
+        {
           "id": "mux_acc_lda2",
           "definition": "std.mux2",
           "x": 1340,
@@ -3700,6 +10699,12 @@
           "definition": "std.or",
           "x": 1120,
           "y": 1160
+        },
+        {
+          "id": "mux_acc_load3",
+          "definition": "std.mux2",
+          "x": 1120,
+          "y": 420
         },
         {
           "id": "mux_acc_lda3",
@@ -3749,6 +10754,10 @@
           "id": "clk_net",
           "domain": "binary",
           "pins": [
+            {
+              "instance": "ram",
+              "pin": "clk"
+            },
             {
               "instance": "pc_reg",
               "pin": "clk"
@@ -3838,6 +10847,10 @@
               "pin": "in3"
             },
             {
+              "instance": "ram",
+              "pin": "d0"
+            },
+            {
               "instance": "acc_add",
               "pin": "a0"
             },
@@ -3850,7 +10863,7 @@
               "pin": "a"
             },
             {
-              "instance": "mux_acc_lda0",
+              "instance": "mux_acc_load0",
               "pin": "a"
             },
             {
@@ -3916,6 +10929,10 @@
               "pin": "in2"
             },
             {
+              "instance": "ram",
+              "pin": "d1"
+            },
+            {
               "instance": "acc_add",
               "pin": "a1"
             },
@@ -3928,7 +10945,7 @@
               "pin": "a"
             },
             {
-              "instance": "mux_acc_lda1",
+              "instance": "mux_acc_load1",
               "pin": "a"
             },
             {
@@ -3994,6 +11011,10 @@
               "pin": "in1"
             },
             {
+              "instance": "ram",
+              "pin": "d2"
+            },
+            {
               "instance": "acc_add",
               "pin": "a2"
             },
@@ -4006,7 +11027,7 @@
               "pin": "a"
             },
             {
-              "instance": "mux_acc_lda2",
+              "instance": "mux_acc_load2",
               "pin": "a"
             },
             {
@@ -4072,6 +11093,10 @@
               "pin": "in0"
             },
             {
+              "instance": "ram",
+              "pin": "d3"
+            },
+            {
               "instance": "acc_add",
               "pin": "a3"
             },
@@ -4084,7 +11109,7 @@
               "pin": "a"
             },
             {
-              "instance": "mux_acc_lda3",
+              "instance": "mux_acc_load3",
               "pin": "a"
             },
             {
@@ -4103,12 +11128,16 @@
               "pin": "out"
             },
             {
+              "instance": "ram",
+              "pin": "addr0"
+            },
+            {
               "instance": "mux_pc0",
               "pin": "b"
             },
             {
-              "instance": "acc_add",
-              "pin": "b0"
+              "instance": "mux_add_b0",
+              "pin": "a"
             },
             {
               "instance": "and_acc0",
@@ -4134,12 +11163,16 @@
               "pin": "out"
             },
             {
+              "instance": "ram",
+              "pin": "addr1"
+            },
+            {
               "instance": "mux_pc1",
               "pin": "b"
             },
             {
-              "instance": "acc_add",
-              "pin": "b1"
+              "instance": "mux_add_b1",
+              "pin": "a"
             },
             {
               "instance": "and_acc1",
@@ -4165,12 +11198,16 @@
               "pin": "out"
             },
             {
+              "instance": "ram",
+              "pin": "addr2"
+            },
+            {
               "instance": "mux_pc2",
               "pin": "b"
             },
             {
-              "instance": "acc_add",
-              "pin": "b2"
+              "instance": "mux_add_b2",
+              "pin": "a"
             },
             {
               "instance": "and_acc2",
@@ -4196,12 +11233,16 @@
               "pin": "out"
             },
             {
+              "instance": "ram",
+              "pin": "addr3"
+            },
+            {
               "instance": "mux_pc3",
               "pin": "b"
             },
             {
-              "instance": "acc_add",
-              "pin": "b3"
+              "instance": "mux_add_b3",
+              "pin": "a"
             },
             {
               "instance": "and_acc3",
@@ -4235,6 +11276,10 @@
               "pin": "in3"
             },
             {
+              "instance": "ctl_sta",
+              "pin": "in3"
+            },
+            {
               "instance": "ctl_and",
               "pin": "in3"
             },
@@ -4248,6 +11293,14 @@
             },
             {
               "instance": "ctl_jz",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_lda_mem",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_add_mem",
               "pin": "in3"
             }
           ]
@@ -4270,6 +11323,10 @@
               "pin": "in2"
             },
             {
+              "instance": "ctl_sta",
+              "pin": "in2"
+            },
+            {
               "instance": "ctl_and",
               "pin": "in2"
             },
@@ -4283,6 +11340,14 @@
             },
             {
               "instance": "ctl_jz",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_lda_mem",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_add_mem",
               "pin": "in2"
             }
           ]
@@ -4305,6 +11370,10 @@
               "pin": "in1"
             },
             {
+              "instance": "ctl_sta",
+              "pin": "in1"
+            },
+            {
               "instance": "ctl_and",
               "pin": "in1"
             },
@@ -4318,6 +11387,14 @@
             },
             {
               "instance": "ctl_jz",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_lda_mem",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_add_mem",
               "pin": "in1"
             }
           ]
@@ -4340,6 +11417,10 @@
               "pin": "in0"
             },
             {
+              "instance": "ctl_sta",
+              "pin": "in0"
+            },
+            {
               "instance": "ctl_and",
               "pin": "in0"
             },
@@ -4354,6 +11435,86 @@
             {
               "instance": "ctl_jz",
               "pin": "in0"
+            },
+            {
+              "instance": "ctl_lda_mem",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_add_mem",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "mem0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ram",
+              "pin": "q0"
+            },
+            {
+              "instance": "mux_add_b0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_load0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "mem1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ram",
+              "pin": "q1"
+            },
+            {
+              "instance": "mux_add_b1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_load1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "mem2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ram",
+              "pin": "q2"
+            },
+            {
+              "instance": "mux_add_b2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_load2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "mem3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ram",
+              "pin": "q3"
+            },
+            {
+              "instance": "mux_add_b3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_load3",
+              "pin": "b"
             }
           ]
         },
@@ -4470,24 +11631,22 @@
               "pin": "out"
             },
             {
-              "instance": "mux_acc_add0",
-              "pin": "s"
+              "instance": "or_add_active",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "ctl_sta_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_sta",
+              "pin": "out"
             },
             {
-              "instance": "mux_acc_add1",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_acc_add2",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_acc_add3",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_carry",
-              "pin": "s"
+              "instance": "ram",
+              "pin": "we"
             }
           ]
         },
@@ -4568,6 +11727,62 @@
             {
               "instance": "and_jz",
               "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "ctl_lda_mem_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_lda_mem",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_acc_load0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_load1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_load2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_load3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "ctl_add_mem_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_add_mem",
+              "pin": "out"
+            },
+            {
+              "instance": "or_add_active",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_add_b0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_add_b1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_add_b2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_add_b3",
+              "pin": "s"
             }
           ]
         },
@@ -4734,6 +11949,36 @@
           ]
         },
         {
+          "id": "add_active",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_add_active",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_add0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_add1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_add2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_add3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_carry",
+              "pin": "s"
+            }
+          ]
+        },
+        {
           "id": "acc_carry",
           "domain": "binary",
           "pins": [
@@ -4744,6 +11989,62 @@
             {
               "instance": "mux_carry",
               "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "alu_b0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_add_b0",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b0"
+            }
+          ]
+        },
+        {
+          "id": "alu_b1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_add_b1",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b1"
+            }
+          ]
+        },
+        {
+          "id": "alu_b2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_add_b2",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b2"
+            }
+          ]
+        },
+        {
+          "id": "alu_b3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_add_b3",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b3"
             }
           ]
         },
@@ -4786,6 +12087,20 @@
             {
               "instance": "mux_acc_or0",
               "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_load_src0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_load0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_lda0",
+              "pin": "a"
             }
           ]
         },
@@ -4888,6 +12203,20 @@
           ]
         },
         {
+          "id": "acc_load_src1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_load1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_lda1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
           "id": "acc_loaded1",
           "domain": "binary",
           "pins": [
@@ -4986,6 +12315,20 @@
           ]
         },
         {
+          "id": "acc_load_src2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_load2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_lda2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
           "id": "acc_loaded2",
           "domain": "binary",
           "pins": [
@@ -5080,6 +12423,20 @@
             {
               "instance": "mux_acc_or3",
               "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_load_src3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_load3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_lda3",
+              "pin": "a"
             }
           ]
         },
@@ -5242,6 +12599,22 @@
           "net": "ir7_net"
         },
         {
+          "pin": "mem0",
+          "net": "mem0_net"
+        },
+        {
+          "pin": "mem1",
+          "net": "mem1_net"
+        },
+        {
+          "pin": "mem2",
+          "net": "mem2_net"
+        },
+        {
+          "pin": "mem3",
+          "net": "mem3_net"
+        },
+        {
           "pin": "carry",
           "net": "carry_net"
         },
@@ -5260,6 +12633,17 @@
             "acc1",
             "acc2",
             "acc3"
+          ]
+        },
+        {
+          "id": "mem",
+          "name": "Memory read",
+          "format": "unsigned-binary",
+          "pins": [
+            "mem0",
+            "mem1",
+            "mem2",
+            "mem3"
           ]
         },
         {
