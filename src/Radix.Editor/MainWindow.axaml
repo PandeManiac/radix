@@ -515,12 +515,66 @@
           </TabItem>
 
           <TabItem Header="Diagnostics">
-            <Grid RowDefinitions="Auto,*" Margin="10,8,12,10">
-              <StackPanel>
-                <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
-                <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition and selects the reported instance or net." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
-              </StackPanel>
-              <ListBox Grid.Row="1" ItemsSource="{Binding Diagnostics}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1">
+            <Grid RowDefinitions="Auto,Auto,*" Margin="10,8,12,10">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <StackPanel>
+                  <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
+                  <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition and selects the reported instance or net." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
+                </StackPanel>
+                <Button
+                  Grid.Column="1"
+                  Classes="tool"
+                  Content="Run script…"
+                  Click="RunTestScript_Click"
+                  VerticalAlignment="Top"
+                  ToolTip.Tip="Run a .radixtest script against the current in-memory project; the live simulation is not changed" />
+              </Grid>
+
+              <Border
+                Grid.Row="1"
+                IsVisible="{Binding HasTestScriptResult}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                Padding="7,5"
+                Margin="0,0,0,6"
+                MaxHeight="190">
+                <Grid RowDefinitions="Auto,*">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                    <TextBlock
+                      Text="{Binding TestScriptSummary}"
+                      Classes="diag"
+                      Classes.error="{Binding HasTestScriptFailures}"
+                      FontSize="10.5"
+                      TextWrapping="Wrap"
+                      ToolTip.Tip="{Binding TestScriptPath}" />
+                    <Button
+                      Grid.Column="1"
+                      Classes="tool"
+                      Content="Clear"
+                      Command="{Binding ClearTestScriptResultCommand}"
+                      Padding="6,1"
+                      VerticalAlignment="Top" />
+                  </Grid>
+                  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="130" Margin="0,4,0,0">
+                    <ItemsControl ItemsSource="{Binding TestScriptFailures}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TestScriptFailureItem">
+                          <TextBlock
+                            Text="{Binding Display}"
+                            Classes="diag error"
+                            FontSize="10"
+                            TextWrapping="Wrap"
+                            Margin="2,1" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+                </Grid>
+              </Border>
+
+              <ListBox Grid.Row="2" ItemsSource="{Binding Diagnostics}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:DiagnosticItem">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">

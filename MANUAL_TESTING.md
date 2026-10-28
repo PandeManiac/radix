@@ -231,6 +231,14 @@ These steps use a terminal only; they never open a window. Run from the reposito
 22. Copy the DFF script to a scratch file and change its final `stable` expectation to `"q": 0`. Expected: `FAIL`, one line naming `step 4 (t=40)` with `stable assertion failed at t=40` and `pin 'q': expected 0 (0), got 1 (1)`; exit code 1. This shows a stability window checks its starting tick and every tick through its deadline, not only the end.
 23. Copy the ternary counter script to a scratch file and change `"t0": 1` in its `transitions` block to `"t0": 0`. Expected: `FAIL`, one line naming `step 27 (t=700)` with `pin 't0': expected 0 transition(s) between t=670 and t=700, observed 1`; exit code 1. This shows transition counts cover the whole interval, including the drive at its start.
 
+### Editor script runner
+
+1. Start the workbench with `dotnet run --project src/Radix.Editor` and open `examples/dff-demo.radix`. Select the **Diagnostics** tab. Expected: a **Run script…** button sits at the upper right of the tab.
+2. Click **Run script…** and choose `examples/tests/dff-captures.radixtest`. Expected: a result panel appears with a `PASS` summary naming the script and `4 step(s) · t=50`; it has no failure rows, and the live simulation time and canvas are unchanged.
+3. Copy the script to a scratch file, change the final `stable` expectation to `"q": 0`, and run that file. Expected: the panel shows `FAIL`, one row reading `step 4 (t=40): pin 'q': expected 0 (0), got 1 (1).`, and the status bar reports the failure.
+4. Click **Clear**. Expected: the result panel disappears while the ordinary diagnostics remain.
+5. Run the passing script again, then open another project. Expected: the result panel clears because it described the previous project.
+
 ## 14. Ternary multi-trit addition
 
 This check uses the GUI and the examples from the previous section.
@@ -415,7 +423,7 @@ Do not file these as new failures until they change in the README:
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
-- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; they do not express edge direction, edge order, or minimum setup/hold constraints;
+- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; they do not express edge direction, edge order, or minimum setup/hold constraints. The editor's result panel is transient and is not marked stale when the circuit is edited afterward; rerun for a current result;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.

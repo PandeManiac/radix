@@ -422,6 +422,70 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void DiagnosticsTabRendersInEditorTestScriptResult()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string scriptPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        File.WriteAllText(
+            scriptPath,
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "name": "rendered failure",
+              "definition": "demo.dff",
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 0 }, "expect": { "q": 1 } }
+              ]
+            }
+            """);
+
+        MainWindow? window = null;
+        try
+        {
+            Assert.False(viewModel.RunTestScript(scriptPath));
+
+            window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var tabs = window.FindControl<TabControl>("RightTabs");
+            Assert.NotNull(tabs);
+            tabs!.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+
+            Button run = Assert.Single(
+                window.GetVisualDescendants().OfType<Button>(),
+                button => button.Content is "Run script…");
+            Assert.True(run.IsEffectivelyVisible);
+
+            TextBlock summary = Assert.Single(
+                window.GetVisualDescendants().OfType<TextBlock>(),
+                text => text.Text?.StartsWith("FAIL", StringComparison.Ordinal) == true);
+            Assert.True(summary.IsEffectivelyVisible);
+
+            TextBlock failure = Assert.Single(
+                window.GetVisualDescendants().OfType<TextBlock>(),
+                text => text.Text?.Contains("pin 'q'", StringComparison.Ordinal) == true);
+            Assert.True(failure.IsEffectivelyVisible);
+
+            using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+            bitmap.Render(window);
+            string path = Path.Combine(ArtifactDirectory(), "workbench-test-script.png");
+            using (FileStream stream = File.Create(path))
+            {
+                bitmap.Save(stream);
+            }
+
+            Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+        }
+        finally
+        {
+            window?.Close();
+            File.Delete(scriptPath);
+        }
+    }
+
+    [AvaloniaFact]
     public void EmptyProjectCanvasRendersHint()
     {
         var project = Core.Model.CircuitProject.CreateEmpty("Empty");

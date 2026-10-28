@@ -135,6 +135,12 @@ public partial class MainWindow : Window
         MimeTypes = ["application/json"],
     };
 
+    private static readonly FilePickerFileType TestScriptFileType = new("RADIX test script")
+    {
+        Patterns = ["*.radixtest"],
+        MimeTypes = ["application/json"],
+    };
+
     private void FieldBox_LostFocus(object? sender, RoutedEventArgs e) => CommitField(sender);
 
     private void FieldBox_KeyDown(object? sender, KeyEventArgs e)
@@ -266,6 +272,26 @@ public partial class MainWindow : Window
         if (ViewModel is EditorViewModel viewModel)
         {
             await SaveAsAsync(viewModel);
+        }
+    }
+
+    private async void RunTestScript_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not EditorViewModel viewModel)
+        {
+            return;
+        }
+
+        IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Run RADIX test script",
+            AllowMultiple = false,
+            FileTypeFilter = [TestScriptFileType],
+        });
+
+        if (files.Count > 0)
+        {
+            viewModel.RunTestScript(files[0].Path.LocalPath);
         }
     }
 

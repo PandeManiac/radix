@@ -1566,6 +1566,137 @@ public sealed class EditorViewModelTests
         Assert.Contains(viewModel.Layout.Wires, w => w.Endpoints.Count >= 2);
     }
 
+    [Fact]
+    public void TestScriptRunsAgainstTheEditorProjectAndReportsPass()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "name": "editor pass",
+                  "definition": "demo.dff",
+                  "steps": [
+                    { "at": 0, "set": { "clk": 0, "d": 1 } },
+                    { "at": 20, "set": { "clk": 1 }, "within": { "ticks": 10, "expect": { "q": 1, "qn": 0 } } }
+                  ]
+                }
+                """);
+
+            Assert.True(viewModel.RunTestScript(path));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.True(viewModel.TestScriptPassed);
+            Assert.False(viewModel.HasTestScriptFailures);
+            Assert.Empty(viewModel.TestScriptFailures);
+            Assert.StartsWith("PASS", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("editor pass", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Equal(path, viewModel.TestScriptPath);
+            Assert.False(viewModel.IsDirty);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void TestScriptFailureIsListedAndMarked()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "name": "editor fail",
+                  "definition": "demo.dff",
+                  "steps": [
+                    { "at": 0, "set": { "clk": 0, "d": 0 }, "expect": { "q": 1 } }
+                  ]
+                }
+                """);
+
+            Assert.False(viewModel.RunTestScript(path));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            Assert.True(viewModel.HasTestScriptFailures);
+            TestScriptFailureItem failure = Assert.Single(viewModel.TestScriptFailures);
+            Assert.Equal(1, failure.Step);
+            Assert.Contains("pin 'q'", failure.Display, StringComparison.Ordinal);
+            Assert.StartsWith("FAIL", viewModel.TestScriptSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void MalformedTestScriptIsReportedWithoutFailures()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        try
+        {
+            File.WriteAllText(path, "{ not json");
+
+            Assert.False(viewModel.RunTestScript(path));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            Assert.Empty(viewModel.TestScriptFailures);
+            Assert.StartsWith("Test script error:", viewModel.TestScriptSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void NewProjectClearsTheLastTestScriptResult()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "definition": "demo.dff",
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 0 } } ]
+                }
+                """);
+            Assert.True(viewModel.RunTestScript(path));
+            Assert.True(viewModel.HasTestScriptResult);
+
+            viewModel.NewProject();
+
+            Assert.False(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            Assert.Empty(viewModel.TestScriptFailures);
+            Assert.Equal(string.Empty, viewModel.TestScriptSummary);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static CircuitProject WideNetProject(int netCount)
     {
         var project = CircuitProject.CreateEmpty("Waveform test");

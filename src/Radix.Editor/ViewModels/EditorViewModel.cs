@@ -10,6 +10,7 @@ using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
 using Radix.Core.Simulation;
+using Radix.Core.Testing;
 using Radix.Editor.Rendering;
 using Radix.Editor.Services;
 using Radix.StdLib;
@@ -94,6 +95,10 @@ public sealed class EditorViewModel : ObservableObject
     private string? _editingLaneId;
     private string _formatPreviewText = string.Empty;
     private bool _refreshingFormatForm;
+    private bool _hasTestScriptResult;
+    private bool _testScriptPassed;
+    private string _testScriptSummary = string.Empty;
+    private string _testScriptPath = string.Empty;
 
 
     public EditorViewModel(CircuitProject project)
@@ -166,6 +171,7 @@ public sealed class EditorViewModel : ObservableObject
         StepClockCommand = new RelayCommand(StepClock);
         SettleCommand = new RelayCommand(Settle);
         ClearDrivesCommand = new RelayCommand(ClearDrives);
+        ClearTestScriptResultCommand = new RelayCommand(ClearTestScriptResult);
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
         CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
         AddNumericLaneCommand = new RelayCommand(AddNumericLane);
@@ -257,6 +263,8 @@ public sealed class EditorViewModel : ObservableObject
     ];
 
     public ObservableCollection<DiagnosticItem> Diagnostics { get; } = [];
+
+    public ObservableCollection<TestScriptFailureItem> TestScriptFailures { get; } = [];
 
     public ObservableCollection<EditableField> Fields { get; } = [];
 
@@ -374,6 +382,8 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ClearDrivesCommand { get; }
 
+    public ICommand ClearTestScriptResultCommand { get; }
+
     public ICommand FitCommand { get; }
 
     public ICommand CloseDefinitionCommand { get; }
@@ -451,6 +461,32 @@ public sealed class EditorViewModel : ObservableObject
             int warnings = Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Warning);
             return string.Create(CultureInfo.InvariantCulture, $"{errors} errors · {warnings} warnings");
         }
+    }
+
+    public bool HasTestScriptResult
+    {
+        get => _hasTestScriptResult;
+        private set => SetField(ref _hasTestScriptResult, value);
+    }
+
+    public bool TestScriptPassed
+    {
+        get => _testScriptPassed;
+        private set => SetField(ref _testScriptPassed, value);
+    }
+
+    public bool HasTestScriptFailures => TestScriptFailures.Count > 0;
+
+    public string TestScriptSummary
+    {
+        get => _testScriptSummary;
+        private set => SetField(ref _testScriptSummary, value);
+    }
+
+    public string TestScriptPath
+    {
+        get => _testScriptPath;
+        private set => SetField(ref _testScriptPath, value);
     }
 
     public string ZoomText => "100%";
@@ -1088,6 +1124,7 @@ public sealed class EditorViewModel : ObservableObject
     public void NewProject()
     {
         CancelDomainEdit();
+        ClearTestScriptResult();
         _waveformPins.Clear();
         var project = CircuitProject.CreateEmpty("Untitled");
         var root = new CircuitDefinition { Id = "main", Name = "Main", Description = "Root circuit" };
@@ -1121,6 +1158,7 @@ public sealed class EditorViewModel : ObservableObject
         {
             CircuitProject loaded = ProjectSerializer.Load(path);
             CancelDomainEdit();
+            ClearTestScriptResult();
             _waveformPins.Clear();
             _project = loaded;
             EnsureProjectShape();
@@ -1180,6 +1218,61 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         RefreshRecentProjects();
+    }
+
+    /// <summary>
+    /// Loads and runs a <c>.radixtest</c> script against the current in-memory project.
+    /// The run never mutates the project or the editor's live simulation.
+    /// </summary>
+    public bool RunTestScript(string path)
+    {
+        ClearTestScriptResult();
+        try
+        {
+            SimulationScript script = SimulationScript.Load(path);
+            SimulationScriptResult result = SimulationScriptRunner.Run(_project, script);
+            TestScriptPath = path;
+            TestScriptPassed = result.Passed;
+            TestScriptSummary = result.Passed
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"PASS · {script.Name} · {result.StepsExecuted} step(s) · t={result.FinalTime} · {result.EventsProcessed} events")
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"FAIL · {script.Name} · {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)");
+            foreach (ScriptFailure failure in result.Failures)
+            {
+                TestScriptFailures.Add(new TestScriptFailureItem(failure));
+            }
+
+            HasTestScriptResult = true;
+            RaisePropertyChanged(nameof(HasTestScriptFailures));
+            StatusText = result.Passed
+                ? $"Test script passed: {script.Name}"
+                : $"Test script failed: {result.Failures.Count} failure(s)";
+            return result.Passed;
+        }
+        catch (Exception exception) when (
+            exception is SimulationScriptException or IOException or UnauthorizedAccessException or
+            CircuitValidationException or ArgumentException)
+        {
+            TestScriptPath = path;
+            TestScriptPassed = false;
+            TestScriptSummary = "Test script error: " + exception.Message;
+            HasTestScriptResult = true;
+            StatusText = "Test script error: " + exception.Message;
+            return false;
+        }
+    }
+
+    public void ClearTestScriptResult()
+    {
+        TestScriptFailures.Clear();
+        TestScriptPath = string.Empty;
+        TestScriptSummary = string.Empty;
+        TestScriptPassed = false;
+        HasTestScriptResult = false;
+        RaisePropertyChanged(nameof(HasTestScriptFailures));
     }
 
     public void OpenRecentProject(string path) => RecentProjectOpenRequested?.Invoke(path);
@@ -1244,6 +1337,7 @@ public sealed class EditorViewModel : ObservableObject
         try
         {
             CancelDomainEdit();
+            ClearTestScriptResult();
             _waveformPins.Clear();
             _project = snapshot.Project;
             EnsureProjectShape();
@@ -4640,6 +4734,7 @@ public sealed class EditorViewModel : ObservableObject
         CancelDomainEdit();
         try
         {
+            ClearTestScriptResult();
             double? savedScale = _project.View.Scale;
             double? savedOffsetX = _project.View.OffsetX;
             double? savedOffsetY = _project.View.OffsetY;

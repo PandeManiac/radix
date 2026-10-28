@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
+using Radix.Core.Testing;
 
 namespace Radix.Editor.ViewModels;
 
@@ -293,6 +294,26 @@ public sealed class CustomNumericFormatListItem
     public ICommand EditCommand { get; }
 
     public ICommand RemoveCommand { get; }
+}
+
+/// <summary>One failed assertion from an in-editor test-script run.</summary>
+public sealed class TestScriptFailureItem
+{
+    public TestScriptFailureItem(ScriptFailure failure)
+    {
+        Step = failure.Step;
+        At = failure.At;
+        Message = failure.Message;
+        Display = $"step {failure.Step} (t={failure.At}): {failure.Message}";
+    }
+
+    public int Step { get; }
+
+    public long At { get; }
+
+    public string Message { get; }
+
+    public string Display { get; }
 }
 
 public sealed class IoState
