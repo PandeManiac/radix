@@ -9,7 +9,8 @@ namespace Radix.Editor.Services;
 /// Deterministic presentation layout for a definition body. Instances are grouped
 /// into strongly connected components, because sequential feedback is a cycle in the
 /// wiring graph but not a layout loop. The condensation is layered left-to-right by
-/// longest path, then each layer is stacked in authored vertical order. Nothing here
+/// longest path, then each layer is ordered by barycenter sweeps to reduce crossings.
+/// Authored position and ID break every tie, so repeated runs are stable. Nothing here
 /// understands clocks, arithmetic, or any other circuit concept.
 /// </summary>
 public static class CircuitAutoLayout
@@ -18,6 +19,8 @@ public static class CircuitAutoLayout
     public const double StartY = 80;
     public const double ColumnGap = 120;
     public const double RowGap = 40;
+
+    private const int CrossingReductionPasses = 4;
 
     public static AutoLayoutResult Arrange(CircuitProject project, CircuitDefinition definition)
     {
@@ -95,10 +98,12 @@ public static class CircuitAutoLayout
         }
 
         var componentSuccessors = new HashSet<int>[componentCount];
+        var componentPredecessors = new HashSet<int>[componentCount];
         var indegree = new int[componentCount];
         for (int component = 0; component < componentCount; component++)
         {
             componentSuccessors[component] = [];
+            componentPredecessors[component] = [];
         }
 
         for (int node = 0; node < count; node++)
@@ -107,14 +112,26 @@ public static class CircuitAutoLayout
             foreach (int next in orderedSuccessors[node])
             {
                 int to = componentOf[next];
-                if (from != to && componentSuccessors[from].Add(to))
+                if (from == to)
+                {
+                    continue;
+                }
+
+                if (componentSuccessors[from].Add(to))
                 {
                     indegree[to]++;
                 }
+
+                componentPredecessors[to].Add(from);
             }
         }
 
-        var layers = new int[componentCount];
+        int[][] orderedComponentSuccessors =
+            componentSuccessors.Select(edges => edges.Order().ToArray()).ToArray();
+        int[][] orderedComponentPredecessors =
+            componentPredecessors.Select(edges => edges.Order().ToArray()).ToArray();
+
+        var componentLayers = new int[componentCount];
         var ready = new PriorityQueue<int, int>();
         for (int component = 0; component < componentCount; component++)
         {
@@ -124,13 +141,11 @@ public static class CircuitAutoLayout
             }
         }
 
-        int processed = 0;
         while (ready.TryDequeue(out int component, out _))
         {
-            processed++;
-            foreach (int next in componentSuccessors[component])
+            foreach (int next in orderedComponentSuccessors[component])
             {
-                layers[next] = Math.Max(layers[next], layers[component] + 1);
+                componentLayers[next] = Math.Max(componentLayers[next], componentLayers[component] + 1);
                 if (--indegree[next] == 0)
                 {
                     ready.Enqueue(next, next);
@@ -138,53 +153,256 @@ public static class CircuitAutoLayout
             }
         }
 
-        if (processed != componentCount)
+        int layerCount = componentLayers.Length == 0 ? 0 : componentLayers.Max() + 1;
+        var layerComponents = new List<int>[layerCount];
+        for (int layer = 0; layer < layerCount; layer++)
         {
-            // A correctly condensed graph is acyclic. Keep this defensive fallback so
-            // a bug cannot hang auto layout or leave unplaced instances.
-            for (int component = 0; component < componentCount; component++)
-            {
-                layers[component] = Math.Max(layers[component], 0);
-            }
+            layerComponents[layer] = [];
         }
 
-        var byLayer = new SortedDictionary<int, List<int>>();
-        for (int node = 0; node < count; node++)
+        for (int component = 0; component < componentCount; component++)
         {
-            int layer = layers[componentOf[node]];
-            if (!byLayer.TryGetValue(layer, out List<int>? nodes))
+            layerComponents[componentLayers[component]].Add(component);
+        }
+
+        // Members of one SCC stay contiguous. Without this, two feedback parts could
+        // be split by an unrelated component that happened to sit between their Y
+        // coordinates, defeating both grouping and crossing reduction.
+        var componentMembers = new int[componentCount][];
+        var componentTopY = new double[componentCount];
+        var componentTopId = new string[componentCount];
+        for (int component = 0; component < componentCount; component++)
+        {
+            componentMembers[component] = components[component]
+                .OrderBy(node => definition.Instances[node].Y)
+                .ThenBy(node => definition.Instances[node].Id, StringComparer.Ordinal)
+                .ToArray();
+            ComponentInstance top = definition.Instances[componentMembers[component][0]];
+            componentTopY[component] = top.Y;
+            componentTopId[component] = top.Id;
+        }
+
+        foreach (List<int> layer in layerComponents)
+        {
+            layer.Sort((left, right) =>
             {
-                nodes = [];
-                byLayer[layer] = nodes;
+                int byY = componentTopY[left].CompareTo(componentTopY[right]);
+                if (byY != 0)
+                {
+                    return byY;
+                }
+
+                int byId = string.CompareOrdinal(componentTopId[left], componentTopId[right]);
+                return byId != 0 ? byId : left.CompareTo(right);
+            });
+        }
+
+        List<List<int>> bestLayers = CloneLayers(layerComponents);
+        int bestCrossings = CountCrossings(bestLayers, orderedComponentSuccessors);
+        for (int pass = 0; pass < CrossingReductionPasses && layerCount > 1; pass++)
+        {
+            var orderIndex = BuildOrderIndex(layerComponents);
+            for (int layer = 1; layer < layerCount; layer++)
+            {
+                OrderLayerByBarycenter(
+                    layerComponents[layer],
+                    orderedComponentPredecessors,
+                    componentLayers,
+                    layer - 1,
+                    orderIndex);
             }
 
-            nodes.Add(node);
+            ConsiderOrder(layerComponents, orderedComponentSuccessors, ref bestLayers, ref bestCrossings);
+
+            orderIndex = BuildOrderIndex(layerComponents);
+            for (int layer = layerCount - 2; layer >= 0; layer--)
+            {
+                OrderLayerByBarycenter(
+                    layerComponents[layer],
+                    orderedComponentSuccessors,
+                    componentLayers,
+                    layer + 1,
+                    orderIndex);
+            }
+
+            ConsiderOrder(layerComponents, orderedComponentSuccessors, ref bestLayers, ref bestCrossings);
         }
 
         var positions = new Dictionary<string, Point>(count, StringComparer.Ordinal);
-        foreach ((int layer, List<int> nodes) in byLayer)
+        for (int layer = 0; layer < layerCount; layer++)
         {
-            nodes.Sort((left, right) =>
-            {
-                int byY = definition.Instances[left].Y.CompareTo(definition.Instances[right].Y);
-                return byY != 0
-                    ? byY
-                    : string.CompareOrdinal(definition.Instances[left].Id, definition.Instances[right].Id);
-            });
-
             double x = StartX + (layer * (CircuitLayout.BoxWidth + ColumnGap));
             double y = StartY;
-            foreach (int node in nodes)
+            foreach (int component in bestLayers[layer])
             {
-                ComponentInstance instance = definition.Instances[node];
-                positions[instance.Id] = new Point(x, y);
-                double height = CircuitLayout.MeasureHeight(project.GetInstancePins(instance));
-                y += height + RowGap;
+                foreach (int node in componentMembers[component])
+                {
+                    ComponentInstance instance = definition.Instances[node];
+                    positions[instance.Id] = new Point(x, y);
+                    double height = CircuitLayout.MeasureHeight(project.GetInstancePins(instance));
+                    y += height + RowGap;
+                }
             }
         }
 
-        int depth = byLayer.Count == 0 ? 0 : byLayer.Keys.Max() + 1;
-        return new AutoLayoutResult(positions, depth);
+        return new AutoLayoutResult(positions, layerCount);
+    }
+
+    private static List<List<int>> CloneLayers(IReadOnlyList<List<int>> layers) =>
+        layers.Select(layer => layer.ToList()).ToList();
+
+    private static int[] BuildOrderIndex(IReadOnlyList<List<int>> layers)
+    {
+        int count = layers.Sum(layer => layer.Count);
+        var index = new int[count];
+        foreach (List<int> layer in layers)
+        {
+            for (int position = 0; position < layer.Count; position++)
+            {
+                index[layer[position]] = position;
+            }
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    /// Sorts one layer by the average position of its neighbors in the adjacent
+    /// layer. A component with no neighbor in that layer keeps its current index,
+    /// which prevents unrelated parts from drifting between passes.
+    /// </summary>
+    private static void OrderLayerByBarycenter(
+        List<int> layer,
+        IReadOnlyList<int[]> adjacency,
+        IReadOnlyList<int> componentLayers,
+        int neighborLayer,
+        int[] orderIndex)
+    {
+        var keyed = new (int Component, int Current, double Score)[layer.Count];
+        for (int current = 0; current < layer.Count; current++)
+        {
+            int component = layer[current];
+            double sum = 0;
+            int neighbors = 0;
+            foreach (int next in adjacency[component])
+            {
+                if (componentLayers[next] == neighborLayer)
+                {
+                    sum += orderIndex[next];
+                    neighbors++;
+                }
+            }
+
+            keyed[current] = (component, current, neighbors == 0 ? current : sum / neighbors);
+        }
+
+        Array.Sort(keyed, (left, right) =>
+        {
+            int byScore = left.Score.CompareTo(right.Score);
+            if (byScore != 0)
+            {
+                return byScore;
+            }
+
+            int byCurrent = left.Current.CompareTo(right.Current);
+            return byCurrent != 0 ? byCurrent : left.Component.CompareTo(right.Component);
+        });
+
+        for (int i = 0; i < keyed.Length; i++)
+        {
+            layer[i] = keyed[i].Component;
+            orderIndex[layer[i]] = i;
+        }
+    }
+
+    private static void ConsiderOrder(
+        IReadOnlyList<List<int>> layers,
+        IReadOnlyList<int[]> successors,
+        ref List<List<int>> bestLayers,
+        ref int bestCrossings)
+    {
+        int crossings = CountCrossings(layers, successors);
+        if (crossings >= bestCrossings)
+        {
+            return;
+        }
+
+        bestCrossings = crossings;
+        bestLayers = CloneLayers(layers);
+    }
+
+    /// <summary>
+    /// Counts crossings between every adjacent pair of layers. Edges are grouped by
+    /// their upper endpoint and a Fenwick tree counts already-seen lower positions,
+    /// so the cost is O(E log V) rather than the naive O(E²).
+    /// </summary>
+    private static int CountCrossings(
+        IReadOnlyList<List<int>> layers,
+        IReadOnlyList<int[]> successors)
+    {
+        int total = 0;
+        for (int layer = 0; layer + 1 < layers.Count; layer++)
+        {
+            List<int> upper = layers[layer];
+            List<int> lower = layers[layer + 1];
+            var lowerPosition = new Dictionary<int, int>(lower.Count);
+            for (int position = 0; position < lower.Count; position++)
+            {
+                lowerPosition[lower[position]] = position;
+            }
+
+            var tree = new int[lower.Count + 1];
+            int seen = 0;
+            for (int upperPosition = 0; upperPosition < upper.Count; upperPosition++)
+            {
+                var targets = new List<int>();
+                foreach (int next in successors[upper[upperPosition]])
+                {
+                    if (lowerPosition.TryGetValue(next, out int target))
+                    {
+                        targets.Add(target);
+                    }
+                }
+
+                if (targets.Count == 0)
+                {
+                    continue;
+                }
+
+                targets.Sort();
+                foreach (int target in targets)
+                {
+                    total += seen - PrefixSum(tree, target + 1);
+                }
+
+                foreach (int target in targets)
+                {
+                    AddToTree(tree, target + 1);
+                    seen++;
+                }
+            }
+        }
+
+        return total;
+    }
+
+    private static int PrefixSum(int[] tree, int index)
+    {
+        int sum = 0;
+        for (int i = index; i > 0; i -= i & -i)
+        {
+            sum += tree[i];
+        }
+
+        return sum;
+    }
+
+    private static void AddToTree(int[] tree, int index)
+    {
+        for (int i = index; i < tree.Length; i += i & -i)
+        {
+            tree[i]++;
+        }
     }
 
     /// <summary>Iterative Tarjan SCC so large definitions cannot overflow the stack.</summary>

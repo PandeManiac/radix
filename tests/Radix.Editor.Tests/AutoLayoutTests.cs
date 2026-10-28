@@ -45,6 +45,44 @@ public sealed class AutoLayoutTests
     }
 
     [Fact]
+    public void BarycenterOrderingReducesCrossingsBetweenLayers()
+    {
+        var builder = new ProjectBuilder("crossing");
+        DefinitionBuilder definition = builder.Define("main", "Main");
+        definition.AddPin("c_out", "C_OUT", PinDirection.Output, StandardDomains.BinaryId);
+        definition.AddPin("d_out", "D_OUT", PinDirection.Output, StandardDomains.BinaryId);
+        definition.AddPrimitive("a", new ConstantSpec(0), 0, 100);
+        definition.AddPrimitive("b", new ConstantSpec(1), 0, 300);
+        definition.AddPrimitive("c", new LookupSpec(1, [0, 1]), 500, 100);
+        definition.AddPrimitive("d", new LookupSpec(1, [0, 1]), 500, 300);
+        definition.Connect(
+            definition.AddNet("wire_c", StandardDomains.BinaryId),
+            definition.Pin("a", "out"),
+            definition.Pin("d", "in0"));
+        definition.Connect(
+            definition.AddNet("wire_d", StandardDomains.BinaryId),
+            definition.Pin("b", "out"),
+            definition.Pin("c", "in0"));
+        definition.Connect(
+            definition.Definition.FindPortNet("c_out")!,
+            definition.Pin("c", "out"));
+        definition.Connect(
+            definition.Definition.FindPortNet("d_out")!,
+            definition.Pin("d", "out"));
+        CircuitProject project = builder.Build("main");
+
+        AutoLayoutResult result = CircuitAutoLayout.Arrange(project, definition.Definition);
+
+        // Authored positions put c above d, but a->d and b->c cross. The barycenter
+        // pass must invert the sinks while keeping each layer's own ordering stable.
+        Assert.True(result.Positions["d"].Y < result.Positions["c"].Y);
+        Assert.True(result.Positions["a"].Y < result.Positions["b"].Y);
+        Assert.Equal(2, result.Layers);
+        AssertNoOverlap(project, definition.Definition, result.Positions);
+        Assert.Equal(result.Positions, CircuitAutoLayout.Arrange(project, definition.Definition).Positions);
+    }
+
+    [Fact]
     public void SequentialFeedbackIsGroupedWithoutOverlappingBodies()
     {
         CircuitProject project = ExampleProjects.CreateCounterDemo();
