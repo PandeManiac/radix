@@ -82,7 +82,7 @@ Exit codes are `0` for a passing script, `1` for a failed assertion or unexpecte
 
 ## Shipped scripts
 
-`examples/tests/` contains regression scripts for the D flip-flop, binary counter, balanced-ternary 2-trit adder, ternary counter, accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the ternary counter script steps all nine states through the `Count` lane and checks the wrap.
+`examples/tests/` contains regression scripts for the D flip-flop, binary counter, balanced and unsigned ternary 2-trit adders, ternary counter, accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane and checks the wrap.
 
 ## Intentional limits
 

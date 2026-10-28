@@ -384,6 +384,57 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryFullAdderCoversAllDigitTriples()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryFullAdderId);
+        for (int a = 0; a < 3; a++)
+        {
+            for (int b = 0; b < 3; b++)
+            {
+                for (int cin = 0; cin < 3; cin++)
+                {
+                    engine.Drive("a", a);
+                    engine.Drive("b", b);
+                    engine.Drive("cin", cin);
+                    Settle(engine, 20);
+
+                    int total = engine.Read("s") + (3 * engine.Read("cout"));
+                    Assert.Equal(a + b + cin, total);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void TernaryAdder2AddsEveryTwoTritPair()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryAdder2Id);
+        for (int ai = 0; ai < 3; ai++)
+        {
+            for (int ah = 0; ah < 3; ah++)
+            {
+                for (int bi = 0; bi < 3; bi++)
+                {
+                    for (int bh = 0; bh < 3; bh++)
+                    {
+                        engine.Drive("a0", ai);
+                        engine.Drive("a1", ah);
+                        engine.Drive("b0", bi);
+                        engine.Drive("b1", bh);
+                        Settle(engine, 30);
+
+                        int expected = (ai + (3 * ah)) + (bi + (3 * bh));
+                        int observed = engine.Read("s0") +
+                                       (3 * engine.Read("s1")) +
+                                       (9 * engine.Read("cout"));
+                        Assert.Equal(expected, observed);
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void TernaryLatchCapturesWhenEnabledAndHoldsWhenClosed()
     {
         SimulationEngine engine = Engine(StandardLibrary.TernaryLatchId);

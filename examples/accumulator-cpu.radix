@@ -10541,6 +10541,441 @@
       ]
     },
     {
+      "id": "std.t-full-adder",
+      "name": "Ternary full adder",
+      "description": "Adds three 0/1/2 digits: A\u002BB\u002BCIN = 3*COUT \u002B S. COUT is a full trit (0..2), not a Boolean flag.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "cin",
+          "name": "CIN",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "sum",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              1,
+              2,
+              1,
+              2,
+              0,
+              2,
+              0,
+              1,
+              1,
+              2,
+              0,
+              2,
+              0,
+              1,
+              0,
+              1,
+              2,
+              2,
+              0,
+              1,
+              0,
+              1,
+              2,
+              1,
+              2,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 60
+        },
+        {
+          "id": "carry",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              1,
+              1,
+              0,
+              0,
+              1,
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 240
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in0"
+            },
+            {
+              "instance": "carry",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in1"
+            },
+            {
+              "instance": "carry",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "cin_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in2"
+            },
+            {
+              "instance": "carry",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "out"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "carry",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "cin",
+          "net": "cin_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-adder-2",
+      "name": "Ternary 2-trit adder",
+      "description": "Adds two unsigned ternary 2-trit numbers into a three-trit result: S0 \u002B 3*S1 \u002B 9*COUT = A\u002BB. The low full adder seeds a zero digit; its carry feeds the high trit.",
+      "pins": [
+        {
+          "id": "a0",
+          "name": "A0",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b0",
+          "name": "B0",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "s0",
+          "name": "S0",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "a1",
+          "name": "A1",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b1",
+          "name": "B1",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "s1",
+          "name": "S1",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "const0",
+          "primitive": {
+            "kind": "constant",
+            "value": 0
+          },
+          "x": 60,
+          "y": 340
+        },
+        {
+          "id": "low",
+          "definition": "std.t-full-adder",
+          "x": 260,
+          "y": 100
+        },
+        {
+          "id": "high",
+          "definition": "std.t-full-adder",
+          "x": 620,
+          "y": 100
+        }
+      ],
+      "nets": [
+        {
+          "id": "a0_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b0_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s0_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a1_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b1_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s1_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "cout"
+            }
+          ]
+        },
+        {
+          "id": "zero",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "const0",
+              "pin": "out"
+            },
+            {
+              "instance": "low",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "carry",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "cout"
+            },
+            {
+              "instance": "high",
+              "pin": "cin"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a0",
+          "net": "a0_net"
+        },
+        {
+          "pin": "b0",
+          "net": "b0_net"
+        },
+        {
+          "pin": "s0",
+          "net": "s0_net"
+        },
+        {
+          "pin": "a1",
+          "net": "a1_net"
+        },
+        {
+          "pin": "b1",
+          "net": "b1_net"
+        },
+        {
+          "pin": "s1",
+          "net": "s1_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "a",
+          "name": "A",
+          "format": "unsigned-ternary",
+          "pins": [
+            "a0",
+            "a1"
+          ]
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "format": "unsigned-ternary",
+          "pins": [
+            "b0",
+            "b1"
+          ]
+        },
+        {
+          "id": "s",
+          "name": "A \u002B B",
+          "format": "unsigned-ternary",
+          "pins": [
+            "s0",
+            "s1",
+            "cout"
+          ]
+        }
+      ]
+    },
+    {
       "id": "std.t-latch",
       "name": "Ternary D latch",
       "description": "Level-sensitive trit latch on the 0/1/2 domain. E=2 captures D, E=0 holds, and E=1 gives an unknown trit. Two cross-coupled Kleene NANDs store the trit, so the state survives the enable transition; Q/QN power up at 0/2.",

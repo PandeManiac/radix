@@ -216,8 +216,9 @@ These steps use a terminal only; they never open a window. Run from the reposito
 10. Run `RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --filter FullyQualifiedName~LayoutBenchmarkTests --logger "console;verbosity=detailed"`. Expected: one passing test and one line per size (`200`, `500`, `1,000` gates) in the form `1000 gates: construct … ms, canonical frames … ms, reused frames … ms, final rebuild … ms`. Reused frames must be far below canonical frames; exact milliseconds depend on the machine. With the variable unset, the test passes without printing.
 11. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-counter.radix examples/tests/ternary-counter.radixtest`. Expected: `PASS: 28 step(s) through t=700`, exit code 0; the script walks all nine counts and checks the wrap to 0.
 12. Run `dotnet run --project src/Radix.Cli -- simulate examples/ternary-counter.radix --ticks 100 --schedule 0:clk=0 --schedule 20:clk=2 --schedule 60:clk=0 --bus t0,t1 --format unsigned-ternary`. Expected: the decoded bus prints `1`; the two flip-flops sample the increment only on the 0→2 clock edge.
+13. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-adder-2.radix examples/tests/ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0, covering sums 16, 9, 8, and 0.
 
-## 14. Balanced-ternary multi-trit addition
+## 14. Ternary multi-trit addition
 
 This check uses the GUI and the examples from the previous section.
 
@@ -227,6 +228,8 @@ This check uses the GUI and the examples from the previous section.
 4. Set `A0 = −`, `A1 = +` (`A = 2`) and `B0 = +`, `B1 = −` (`B = −2`) and settle. Expected: every sum trit is `0` and the lane reads `0`.
 5. Double-click the `adder` instance. Expected: two `std.bt-full-adder` instances and a constant zero are visible, with the low adder's carry wired into the high adder. Double-click one full adder. Expected: separate sum and carry lookup primitives with a shared `sum`/`carry` table layout.
 6. Return to the root and use **Locate** diagnostics if any appear. Expected: no errors or warnings for the shipped example.
+7. Open `examples/ternary-adder-2.radix`. Expected: lanes **A**, **B**, and **A + B** over `unsigned-ternary`. Set `A0 = A1 = B0 = B1 = 2` (A = B = 8) and settle. Expected: `S0 = 1`, `S1 = 2`, `COUT = 1`, and `A + B` reads `16`.
+8. Set `A0 = A1 = 1` (A = 4), `B0 = 2`, `B1 = 1` (B = 5), and settle. Expected: `S0 = S1 = 0`, `COUT = 1`, and the lane reads `9`.
 
 ## 15. Ternary counter (sequential ternary logic)
 
