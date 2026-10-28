@@ -1458,7 +1458,8 @@ public static class ExampleProjects
         root.Definition.Description =
             "A ternary machine with subroutine calls. CALL target pushes the following PC onto a " +
             "three-word stack (std.t-ram-3x2) and jumps; RET pops that address back into PC. The stack " +
-            "pointer is one trit, so nesting deeper than three wraps without an error flag. Opcodes: " +
+            "pointer is one trit, so nesting deeper than three wraps; a latched STACK ERROR reports a CALL " +
+            "with SP=2 or a RET with SP=0 until the simulation restarts. Opcodes: " +
             "0 NOP, 1 LOAD arg, 2 ADD arg (mod 9), 3 JMP target, 4 BZ target, 5 CALL target, 6 RET. " +
             "The shipped program calls a routine that calls a second routine before returning through " +
             "both levels to the instruction after the first call.";
@@ -1490,6 +1491,9 @@ public static class ExampleProjects
 
         Net stackPointer = root.SetInitial(
             root.AddPin("sp", "SP", PinDirection.Output, StandardDomains.TernaryId),
+            0);
+        Net stackError = root.SetInitial(
+            root.AddPin("stack_error", "STACK ERROR", PinDirection.Output, StandardDomains.TernaryId),
             0);
         var read = new Net[2];
         for (int lane = 0; lane < 2; lane++)
@@ -1708,6 +1712,42 @@ public static class ExampleProjects
         root.Connect(spInput, root.Pin("sp_ff", "d"));
         root.Connect(clk, root.Pin("sp_ff", "clk"));
         root.Connect(stackPointer, root.Pin("sp_ff", "q"));
+
+        // Stack faults latch: CALL at SP=2 overwrites the oldest entry, RET at SP=0 pops
+        // a word that was never pushed. The flag clears only when the simulation restarts.
+        int[] overflowTable = new int[9];
+        overflowTable[(2 * 3) + 2] = 2;
+        int[] underflowTable = new int[9];
+        underflowTable[(2 * 3) + 0] = 2;
+        Net overflow = root.Rename(root.AddNet("stack_overflow", StandardDomains.TernaryId), "CALL at SP 2");
+        Net underflow = root.Rename(root.AddNet("stack_underflow", StandardDomains.TernaryId), "RET at SP 0");
+        Net errorNext = root.Rename(root.AddNet("stack_error_next", StandardDomains.TernaryId), "new stack fault");
+        Net errorLatched = root.Rename(root.AddNet("stack_error_latched", StandardDomains.TernaryId), "stack fault or latch");
+
+        root.AddPrimitive("check_overflow", new LookupSpec(2, overflowTable, 1), 860, 2100);
+        root.Connect(isCall, root.Pin("check_overflow", "in0"));
+        root.Connect(stackPointer, root.Pin("check_overflow", "in1"));
+        root.Connect(overflow, root.Pin("check_overflow", PrimitiveShapes.OutputPinId));
+
+        root.AddPrimitive("check_underflow", new LookupSpec(2, underflowTable, 1), 860, 2240);
+        root.Connect(isReturn, root.Pin("check_underflow", "in0"));
+        root.Connect(stackPointer, root.Pin("check_underflow", "in1"));
+        root.Connect(underflow, root.Pin("check_underflow", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("error_next", "std.t-max", 1100, 2100);
+        root.Connect(overflow, root.Pin("error_next", "a"));
+        root.Connect(underflow, root.Pin("error_next", "b"));
+        root.Connect(errorNext, root.Pin("error_next", "y"));
+
+        root.AddInstance("error_latch", "std.t-max", 1340, 2100);
+        root.Connect(errorNext, root.Pin("error_latch", "a"));
+        root.Connect(stackError, root.Pin("error_latch", "b"));
+        root.Connect(errorLatched, root.Pin("error_latch", "y"));
+
+        root.AddInstance("error_ff", "std.t-dff", 1600, 2100);
+        root.Connect(errorLatched, root.Pin("error_ff", "d"));
+        root.Connect(clk, root.Pin("error_ff", "clk"));
+        root.Connect(stackError, root.Pin("error_ff", "q"));
 
         // RET reads the word below SP; CALL writes at SP. Other opcodes leave WE at 0.
         root.AddInstance("stack_addr_mux", "std.t-mux", 1100, 1900);

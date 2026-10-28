@@ -627,8 +627,44 @@ public sealed class StdLibTests
             Assert.Equal(read, ReadTernaryPair(engine, "read"));
         }
 
+        Assert.Equal(0, engine.Read("stack_error"));
         Assert.False(engine.IsHalted, engine.HaltReason);
         Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void TernaryCallMachineLatchesStackOverflowAndUnderflow()
+    {
+        CircuitProject overflowProject = ExampleProjects.CreateTernaryCallMachineDemo();
+        SetCallMachineProgram(overflowProject, [5, 5, 5, 0, 0, 0, 0, 0, 0], [1, 2, 3, 0, 0, 0, 0, 0, 0]);
+        SimulationEngine overflow = Engine("demo.t-machine-3", overflowProject);
+        overflow.Drive("clk", 0);
+        Settle(overflow, 120);
+        Assert.Equal(0, overflow.Read("stack_error"));
+
+        for (int depth = 1; depth <= 3; depth++)
+        {
+            PulseTernaryClock(overflow, settle: 120);
+            Assert.Equal(depth % 3, overflow.Read("sp"));
+            Assert.Equal(depth < 3 ? 0 : 2, overflow.Read("stack_error"));
+        }
+
+        // The flag is latched: a following NOP does not clear it.
+        PulseTernaryClock(overflow, settle: 120);
+        Assert.Equal(2, overflow.Read("stack_error"));
+        Assert.Empty(overflow.RuntimeDiagnostics);
+
+        CircuitProject underflowProject = ExampleProjects.CreateTernaryCallMachineDemo();
+        SetCallMachineProgram(underflowProject, [6, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        SimulationEngine underflow = Engine("demo.t-machine-3", underflowProject);
+        underflow.Drive("clk", 0);
+        Settle(underflow, 120);
+        Assert.Equal(0, underflow.Read("stack_error"));
+
+        PulseTernaryClock(underflow, settle: 120);
+        Assert.Equal(2, underflow.Read("stack_error"));
+        Assert.Equal(2, underflow.Read("sp"));
+        Assert.Empty(underflow.RuntimeDiagnostics);
     }
 
     [Fact]
@@ -853,6 +889,34 @@ public sealed class StdLibTests
 
     private static int ReadTernaryPair(SimulationEngine engine, string prefix) =>
         engine.Read($"{prefix}0") + (3 * engine.Read($"{prefix}1"));
+
+    /// <summary>Rewrites the call machine's four instruction ROMs for a scenario test.</summary>
+    private static void SetCallMachineProgram(CircuitProject project, int[] program, int[] operands)
+    {
+        CircuitDefinition root = project.RequireDefinition("demo.t-machine-3");
+        int[] opcodeLow = new int[9];
+        int[] opcodeHigh = new int[9];
+        int[] argumentLow = new int[9];
+        int[] argumentHigh = new int[9];
+        for (int address = 0; address < 9; address++)
+        {
+            opcodeLow[address] = program[address] % 3;
+            opcodeHigh[address] = program[address] / 3;
+            argumentLow[address] = operands[address] % 3;
+            argumentHigh[address] = operands[address] / 3;
+        }
+
+        SetRom(root, "rom_op_low", opcodeLow);
+        SetRom(root, "rom_op_high", opcodeHigh);
+        SetRom(root, "rom_arg_low", argumentLow);
+        SetRom(root, "rom_arg_high", argumentHigh);
+    }
+
+    private static void SetRom(CircuitDefinition definition, string instanceId, int[] table)
+    {
+        ComponentInstance instance = definition.Instances.Single(i => string.Equals(i.Id, instanceId, StringComparison.Ordinal));
+        instance.Primitive = new LookupSpec(2, table, 1);
+    }
 
     private static int ReadBalancedPair(SimulationEngine engine, string prefix)
     {
