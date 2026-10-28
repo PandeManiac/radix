@@ -292,20 +292,25 @@ public static class SimulationScriptRunner
             {
                 long deadline = step.At + transitions.Ticks;
                 var observed = new List<(ScriptTransitionExpectation Expectation, int Net)>();
-                bool pinsValid = true;
-                foreach (ScriptTransitionExpectation expectation in transitions.PinExpectations)
+                bool signalsValid = true;
+                foreach (ScriptTransitionExpectation expectation in transitions.Expectations)
                 {
-                    if (!TryFindPort(engine, expectation.PinId, out _, out CompiledPort port, out string error))
+                    if (!TryResolveSignal(
+                            engine,
+                            expectation.Signal,
+                            out int net,
+                            out _,
+                            out string error))
                     {
                         failures.Add(new ScriptFailure(stepNumber, step.At, error));
-                        pinsValid = false;
+                        signalsValid = false;
                         continue;
                     }
 
-                    observed.Add((expectation, port.Net));
+                    observed.Add((expectation, net));
                 }
 
-                if (pinsValid)
+                if (signalsValid)
                 {
                     if (engine.Now < deadline)
                     {
@@ -330,7 +335,8 @@ public static class SimulationScriptRunner
                                 failures.Add(new ScriptFailure(
                                     stepNumber,
                                     deadline,
-                                    $"pin '{expectation.PinId}': expected {expectation.Count.ToString(CultureInfo.InvariantCulture)} " +
+                                    $"{expectation.Signal.Kind} '{expectation.Signal.Name}': expected " +
+                                    $"{expectation.Count.ToString(CultureInfo.InvariantCulture)} " +
                                     $"transition(s) between t={step.At} and t={deadline}, observed {actual.ToString(CultureInfo.InvariantCulture)}."));
                             }
                         }
@@ -342,13 +348,18 @@ public static class SimulationScriptRunner
             {
                 long deadline = step.At + edges.Ticks;
                 var observed = new List<ResolvedEdgeExpectation>();
-                bool pinsValid = true;
-                foreach (ScriptEdgeExpectation expectation in edges.PinExpectations)
+                bool signalsValid = true;
+                foreach (ScriptEdgeExpectation expectation in edges.Expectations)
                 {
-                    if (!TryFindPort(engine, expectation.PinId, out _, out CompiledPort port, out string error))
+                    if (!TryResolveSignal(
+                            engine,
+                            expectation.Signal,
+                            out int net,
+                            out SignalDomain domain,
+                            out string error))
                     {
                         failures.Add(new ScriptFailure(stepNumber, step.At, error));
-                        pinsValid = false;
+                        signalsValid = false;
                         continue;
                     }
 
@@ -356,8 +367,8 @@ public static class SimulationScriptRunner
                     foreach (ScriptEdgeFilter filter in expectation.Filters)
                     {
                         if (!TryResolveEdgeValues(
-                                expectation.PinId,
-                                port.Domain,
+                                expectation.Signal,
+                                domain,
                                 filter.From,
                                 filter.To,
                                 stepNumber,
@@ -366,7 +377,7 @@ public static class SimulationScriptRunner
                                 out int? from,
                                 out int? to))
                         {
-                            pinsValid = false;
+                            signalsValid = false;
                             continue;
                         }
 
@@ -374,13 +385,13 @@ public static class SimulationScriptRunner
                     }
 
                     observed.Add(new ResolvedEdgeExpectation(
-                        expectation.PinId,
-                        port.Net,
-                        port.Domain,
+                        expectation.Signal,
+                        net,
+                        domain,
                         filters));
                 }
 
-                if (pinsValid)
+                if (signalsValid)
                 {
                     if (engine.Now < deadline)
                     {
@@ -417,7 +428,7 @@ public static class SimulationScriptRunner
                                     failures.Add(new ScriptFailure(
                                         stepNumber,
                                         deadline,
-                                        $"pin '{expectation.PinId}': expected " +
+                                        $"{expectation.Signal.Kind} '{expectation.Signal.Name}': expected " +
                                         $"{filter.Count.ToString(CultureInfo.InvariantCulture)} edge(s) " +
                                         $"{DescribeEdge(expectation.Domain, filter.From, filter.To)} " +
                                         $"between t={step.At} and t={deadline}, observed " +
@@ -437,7 +448,12 @@ public static class SimulationScriptRunner
                 for (int itemIndex = 0; itemIndex < sequence.Items.Count; itemIndex++)
                 {
                     ScriptEdgeSequenceItem item = sequence.Items[itemIndex];
-                    if (!TryFindPort(engine, item.PinId, out _, out CompiledPort port, out string error))
+                    if (!TryResolveSignal(
+                            engine,
+                            item.Signal,
+                            out int net,
+                            out SignalDomain domain,
+                            out string error))
                     {
                         failures.Add(new ScriptFailure(stepNumber, step.At, error));
                         itemsValid = false;
@@ -445,8 +461,8 @@ public static class SimulationScriptRunner
                     }
 
                     if (!TryResolveEdgeValues(
-                            item.PinId,
-                            port.Domain,
+                            item.Signal,
+                            domain,
                             item.From,
                             item.To,
                             stepNumber,
@@ -461,9 +477,9 @@ public static class SimulationScriptRunner
 
                     resolved.Add(new ResolvedEdgeSequenceItem(
                         itemIndex + 1,
-                        item.PinId,
-                        port.Net,
-                        port.Domain,
+                        item.Signal,
+                        net,
+                        domain,
                         from,
                         to));
                 }
@@ -507,7 +523,7 @@ public static class SimulationScriptRunner
                                 failures.Add(new ScriptFailure(
                                     stepNumber,
                                     deadline,
-                                    $"sequence item {item.Index} (pin '{item.PinId}': " +
+                                    $"sequence item {item.Index} ({item.Signal.Kind} '{item.Signal.Name}': " +
                                     $"{DescribeEdge(item.Domain, item.From, item.To)}) was not observed " +
                                     $"in order between t={step.At} and t={deadline}."));
                                 break;
@@ -776,6 +792,37 @@ public static class SimulationScriptRunner
               $"({format.Describe(values.Length)} over {string.Join(",", lane.PinIds)})";
     }
 
+    private static bool TryResolveSignal(
+        SimulationEngine engine,
+        ScriptSignalReference signal,
+        out int net,
+        out SignalDomain domain,
+        out string error)
+    {
+        if (signal.Net is ScriptNetReference reference)
+        {
+            if (!TryFindNet(engine, reference, out net, out CompiledNet compiled, out error))
+            {
+                domain = null!;
+                return false;
+            }
+
+            domain = compiled.Domain;
+            return true;
+        }
+
+        if (!TryFindPort(engine, signal.Name, out _, out CompiledPort port, out error))
+        {
+            net = 0;
+            domain = null!;
+            return false;
+        }
+
+        net = port.Net;
+        domain = port.Domain;
+        return true;
+    }
+
     private static bool TryFindNet(
         SimulationEngine engine,
         ScriptNetReference reference,
@@ -841,7 +888,7 @@ public static class SimulationScriptRunner
     }
 
     private static bool TryResolveEdgeValues(
-        string pinId,
+        ScriptSignalReference signal,
         SignalDomain domain,
         ScriptValue? fromValue,
         ScriptValue? toValue,
@@ -860,7 +907,7 @@ public static class SimulationScriptRunner
                 failures.Add(new ScriptFailure(
                     stepNumber,
                     at,
-                    $"invalid 'from' for pin '{pinId}': {error}"));
+                    $"invalid 'from' for {signal.Kind} '{signal.Name}': {error}"));
                 return false;
             }
 
@@ -874,7 +921,7 @@ public static class SimulationScriptRunner
                 failures.Add(new ScriptFailure(
                     stepNumber,
                     at,
-                    $"invalid 'to' for pin '{pinId}': {error}"));
+                    $"invalid 'to' for {signal.Kind} '{signal.Name}': {error}"));
                 return false;
             }
 
@@ -886,7 +933,7 @@ public static class SimulationScriptRunner
             failures.Add(new ScriptFailure(
                 stepNumber,
                 at,
-                $"edge filter for pin '{pinId}' has the same 'from' and 'to' value " +
+                $"edge filter for {signal.Kind} '{signal.Name}' has the same 'from' and 'to' value " +
                 $"{DescribeValue(domain, from.Value)}; no transition can match."));
             return false;
         }
@@ -948,14 +995,14 @@ public static class SimulationScriptRunner
     private sealed record ResolvedEdgeFilter(int? From, int? To, long Count);
 
     private sealed record ResolvedEdgeExpectation(
-        string PinId,
+        ScriptSignalReference Signal,
         int Net,
         SignalDomain Domain,
         IReadOnlyList<ResolvedEdgeFilter> Filters);
 
     private sealed record ResolvedEdgeSequenceItem(
         int Index,
-        string PinId,
+        ScriptSignalReference Signal,
         int Net,
         SignalDomain Domain,
         int? From,

@@ -53,6 +53,25 @@ public readonly record struct ScriptNetReference(string Path, string NetId)
 /// <summary>An expected internal-net value at a scripted tick.</summary>
 public sealed record ScriptNetExpectation(ScriptNetReference Reference, ScriptValue Expected);
 
+/// <summary>
+/// A signal observed by a transition, edge, or sequence window: either an
+/// interface pin or an authored internal net. <see cref="Name"/> is the pin ID or
+/// the display form of the net reference, and <see cref="Net"/> distinguishes them.
+/// </summary>
+public readonly record struct ScriptSignalReference(string Name, ScriptNetReference? Net)
+{
+    public bool IsNet => Net.HasValue;
+
+    public string Kind => IsNet ? "net" : "pin";
+
+    public static ScriptSignalReference Pin(string pinId) => new(pinId, null);
+
+    public static ScriptSignalReference InternalNet(ScriptNetReference reference) =>
+        new(reference.ToString(), reference);
+
+    public override string ToString() => Name;
+}
+
 /// <summary>An expected decoded numeric-lane value at a scripted tick.</summary>
 public sealed class ScriptLaneExpectation
 {
@@ -155,27 +174,27 @@ public sealed class ScriptSetup
     public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
 }
 
-/// <summary>Expected number of value changes on one interface pin over an interval.</summary>
-public sealed record ScriptTransitionExpectation(string PinId, long Count);
+/// <summary>Expected number of value changes on one pin or internal net over an interval.</summary>
+public sealed record ScriptTransitionExpectation(ScriptSignalReference Signal, long Count);
 
 /// <summary>
-/// A transition-count assertion: every observed interface pin must change value
-/// exactly <see cref="ScriptTransitionExpectation.Count"/> times between the step's
-/// tick and <c>At + Ticks</c>, inclusive, after this step's drives are applied.
+/// A transition-count assertion: every observed signal must change value exactly
+/// <see cref="ScriptTransitionExpectation.Count"/> times between the step's tick and
+/// <c>At + Ticks</c>, inclusive, after this step's drives are applied.
 /// </summary>
 public sealed class ScriptTransitionWindow
 {
     public ScriptTransitionWindow(
         long ticks,
-        IReadOnlyList<ScriptTransitionExpectation> pinExpectations)
+        IReadOnlyList<ScriptTransitionExpectation> expectations)
     {
         Ticks = ticks;
-        PinExpectations = pinExpectations;
+        Expectations = expectations;
     }
 
     public long Ticks { get; }
 
-    public IReadOnlyList<ScriptTransitionExpectation> PinExpectations { get; }
+    public IReadOnlyList<ScriptTransitionExpectation> Expectations { get; }
 }
 
 /// <summary>
@@ -185,8 +204,8 @@ public sealed class ScriptTransitionWindow
 /// </summary>
 public sealed record ScriptEdgeFilter(ScriptValue? From, ScriptValue? To, long Count);
 
-/// <summary>Filtered edge expectations for one interface pin.</summary>
-public sealed record ScriptEdgeExpectation(string PinId, IReadOnlyList<ScriptEdgeFilter> Filters);
+/// <summary>Filtered edge expectations for one pin or internal net.</summary>
+public sealed record ScriptEdgeExpectation(ScriptSignalReference Signal, IReadOnlyList<ScriptEdgeFilter> Filters);
 
 /// <summary>
 /// A filtered-edge assertion: each filter must match exactly its expected number of
@@ -198,20 +217,20 @@ public sealed class ScriptEdgeWindow
 {
     public ScriptEdgeWindow(
         long ticks,
-        IReadOnlyList<ScriptEdgeExpectation> pinExpectations)
+        IReadOnlyList<ScriptEdgeExpectation> expectations)
     {
         Ticks = ticks;
-        PinExpectations = pinExpectations;
+        Expectations = expectations;
     }
 
     public long Ticks { get; }
 
-    public IReadOnlyList<ScriptEdgeExpectation> PinExpectations { get; }
+    public IReadOnlyList<ScriptEdgeExpectation> Expectations { get; }
 }
 
 /// <summary>One ordered edge in a sequence assertion.</summary>
 public sealed record ScriptEdgeSequenceItem(
-    string PinId,
+    ScriptSignalReference Signal,
     ScriptValue? From,
     ScriptValue? To);
 
@@ -556,19 +575,30 @@ public sealed class SimulationScript
 
         foreach ((string reference, JsonElement element) in source)
         {
-            if (!TryParseNetReference(reference, out ScriptNetReference parsed, out string error))
-            {
-                throw new SimulationScriptException(
-                    $"Step {stepNumber} '{field}' has an invalid net reference '{reference}': {error}");
-            }
-
             expectations.Add(new ScriptNetExpectation(
-                parsed,
+                ParseNetReference(reference, stepNumber, field),
                 ReadValue(element, stepNumber, $"{field}.{reference}")));
         }
 
         return expectations;
     }
+
+    private static ScriptNetReference ParseNetReference(string reference, int stepNumber, string field)
+    {
+        if (!TryParseNetReference(reference, out ScriptNetReference parsed, out string error))
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} '{field}' has an invalid net reference '{reference}': {error}");
+        }
+
+        return parsed;
+    }
+
+    private static ScriptSignalReference MapPinSignal(string pinId, int stepNumber, string field) =>
+        ScriptSignalReference.Pin(NormalizeId(pinId, "pin", stepNumber, field));
+
+    private static ScriptSignalReference MapNetSignal(string reference, int stepNumber, string field) =>
+        ScriptSignalReference.InternalNet(ParseNetReference(reference, stepNumber, field));
 
     private static List<ScriptLaneExpectation> MapLaneExpectations(
         Dictionary<string, JsonElement>? source,
@@ -667,29 +697,50 @@ public sealed class SimulationScript
                 $"Step {stepNumber} 'transitions.ticks' moves the deadline past the maximum simulated time.");
         }
 
-        if (source.Expect is null || source.Expect.Count == 0)
+        bool hasPins = source.Expect is { Count: > 0 };
+        bool hasNets = source.ExpectNet is { Count: > 0 };
+        if (!hasPins && !hasNets)
         {
             throw new SimulationScriptException(
-                $"Step {stepNumber} 'transitions' needs at least one 'expect' entry.");
+                $"Step {stepNumber} 'transitions' needs at least one 'expect' or 'expectNet' entry.");
         }
 
-        var expectations = new List<ScriptTransitionExpectation>(source.Expect.Count);
-        foreach ((string pinId, JsonElement element) in source.Expect)
+        var expectations = new List<ScriptTransitionExpectation>(
+            (source.Expect?.Count ?? 0) + (source.ExpectNet?.Count ?? 0));
+        if (source.Expect is not null)
         {
-            if (element.ValueKind != JsonValueKind.Number ||
-                !element.TryGetInt64(out long count) ||
-                count < 0)
+            foreach ((string pinId, JsonElement element) in source.Expect)
             {
-                throw new SimulationScriptException(
-                    $"Step {stepNumber} 'transitions.expect.{pinId}' must be a non-negative integer count.");
+                expectations.Add(new ScriptTransitionExpectation(
+                    MapPinSignal(pinId, stepNumber, "transitions.expect"),
+                    ReadTransitionCount(element, stepNumber, $"transitions.expect.{pinId}")));
             }
+        }
 
-            expectations.Add(new ScriptTransitionExpectation(
-                NormalizeId(pinId, "pin", stepNumber, "transitions.expect"),
-                count));
+        if (source.ExpectNet is not null)
+        {
+            foreach ((string reference, JsonElement element) in source.ExpectNet)
+            {
+                expectations.Add(new ScriptTransitionExpectation(
+                    MapNetSignal(reference, stepNumber, "transitions.expectNet"),
+                    ReadTransitionCount(element, stepNumber, $"transitions.expectNet.{reference}")));
+            }
         }
 
         return new ScriptTransitionWindow(ticks, expectations);
+    }
+
+    private static long ReadTransitionCount(JsonElement element, int stepNumber, string field)
+    {
+        if (element.ValueKind != JsonValueKind.Number ||
+            !element.TryGetInt64(out long count) ||
+            count < 0)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} '{field}' must be a non-negative integer count.");
+        }
+
+        return count;
     }
 
     private static ScriptEdgeWindow? MapEdges(EdgesDto? source, int stepNumber, long at)
@@ -716,58 +767,83 @@ public sealed class SimulationScript
                 $"Step {stepNumber} 'edges.ticks' moves the deadline past the maximum simulated time.");
         }
 
-        if (source.Expect is null || source.Expect.Count == 0)
+        bool hasPins = source.Expect is { Count: > 0 };
+        bool hasNets = source.ExpectNet is { Count: > 0 };
+        if (!hasPins && !hasNets)
         {
             throw new SimulationScriptException(
-                $"Step {stepNumber} 'edges' needs at least one 'expect' entry.");
+                $"Step {stepNumber} 'edges' needs at least one 'expect' or 'expectNet' entry.");
         }
 
-        var expectations = new List<ScriptEdgeExpectation>(source.Expect.Count);
-        foreach ((string pinId, List<EdgeFilterDto>? filters) in source.Expect)
+        var expectations = new List<ScriptEdgeExpectation>(
+            (source.Expect?.Count ?? 0) + (source.ExpectNet?.Count ?? 0));
+        if (source.Expect is not null)
         {
-            string normalizedPin = NormalizeId(pinId, "pin", stepNumber, "edges.expect");
-            if (filters is null || filters.Count == 0)
+            foreach ((string pinId, List<EdgeFilterDto>? filters) in source.Expect)
             {
-                throw new SimulationScriptException(
-                    $"Step {stepNumber} 'edges.expect.{pinId}' needs at least one edge filter.");
+                expectations.Add(new ScriptEdgeExpectation(
+                    MapPinSignal(pinId, stepNumber, "edges.expect"),
+                    MapEdgeFilters(filters, stepNumber, $"edges.expect.{pinId}")));
             }
+        }
 
-            var mapped = new List<ScriptEdgeFilter>(filters.Count);
-            foreach (EdgeFilterDto filter in filters)
+        if (source.ExpectNet is not null)
+        {
+            foreach ((string reference, List<EdgeFilterDto>? filters) in source.ExpectNet)
             {
-                if (filter is null)
-                {
-                    throw new SimulationScriptException(
-                        $"Step {stepNumber} 'edges.expect.{pinId}' contains a null filter.");
-                }
-
-                bool hasFrom = filter.From.ValueKind != JsonValueKind.Undefined;
-                bool hasTo = filter.To.ValueKind != JsonValueKind.Undefined;
-                if (!hasFrom && !hasTo)
-                {
-                    throw new SimulationScriptException(
-                        $"Step {stepNumber} 'edges.expect.{pinId}' filter needs 'from', 'to', or both.");
-                }
-
-                if (filter.Count is null || filter.Count < 0)
-                {
-                    throw new SimulationScriptException(
-                        $"Step {stepNumber} 'edges.expect.{pinId}' filter needs a non-negative 'count'.");
-                }
-
-                ScriptValue? from = hasFrom
-                    ? ReadValue(filter.From, stepNumber, $"edges.expect.{pinId}.from")
-                    : null;
-                ScriptValue? to = hasTo
-                    ? ReadValue(filter.To, stepNumber, $"edges.expect.{pinId}.to")
-                    : null;
-                mapped.Add(new ScriptEdgeFilter(from, to, filter.Count.Value));
+                expectations.Add(new ScriptEdgeExpectation(
+                    MapNetSignal(reference, stepNumber, "edges.expectNet"),
+                    MapEdgeFilters(filters, stepNumber, $"edges.expectNet.{reference}")));
             }
-
-            expectations.Add(new ScriptEdgeExpectation(normalizedPin, mapped));
         }
 
         return new ScriptEdgeWindow(ticks, expectations);
+    }
+
+    private static List<ScriptEdgeFilter> MapEdgeFilters(
+        List<EdgeFilterDto>? filters,
+        int stepNumber,
+        string field)
+    {
+        if (filters is null || filters.Count == 0)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} '{field}' needs at least one edge filter.");
+        }
+
+        var mapped = new List<ScriptEdgeFilter>(filters.Count);
+        foreach (EdgeFilterDto filter in filters)
+        {
+            if (filter is null)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{field}' contains a null filter.");
+            }
+
+            bool hasFrom = filter.From.ValueKind != JsonValueKind.Undefined;
+            bool hasTo = filter.To.ValueKind != JsonValueKind.Undefined;
+            if (!hasFrom && !hasTo)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{field}' filter needs 'from', 'to', or both.");
+            }
+
+            if (filter.Count is null || filter.Count < 0)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{field}' filter needs a non-negative 'count'.");
+            }
+
+            ScriptValue? from = hasFrom
+                ? ReadValue(filter.From, stepNumber, $"{field}.from")
+                : null;
+            ScriptValue? to = hasTo
+                ? ReadValue(filter.To, stepNumber, $"{field}.to")
+                : null;
+            mapped.Add(new ScriptEdgeFilter(from, to, filter.Count.Value));
+        }
+
+        return mapped;
     }
 
     private static ScriptEdgeSequenceWindow? MapSequence(SequenceDto? source, int stepNumber, long at)
@@ -807,11 +883,18 @@ public sealed class SimulationScript
                 ?? throw new SimulationScriptException(
                     $"Step {stepNumber} 'sequence.expect[{i}]' is null.");
             string field = $"sequence.expect[{i}]";
-            if (string.IsNullOrWhiteSpace(item.Pin))
+            bool hasPin = !string.IsNullOrWhiteSpace(item.Pin);
+            bool hasNet = !string.IsNullOrWhiteSpace(item.Net);
+            if (hasPin == hasNet)
             {
-                throw new SimulationScriptException(
-                    $"Step {stepNumber} '{field}' needs a non-blank 'pin'.");
+                throw new SimulationScriptException(hasPin
+                    ? $"Step {stepNumber} '{field}' cannot have both 'pin' and 'net'."
+                    : $"Step {stepNumber} '{field}' needs a non-blank 'pin' or 'net'.");
             }
+
+            ScriptSignalReference signal = hasPin
+                ? MapPinSignal(item.Pin!, stepNumber, field)
+                : MapNetSignal(item.Net!, stepNumber, field);
 
             bool hasFrom = item.From.ValueKind != JsonValueKind.Undefined;
             bool hasTo = item.To.ValueKind != JsonValueKind.Undefined;
@@ -828,7 +911,7 @@ public sealed class SimulationScript
                 ? ReadValue(item.To, stepNumber, $"{field}.to")
                 : null;
             items.Add(new ScriptEdgeSequenceItem(
-                item.Pin.Trim(),
+                signal,
                 from,
                 to));
         }
@@ -1043,6 +1126,8 @@ public sealed class SimulationScript
         public long? Ticks { get; set; }
 
         public Dictionary<string, JsonElement>? Expect { get; set; }
+
+        public Dictionary<string, JsonElement>? ExpectNet { get; set; }
     }
 
     private sealed class EdgesDto
@@ -1050,6 +1135,8 @@ public sealed class SimulationScript
         public long? Ticks { get; set; }
 
         public Dictionary<string, List<EdgeFilterDto>?>? Expect { get; set; }
+
+        public Dictionary<string, List<EdgeFilterDto>?>? ExpectNet { get; set; }
     }
 
     private sealed class EdgeFilterDto
@@ -1071,6 +1158,8 @@ public sealed class SimulationScript
     private sealed class SequenceItemDto
     {
         public string? Pin { get; set; }
+
+        public string? Net { get; set; }
 
         public JsonElement From { get; set; }
 

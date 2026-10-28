@@ -9,7 +9,8 @@
       "at": 100,
       "expect": { "q0": 1, "q1": 0, "q2": 1, "q3": 0 },
       "expectLane": { "count": 5 },
-      "expectNet": { "adder/c1": 1, "adder/c2": 0 }
+      "expectNet": { "adder/c1": 1, "adder/c2": 0 },
+      "transitions": { "ticks": 20, "expectNet": { "adder/c1": 1 } }
     },
     {
       "at": 320,

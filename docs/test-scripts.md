@@ -43,9 +43,9 @@ Unknown fields are rejected so a misspelled assertion cannot silently pass.
 | `within` | Optional eventual assertion: `{ "ticks": N, "expect": {...}, "expectLane": {...}, "expectNet": {...} }`. Values must hold together at `at` or at some tick up to `at + N`, inclusive. |
 | `setup` | Optional pre-drive held-value assertion with the same shape as `within`. The values must match at every tick from `at - N` through `at - 1`, inclusive, before this step's `set` drives. |
 | `stable` | Optional held-value assertion with the same shape as `within`. The values must match at `at` and at every tick through `at + N`, inclusive. Cannot be combined with `within` or `expectHalted: true`. |
-| `transitions` | Optional change-count assertion: `{ "ticks": N, "expect": { "pin": count } }`. Each pin must change value exactly the given number of times from the step's tick through `at + N`, inclusive. Cannot be combined with `within`, `stable`, `edges`, or `expectHalted: true`. |
-| `edges` | Optional direction-filtered edge assertion: `{ "ticks": N, "expect": { "pin": [ { "from": value, "to": value, "count": N }, ... ] } }`. Each filter counts only transitions that match its `from` and/or `to` value. Cannot be combined with `within`, `stable`, `transitions`, `sequence`, or `expectHalted: true`. |
-| `sequence` | Optional ordered-edge assertion: `{ "ticks": N, "expect": [ { "pin": "clk", "to": 1 }, { "pin": "q", "to": 1 } ] }`. Each item must occur in the given order, with unrelated transitions allowed between matches. Cannot be combined with `within`, `stable`, `transitions`, `edges`, or `expectHalted: true`. |
+| `transitions` | Optional change-count assertion: `{ "ticks": N, "expect": { "pin": count }, "expectNet": { "net": count } }`. Each signal must change value exactly the given number of times from the step's tick through `at + N`, inclusive. Cannot be combined with `within`, `stable`, `edges`, or `expectHalted: true`. |
+| `edges` | Optional direction-filtered edge assertion: `{ "ticks": N, "expect": { "pin": [ { "from": value, "to": value, "count": N }, ... ] }, "expectNet": { "net": [ ... ] } }`. Each filter counts only transitions that match its `from` and/or `to` value. Cannot be combined with `within`, `stable`, `transitions`, `sequence`, or `expectHalted: true`. |
+| `sequence` | Optional ordered-edge assertion: `{ "ticks": N, "expect": [ { "pin": "clk", "to": 1 }, { "net": "adder/c1", "to": 1 } ] }`. Each item names a `pin` or a `net` and must occur in the given order, with unrelated transitions allowed between matches. Cannot be combined with `within`, `stable`, `transitions`, `edges`, or `expectHalted: true`. |
 | `expectHalted` | Optional assertion about the engine's halt state after the step settles. |
 | `description` | Optional note for readers; not interpreted. |
 
@@ -73,7 +73,7 @@ Interface pins are the right boundary for a whole-design experiment, but some be
 - `instance/netId` names a net inside an instance. Path segments are instance IDs from the simulated definition, joined with `/`; the last segment is the authored net ID. `"adder/c1"` means instance `adder` of the simulated definition, net `c1` inside it. Deeper paths extend the same way, for example `"cpu/regfile/word0/q_net"`.
 - Each authored net is addressable even when the compiler merges it with other nets or binds it to an interface port. The assertion reads the resolved value of the merged net.
 - Net IDs and path segments follow the normal identifier rule, so a typo or a blank segment is rejected when the script loads rather than silently matching another net.
-- `expectNet` can be used on a step and inside `setup`, `within`, and `stable`. It uses the same value forms and domain checks as `expect`, and a window may contain only `expectNet` entries. Transition, edge, and sequence windows still count interface pins.
+- `expectNet` can be used on a step and inside `setup`, `within`, and `stable`. It uses the same value forms and domain checks as `expect`, and a window may contain only `expectNet` entries. `transitions` and `edges` also accept an `expectNet` object, and a `sequence` item may name a `net` instead of a `pin`.
 
 The runner resolves the path against the compiled circuit, not against a display label. A failure names the reference, the expected and observed values, and the net's domain; an unknown reference also lists a bounded sample of the authored nets that do exist. Because the reference is hierarchy-relative, the same script can target a reusable definition directly and keep working when that definition is instantiated elsewhere.
 
@@ -115,19 +115,19 @@ Because the interval must be observed, a simulation halt before the deadline fai
 
 ## Transition counts
 
-Levels alone do not say whether a clock actually toggled or whether a state changed exactly once. A `transitions` window counts resolved value changes on interface pins over an interval:
+Levels alone do not say whether a clock actually toggled or whether a state changed exactly once. A `transitions` window counts resolved value changes on interface pins or internal nets over an interval:
 
 ```json
 {
   "at": 670,
   "set": { "clk": 2 },
-  "transitions": { "ticks": 30, "expect": { "clk": 1, "t0": 1, "t1": 1 } }
+  "transitions": { "ticks": 30, "expect": { "clk": 1, "t0": 1, "t1": 1 }, "expectNet": { "adder/c1": 1 } }
 }
 ```
 
-This asserts one CLK change, one low-trit change, and one high-trit change between t=670 and t=700. Counting starts after the step's drives are applied at its tick and includes changes at that tick, so a drive-triggered edge is visible. It then advances to `at + ticks` and compares every pin's count; a mismatch reports the expected and observed counts plus the interval.
+This asserts one CLK change, one low-trit change, one high-trit change, and one internal carry change between t=670 and t=700. Counting starts after the step's drives are applied at its tick and includes changes at that tick, so a drive-triggered edge is visible. It then advances to `at + ticks` and compares every signal's count; a mismatch reports the expected and observed counts plus the interval.
 
-`count: 0` proves a value did not change, complementing `stable` (which also checks that it equals a particular value). A simulation halt anywhere through the deadline fails the window, because the full interval was not observed. Transition expectations are non-negative integers and must name at least one pin. Use separate consecutive steps when a test needs both held values and transition counts over adjacent intervals.
+`count: 0` proves a value did not change, complementing `stable` (which also checks that it equals a particular value). A simulation halt anywhere through the deadline fails the window, because the full interval was not observed. Transition expectations are non-negative integers, and a window needs at least one `expect` or `expectNet` entry. Use separate consecutive steps when a test needs both held values and transition counts over adjacent intervals.
 
 ## Filtered edges
 
@@ -147,9 +147,9 @@ A total transition count cannot tell a rising clock edge from a falling one, or 
 }
 ```
 
-Each pin maps to an array of filters, and every filter is checked independently. `from` and `to` use the same indices, domain labels, `null`, and `"undriven"` forms as other script values. Omit one side to count every change that enters or leaves a value: `{ "to": 1, "count": 2 }` counts all rising edges, and `{ "from": 0, "count": 2 }` counts every departure from 0. At least one side is required; a filter with neither has no direction and is rejected. `count` is required and non-negative.
+Each pin or net maps to an array of filters, and every filter is checked independently; use `expect` for pins and `expectNet` for authored nets. `from` and `to` use the same indices, domain labels, `null`, and `"undriven"` forms as other script values. Omit one side to count every change that enters or leaves a value: `{ "to": 1, "count": 2 }` counts all rising edges, and `{ "from": 0, "count": 2 }` counts every departure from 0. At least one side is required; a filter with neither has no direction and is rejected. `count` is required and non-negative.
 
-The interval starts after the step's drives are applied and runs through `at + ticks`, inclusive, exactly like a `transitions` window. A count of zero is useful for proving the absence of a glitch in one direction, for example a falling edge on a line that must only rise. Values are resolved against the pin's domain, so a typo in a label fails the step instead of silently matching nothing.
+The interval starts after the step's drives are applied and runs through `at + ticks`, inclusive, exactly like a `transitions` window. A count of zero is useful for proving the absence of a glitch in one direction, for example a falling edge on a line that must only rise. Values are resolved against the pin's or net's domain, so a typo in a label fails the step instead of silently matching nothing.
 
 ## Edge sequences
 
@@ -163,15 +163,15 @@ Some properties are about order, not counts: a clock edge must precede a capture
     "ticks": 30,
     "expect": [
       { "pin": "clk", "from": 0, "to": 2 },
-      { "pin": "t0", "from": 0, "to": 1 }
+      { "net": "t0_net", "from": 0, "to": 1 }
     ]
   }
 }
 ```
 
-Each item is a single `from`/`to` filter with the same value forms as `edges`; at least one side is required. The runner scans observed transitions in commit order and starts each search after the previous match, so unrelated edges may happen in between. This also means two transitions at the same tick are ordered by the engine's deterministic event order, not by the order of keys in the script. A filter whose `from` and `to` resolve to the same value is rejected because no transition can ever match it.
+Each item names exactly one of `pin` or `net` and is a single `from`/`to` filter with the same value forms as `edges`; at least one side is required. The runner scans observed transitions in commit order and starts each search after the previous match, so unrelated edges may happen in between. This also means two transitions at the same tick are ordered by the engine's deterministic event order, not by the order of keys in the script. A filter whose `from` and `to` resolve to the same value is rejected because no transition can ever match it.
 
-The interval starts after the step's drives are applied, so a drive at the step's own tick is visible to the sequence. A missing item reports its one-based position, pin, direction, and interval. A sequence advances to its deadline; later steps must be at that tick or later.
+The interval starts after the step's drives are applied, so a drive at the step's own tick is visible to the sequence. A missing item reports its one-based position, signal kind and name, direction, and interval. A sequence advances to its deadline; later steps must be at that tick or later.
 
 ## Values
 
@@ -207,12 +207,12 @@ The Diagnostics tab's **Run script…** button runs the same files against the c
 
 ## Shipped scripts
 
-`examples/tests/` contains regression scripts for the D flip-flop (which asserts a 5-tick pre-edge setup window, its capture with a 10-tick settle window, and its low-phase hold with a 10-tick stability window), binary counter (which checks the ripple adder's internal carry nets `adder/c1` and `adder/c2` as well as the output bits), balanced and unsigned ternary 2-trit adders, ternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions and an ordered sequence to require the clock edge before the trit update; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
+`examples/tests/` contains regression scripts for the D flip-flop (which asserts a 5-tick pre-edge setup window, its capture with a 10-tick settle window, and its low-phase hold with a 10-tick stability window), binary counter (which checks the ripple adder's internal carry levels and an exact one-transition carry count as well as the output bits), balanced and unsigned ternary 2-trit adders, ternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions and an ordered sequence to require the clock edge before the trit update; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
 
 ## Intentional limits
 
 - Scripts are linear. There are no loops, variables, expressions, random drives, or reusable subroutines; generate or copy steps instead.
-- Value assertions read top-level interface pins, definition numeric lanes, and authored internal nets. Transition, edge, and sequence windows still count interface pins only, and internal nets cannot be driven directly.
+- Value, transition, edge, and sequence assertions read top-level interface pins and authored internal nets, and value assertions also decode numeric lanes. Internal nets cannot be driven directly; use an interface input or a component instance to affect them.
 - Assertions sample values at integer ticks. `within`, `stable`, `setup`, `transitions`, `edges`, and `sequence` express convergence, held values, pre-drive setup, total change counts, filtered edge counts, and relative edge order, not continuous time; hold time is expressed as a `stable` window after the edge. Use exact expectations, filtered edge counts, sequences, and engine traces for those properties.
 - A `setup` window cannot observe time that has already been simulated; script steps must leave enough room before the edge for the requested interval.
 - A script does not save simulation state. Every run starts from time zero.

@@ -1388,6 +1388,160 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void InternalNetsCanBeCountedFilteredAndOrdered()
+    {
+        var builder = new ProjectBuilder("internal edge windows");
+        DefinitionBuilder definition = builder.Define("root", "Root");
+        Net input = definition.AddPin("a", "A", PinDirection.Input, "binary");
+        Net output = definition.AddPin("y", "Y", PinDirection.Output, "binary");
+        definition.AddPrimitive("g1", new LookupSpec(1, [0, 1]));
+        definition.AddPrimitive("g2", new LookupSpec(1, [0, 1], delayTicks: 2));
+        Net wire = definition.AddNet("w", "binary");
+        definition.Connect(input, definition.Pin("g1", "in0"));
+        definition.Connect(wire, definition.Pin("g1", "out"), definition.Pin("g2", "in0"));
+        definition.Connect(output, definition.Pin("g2", "out"));
+
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "a": 0 } },
+                {
+                  "at": 10,
+                  "set": { "a": 1 },
+                  "transitions": { "ticks": 0, "expectNet": { "w": 1 } }
+                },
+                {
+                  "at": 20,
+                  "set": { "a": 0 },
+                  "edges": { "ticks": 0, "expectNet": { "w": [ { "from": 1, "to": 0, "count": 1 } ] } }
+                },
+                {
+                  "at": 30,
+                  "set": { "a": 1 },
+                  "sequence": {
+                    "ticks": 5,
+                    "expect": [
+                      { "net": "w", "from": 0, "to": 1 },
+                      { "net": "y_net", "from": 0, "to": 1 }
+                    ]
+                  }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(builder.Build("root"), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(4, result.StepsExecuted);
+        Assert.Equal(35, result.FinalTime);
+    }
+
+    [Fact]
+    public void InternalNetWindowsReportUnknownReferencesAndInvalidValues()
+    {
+        SimulationScript unknown = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "transitions": { "ticks": 5, "expectNet": { "nope": 0 } } }
+              ]
+            }
+            """);
+        SimulationScriptResult unknownResult = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            unknown);
+        Assert.False(unknownResult.Passed);
+        Assert.Contains("unknown internal net 'nope'", unknownResult.Failures[0].Message, StringComparison.Ordinal);
+
+        SimulationScript invalid = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "set": { "clk": 0 },
+                  "edges": { "ticks": 0, "expectNet": { "q_net": [ { "to": 5, "count": 0 } ] } }
+                }
+              ]
+            }
+            """);
+        SimulationScriptResult invalidResult = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            invalid);
+        Assert.False(invalidResult.Passed);
+        Assert.Contains("invalid 'to' for net 'q_net'", invalidResult.Failures[0].Message, StringComparison.Ordinal);
+        Assert.Contains("outside domain 'binary'", invalidResult.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMalformedInternalNetWindowSignals()
+    {
+        Assert.Contains(
+            "'transitions' needs at least one 'expect' or 'expectNet' entry",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "transitions": { "ticks": 5, "expectNet": {} } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "transitions.expectNet.w' must be a non-negative integer count",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "transitions": { "ticks": 5, "expectNet": { "w": -1 } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "invalid net reference 'u1//w'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    { "edges": { "ticks": 5, "expectNet": { "u1//w": [ { "to": 1, "count": 1 } ] } } }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot have both 'pin' and 'net'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    { "sequence": { "ticks": 5, "expect": [ { "pin": "q", "net": "q_net", "to": 1 } ] } }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs a non-blank 'pin' or 'net'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [ { "sequence": { "ticks": 5, "expect": [ { "to": 1 } ] } } ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InternalNetFailureReportsTheReferenceAndDomainValues()
     {
         SimulationScript script = SimulationScript.LoadFromString(
