@@ -29,7 +29,8 @@ public sealed class DefinitionListItem
         bool isCurrent,
         ICommand openCommand,
         ICommand placeCommand,
-        ICommand duplicateCommand)
+        ICommand duplicateCommand,
+        int usageCount)
     {
         Id = definition.Id;
         Name = definition.Name;
@@ -38,7 +39,8 @@ public sealed class DefinitionListItem
         OpenCommand = openCommand;
         PlaceCommand = placeCommand;
         DuplicateCommand = duplicateCommand;
-        Subtitle = $"{(isRoot ? "root · " : string.Empty)}{definition.Pins.Count} pins · {definition.Instances.Count} instances";
+        Subtitle = $"{(isRoot ? "root · " : string.Empty)}{definition.Pins.Count} pins · {definition.Instances.Count} instances" +
+            (usageCount > 0 ? $" · used ×{usageCount}" : string.Empty);
         Prefix = isCurrent ? "▸ " : "  ";
     }
 
@@ -59,6 +61,36 @@ public sealed class DefinitionListItem
     public ICommand PlaceCommand { get; }
 
     public ICommand DuplicateCommand { get; }
+}
+
+/// <summary>
+/// One parent definition that instantiates the definition being edited. Selecting
+/// the row opens that parent and selects every matching instance there.
+/// </summary>
+public sealed class DefinitionUsageItem
+{
+    public DefinitionUsageItem(
+        CircuitDefinition parent,
+        IReadOnlyList<string> instanceIds,
+        ICommand openCommand)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        ArgumentNullException.ThrowIfNull(instanceIds);
+        ParentId = parent.Id;
+        ParentName = parent.Name;
+        Detail = instanceIds.Count == 1
+            ? $"instance {instanceIds[0]}"
+            : $"{instanceIds.Count} instances · {string.Join(", ", instanceIds.Take(8))}{(instanceIds.Count > 8 ? "…" : string.Empty)}";
+        OpenCommand = openCommand;
+    }
+
+    public string ParentId { get; }
+
+    public string ParentName { get; }
+
+    public string Detail { get; }
+
+    public ICommand OpenCommand { get; }
 }
 
 public sealed class PaletteItem

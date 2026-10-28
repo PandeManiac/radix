@@ -280,6 +280,11 @@ public sealed class EditorViewModel : ObservableObject
 
     public ObservableCollection<DefinitionListItem> Definitions { get; } = [];
 
+    /// <summary>Parents that instantiate the definition being edited.</summary>
+    public ObservableCollection<DefinitionUsageItem> DefinitionUsages { get; } = [];
+
+    public bool HasDefinitionUsages => DefinitionUsages.Count > 0;
+
     public ObservableCollection<PaletteItem> Palette { get; } = [];
 
     public ObservableCollection<PinListItem> Pins { get; } = [];
@@ -4345,14 +4350,51 @@ public sealed class EditorViewModel : ObservableObject
             }
 
             string id = definition.Id;
+            int usageCount = _project.Definitions.Sum(parent => parent.Instances.Count(instance =>
+                string.Equals(instance.DefinitionId, id, StringComparison.Ordinal)));
             Definitions.Add(new DefinitionListItem(
                 definition,
                 definition.Id == _project.RootDefinitionId,
                 definition.Id == Definition.Id,
                 new RelayCommand(() => OpenDefinition(id)),
                 new RelayCommand(() => PlaceDefinition(id)),
-                new RelayCommand(() => DuplicateDefinitionOf(id))));
+                new RelayCommand(() => DuplicateDefinitionOf(id)),
+                usageCount));
         }
+    }
+
+    /// <summary>
+    /// Projects direct parent instances of the current definition. A row opens its
+    /// parent and selects every matching instance, so hierarchy navigation is one
+    /// click instead of a manual search. No compilation or simulation is involved.
+    /// </summary>
+    private void RefreshDefinitionUsages()
+    {
+        DefinitionUsages.Clear();
+        string currentId = Definition.Id;
+        foreach (CircuitDefinition parent in _project.Definitions)
+        {
+            string[] instanceIds = parent.Instances
+                .Where(instance => string.Equals(instance.DefinitionId, currentId, StringComparison.Ordinal))
+                .Select(instance => instance.Id)
+                .ToArray();
+            if (instanceIds.Length == 0)
+            {
+                continue;
+            }
+
+            string parentId = parent.Id;
+            DefinitionUsages.Add(new DefinitionUsageItem(
+                parent,
+                instanceIds,
+                new RelayCommand(() =>
+                {
+                    OpenDefinition(parentId);
+                    SelectInstances(instanceIds);
+                })));
+        }
+
+        RaisePropertyChanged(nameof(HasDefinitionUsages));
     }
 
     private void RefreshPalette()
@@ -4824,6 +4866,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         Fields.Clear();
         RefreshLookupTable(_selectedInstanceIds.Count == 1 ? _selectedInstance : null);
+        RefreshDefinitionUsages();
 
         if (_selectedInstanceIds.Count > 1)
         {

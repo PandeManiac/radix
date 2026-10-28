@@ -684,6 +684,48 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void DefinitionUsagesOpenTheParentAndSelectEveryInstance()
+    {
+        var builder = new ProjectBuilder("usages");
+        DefinitionBuilder leaf = builder.Define("leaf", "Leaf");
+        Net leafA = leaf.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net leafY = leaf.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        leaf.AddPrimitive("g", new LookupSpec(1, [0, 1]));
+        leaf.Connect(leafA, leaf.Pin("g", "in0"));
+        leaf.Connect(leafY, leaf.Pin("g", "out"));
+
+        DefinitionBuilder parent = builder.Define("parent", "Parent");
+        Net a = parent.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net y = parent.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        parent.AddInstance("leaf1", "leaf", 100, 100);
+        parent.AddInstance("leaf2", "leaf", 400, 100);
+        parent.AddPrimitive("or", new LookupSpec(2, [0, 1, 1, 1]));
+        Net first = parent.AddNet("n1", StandardDomains.BinaryId);
+        Net second = parent.AddNet("n2", StandardDomains.BinaryId);
+        parent.Connect(a, parent.Pin("leaf1", "a"), parent.Pin("leaf2", "a"));
+        parent.Connect(first, parent.Pin("leaf1", "y"), parent.Pin("or", "in0"));
+        parent.Connect(second, parent.Pin("leaf2", "y"), parent.Pin("or", "in1"));
+        parent.Connect(y, parent.Pin("or", "out"));
+
+        var viewModel = new EditorViewModel(builder.Build("parent"));
+        viewModel.OpenDefinition("leaf");
+
+        Assert.True(viewModel.HasDefinitionUsages);
+        DefinitionUsageItem usage = Assert.Single(viewModel.DefinitionUsages);
+        Assert.Equal("parent", usage.ParentId);
+        Assert.Equal("Parent", usage.ParentName);
+        Assert.Contains("leaf1", usage.Detail);
+        Assert.Contains("leaf2", usage.Detail);
+        Assert.Contains("used ×2", viewModel.Definitions.Single(definition => definition.Id == "leaf").Subtitle);
+
+        usage.OpenCommand.Execute(null);
+
+        Assert.Equal("parent", viewModel.Definition.Id);
+        Assert.Equal(["leaf1", "leaf2"], viewModel.SelectedInstanceIds.Order().ToArray());
+        Assert.False(viewModel.HasDefinitionUsages);
+    }
+
+    [Fact]
     public void ArrangeSelectionAlignsAndSpreadsPartsAsAPresentationEdit()
     {
         var viewModel = CreateEmptyEditor();
