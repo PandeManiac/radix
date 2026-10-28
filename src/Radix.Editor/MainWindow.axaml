@@ -123,6 +123,27 @@
               <Button Content="Export part…" Click="ExportLibrary_Click" ToolTip.Tip="Export the current definition and its dependencies as a reusable library" />
             </StackPanel>
 
+            <Border
+                IsVisible="{Binding HasMultipleSelection}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                Padding="6"
+                Margin="0,6,0,0">
+              <StackPanel Spacing="4">
+                <TextBlock Text="ARRANGE SELECTION" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource App.TextMuted}" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <Button Classes="tool" Content="Align left" Command="{Binding AlignLeftCommand}" ToolTip.Tip="Line the selected parts up on their leftmost edge" />
+                  <Button Classes="tool" Content="Align top" Command="{Binding AlignTopCommand}" ToolTip.Tip="Line the selected parts up on their topmost edge" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <Button Classes="tool" Content="Space ↔" Command="{Binding DistributeHorizontallyCommand}" ToolTip.Tip="Evenly space three or more selected parts between the outermost left edges" />
+                  <Button Classes="tool" Content="Space ↕" Command="{Binding DistributeVerticallyCommand}" ToolTip.Tip="Evenly space three or more selected parts between the outermost top edges" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
             <TextBlock Text="INTERFACE" Classes="section" />
             <ItemsControl ItemsSource="{Binding Pins}">
               <ItemsControl.ItemTemplate>

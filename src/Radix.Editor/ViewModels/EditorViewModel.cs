@@ -32,6 +32,10 @@ public sealed class EditorViewModel : ObservableObject
     private readonly RelayCommand _duplicateCommand;
     private readonly RelayCommand _selectAllCommand;
     private readonly RelayCommand _extractCommand;
+    private readonly RelayCommand _alignLeftCommand;
+    private readonly RelayCommand _alignTopCommand;
+    private readonly RelayCommand _distributeHorizontallyCommand;
+    private readonly RelayCommand _distributeVerticallyCommand;
     private readonly RelayCommand _promoteInputCommand;
     private readonly RelayCommand _promoteOutputCommand;
     private readonly HashSet<string> _selectedInstanceIds = new(StringComparer.Ordinal);
@@ -127,6 +131,18 @@ public sealed class EditorViewModel : ObservableObject
         SelectAllCommand = _selectAllCommand;
         _extractCommand = new RelayCommand(ExtractSelectionToComponent, () => _selectedInstanceIds.Count > 0);
         ExtractSelectionCommand = _extractCommand;
+        _alignLeftCommand = new RelayCommand(AlignSelectionLeft, () => _selectedInstanceIds.Count > 1);
+        AlignLeftCommand = _alignLeftCommand;
+        _alignTopCommand = new RelayCommand(AlignSelectionTop, () => _selectedInstanceIds.Count > 1);
+        AlignTopCommand = _alignTopCommand;
+        _distributeHorizontallyCommand = new RelayCommand(
+            DistributeSelectionHorizontally,
+            () => _selectedInstanceIds.Count > 2);
+        DistributeHorizontallyCommand = _distributeHorizontallyCommand;
+        _distributeVerticallyCommand = new RelayCommand(
+            DistributeSelectionVertically,
+            () => _selectedInstanceIds.Count > 2);
+        DistributeVerticallyCommand = _distributeVerticallyCommand;
         _promoteInputCommand = new RelayCommand(
             () => PromoteSelectedNet(PinDirection.Input),
             () => CanPromoteSelectedNet);
@@ -318,6 +334,14 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand SelectAllCommand { get; }
 
     public ICommand ExtractSelectionCommand { get; }
+
+    public ICommand AlignLeftCommand { get; }
+
+    public ICommand AlignTopCommand { get; }
+
+    public ICommand DistributeHorizontallyCommand { get; }
+
+    public ICommand DistributeVerticallyCommand { get; }
 
     public ICommand PromoteInputCommand { get; }
 
@@ -1303,6 +1327,114 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         AfterMutation(structural: false, invalidateSimulation: false);
+    }
+
+    /// <summary>
+    /// Arranges the selected parts without touching connectivity or the running
+    /// simulation: presentation-only edits keep the compiled engine and its time.
+    /// </summary>
+    public void AlignSelectionLeft()
+    {
+        List<ComponentInstance> instances = SelectedInstances();
+        if (instances.Count < 2)
+        {
+            return;
+        }
+
+        PushUndo();
+        double left = instances.Min(instance => instance.X);
+        foreach (ComponentInstance instance in instances)
+        {
+            instance.X = Math.Round(left, 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = $"Aligned {instances.Count} parts to the left";
+    }
+
+    public void AlignSelectionTop()
+    {
+        List<ComponentInstance> instances = SelectedInstances();
+        if (instances.Count < 2)
+        {
+            return;
+        }
+
+        PushUndo();
+        double top = instances.Min(instance => instance.Y);
+        foreach (ComponentInstance instance in instances)
+        {
+            instance.Y = Math.Round(top, 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = $"Aligned {instances.Count} parts to the top";
+    }
+
+    /// <summary>
+    /// Spaces the selected parts evenly between the outermost left edges. The two
+    /// extremes stay where they are, so repeated distribution is stable.
+    /// </summary>
+    public void DistributeSelectionHorizontally()
+    {
+        List<ComponentInstance> instances = SelectedInstances()
+            .OrderBy(instance => instance.X)
+            .ThenBy(instance => instance.Y)
+            .ThenBy(instance => instance.Id, StringComparer.Ordinal)
+            .ToList();
+        if (instances.Count < 3)
+        {
+            return;
+        }
+
+        PushUndo();
+        double first = instances[0].X;
+        double step = (instances[^1].X - first) / (instances.Count - 1);
+        for (int i = 1; i < instances.Count - 1; i++)
+        {
+            instances[i].X = Math.Round(first + (step * i), 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = $"Spread {instances.Count} parts horizontally";
+    }
+
+    public void DistributeSelectionVertically()
+    {
+        List<ComponentInstance> instances = SelectedInstances()
+            .OrderBy(instance => instance.Y)
+            .ThenBy(instance => instance.X)
+            .ThenBy(instance => instance.Id, StringComparer.Ordinal)
+            .ToList();
+        if (instances.Count < 3)
+        {
+            return;
+        }
+
+        PushUndo();
+        double first = instances[0].Y;
+        double step = (instances[^1].Y - first) / (instances.Count - 1);
+        for (int i = 1; i < instances.Count - 1; i++)
+        {
+            instances[i].Y = Math.Round(first + (step * i), 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = $"Spread {instances.Count} parts vertically";
+    }
+
+    private List<ComponentInstance> SelectedInstances()
+    {
+        var instances = new List<ComponentInstance>(_selectedInstanceIds.Count);
+        foreach (string id in _selectedInstanceIds)
+        {
+            if (Definition.FindInstance(id) is ComponentInstance instance)
+            {
+                instances.Add(instance);
+            }
+        }
+
+        return instances;
     }
 
     public void SetInstanceState(string instanceId, double x, double y)
@@ -4434,6 +4566,10 @@ public sealed class EditorViewModel : ObservableObject
         _duplicateCommand.RaiseCanExecuteChanged();
         _selectAllCommand.RaiseCanExecuteChanged();
         _extractCommand.RaiseCanExecuteChanged();
+        _alignLeftCommand.RaiseCanExecuteChanged();
+        _alignTopCommand.RaiseCanExecuteChanged();
+        _distributeHorizontallyCommand.RaiseCanExecuteChanged();
+        _distributeVerticallyCommand.RaiseCanExecuteChanged();
         _promoteInputCommand.RaiseCanExecuteChanged();
         _promoteOutputCommand.RaiseCanExecuteChanged();
         (ClearNetRouteCommand as RelayCommand)?.RaiseCanExecuteChanged();

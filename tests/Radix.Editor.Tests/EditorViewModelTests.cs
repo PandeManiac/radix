@@ -627,6 +627,69 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void ArrangeSelectionAlignsAndSpreadsPartsAsAPresentationEdit()
+    {
+        var viewModel = CreateEmptyEditor();
+        LibraryComponent gate = ComponentCatalog.Components.First(c => c.Name == "AND gate");
+        viewModel.PlaceLibraryComponent(gate);
+        ComponentInstance first = viewModel.Definition.Instances.Single();
+        viewModel.PlaceLibraryComponent(gate);
+        ComponentInstance second = viewModel.Definition.Instances.Single(i => i.Id != first.Id);
+        viewModel.PlaceLibraryComponent(gate);
+        ComponentInstance third = viewModel.Definition.Instances.Single(i => i.Id != first.Id && i.Id != second.Id);
+
+        viewModel.BeginSimulation();
+        viewModel.AdvanceTicksText = "40";
+        viewModel.AdvanceSimulation();
+        long time = viewModel.Simulator.Now;
+
+        viewModel.SelectInstances([first.Id, second.Id]);
+        Assert.True(viewModel.AlignLeftCommand.CanExecute(null));
+        Assert.True(viewModel.AlignTopCommand.CanExecute(null));
+        Assert.False(viewModel.DistributeHorizontallyCommand.CanExecute(null));
+
+        viewModel.SetInstanceState(first.Id, 40, 80);
+        viewModel.SetInstanceState(second.Id, 120, 260);
+        viewModel.SetInstanceState(third.Id, 300, 180);
+
+        viewModel.AlignSelectionLeft();
+        Assert.Equal(40, first.X);
+        Assert.Equal(40, second.X);
+        Assert.Equal(300, third.X);
+        Assert.Equal(260, second.Y);
+        Assert.True(viewModel.Simulator.IsCompiled);
+        Assert.Equal(time, viewModel.Simulator.Now);
+
+        viewModel.Undo();
+        first = viewModel.Definition.FindInstance(first.Id)!;
+        second = viewModel.Definition.FindInstance(second.Id)!;
+        third = viewModel.Definition.FindInstance(third.Id)!;
+        Assert.Equal(120, second.X);
+
+        viewModel.AlignSelectionTop();
+        Assert.Equal(80, second.Y);
+
+        viewModel.SelectInstances([first.Id, second.Id, third.Id]);
+        Assert.True(viewModel.DistributeHorizontallyCommand.CanExecute(null));
+        viewModel.SetInstanceState(first.Id, 0, 100);
+        viewModel.SetInstanceState(second.Id, 100, 300);
+        viewModel.SetInstanceState(third.Id, 300, 200);
+
+        viewModel.DistributeSelectionVertically();
+        Assert.Equal([100.0, 200.0, 300.0], new[] { first.Y, second.Y, third.Y }.Order());
+        Assert.Equal(100, first.Y);
+        Assert.Equal(300, second.Y);
+        Assert.Equal(0, first.X);
+        Assert.Equal(300, third.X);
+
+        viewModel.DistributeSelectionHorizontally();
+        Assert.Equal(0, first.X);
+        Assert.Equal(150, second.X);
+        Assert.Equal(300, third.X);
+        Assert.True(viewModel.IsDirty);
+    }
+
+    [Fact]
     public void ExtractSelectionCreatesPinnedReusablePartAndPreservesSimulation()
     {
         var viewModel = CreateEmptyEditor();

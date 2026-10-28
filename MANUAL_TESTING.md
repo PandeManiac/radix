@@ -85,6 +85,8 @@ If counter values differ, record the values and diagnostics; this is a correctne
 10. Type `ternary` in **search parts**. Expected: the Library filters and matching Definitions also filter. Clear the search to restore both lists.
 11. Use arrow keys to nudge a selected part; Shift+arrow moves in 10-unit steps. Press `F` to fit.
 12. Begin and advance to a nonzero time. Drag or nudge a part, change a wire color, and add/remove a bendpoint. Expected: the circuit redraws but simulated time, values, and drives remain; no Begin is needed. Add or delete a part: expected the simulation is invalidated and must be begun again.
+13. Select three parts at different positions. Expected: **ARRANGE SELECTION** appears under the Definitions list with four buttons; with exactly two parts only the two Align buttons are enabled. Click **Align left**: the parts share the leftmost X, the selection stays intact, and the status line reports the count. `Ctrl+Z` restores the previous positions in one step while keeping the running simulation.
+14. With the same three parts at uneven X positions, click **Space ↔**. Expected: the outermost parts do not move and the middle part sits exactly halfway between their left edges; **Space ↕** behaves the same for Y. Re-running the command does not move anything.
 
 ## 5. Extract a reusable component
 
