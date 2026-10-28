@@ -166,6 +166,56 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void CopyPasteCarriesInternalNetsAndUndoesAsOneStep()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(c => c.Name == "AND gate"));
+        ComponentInstance gate = viewModel.Definition.Instances.Single();
+        viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(c => c.Name == "OR gate"));
+        ComponentInstance sink = viewModel.Definition.Instances.Single(i => i.Id != gate.Id);
+        viewModel.Connect(
+            EditorPin.ForInstance(gate.Id, PrimitiveShapes.OutputPinId),
+            EditorPin.ForInstance(sink.Id, "in0"));
+
+        int instancesBefore = viewModel.Definition.Instances.Count;
+        int netsBefore = viewModel.Definition.Nets.Count;
+        viewModel.SelectInstances([gate.Id, sink.Id]);
+        Assert.True(viewModel.CopySelection());
+
+        viewModel.Paste();
+
+        Assert.Equal(instancesBefore + 2, viewModel.Definition.Instances.Count);
+        Assert.Equal(netsBefore + 1, viewModel.Definition.Nets.Count);
+        Assert.Equal(2, viewModel.SelectionCount);
+        Net pastedNet = viewModel.Definition.Nets.Single(n =>
+            n.Pins.Count == 2 &&
+            n.Pins.All(p => viewModel.Definition.FindInstance(p.InstanceId)?.Primitive is not null) &&
+            n.Pins.Any(p => p.InstanceId != gate.Id && p.InstanceId != sink.Id));
+        Assert.DoesNotContain(pastedNet.Pins, p => p.InstanceId == gate.Id || p.InstanceId == sink.Id);
+
+        viewModel.Undo();
+        Assert.Equal(instancesBefore, viewModel.Definition.Instances.Count);
+        Assert.Equal(netsBefore, viewModel.Definition.Nets.Count);
+    }
+
+    [Fact]
+    public void LibrarySearchFiltersByNameCategoryAndDescription()
+    {
+        var viewModel = CreateEmptyEditor();
+
+        viewModel.LibrarySearch = "ternary";
+        Assert.Equal(["Ternary maximum"], viewModel.Palette.Select(p => p.Label));
+        Assert.True(viewModel.HasPaletteResults);
+
+        viewModel.LibrarySearch = "signal";
+        Assert.All(viewModel.Palette, item => Assert.Equal("Signal", item.Category));
+
+        viewModel.LibrarySearch = "zzzz";
+        Assert.Empty(viewModel.Palette);
+        Assert.False(viewModel.HasPaletteResults);
+    }
+
+    [Fact]
     public void LayoutIncludesWireJunctionsForMultiPinNets()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());

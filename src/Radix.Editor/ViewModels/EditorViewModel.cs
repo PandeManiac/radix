@@ -25,6 +25,10 @@ public sealed class EditorViewModel : ObservableObject
     private readonly RelayCommand _undoCommand;
     private readonly RelayCommand _redoCommand;
     private readonly RelayCommand _deleteCommand;
+    private readonly RelayCommand _copyCommand;
+    private readonly RelayCommand _pasteCommand;
+    private readonly RelayCommand _duplicateCommand;
+    private readonly RelayCommand _selectAllCommand;
     private readonly HashSet<string> _selectedInstanceIds = new(StringComparer.Ordinal);
     private CircuitProject _project;
     private string _definitionId = string.Empty;
@@ -46,6 +50,9 @@ public sealed class EditorViewModel : ObservableObject
     private string _advanceTicksText = "10";
     private string _newDomainName = string.Empty;
     private string _newDomainValues = "0 1 2";
+    private string _librarySearch = string.Empty;
+    private ClipboardPayload? _clipboard;
+    private int _pasteOffset;
 
 
     public EditorViewModel(CircuitProject project)
@@ -68,6 +75,14 @@ public sealed class EditorViewModel : ObservableObject
         AddDomainCommand = new RelayCommand(AddDomain);
         _deleteCommand = new RelayCommand(DeleteSelection, () => _selectedInstanceIds.Count > 0 || _selectedNet is not null);
         DeleteSelectionCommand = _deleteCommand;
+        _copyCommand = new RelayCommand(() => CopySelection(), () => _selectedInstanceIds.Count > 0);
+        CopyCommand = _copyCommand;
+        _pasteCommand = new RelayCommand(Paste, () => _clipboard is not null);
+        PasteCommand = _pasteCommand;
+        _duplicateCommand = new RelayCommand(DuplicateSelection, () => _selectedInstanceIds.Count > 0);
+        DuplicateCommand = _duplicateCommand;
+        _selectAllCommand = new RelayCommand(SelectAllInstances, () => Definition.Instances.Count > 0);
+        SelectAllCommand = _selectAllCommand;
         ClearNetRouteCommand = new RelayCommand(ClearSelectedNetRoute, () => _selectedNet is not null);
         BeginCommand = new RelayCommand(BeginSimulation);
         AdvanceCommand = new RelayCommand(AdvanceSimulation);
@@ -135,6 +150,14 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand AddDomainCommand { get; }
 
     public ICommand DeleteSelectionCommand { get; }
+
+    public ICommand CopyCommand { get; }
+
+    public ICommand PasteCommand { get; }
+
+    public ICommand DuplicateCommand { get; }
+
+    public ICommand SelectAllCommand { get; }
 
     public ICommand ClearNetRouteCommand { get; }
 
@@ -293,6 +316,21 @@ public sealed class EditorViewModel : ObservableObject
             return "definition · " + Definition.Id;
         }
     }
+
+    public string LibrarySearch
+    {
+        get => _librarySearch;
+        set
+        {
+            if (SetField(ref _librarySearch, value))
+            {
+                RefreshPalette();
+                RefreshDefinitions();
+            }
+        }
+    }
+
+    public bool HasPaletteResults => Palette.Count > 0;
 
     public string NewPinName
     {
@@ -486,6 +524,8 @@ public sealed class EditorViewModel : ObservableObject
         _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
+        _clipboard = null;
+        _pasteOffset = 0;
         _undo.Clear();
         _redo.Clear();
         Simulator = new SimulatorHost(_project, Definition);
@@ -507,6 +547,8 @@ public sealed class EditorViewModel : ObservableObject
             _selectedInstanceIds.Clear();
             _selectedInstance = null;
             _selectedNet = null;
+            _clipboard = null;
+            _pasteOffset = 0;
             _undo.Clear();
             _redo.Clear();
             Simulator = new SimulatorHost(_project, Definition);
@@ -991,6 +1033,170 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = $"Placed {target.Name}";
     }
 
+    /// <summary>
+    /// Copies the selected parts plus every unbound net whose pins are all inside
+    /// the selection. Wires to the outside are intentionally not copied, so a paste
+    /// cannot silently join unrelated circuitry.
+    /// </summary>
+    public bool CopySelection()
+    {
+        ClipboardPayload? payload = CaptureSelection();
+        if (payload is null)
+        {
+            StatusText = "Select one or more parts to copy.";
+            return false;
+        }
+
+        _clipboard = payload;
+        _pasteOffset = 0;
+        _pasteCommand.RaiseCanExecuteChanged();
+        StatusText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Copied {payload.Instances.Count} parts and {payload.Nets.Count} internal nets");
+        return true;
+    }
+
+    public void Paste()
+    {
+        if (_clipboard is null)
+        {
+            StatusText = "Clipboard is empty.";
+            return;
+        }
+
+        PastePayload(_clipboard, "Pasted");
+    }
+
+    public void DuplicateSelection()
+    {
+        ClipboardPayload? payload = CaptureSelection();
+        if (payload is null)
+        {
+            StatusText = "Select one or more parts to duplicate.";
+            return;
+        }
+
+        PastePayload(payload, "Duplicated");
+    }
+
+    private ClipboardPayload? CaptureSelection()
+    {
+        if (_selectedInstanceIds.Count == 0)
+        {
+            return null;
+        }
+
+        var instances = Definition.Instances
+            .Where(instance => _selectedInstanceIds.Contains(instance.Id))
+            .Select(CloneInstance)
+            .ToList();
+
+        HashSet<string> boundNets = Definition.Ports
+            .Select(port => port.NetId)
+            .ToHashSet(StringComparer.Ordinal);
+        var nets = Definition.Nets
+            .Where(net =>
+                !boundNets.Contains(net.Id) &&
+                net.Pins.Count > 0 &&
+                net.Pins.All(pin => _selectedInstanceIds.Contains(pin.InstanceId)))
+            .Select(CloneNet)
+            .ToList();
+
+        return new ClipboardPayload(instances, nets);
+    }
+
+    private void PastePayload(ClipboardPayload payload, string verb)
+    {
+        List<ComponentInstance> instances = payload.Instances
+            .Where(instance => instance.DefinitionId is null || _project.FindDefinition(instance.DefinitionId) is not null)
+            .ToList();
+        if (instances.Count == 0)
+        {
+            StatusText = "Copied parts refer to definitions that are not in this project.";
+            return;
+        }
+
+        PushUndo();
+        double offset = 32 + (_pasteOffset * 24);
+        _pasteOffset++;
+        var idMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pastedIds = new List<string>(instances.Count);
+        foreach (ComponentInstance source in instances)
+        {
+            string id = UniquePlacementId(source.Label ?? source.DefinitionId ?? "part");
+            idMap[source.Id] = id;
+            pastedIds.Add(id);
+
+            ComponentInstance clone = CloneInstance(source);
+            clone.Id = id;
+            clone.X += offset;
+            clone.Y += offset;
+            Definition.Instances.Add(clone);
+        }
+
+        int pastedNets = 0;
+        foreach (Net source in payload.Nets)
+        {
+            if (_project.FindDomain(source.DomainId) is null)
+            {
+                continue;
+            }
+
+            var pins = source.Pins
+                .Where(pin => idMap.ContainsKey(pin.InstanceId))
+                .Select(pin => new PinRef(idMap[pin.InstanceId], pin.PinId))
+                .ToList();
+            if (pins.Count == 0)
+            {
+                continue;
+            }
+
+            Net net = CloneNet(source);
+            net.Id = DefinitionEditor.UniqueNetId(Definition, Slug(source.Id));
+            net.Pins.Clear();
+            net.Pins.AddRange(pins);
+            net.RoutePoints.Clear();
+            foreach (NetWaypoint point in source.RoutePoints)
+            {
+                net.RoutePoints.Add(new NetWaypoint(point.X + offset, point.Y + offset));
+            }
+
+            Definition.Nets.Add(net);
+            pastedNets++;
+        }
+
+        AfterMutation(structural: true);
+        SelectInstances(pastedIds);
+        StatusText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{verb} {pastedIds.Count} parts and {pastedNets} internal nets");
+    }
+
+    private static ComponentInstance CloneInstance(ComponentInstance source) => new()
+    {
+        Id = source.Id,
+        DefinitionId = source.DefinitionId,
+        Primitive = source.Primitive,
+        Label = source.Label,
+        X = source.X,
+        Y = source.Y,
+    };
+
+    private static Net CloneNet(Net source)
+    {
+        var net = new Net
+        {
+            Id = source.Id,
+            DomainId = source.DomainId,
+            Label = source.Label,
+            InitialValue = source.InitialValue,
+            WireColor = source.WireColor,
+        };
+        net.RoutePoints.AddRange(source.RoutePoints);
+        net.Pins.AddRange(source.Pins);
+        return net;
+    }
+
     public void Connect(EditorPin start, EditorPin end)
     {
         if (start == end)
@@ -1359,8 +1565,17 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshDefinitions()
     {
         Definitions.Clear();
+        string query = _librarySearch.Trim();
         foreach (CircuitDefinition definition in _project.Definitions)
         {
+            if (query.Length > 0 &&
+                !definition.Name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !definition.Id.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !(definition.Description?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                continue;
+            }
+
             string id = definition.Id;
             Definitions.Add(new DefinitionListItem(
                 definition,
@@ -1374,8 +1589,17 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshPalette()
     {
         Palette.Clear();
+        string query = _librarySearch.Trim();
         foreach (LibraryComponent component in ComponentCatalog.Components)
         {
+            if (query.Length > 0 &&
+                !component.Name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !component.Category.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !component.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             Palette.Add(new PaletteItem(
                 component.Name,
                 component.Category,
@@ -1383,6 +1607,7 @@ public sealed class EditorViewModel : ObservableObject
                 () => PlaceLibraryComponent(component)));
         }
 
+        RaisePropertyChanged(nameof(HasPaletteResults));
     }
 
     private void RefreshDomains()
@@ -2198,9 +2423,17 @@ public sealed class EditorViewModel : ObservableObject
         _undoCommand.RaiseCanExecuteChanged();
         _redoCommand.RaiseCanExecuteChanged();
         _deleteCommand.RaiseCanExecuteChanged();
+        _copyCommand.RaiseCanExecuteChanged();
+        _pasteCommand.RaiseCanExecuteChanged();
+        _duplicateCommand.RaiseCanExecuteChanged();
+        _selectAllCommand.RaiseCanExecuteChanged();
         (ClearNetRouteCommand as RelayCommand)?.RaiseCanExecuteChanged();
         RaisePropertyChanged(nameof(ProjectTitle));
     }
+
+    private sealed record ClipboardPayload(
+        IReadOnlyList<ComponentInstance> Instances,
+        IReadOnlyList<Net> Nets);
 
     private sealed record EditorSnapshot(
         string Json,

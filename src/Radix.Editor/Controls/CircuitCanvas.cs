@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Radix.Core.Model;
 using Radix.Core.Signals;
@@ -665,7 +666,8 @@ public sealed class CircuitCanvas : Control
         if (point.Properties.IsRightButtonPressed)
         {
             _connectStart = null;
-            SelectUnderPointer(world, tolerance);
+            SelectForContextMenu(world, tolerance);
+            OpenContextMenu(world);
             InvalidateVisual();
             return;
         }
@@ -788,6 +790,99 @@ public sealed class CircuitCanvas : Control
         _rubberBandCurrent = world;
         e.Pointer.Capture(this);
         e.Handled = true;
+    }
+
+    private void SelectForContextMenu(Point world, double tolerance)
+    {
+        if (_viewModel?.Layout is null)
+        {
+            return;
+        }
+
+        if (_viewModel.Layout.HitComponent(world) is ComponentBox component)
+        {
+            // Keep an existing multi-selection when the context menu is opened on
+            // one of its members, so group operations remain available.
+            if (!_viewModel.SelectedInstanceIds.Contains(component.Instance.Id))
+            {
+                _viewModel.SelectInstance(component.Instance.Id);
+            }
+
+            return;
+        }
+
+        if (_viewModel.Layout.HitPin(world, tolerance) is PinHit pin)
+        {
+            _viewModel.SelectNet(_viewModel.Simulator.NetFor(pin.Pin)?.Id);
+            return;
+        }
+
+        if (_viewModel.Layout.HitPortBody(world) is PortBox port)
+        {
+            _viewModel.SelectNet(port.NetId);
+            return;
+        }
+
+        if (_viewModel.Layout.HitWire(world, tolerance) is NetWire wire)
+        {
+            _viewModel.SelectNet(wire.NetId);
+            return;
+        }
+
+        _viewModel.ClearSelection();
+    }
+
+    private void OpenContextMenu(Point world)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        EditorViewModel viewModel = _viewModel;
+        var menu = new ContextMenu();
+        if (viewModel.SelectedInstanceIds.Count > 0)
+        {
+            menu.Items.Add(Item("Copy", () => viewModel.CopySelection()));
+            menu.Items.Add(Item("Duplicate", viewModel.DuplicateSelection));
+            if (viewModel.SelectedInstanceIds.Count == 1 &&
+                viewModel.SelectedInstanceId.Length > 0 &&
+                viewModel.Definition.FindInstance(viewModel.SelectedInstanceId)?.DefinitionId is string definitionId)
+            {
+                menu.Items.Add(Item("Open definition", () => viewModel.OpenDefinition(definitionId)));
+            }
+
+            menu.Items.Add(Item("Delete", viewModel.DeleteSelection));
+        }
+        else if (viewModel.SelectedNetId.Length > 0 &&
+                 viewModel.Layout?.FindWire(viewModel.SelectedNetId) is NetWire wire)
+        {
+            Point? nearest = NearestPointOnWire(wire, world) ?? world;
+            string netId = wire.NetId;
+            menu.Items.Add(Item("Add bendpoint", () => viewModel.AddNetWaypoint(netId, nearest.Value)));
+            menu.Items.Add(Item(
+                "Reset route",
+                () => viewModel.ClearNetRoute(netId),
+                viewModel.SelectedNetHasRoute));
+            menu.Items.Add(Item("Delete wire", viewModel.DeleteSelection));
+        }
+
+        if (menu.Items.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+        }
+
+        menu.Items.Add(Item("Paste", viewModel.Paste, viewModel.PasteCommand.CanExecute(null)));
+        menu.Items.Add(Item("Select all", viewModel.SelectAllInstances, viewModel.Definition.Instances.Count > 0));
+        menu.Items.Add(Item("Fit circuit", FitToContent));
+        menu.Open(this);
+    }
+
+    private static MenuItem Item(string header, Action action, bool enabled = true)
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled };
+        item.Click += (_, _) => action();
+        return item;
     }
 
     private void SelectUnderPointer(Point world, double tolerance)
@@ -1063,6 +1158,26 @@ public sealed class CircuitCanvas : Control
         else if (control && e.Key == Key.Y)
         {
             _viewModel.Redo();
+            e.Handled = true;
+        }
+        else if (control && e.Key == Key.C)
+        {
+            _viewModel.CopySelection();
+            e.Handled = true;
+        }
+        else if (control && e.Key == Key.V)
+        {
+            _viewModel.Paste();
+            e.Handled = true;
+        }
+        else if (control && e.Key == Key.D)
+        {
+            _viewModel.DuplicateSelection();
+            e.Handled = true;
+        }
+        else if (control && e.Key == Key.A)
+        {
+            _viewModel.SelectAllInstances();
             e.Handled = true;
         }
         else if (e.Key == Key.Delete)

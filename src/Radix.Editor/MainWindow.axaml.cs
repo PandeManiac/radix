@@ -11,6 +11,7 @@ namespace Radix.Editor;
 public partial class MainWindow : Window
 {
     private readonly bool _themeReady;
+    private bool _closeConfirmed;
 
     public MainWindow()
     {
@@ -19,7 +20,31 @@ public partial class MainWindow : Window
         _themeReady = true;
         ThemeService.Changed += ThemeService_Changed;
         Closed += (_, _) => ThemeService.Changed -= ThemeService_Changed;
+        Closing += Window_Closing;
         AddHandler(KeyDownEvent, Window_KeyDown, RoutingStrategies.Tunnel);
+    }
+
+    private async void Window_Closing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_closeConfirmed || ViewModel is not EditorViewModel { IsDirty: true })
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (await ConfirmDiscardAsync())
+        {
+            _closeConfirmed = true;
+            Close();
+        }
+    }
+
+    private async void NewProject_Click(object? sender, RoutedEventArgs e)
+    {
+        if (await ConfirmDiscardAsync())
+        {
+            ViewModel?.NewProject();
+        }
     }
 
     private void ThemeBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -83,6 +108,16 @@ public partial class MainWindow : Window
 
     private async void OpenProject_Click(object? sender, RoutedEventArgs e)
     {
+        await OpenProjectAsync();
+    }
+
+    private async Task OpenProjectAsync()
+    {
+        if (!await ConfirmDiscardAsync())
+        {
+            return;
+        }
+
         IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Open RADIX project",
@@ -120,7 +155,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task SaveAsAsync(EditorViewModel viewModel)
+    private async Task<bool> SaveAsAsync(EditorViewModel viewModel)
     {
         IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
@@ -131,10 +166,34 @@ public partial class MainWindow : Window
             ShowOverwritePrompt = true,
         });
 
-        if (file is not null)
+        if (file is null)
         {
-            viewModel.SaveProject(file.Path.LocalPath);
+            return false;
         }
+
+        return viewModel.SaveProject(file.Path.LocalPath);
+    }
+
+    /// <summary>
+    /// Returns true when it is safe to replace or close the project. Save failures
+    /// and cancelled file pickers abort the action instead of silently discarding.
+    /// </summary>
+    private async Task<bool> ConfirmDiscardAsync()
+    {
+        if (ViewModel is not EditorViewModel { IsDirty: true } viewModel)
+        {
+            return true;
+        }
+
+        UnsavedChangesChoice choice = await UnsavedChangesDialog.AskAsync(this, viewModel.Project.Name);
+        return choice switch
+        {
+            UnsavedChangesChoice.Discard => true,
+            UnsavedChangesChoice.Save => string.IsNullOrWhiteSpace(viewModel.ProjectPath)
+                ? await SaveAsAsync(viewModel)
+                : viewModel.SaveProject(viewModel.ProjectPath),
+            _ => false,
+        };
     }
 
     private static string SanitizeFileName(string name)
@@ -146,16 +205,80 @@ public partial class MainWindow : Window
 
     private async void Window_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Delete && e.Source is not TextBox && ViewModel is EditorViewModel delete)
+        {
+            e.Handled = true;
+            delete.DeleteSelection();
+            return;
+        }
+
         if (!e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             return;
         }
 
+        bool editingText = e.Source is TextBox;
         switch (e.Key)
         {
+            case Key.Z:
+                if (!editingText && ViewModel is EditorViewModel undo)
+                {
+                    e.Handled = true;
+                    if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                    {
+                        undo.Redo();
+                    }
+                    else
+                    {
+                        undo.Undo();
+                    }
+                }
+
+                break;
+            case Key.Y:
+                if (!editingText && ViewModel is EditorViewModel redo)
+                {
+                    e.Handled = true;
+                    redo.Redo();
+                }
+
+                break;
+            case Key.C:
+                if (!editingText && ViewModel is EditorViewModel copy)
+                {
+                    e.Handled = true;
+                    copy.CopySelection();
+                }
+
+                break;
+            case Key.V:
+                if (!editingText && ViewModel is EditorViewModel paste)
+                {
+                    e.Handled = true;
+                    paste.Paste();
+                }
+
+                break;
+            case Key.D:
+                if (!editingText && ViewModel is EditorViewModel duplicate)
+                {
+                    e.Handled = true;
+                    duplicate.DuplicateSelection();
+                }
+
+                break;
+            case Key.A:
+                if (!editingText && ViewModel is EditorViewModel selectAll)
+                {
+                    e.Handled = true;
+                    selectAll.SelectAllInstances();
+                }
+
+                break;
             case Key.S:
                 e.Handled = true;
-                if (ViewModel is EditorViewModel save && !string.IsNullOrWhiteSpace(save.ProjectPath))
+                if (ViewModel is EditorViewModel save && !string.IsNullOrWhiteSpace(save.ProjectPath) &&
+                    !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
                     save.SaveProject(save.ProjectPath);
                 }
@@ -167,11 +290,15 @@ public partial class MainWindow : Window
                 break;
             case Key.O:
                 e.Handled = true;
-                OpenProject_Click(sender, new RoutedEventArgs());
+                await OpenProjectAsync();
                 break;
             case Key.N:
                 e.Handled = true;
-                ViewModel?.NewProject();
+                if (await ConfirmDiscardAsync())
+                {
+                    ViewModel?.NewProject();
+                }
+
                 break;
         }
     }
