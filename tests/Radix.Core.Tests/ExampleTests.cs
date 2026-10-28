@@ -114,6 +114,27 @@ public sealed class ExampleTests
         Assert.Equal(1, engine.Read("zero"));
     }
 
+    [Fact]
+    public void MultiplierExampleCarriesNumericLanesAndComputes()
+    {
+        CircuitProject project = ExampleProjects.CreateMultiplierDemo();
+        CircuitDefinition root = project.RequireDefinition("demo.mult-4");
+        Assert.Equal(["A", "B", "P"], root.NumericLanes.Select(lane => lane.Name).ToArray());
+        Assert.Equal(4, root.NumericLanes[0].PinIds.Count);
+        Assert.Equal(8, root.NumericLanes[2].PinIds.Count);
+
+        var engine = TestFixtures.Simulate(project, "demo.mult-4");
+        for (int bit = 0; bit < 4; bit++)
+        {
+            engine.Drive($"a{bit}", (9 >> bit) & 1);
+            engine.Drive($"b{bit}", (7 >> bit) & 1);
+        }
+
+        engine.Settle(80);
+        Assert.Equal(63, ReadByte(engine, "p"));
+        Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
     private static void DriveByte(SimulationEngine engine, string prefix, int value)
     {
         for (int i = 0; i < 8; i++)

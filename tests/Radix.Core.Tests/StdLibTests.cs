@@ -177,6 +177,28 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void FourBitMultiplierComputesEveryProduct()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.Multiplier4Id);
+        for (int a = 0; a < 16; a++)
+        {
+            for (int b = 0; b < 16; b++)
+            {
+                for (int bit = 0; bit < 4; bit++)
+                {
+                    engine.Drive($"a{bit}", (a >> bit) & 1);
+                    engine.Drive($"b{bit}", (b >> bit) & 1);
+                }
+
+                Settle(engine, 80);
+                Assert.Equal(a * b, ReadBinaryByte(engine, "p"));
+            }
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    [Fact]
     public void MultiplexerSelectsInput()
     {
         SimulationEngine engine = Engine("std.mux2");

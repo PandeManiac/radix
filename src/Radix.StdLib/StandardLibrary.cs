@@ -33,6 +33,7 @@ public static class StandardLibrary
     public const string TernaryRam9x2Id = "std.t-ram-9x2";
     public const string Ram16x4Id = "std.ram-16x4";
     public const string Adder8Id = "std.adder-8";
+    public const string Multiplier4Id = "std.mult-4";
     public const string Register8Id = "std.reg-8";
     public const string Alu8Id = "std.alu-8";
 
@@ -116,6 +117,12 @@ public static class StandardLibrary
         {
             AddAdder8(project);
             added.Add(Adder8Id);
+        }
+
+        if (project.FindDefinition(Multiplier4Id) is null)
+        {
+            AddMultiplier4(project);
+            added.Add(Multiplier4Id);
         }
 
         if (project.FindDefinition("std.mux2") is null)
@@ -378,6 +385,97 @@ public static class StandardLibrary
             builder.Connect(s[i], builder.Pin($"fa{i}", "s"));
             builder.Connect(carries[i + 1], builder.Pin($"fa{i}", "cout"));
         }
+    }
+
+    /// <summary>
+    /// Four-by-four array multiplier. Sixteen AND gates form the partial products,
+    /// and three 8-bit adders accumulate them already shifted by their row. The
+    /// product of two four-bit values fits in eight bits, so no overflow output is
+    /// exposed and the top bit stays 0 for every input pair.
+    /// </summary>
+    private static void AddMultiplier4(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, Multiplier4Id, "4 × 4 multiplier");
+        builder.Definition.Description =
+            "An array multiplier built from sixteen AND gates and three 8-bit adders. " +
+            "Combinational; the 8-bit product of two 4-bit operands always fits.";
+
+        var a = new Net[4];
+        var b = new Net[4];
+        var p = new Net[8];
+        for (int i = 0; i < 4; i++)
+        {
+            a[i] = builder.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.BinaryId);
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            b[i] = builder.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.BinaryId);
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            p[i] = builder.AddPin($"p{i}", $"P{i}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        Net zero = builder.AddNet("zero", StandardDomains.BinaryId);
+        builder.AddPrimitive("zero_source", new ConstantSpec(0), 40, 40);
+        builder.Connect(zero, builder.Pin("zero_source", "out"));
+
+        var partial = new Net[4, 4];
+        for (int i = 0; i < 4; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                string id = $"and{i}{j}";
+                partial[i, j] = builder.AddNet($"{id}_out", StandardDomains.BinaryId);
+                builder.AddPrimitive(id, new LookupSpec(2, [0, 0, 0, 1]), 80 + (j * 240), 80 + (i * 120));
+                builder.Connect(a[i], builder.Pin(id, "in0"));
+                builder.Connect(b[j], builder.Pin(id, "in1"));
+                builder.Connect(partial[i, j], builder.Pin(id, "out"));
+            }
+        }
+
+        Net[] Row(int shiftedBy)
+        {
+            var row = new Net[8];
+            for (int bit = 0; bit < 8; bit++)
+            {
+                int multiplicandBit = bit - shiftedBy;
+                row[bit] = multiplicandBit is >= 0 and < 4 ? partial[multiplicandBit, shiftedBy] : zero;
+            }
+
+            return row;
+        }
+
+        Net[] AddEightBits(string instanceId, Net[] left, Net[] right, Net[]? sum, double y)
+        {
+            Net[] outputs = sum ?? new Net[8];
+            if (sum is null)
+            {
+                for (int i = 0; i < 8; i++)
+                {
+                    outputs[i] = builder.AddNet($"{instanceId}_s{i}", StandardDomains.BinaryId);
+                }
+            }
+
+            Net cout = builder.AddNet($"{instanceId}_cout", StandardDomains.BinaryId);
+            builder.AddInstance(instanceId, Adder8Id, 120, y);
+            for (int i = 0; i < 8; i++)
+            {
+                builder.Connect(left[i], builder.Pin(instanceId, $"a{i}"));
+                builder.Connect(right[i], builder.Pin(instanceId, $"b{i}"));
+                builder.Connect(outputs[i], builder.Pin(instanceId, $"s{i}"));
+            }
+
+            builder.Connect(zero, builder.Pin(instanceId, "cin"));
+            builder.Connect(cout, builder.Pin(instanceId, "cout"));
+            return outputs;
+        }
+
+        Net[] low = AddEightBits("add_low", Row(0), Row(1), sum: null, 620);
+        Net[] mid = AddEightBits("add_mid", low, Row(2), sum: null, 820);
+        AddEightBits("add_high", mid, Row(3), p, 1020);
     }
 
     private static void AddRegister4(CircuitProject project)

@@ -28,6 +28,7 @@ public static class ExampleProjects
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
     public const string EightBitAluFile = "8-bit-alu.radix";
+    public const string MultiplierFile = "multiplier.radix";
 
     public static IReadOnlyList<ExampleProject> All() =>
     [
@@ -48,8 +49,68 @@ public static class ExampleProjects
         new(BalancedTernaryAccumulatorFile, "Balanced ternary accumulator", "A signed trit register with LOAD/ADD/HOLD control, built from balanced min/max/mux gates and a balanced register.", CreateBalancedTernaryAccumulatorDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(EightBitAluFile, "8-bit ALU", "Eight-bit ADD/AND/OR/XOR selected by two opcode bits, with carry and zero flags and numeric A/B/Y lanes.", CreateEightBitAluDemo()),
+        new(MultiplierFile, "4 × 4 multiplier", "An array multiplier built from AND partial products and three 8-bit adders, with A, B, and 8-bit P numeric lanes.", CreateMultiplierDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
+
+    public static CircuitProject CreateMultiplierDemo()
+    {
+        var builder = new ProjectBuilder("4 × 4 multiplier demo");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.mult-4", "4 × 4 multiplier");
+        root.Definition.Description =
+            "Wraps std.mult-4 with named A, B, and P numeric lanes. Both operands are " +
+            "four-bit unsigned values read from their pins in LSB-first order; P is the " +
+            "full eight-bit product.";
+
+        var a = new Net[4];
+        var b = new Net[4];
+        var p = new Net[8];
+        for (int i = 0; i < 4; i++)
+        {
+            a[i] = root.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.BinaryId);
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            b[i] = root.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.BinaryId);
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            p[i] = root.AddPin($"p{i}", $"P{i}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        root.AddNumericLane(
+            "a",
+            "A",
+            NumericFormats.UnsignedBinary.Id,
+            Enumerable.Range(0, 4).Select(i => $"a{i}").ToArray());
+        root.AddNumericLane(
+            "b",
+            "B",
+            NumericFormats.UnsignedBinary.Id,
+            Enumerable.Range(0, 4).Select(i => $"b{i}").ToArray());
+        root.AddNumericLane(
+            "p",
+            "P",
+            NumericFormats.UnsignedBinary.Id,
+            Enumerable.Range(0, 8).Select(i => $"p{i}").ToArray());
+
+        root.AddInstance("mult", StandardLibrary.Multiplier4Id, 300, 140);
+        for (int i = 0; i < 4; i++)
+        {
+            root.Connect(a[i], root.Pin("mult", $"a{i}"));
+            root.Connect(b[i], root.Pin("mult", $"b{i}"));
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            root.Connect(p[i], root.Pin("mult", $"p{i}"));
+        }
+
+        return builder.Build("demo.mult-4");
+    }
 
     public static CircuitProject CreateEightBitAluDemo()
     {

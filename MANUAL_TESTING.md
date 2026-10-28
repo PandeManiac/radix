@@ -433,7 +433,19 @@ This uses the GUI. Both data inputs and the bus are on the four-state domain; in
 7. Set `EN A = 1`, `A = 2`. Expected: **BUS** = X and **CONFLICT** = 1; X has higher priority than 1 in this domain.
 8. Expected limitation: the resolution policy is the domain's one priority table; there is no wired-AND/open-drain option, and the diagnostic reports a conflict per net once, not per transition.
 
-## 26. Known limitations to verify as *limitations*
+## 26. 4 × 4 multiplier
+
+This uses the GUI and a terminal. The multiplier wraps `std.mult-4`, an array multiplier built from sixteen AND gates and three 8-bit adders.
+
+1. Open `examples/multiplier.radix` and click **Begin**. Expected: numeric lanes **A**, **B**, and **P**, all reading 0; interface pins `A0`…`A3`, `B0`…`B3`, and `P0`…`P7`.
+2. Type `9` in the **A** lane and click **Drive**; type `7` in **B** and drive it; click **Settle**. Expected: **P** reads `63`, and `P0`…`P5` are 1 while `P6` and `P7` are 0.
+3. Drive `A = 15` and `B = 15`, then settle. Expected: **P** reads `225`; `P0 = 1`, `P1`…`P4 = 0`, and `P5`…`P7 = 1`. No diagnostics appear.
+4. Drive `A = 0`, `B = 5`; settle. Expected: **P** = 0. Drive `A = 5`, `B = 0`; settle. Expected: **P** = 0 as well.
+5. Double-click the `mult` instance. Expected: a 4 × 4 AND array feeding three `std.adder-8` instances (`add_low`, `add_mid`, `add_high`) plus a constant-zero source. Double-click `add_high`; expected: eight full adders in a carry chain.
+6. Run `dotnet run --project src/Radix.Cli -- sweep examples/multiplier.radix --ticks 80 --max-rows 256`. Expected: `rows: 256 (settle 80 tick(s))`, columns `a0 a1 a2 a3 b0 b1 b2 b3 p0 … p7`, and a final row `1 1 1 1 | 1 1 1 1 | 1 0 0 0 0 1 1 1` (15 × 15 = 225).
+7. Expected limitation: the part is fixed at four bits per operand and an eight-bit product; there is no parameterized width, and the example does not chain multipliers into a wider array.
+
+## 27. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
