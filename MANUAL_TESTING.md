@@ -249,6 +249,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 26. Copy the script again and change the `t0` item in the `sequence` block from `"from": 0` to `"from": 2`, leaving `"to": 1`. Expected: `FAIL`, one line at `step 12 (t=300)` reading `sequence item 2 (pin 't0': 2 (2) -> 1 (1)) was not observed in order between t=270 and t=300.`; exit code 1. Restore and rerun. This shows a sequence requires each filtered edge, not only the first one.
 27. Run `dotnet run --project src/Radix.Cli -- sweep examples/full-adder.radix`. Expected: exit code 0, `rows: 8 (settle 10 tick(s))`, and a table with inputs `a b cin` and outputs `s cout`; the last row is `1 1 1 -> 1 1` and every row has a driven value (no `-`). Add `--ticks 0` and verify the outputs become `-` for this delay-built example, showing that settle time is explicit.
 28. Run `dotnet run --project src/Radix.Cli -- sweep examples/full-adder.radix --max-rows 4`. Expected: stderr `sweep error: Sweep needs at least 8 rows, above the limit of 4. Reduce the input set or raise --max-rows.` and exit code 1. Run with `--definition missing`; expected `unknown definition 'missing'.` and exit code 2.
+29. Run `dotnet run --project src/Radix.Cli -- validate examples/tiny-cpu.radix --all`. Expected: exit code 0 and `OK: 46 definitions compile as roots.` Plain `validate` only compiles the project root, so a deliberately broken but unused part is caught by `--all` and not by the default run; the all-definition path reports each diagnostic once.
 
 ### Editor script runner
 

@@ -91,6 +91,7 @@ internal static class Program
 
             Commands:
               validate <project.radix>       Validate structure and compile the project
+                  [--all]                    Also compile every definition as a root
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -129,10 +130,10 @@ internal static class Program
 
     private static int ValidateCommand(string[] args)
     {
-        (var positional, _) = Parse(args, []);
+        (var positional, var options) = Parse(args, ["all"]);
         if (positional.Count != 1)
         {
-            Console.Error.WriteLine("usage: radix validate <project.radix>");
+            Console.Error.WriteLine("usage: radix validate <project.radix> [--all]");
             return 2;
         }
 
@@ -141,11 +142,16 @@ internal static class Program
             $"project '{project.Name}' — {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
             $"{project.Domains.Count.ToString(CultureInfo.InvariantCulture)} domains, root '{project.RootDefinitionId}'");
 
-        bool compiled = CircuitCompiler.TryCompile(
-            project,
-            project.RootDefinitionId,
-            out CompiledCircuit? circuit,
-            out DiagnosticBag report);
+        bool validateAll = options.ContainsKey("all");
+        CompiledCircuit? circuit = null;
+        DiagnosticBag report;
+        bool compiled = validateAll
+            ? CircuitCompiler.TryValidateAllDefinitions(project, out report)
+            : CircuitCompiler.TryCompile(
+                project,
+                project.RootDefinitionId,
+                out circuit,
+                out report);
         PrintDiagnostics(report, Console.Out);
 
         if (!compiled || report.HasErrors)
@@ -154,6 +160,13 @@ internal static class Program
                 $"INVALID: {report.ErrorCount.ToString(CultureInfo.InvariantCulture)} error(s), " +
                 $"{report.WarningCount.ToString(CultureInfo.InvariantCulture)} warning(s).");
             return 1;
+        }
+
+        if (validateAll)
+        {
+            Console.WriteLine(
+                $"OK: {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions compile as roots.");
+            return 0;
         }
 
         Console.WriteLine(
