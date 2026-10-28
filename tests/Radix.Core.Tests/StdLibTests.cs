@@ -436,6 +436,82 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void BalancedTernaryRegisterLoadsOnTheEdgeAndHoldsWhenDisabled()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.BalancedTernaryRegister2Id);
+        engine.Drive("clk", 0);
+        engine.Drive("load", 2);
+
+        for (int value = 0; value < 9; value++)
+        {
+            LoadTernaryPair(engine, "d", value);
+            PulseTernaryClock(engine, settle: 120);
+            Assert.Equal(value, ReadTernaryPair(engine, "q"));
+        }
+
+        engine.Drive("load", 0);
+        LoadTernaryPair(engine, "d", 4);
+        PulseTernaryClock(engine, settle: 120);
+        Assert.Equal(8, ReadTernaryPair(engine, "q"));
+
+        engine.Drive("load", 2);
+        PulseTernaryClock(engine, settle: 120);
+        Assert.Equal(4, ReadTernaryPair(engine, "q"));
+    }
+
+    [Fact]
+    public void BalancedTernaryAccumulatorLoadsAddsHoldsAndWraps()
+    {
+        CircuitProject project = ExampleProjects.CreateBalancedTernaryAccumulatorDemo();
+        Assert.Contains(
+            project.RequireDefinition("demo.bt-accumulator").Instances,
+            instance => instance.DefinitionId == StandardLibrary.BalancedTernaryRegister2Id);
+        SimulationEngine engine = Engine("demo.bt-accumulator", project);
+        engine.Drive("clk", 0);
+        engine.Drive("load", 0);
+        engine.Drive("add", 0);
+        Settle(engine, 120);
+        Assert.Equal(0, ReadBalancedPair(engine, "q"));
+
+        // LOAD +4.
+        engine.Drive("d0", 2);
+        engine.Drive("d1", 2);
+        engine.Drive("load", 2);
+        PulseTernaryClock(engine, settle: 120);
+        Assert.Equal(4, ReadBalancedPair(engine, "q"));
+
+        // HOLD keeps +4 even with new data on the pins.
+        engine.Drive("load", 0);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        PulseTernaryClock(engine, settle: 120);
+        Assert.Equal(4, ReadBalancedPair(engine, "q"));
+
+        // ADD +4 wraps out of the top of the 2-trit range to -1.
+        engine.Drive("add", 2);
+        engine.Drive("d0", 2);
+        engine.Drive("d1", 2);
+        PulseTernaryClock(engine, settle: 120);
+        Assert.Equal(-1, ReadBalancedPair(engine, "q"));
+
+        // ADD +2 gives 1.
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 2);
+        PulseTernaryClock(engine, settle: 120);
+        Assert.Equal(1, ReadBalancedPair(engine, "q"));
+
+        // HOLD with ADD back at - keeps 1.
+        engine.Drive("add", 0);
+        engine.Drive("d0", 1);
+        engine.Drive("d1", 1);
+        PulseTernaryClock(engine, settle: 120);
+        Assert.Equal(1, ReadBalancedPair(engine, "q"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryBranchMachineBranchesStoresAndReadsMemory()
     {
         CircuitProject project = ExampleProjects.CreateTernaryBranchMachineDemo();
@@ -700,6 +776,14 @@ public sealed class StdLibTests
 
     private static int ReadTernaryPair(SimulationEngine engine, string prefix) =>
         engine.Read($"{prefix}0") + (3 * engine.Read($"{prefix}1"));
+
+    private static int ReadBalancedPair(SimulationEngine engine, string prefix)
+    {
+        NumericDecodeResult decoded = NumericFormats.BalancedTernary.Decode(
+            [engine.Read($"{prefix}0"), engine.Read($"{prefix}1")]);
+        Assert.True(decoded.IsValid);
+        return (int)decoded.Value;
+    }
 
     private static void LoadTernaryPair(SimulationEngine engine, string prefix, int value)
     {

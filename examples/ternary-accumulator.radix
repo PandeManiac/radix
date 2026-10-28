@@ -9719,6 +9719,138 @@
       ]
     },
     {
+      "id": "std.bt-mux",
+      "name": "Balanced ternary 2:1 multiplexer",
+      "description": "Select - returns A, \u002B returns B, and 0 returns the middle value 0. The balanced-ternary mirror of std.t-mux, where 0 is the unknown trit.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "s",
+          "name": "Select",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              1,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              2,
+              1,
+              1,
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2,
+              2,
+              1,
+              0,
+              2,
+              1,
+              1,
+              2,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
       "id": "std.bt-half-adder",
       "name": "Balanced ternary half adder",
       "description": "Adds two balanced-ternary digits, producing a sum trit and carry trit: A\u002BB = 3*C \u002B S.",
@@ -11740,6 +11872,661 @@
           "id": "result",
           "name": "Result",
           "format": "unsigned-ternary",
+          "pins": [
+            "q0",
+            "q1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "std.bt-latch",
+      "name": "Balanced ternary D latch",
+      "description": "Level-sensitive trit latch on the balanced -/0/\u002B domain. E=\u002B captures D, E=- holds, and E=0 gives the unknown middle value. The structure is the same Kleene latch used for 0/1/2, wired from balanced gates; Q/QN power up at 0/0, the self-complementary middle value.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "e",
+          "name": "E",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "inv_d",
+          "definition": "std.bt-not",
+          "x": 60,
+          "y": 200
+        },
+        {
+          "id": "capture",
+          "definition": "std.bt-min",
+          "x": 240,
+          "y": 40
+        },
+        {
+          "id": "release",
+          "definition": "std.bt-min",
+          "x": 240,
+          "y": 240
+        },
+        {
+          "id": "nand_set",
+          "definition": "std.bt-not",
+          "x": 440,
+          "y": 40
+        },
+        {
+          "id": "nand_reset",
+          "definition": "std.bt-not",
+          "x": 440,
+          "y": 240
+        },
+        {
+          "id": "hold_q",
+          "definition": "std.bt-min",
+          "x": 620,
+          "y": 40
+        },
+        {
+          "id": "hold_qn",
+          "definition": "std.bt-min",
+          "x": 620,
+          "y": 240
+        },
+        {
+          "id": "q_bar",
+          "definition": "std.bt-not",
+          "x": 800,
+          "y": 40
+        },
+        {
+          "id": "qn_bar",
+          "definition": "std.bt-not",
+          "x": 800,
+          "y": 240
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "inv_d",
+              "pin": "a"
+            },
+            {
+              "instance": "capture",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "e_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "capture",
+              "pin": "b"
+            },
+            {
+              "instance": "release",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "balanced-ternary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "hold_qn",
+              "pin": "b"
+            },
+            {
+              "instance": "q_bar",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "balanced-ternary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "hold_q",
+              "pin": "b"
+            },
+            {
+              "instance": "qn_bar",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "not_d",
+          "domain": "balanced-ternary",
+          "label": "not D",
+          "pins": [
+            {
+              "instance": "inv_d",
+              "pin": "y"
+            },
+            {
+              "instance": "release",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "set_in",
+          "domain": "balanced-ternary",
+          "label": "D and E",
+          "pins": [
+            {
+              "instance": "capture",
+              "pin": "y"
+            },
+            {
+              "instance": "nand_set",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "reset_in",
+          "domain": "balanced-ternary",
+          "label": "not D and E",
+          "pins": [
+            {
+              "instance": "release",
+              "pin": "y"
+            },
+            {
+              "instance": "nand_reset",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "set_bar",
+          "domain": "balanced-ternary",
+          "label": "set",
+          "pins": [
+            {
+              "instance": "nand_set",
+              "pin": "y"
+            },
+            {
+              "instance": "hold_q",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "reset_bar",
+          "domain": "balanced-ternary",
+          "label": "reset",
+          "pins": [
+            {
+              "instance": "nand_reset",
+              "pin": "y"
+            },
+            {
+              "instance": "hold_qn",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "q_hold",
+          "domain": "balanced-ternary",
+          "label": "set and QN",
+          "pins": [
+            {
+              "instance": "hold_q",
+              "pin": "y"
+            },
+            {
+              "instance": "q_bar",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "qn_hold",
+          "domain": "balanced-ternary",
+          "label": "reset and Q",
+          "pins": [
+            {
+              "instance": "hold_qn",
+              "pin": "y"
+            },
+            {
+              "instance": "qn_bar",
+              "pin": "a"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "e",
+          "net": "e_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-dff",
+      "name": "Balanced ternary D flip-flop",
+      "description": "Positive-edge-triggered balanced-ternary flip-flop built from two balanced latches and a complement gate. Drive CLK between - and \u002B; the slave captures on \u002B. Q/QN power up at 0/0.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "inv",
+          "definition": "std.bt-not",
+          "x": 80,
+          "y": 60
+        },
+        {
+          "id": "master",
+          "definition": "std.bt-latch",
+          "x": 340,
+          "y": 60
+        },
+        {
+          "id": "slave",
+          "definition": "std.bt-latch",
+          "x": 640,
+          "y": 220
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "a"
+            },
+            {
+              "instance": "slave",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "balanced-ternary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "balanced-ternary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "qn"
+            }
+          ]
+        },
+        {
+          "id": "clk_n",
+          "domain": "balanced-ternary",
+          "label": "not clock",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "y"
+            },
+            {
+              "instance": "master",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "master_q",
+          "domain": "balanced-ternary",
+          "label": "master Q",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "q"
+            },
+            {
+              "instance": "slave",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "master_qn",
+          "domain": "balanced-ternary",
+          "label": "master QN",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "qn"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-reg-2",
+      "name": "Balanced ternary 2-trit register",
+      "description": "Two balanced-ternary flip-flops with a shared level load. LOAD=\u002B captures D on the rising CLK edge (- -\u003E \u002B); LOAD=- holds and LOAD=0 seeds the unknown middle value. Q/QN power up at 0. Data and Result lanes decode as balanced ternary.",
+      "pins": [
+        {
+          "id": "d0",
+          "name": "D0",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "q0",
+          "name": "Q0",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "d1",
+          "name": "D1",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "q1",
+          "name": "Q1",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "load",
+          "name": "LOAD",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "mux0",
+          "definition": "std.bt-mux",
+          "x": 220,
+          "y": 60
+        },
+        {
+          "id": "ff0",
+          "definition": "std.bt-dff",
+          "x": 500,
+          "y": 60
+        },
+        {
+          "id": "mux1",
+          "definition": "std.bt-mux",
+          "x": 220,
+          "y": 260
+        },
+        {
+          "id": "ff1",
+          "definition": "std.bt-dff",
+          "x": 500,
+          "y": 260
+        }
+      ],
+      "nets": [
+        {
+          "id": "d0_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q0_net",
+          "domain": "balanced-ternary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d1_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "mux1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q1_net",
+          "domain": "balanced-ternary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "mux1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "load_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux1",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "ff0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1",
+              "pin": "clk"
+            }
+          ]
+        },
+        {
+          "id": "selected0",
+          "domain": "balanced-ternary",
+          "label": "next Q0",
+          "pins": [
+            {
+              "instance": "mux0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "selected1",
+          "domain": "balanced-ternary",
+          "label": "next Q1",
+          "pins": [
+            {
+              "instance": "mux1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1",
+              "pin": "d"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d0",
+          "net": "d0_net"
+        },
+        {
+          "pin": "q0",
+          "net": "q0_net"
+        },
+        {
+          "pin": "d1",
+          "net": "d1_net"
+        },
+        {
+          "pin": "q1",
+          "net": "q1_net"
+        },
+        {
+          "pin": "load",
+          "net": "load_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "data",
+          "name": "Data",
+          "format": "balanced-ternary",
+          "pins": [
+            "d0",
+            "d1"
+          ]
+        },
+        {
+          "id": "result",
+          "name": "Result",
+          "format": "balanced-ternary",
           "pins": [
             "q0",
             "q1"

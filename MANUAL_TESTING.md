@@ -220,6 +220,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 14. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-accumulator.radix examples/tests/ternary-accumulator.radixtest`. Expected: `PASS: 17 step(s) through t=410`, exit code 0; the `Result` lane goes 5 → 8 → 3 (wrap) → 3 (hold) → 8.
 15. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-machine.radix examples/tests/ternary-machine.radixtest`. Expected: `PASS: 32 step(s) through t=2260`, exit code 0; PC walks 0..8, ACC follows 1, 3, 5, 5, 2, 4, 5, 5, 5, then restarts with 1.
 16. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-branch-machine.radix examples/tests/ternary-branch-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; MEM1 becomes 4, a BZ falls through, a later BZ jumps to PC 8, LOADM reads 4 back into ACC, and PC wraps to 0.
+17. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-accumulator.radix examples/tests/balanced-ternary-accumulator.radixtest`. Expected: `PASS: 21 step(s) through t=1220`, exit code 0; the `Result` lane goes 0 → 4 → 4 (hold) → −1 (wrap) → 1 → 1.
 
 ## 14. Ternary multi-trit addition
 
@@ -291,7 +292,19 @@ This uses the GUI. The machine has a 2-trit opcode, a 2-trit argument, three wor
 6. Select `write_mem1` and change its table entry for `(STORE, 1)` from 2 to 0, then commit. Expected: one undo step and no diagnostics; the next `STORE 1` leaves MEM1 unchanged. Undo restores the write.
 7. Double-click `mem_reg1`. Expected: a `std.t-reg-2` instance body, and inside it the same two mux/flip-flop slices as the other registers. Double-click `mem_read_low`. Expected: one 4-input lookup primitive whose 81-entry table is the read mux; no errors or warnings appear.
 
-## 20. Tiny program-driven CPU
+## 20. Balanced ternary accumulator
+
+This uses the GUI. Control, data, and clock are all balanced trits, so a pin value of `0` means `−`, `1` means `0`, and `2` means `+`.
+
+1. Open `examples/balanced-ternary-accumulator.radix` and click **Begin**. Drive `CLK = 0`, `LOAD = 0`, `ADD = 0`, `D0 = 1`, `D1 = 1`. Expected: the **Data** and **Result** lanes both read `0`, and the project is clean.
+2. Set `D0 = 2`, `D1 = 2` (Data lane reads `4`), then `LOAD = 2`. Pulse `CLK` to `2`, settle, then back to `0`. Expected: **Result** = `4`.
+3. Set `LOAD = 0`, `D0 = 0`, `D1 = 0` (Data lane reads `−4`). Pulse `CLK`. Expected: **Result** stays `4`, showing the register holds while LOAD is inactive.
+4. Set `ADD = 2` with `D0 = D1 = 2` (`+4`) and pulse `CLK`. Expected: **Result** = `−1`; the 2-trit sum wraps modulo 9 instead of saturating.
+5. Set `D0 = 0`, `D1 = 2` (Data lane reads `2`) and pulse `CLK`. Expected: **Result** = `1`.
+6. Set `ADD = 0`, `D0 = 1`, `D1 = 1`, and pulse `CLK`. Expected: **Result** stays `1`; ADD took precedence while it was active, and now both controls hold.
+7. Double-click `register`. Expected: a `std.bt-reg-2` body with two `mux` slices and two `ff` slices, and **Data**/**Result** lanes that decode as balanced ternary. Double-click `ff0`, then `slave`: the balanced latch is the same Kleene cross-coupled structure as the 0/1/2 latch, wired from `std.bt-not` and `std.bt-min` rather than `std.t-lognot`/`std.t-min`. No errors or warnings appear.
+
+## 21. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -318,7 +331,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 21. Known limitations to verify as *limitations*
+## 22. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -329,6 +342,7 @@ Do not file these as new failures until they change in the README:
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
 - the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no subroutine call stack, no halt instruction, and drops the adder carry on ADD, so its 0..8 accumulator wraps rather than overflowing;
+- the balanced accumulator is also 2 trits wide and drops the adder carry, so it wraps in −4..4 instead of overflowing; its third trit is not stored;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;

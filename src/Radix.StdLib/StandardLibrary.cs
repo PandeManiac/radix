@@ -22,6 +22,9 @@ public static class StandardLibrary
     public const string BalancedTernaryAdder2Id = "std.bt-adder-2";
     public const string TernaryLatchId = "std.t-latch";
     public const string TernaryDFlipFlopId = "std.t-dff";
+    public const string BalancedTernaryLatchId = "std.bt-latch";
+    public const string BalancedTernaryDFlipFlopId = "std.bt-dff";
+    public const string BalancedTernaryRegister2Id = "std.bt-reg-2";
     public const string TernaryFullAdderId = "std.t-full-adder";
     public const string TernaryAdder2Id = "std.t-adder-2";
     public const string TernaryRegister2Id = "std.t-reg-2";
@@ -534,6 +537,32 @@ public static class StandardLibrary
             added.Add("std.bt-max");
         }
 
+        if (project.FindDefinition("std.bt-mux") is null)
+        {
+            int[] muxTable = new int[27];
+            for (int a = 0; a < 3; a++)
+            {
+                for (int b = 0; b < 3; b++)
+                {
+                    muxTable[((a * 3) + b) * 3] = a;
+                    muxTable[(((a * 3) + b) * 3) + 1] = 1;
+                    muxTable[(((a * 3) + b) * 3) + 2] = b;
+                }
+            }
+
+            AddLookupDefinition(
+                project,
+                "std.bt-mux",
+                "Balanced ternary 2:1 multiplexer",
+                StandardDomains.BalancedTernaryId,
+                ["a", "b", "s"],
+                ["A", "B", "Select"],
+                muxTable,
+                description: "Select - returns A, + returns B, and 0 returns the middle value 0. " +
+                             "The balanced-ternary mirror of std.t-mux, where 0 is the unknown trit.");
+            added.Add("std.bt-mux");
+        }
+
         if (project.FindDefinition("std.bt-half-adder") is null)
         {
             AddBalancedTernaryHalfAdder(project);
@@ -639,37 +668,87 @@ public static class StandardLibrary
             added.Add(TernaryRegister2Id);
         }
 
+        if (project.FindDefinition(BalancedTernaryLatchId) is null)
+        {
+            AddBalancedTernaryLatch(project);
+            added.Add(BalancedTernaryLatchId);
+        }
+
+        if (project.FindDefinition(BalancedTernaryDFlipFlopId) is null)
+        {
+            AddBalancedTernaryDFlipFlop(project);
+            added.Add(BalancedTernaryDFlipFlopId);
+        }
+
+        if (project.FindDefinition(BalancedTernaryRegister2Id) is null)
+        {
+            AddBalancedTernaryRegister2(project);
+            added.Add(BalancedTernaryRegister2Id);
+        }
+
         return added;
     }
 
-    private static void AddTernaryRegister2(CircuitProject project)
-    {
-        var builder = new DefinitionBuilder(project, TernaryRegister2Id, "Ternary 2-trit register");
-        builder.Definition.Description =
+    private static void AddTernaryRegister2(CircuitProject project) =>
+        AddThreeValuedRegister2(
+            project,
+            TernaryRegister2Id,
+            "Ternary 2-trit register",
+            StandardDomains.TernaryId,
+            "std.t-mux",
+            TernaryDFlipFlopId,
+            NumericFormats.UnsignedTernary.Id,
+            0,
             "Two trit flip-flops with a shared level load. LOAD=2 captures D on the rising CLK edge (0 -> 2); " +
-            "LOAD=0 holds. Q/QN power up at 0.";
+            "LOAD=0 holds. Q/QN power up at 0.");
+
+    private static void AddBalancedTernaryRegister2(CircuitProject project) =>
+        AddThreeValuedRegister2(
+            project,
+            BalancedTernaryRegister2Id,
+            "Balanced ternary 2-trit register",
+            StandardDomains.BalancedTernaryId,
+            "std.bt-mux",
+            BalancedTernaryDFlipFlopId,
+            NumericFormats.BalancedTernary.Id,
+            1,
+            "Two balanced-ternary flip-flops with a shared level load. LOAD=+ captures D on the rising CLK edge " +
+            "(- -> +); LOAD=- holds and LOAD=0 seeds the unknown middle value. Q/QN power up at 0. " +
+            "Data and Result lanes decode as balanced ternary.");
+
+    private static void AddThreeValuedRegister2(
+        CircuitProject project,
+        string id,
+        string name,
+        string domainId,
+        string muxId,
+        string flipFlopId,
+        string formatId,
+        int initialValue,
+        string description)
+    {
+        var builder = new DefinitionBuilder(project, id, name);
+        builder.Definition.Description = description;
 
         var data = new Net[2];
         var q = new Net[2];
         for (int i = 0; i < 2; i++)
         {
-            data[i] = builder.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.TernaryId);
-            q[i] = builder.SetInitial(
-                builder.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.TernaryId),
-                0);
+            data[i] = builder.AddPin($"d{i}", $"D{i}", PinDirection.Input, domainId);
+            q[i] = builder.SetInitial(builder.AddPin($"q{i}", $"Q{i}", PinDirection.Output, domainId), initialValue);
         }
 
-        Net load = builder.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.TernaryId);
-        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+        Net load = builder.AddPin("load", "LOAD", PinDirection.Input, domainId);
+        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, domainId);
 
-        builder.AddNumericLane("data", "Data", NumericFormats.UnsignedTernary.Id, "d0", "d1");
-        builder.AddNumericLane("result", "Result", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+        builder.AddNumericLane("data", "Data", formatId, "d0", "d1");
+        builder.AddNumericLane("result", "Result", formatId, "q0", "q1");
 
         for (int i = 0; i < 2; i++)
         {
-            Net selected = builder.Rename(builder.AddNet($"selected{i}", StandardDomains.TernaryId), $"next Q{i}");
-            builder.AddInstance($"mux{i}", "std.t-mux", 220, 60 + (i * 200));
-            builder.AddInstance($"ff{i}", TernaryDFlipFlopId, 500, 60 + (i * 200));
+            Net selected = builder.Rename(builder.AddNet($"selected{i}", domainId), $"next Q{i}");
+            builder.AddInstance($"mux{i}", muxId, 220, 60 + (i * 200));
+            builder.AddInstance($"ff{i}", flipFlopId, 500, 60 + (i * 200));
 
             builder.Connect(q[i], builder.Pin($"mux{i}", "a"), builder.Pin($"ff{i}", "q"));
             builder.Connect(data[i], builder.Pin($"mux{i}", "b"));
@@ -776,35 +855,74 @@ public static class StandardLibrary
         return added;
     }
 
-    private static void AddTernaryLatch(CircuitProject project)
-    {
-        var builder = new DefinitionBuilder(project, TernaryLatchId, "Ternary D latch");
-        builder.Definition.Description =
+    private static void AddTernaryLatch(CircuitProject project) =>
+        AddThreeValuedLatch(
+            project,
+            TernaryLatchId,
+            "Ternary D latch",
+            StandardDomains.TernaryId,
+            "std.t-lognot",
+            "std.t-min",
+            0,
+            2,
             "Level-sensitive trit latch on the 0/1/2 domain. E=2 captures D, E=0 holds, and E=1 gives an unknown trit. " +
-            "Two cross-coupled Kleene NANDs store the trit, so the state survives the enable transition; Q/QN power up at 0/2.";
+            "Two cross-coupled Kleene NANDs store the trit, so the state survives the enable transition; Q/QN power up at 0/2.");
 
-        Net d = builder.AddPin("d", "D", PinDirection.Input, StandardDomains.TernaryId);
-        Net e = builder.AddPin("e", "E", PinDirection.Input, StandardDomains.TernaryId);
-        Net q = builder.SetInitial(builder.AddPin("q", "Q", PinDirection.Output, StandardDomains.TernaryId), 0);
-        Net qn = builder.SetInitial(builder.AddPin("qn", "QN", PinDirection.Output, StandardDomains.TernaryId), 2);
+    private static void AddBalancedTernaryLatch(CircuitProject project) =>
+        AddThreeValuedLatch(
+            project,
+            BalancedTernaryLatchId,
+            "Balanced ternary D latch",
+            StandardDomains.BalancedTernaryId,
+            "std.bt-not",
+            "std.bt-min",
+            1,
+            1,
+            "Level-sensitive trit latch on the balanced -/0/+ domain. E=+ captures D, E=- holds, and E=0 gives the " +
+            "unknown middle value. The structure is the same Kleene latch used for 0/1/2, wired from balanced gates; " +
+            "Q/QN power up at 0/0, the self-complementary middle value.");
 
-        Net notD = builder.Rename(builder.AddNet("not_d", StandardDomains.TernaryId), "not D");
-        Net setIn = builder.Rename(builder.AddNet("set_in", StandardDomains.TernaryId), "D and E");
-        Net resetIn = builder.Rename(builder.AddNet("reset_in", StandardDomains.TernaryId), "not D and E");
-        Net setBar = builder.Rename(builder.AddNet("set_bar", StandardDomains.TernaryId), "set");
-        Net resetBar = builder.Rename(builder.AddNet("reset_bar", StandardDomains.TernaryId), "reset");
-        Net qHold = builder.Rename(builder.AddNet("q_hold", StandardDomains.TernaryId), "set and QN");
-        Net qnHold = builder.Rename(builder.AddNet("qn_hold", StandardDomains.TernaryId), "reset and Q");
+    /// <summary>
+    /// The latch and flip-flop construction only assumes a three-value domain whose
+    /// gates are minimum, maximum, and complement. Both shipped ternary domains qualify,
+    /// so the same wiring serves them with different constituent definitions.
+    /// </summary>
+    private static void AddThreeValuedLatch(
+        CircuitProject project,
+        string id,
+        string name,
+        string domainId,
+        string notId,
+        string minId,
+        int initialQ,
+        int initialQn,
+        string description)
+    {
+        var builder = new DefinitionBuilder(project, id, name);
+        builder.Definition.Description = description;
 
-        builder.AddInstance("inv_d", "std.t-lognot", 60, 200);
-        builder.AddInstance("capture", "std.t-min", 240, 40);
-        builder.AddInstance("release", "std.t-min", 240, 240);
-        builder.AddInstance("nand_set", "std.t-lognot", 440, 40);
-        builder.AddInstance("nand_reset", "std.t-lognot", 440, 240);
-        builder.AddInstance("hold_q", "std.t-min", 620, 40);
-        builder.AddInstance("hold_qn", "std.t-min", 620, 240);
-        builder.AddInstance("q_bar", "std.t-lognot", 800, 40);
-        builder.AddInstance("qn_bar", "std.t-lognot", 800, 240);
+        Net d = builder.AddPin("d", "D", PinDirection.Input, domainId);
+        Net e = builder.AddPin("e", "E", PinDirection.Input, domainId);
+        Net q = builder.SetInitial(builder.AddPin("q", "Q", PinDirection.Output, domainId), initialQ);
+        Net qn = builder.SetInitial(builder.AddPin("qn", "QN", PinDirection.Output, domainId), initialQn);
+
+        Net notD = builder.Rename(builder.AddNet("not_d", domainId), "not D");
+        Net setIn = builder.Rename(builder.AddNet("set_in", domainId), "D and E");
+        Net resetIn = builder.Rename(builder.AddNet("reset_in", domainId), "not D and E");
+        Net setBar = builder.Rename(builder.AddNet("set_bar", domainId), "set");
+        Net resetBar = builder.Rename(builder.AddNet("reset_bar", domainId), "reset");
+        Net qHold = builder.Rename(builder.AddNet("q_hold", domainId), "set and QN");
+        Net qnHold = builder.Rename(builder.AddNet("qn_hold", domainId), "reset and Q");
+
+        builder.AddInstance("inv_d", notId, 60, 200);
+        builder.AddInstance("capture", minId, 240, 40);
+        builder.AddInstance("release", minId, 240, 240);
+        builder.AddInstance("nand_set", notId, 440, 40);
+        builder.AddInstance("nand_reset", notId, 440, 240);
+        builder.AddInstance("hold_q", minId, 620, 40);
+        builder.AddInstance("hold_qn", minId, 620, 240);
+        builder.AddInstance("q_bar", notId, 800, 40);
+        builder.AddInstance("qn_bar", notId, 800, 240);
 
         builder.Connect(d, builder.Pin("inv_d", "a"), builder.Pin("capture", "a"));
         builder.Connect(notD, builder.Pin("inv_d", "y"), builder.Pin("release", "a"));
@@ -821,29 +939,62 @@ public static class StandardLibrary
         builder.Connect(qn, builder.Pin("qn_bar", "y"));
     }
 
-    private static void AddTernaryDFlipFlop(CircuitProject project)
-    {
-        var builder = new DefinitionBuilder(project, TernaryDFlipFlopId, "Ternary D flip-flop");
-        builder.Definition.Description =
+    private static void AddTernaryDFlipFlop(CircuitProject project) =>
+        AddThreeValuedDFlipFlop(
+            project,
+            TernaryDFlipFlopId,
+            "Ternary D flip-flop",
+            StandardDomains.TernaryId,
+            TernaryLatchId,
+            "std.t-lognot",
+            0,
+            2,
             "Positive-edge-triggered trit flip-flop built from two ternary latches and an inverter. " +
-            "Drive CLK between 0 and 2; the slave captures on 2. Q/QN power up at 0/2.";
+            "Drive CLK between 0 and 2; the slave captures on 2. Q/QN power up at 0/2.");
 
-        Net d = builder.AddPin("d", "D", PinDirection.Input, StandardDomains.TernaryId);
-        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
-        Net q = builder.SetInitial(builder.AddPin("q", "Q", PinDirection.Output, StandardDomains.TernaryId), 0);
-        Net qn = builder.SetInitial(builder.AddPin("qn", "QN", PinDirection.Output, StandardDomains.TernaryId), 2);
+    private static void AddBalancedTernaryDFlipFlop(CircuitProject project) =>
+        AddThreeValuedDFlipFlop(
+            project,
+            BalancedTernaryDFlipFlopId,
+            "Balanced ternary D flip-flop",
+            StandardDomains.BalancedTernaryId,
+            BalancedTernaryLatchId,
+            "std.bt-not",
+            1,
+            1,
+            "Positive-edge-triggered balanced-ternary flip-flop built from two balanced latches and a complement " +
+            "gate. Drive CLK between - and +; the slave captures on +. Q/QN power up at 0/0.");
 
-        Net clkN = builder.Rename(builder.AddNet("clk_n", StandardDomains.TernaryId), "not clock");
+    private static void AddThreeValuedDFlipFlop(
+        CircuitProject project,
+        string id,
+        string name,
+        string domainId,
+        string latchId,
+        string notId,
+        int initialQ,
+        int initialQn,
+        string description)
+    {
+        var builder = new DefinitionBuilder(project, id, name);
+        builder.Definition.Description = description;
+
+        Net d = builder.AddPin("d", "D", PinDirection.Input, domainId);
+        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, domainId);
+        Net q = builder.SetInitial(builder.AddPin("q", "Q", PinDirection.Output, domainId), initialQ);
+        Net qn = builder.SetInitial(builder.AddPin("qn", "QN", PinDirection.Output, domainId), initialQn);
+
+        Net clkN = builder.Rename(builder.AddNet("clk_n", domainId), "not clock");
         Net masterQ = builder.SetInitial(
-            builder.Rename(builder.AddNet("master_q", StandardDomains.TernaryId), "master Q"),
-            0);
+            builder.Rename(builder.AddNet("master_q", domainId), "master Q"),
+            initialQ);
         Net masterQn = builder.SetInitial(
-            builder.Rename(builder.AddNet("master_qn", StandardDomains.TernaryId), "master QN"),
-            2);
+            builder.Rename(builder.AddNet("master_qn", domainId), "master QN"),
+            initialQn);
 
-        builder.AddInstance("inv", "std.t-lognot", 80, 60);
-        builder.AddInstance("master", TernaryLatchId, 340, 60);
-        builder.AddInstance("slave", TernaryLatchId, 640, 220);
+        builder.AddInstance("inv", notId, 80, 60);
+        builder.AddInstance("master", latchId, 340, 60);
+        builder.AddInstance("slave", latchId, 640, 220);
 
         builder.Connect(clk, builder.Pin("inv", "a"));
         builder.Connect(clkN, builder.Pin("inv", "y"), builder.Pin("master", "e"));

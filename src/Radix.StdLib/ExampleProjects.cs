@@ -20,6 +20,7 @@ public static class ExampleProjects
     public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
     public const string TernaryMachineFile = "ternary-machine.radix";
     public const string TernaryBranchMachineFile = "ternary-branch-machine.radix";
+    public const string BalancedTernaryAccumulatorFile = "balanced-ternary-accumulator.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
 
@@ -35,6 +36,7 @@ public static class ExampleProjects
         new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
         new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
         new(TernaryBranchMachineFile, "Ternary branch machine", "A ternary machine with LOAD/STORE/ADD, three words of trit memory, and conditional JMP/BZ control.", CreateTernaryBranchMachineDemo()),
+        new(BalancedTernaryAccumulatorFile, "Balanced ternary accumulator", "A signed trit register with LOAD/ADD/HOLD control, built from balanced min/max/mux gates and a balanced register.", CreateBalancedTernaryAccumulatorDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
@@ -982,6 +984,72 @@ public static class ExampleProjects
         }
 
         return builder.Build("demo.t-accumulator");
+    }
+
+    /// <summary>
+    /// The balanced-ternary counterpart of the unsigned accumulator: the same
+    /// register-with-selector construction, wired from balanced-ternary gates.
+    /// </summary>
+    public static CircuitProject CreateBalancedTernaryAccumulatorDemo()
+    {
+        var builder = new ProjectBuilder("Balanced ternary accumulator");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.bt-accumulator", "Balanced ternary accumulator");
+        root.Definition.Description =
+            "Two-trit balanced-ternary accumulator on the -/0/+ domain. LOAD=+ captures Data, ADD=+ adds Data, " +
+            "and both at - holds Q. ADD takes precedence when both are +. Results wrap modulo 9 in the range " +
+            "-4..4, so +4 plus +4 is -1; the adder carry is unused.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BalancedTernaryId);
+        Net load = root.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.BalancedTernaryId);
+        Net add = root.AddPin("add", "ADD", PinDirection.Input, StandardDomains.BalancedTernaryId);
+
+        var data = new Net[2];
+        var q = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            data[i] = root.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.BalancedTernaryId);
+            q[i] = root.SetInitial(
+                root.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.BalancedTernaryId),
+                1);
+        }
+
+        root.AddNumericLane("data", "Data", NumericFormats.BalancedTernary.Id, "d0", "d1");
+        root.AddNumericLane("result", "Result", NumericFormats.BalancedTernary.Id, "q0", "q1");
+
+        var sum = new Net[2];
+        var registerInput = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            sum[i] = root.Rename(root.AddNet($"sum{i}", StandardDomains.BalancedTernaryId), $"Q + D trit {i}");
+            registerInput[i] = root.Rename(root.AddNet($"reg_in{i}", StandardDomains.BalancedTernaryId), $"register D{i}");
+        }
+
+        Net writeEnable = root.Rename(root.AddNet("write_enable", StandardDomains.BalancedTernaryId), "load or add");
+
+        root.AddInstance("adder", StandardLibrary.BalancedTernaryAdder2Id, 300, 40);
+        root.AddInstance("enable", "std.bt-max", 300, 620);
+        root.AddInstance("register", StandardLibrary.BalancedTernaryRegister2Id, 820, 40);
+        for (int i = 0; i < 2; i++)
+        {
+            root.AddInstance($"mux_add{i}", "std.bt-mux", 560, 40 + (i * 200));
+        }
+
+        root.Connect(load, root.Pin("enable", "a"));
+        root.Connect(add, root.Pin("enable", "b"));
+        root.Connect(writeEnable, root.Pin("enable", "y"), root.Pin("register", "load"));
+        root.Connect(clk, root.Pin("register", "clk"));
+
+        for (int i = 0; i < 2; i++)
+        {
+            root.Connect(q[i], root.Pin("adder", $"a{i}"), root.Pin("register", $"q{i}"));
+            root.Connect(data[i], root.Pin("adder", $"b{i}"), root.Pin($"mux_add{i}", "a"));
+            root.Connect(sum[i], root.Pin("adder", $"s{i}"), root.Pin($"mux_add{i}", "b"));
+            root.Connect(registerInput[i], root.Pin($"mux_add{i}", "y"), root.Pin("register", $"d{i}"));
+            root.Connect(add, root.Pin($"mux_add{i}", "s"));
+        }
+
+        return builder.Build("demo.bt-accumulator");
     }
 
     public static CircuitProject CreateTernaryMachineDemo()
