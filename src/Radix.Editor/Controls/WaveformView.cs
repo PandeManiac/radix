@@ -27,6 +27,8 @@ public sealed class WaveformView : Control
     private IBrush _two = Brushes.DarkOrange;
     private IBrush _three = Brushes.MediumPurple;
     private IBrush _four = Brushes.MediumVioletRed;
+    private IBrush _accent = Brushes.SteelBlue;
+    private long? _cursorTime;
     private bool _followEnd = true;
     private long _lastEnd = 1;
     private Rect _plotRect;
@@ -58,6 +60,7 @@ public sealed class WaveformView : Control
     public void FitAll()
     {
         _followEnd = true;
+        _cursorTime = null;
         if (Snapshot is { } snapshot)
         {
             VisibleWindow.Fit(snapshot.End);
@@ -161,11 +164,31 @@ public sealed class WaveformView : Control
             }
         }
 
+        long? cursor = _cursorTime is long rawCursor
+            ? Math.Clamp(rawCursor, start, end)
+            : null;
+        if (cursor is long cursorTime)
+        {
+            double cursorX = X(cursorTime, start, end, plot);
+            context.DrawLine(
+                new Pen(_accent, 1.4, new DashStyle([4, 2], 0)),
+                new Point(cursorX, plot.Top),
+                new Point(cursorX, plot.Bottom));
+            FormattedText stamp = Text($"t={cursorTime.ToString(CultureInfo.InvariantCulture)}", 9, _ink);
+            double stampX = Math.Clamp(cursorX + 4, plot.Left, Math.Max(plot.Left, plot.Right - stamp.Width - 4));
+            context.FillRectangle(_panel, new Rect(stampX - 2, 1, stamp.Width + 4, stamp.Height + 2));
+            context.DrawText(stamp, new Point(stampX, 2));
+        }
+
         for (int rowIndex = 0; rowIndex < snapshot.Rows.Count; rowIndex++)
         {
             WaveformRow row = snapshot.Rows[rowIndex];
             double center = plot.Top + (rowIndex * rowHeight) + (rowHeight / 2);
-            int value = row.Changes.Count == 0 ? row.StartValue : row.Changes[^1].Value;
+            int value = cursor is long cursorAt
+                ? row.ValueAt(cursorAt)
+                : row.Changes.Count == 0
+                    ? row.StartValue
+                    : row.Changes[^1].Value;
             FormattedText last = Text(
                 value < 0 ? "z" : Format(value, row.Domain),
                 Math.Min(10, Math.Max(8, rowHeight * 0.4)),
@@ -243,6 +266,7 @@ public sealed class WaveformView : Control
             return;
         }
 
+        _cursorTime = null;
         _panning = true;
         _panOrigin = e.GetPosition(this);
         _panStart = VisibleWindow.Start;
@@ -254,12 +278,28 @@ public sealed class WaveformView : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!_panning || Snapshot is not { } snapshot || _plotRect.Width <= 0)
+        if (Snapshot is not { } snapshot || _plotRect.Width <= 0)
         {
             return;
         }
 
-        double deltaX = e.GetPosition(this).X - _panOrigin.X;
+        Point position = e.GetPosition(this);
+        if (!_panning)
+        {
+            if (_plotRect.Contains(position))
+            {
+                SetCursorAt(position.X, snapshot);
+            }
+            else if (_cursorTime is not null)
+            {
+                _cursorTime = null;
+                InvalidateVisual();
+            }
+
+            return;
+        }
+
+        double deltaX = position.X - _panOrigin.X;
         long span = Math.Max(1, _panEnd - _panStart);
         long deltaTicks = -(long)Math.Round(deltaX / _plotRect.Width * span);
         VisibleWindow.Set(_panStart + deltaTicks, _panEnd + deltaTicks);
@@ -278,7 +318,39 @@ public sealed class WaveformView : Control
 
         _panning = false;
         e.Pointer.Capture(null);
+        if (Snapshot is { } snapshot && _plotRect.Contains(e.GetPosition(this)))
+        {
+            SetCursorAt(e.GetPosition(this).X, snapshot);
+        }
+
         e.Handled = true;
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        if (!_panning && _cursorTime is not null)
+        {
+            _cursorTime = null;
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>Maps a horizontal plot position to an absolute tick and redraws.</summary>
+    private void SetCursorAt(double x, WaveformSnapshot snapshot)
+    {
+        long start = VisibleWindow.Start;
+        long end = Math.Max(VisibleWindow.End, start + 1);
+        double fraction = Math.Clamp((x - _plotRect.Left) / _plotRect.Width, 0, 1);
+        long time = start + (long)Math.Round(fraction * (end - start));
+        time = Math.Clamp(time, 0, Math.Max(0, snapshot.End));
+        if (_cursorTime == time)
+        {
+            return;
+        }
+
+        _cursorTime = time;
+        InvalidateVisual();
     }
 
     private static double X(long time, long start, long end, Rect plot) =>
@@ -374,6 +446,7 @@ public sealed class WaveformView : Control
         _two = ThemeBrushes.Get(this, "App.SignalTwo", "#D97706");
         _three = ThemeBrushes.Get(this, "App.SignalThree", "#7C5CBF");
         _four = ThemeBrushes.Get(this, "App.SignalFour", "#B0427A");
+        _accent = ThemeBrushes.Get(this, "App.Accent", "#2B6CB0");
     }
 
     private static FormattedText Text(string text, double size, IBrush brush, FontWeight weight = FontWeight.Normal)

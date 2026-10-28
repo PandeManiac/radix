@@ -255,6 +255,32 @@ public sealed class WaveformRow
     public int StartValue { get; }
 
     public IReadOnlyList<WaveValueChange> Changes { get; }
+
+    /// <summary>
+    /// Value held at an absolute tick. Changes are ordered, so this binary-searches
+    /// instead of replaying the row on every cursor render.
+    /// </summary>
+    public int ValueAt(long time)
+    {
+        int low = 0;
+        int high = Changes.Count - 1;
+        int value = StartValue;
+        while (low <= high)
+        {
+            int middle = low + ((high - low) / 2);
+            if (Changes[middle].Time <= time)
+            {
+                value = Changes[middle].Value;
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+
+        return value;
+    }
 }
 
 public sealed class WaveformSnapshot

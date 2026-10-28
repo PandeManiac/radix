@@ -412,6 +412,31 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void WaveformRowValueAtHoldsTheLastChangeAtOrBeforeTheCursor()
+    {
+        var row = new WaveformRow(
+            "n0",
+            StandardDomains.Binary(),
+            startValue: 1,
+            changes:
+            [
+                new WaveValueChange(10, 0),
+                new WaveValueChange(20, 1),
+                new WaveValueChange(20, 0),
+                new WaveValueChange(30, 1),
+            ]);
+
+        Assert.Equal(1, row.ValueAt(0));
+        Assert.Equal(1, row.ValueAt(9));
+        Assert.Equal(0, row.ValueAt(10));
+        Assert.Equal(0, row.ValueAt(19));
+        Assert.Equal(0, row.ValueAt(20));
+        Assert.Equal(0, row.ValueAt(29));
+        Assert.Equal(1, row.ValueAt(30));
+        Assert.Equal(1, row.ValueAt(10_000));
+    }
+
+    [Fact]
     public void WaveformPinsShowANetBeforeTheDeclarationOrderedRows()
     {
         var viewModel = new EditorViewModel(WideNetProject(20));
