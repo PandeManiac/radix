@@ -84,6 +84,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 9. Right-click empty canvas, a component, and a wire. Expected: relevant actions (Paste/Select all/Fit, Copy/Duplicate/Open definition/Delete, Add bendpoint/Reset route/Delete wire) and no focus theft.
 10. Type `ternary` in **search parts**. Expected: the Library filters and matching Definitions also filter. Clear the search to restore both lists.
 11. Use arrow keys to nudge a selected part; Shift+arrow moves in 10-unit steps. Press `F` to fit.
+12. Begin and advance to a nonzero time. Drag or nudge a part, change a wire color, and add/remove a bendpoint. Expected: the circuit redraws but simulated time, values, and drives remain; no Begin is needed. Add or delete a part: expected the simulation is invalidated and must be begun again.
 
 ## 5. Extract a reusable component
 

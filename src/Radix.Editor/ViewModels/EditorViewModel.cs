@@ -925,7 +925,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         _project.Name = trimmed;
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
     }
 
     public void NewProject()
@@ -1103,7 +1103,6 @@ public sealed class EditorViewModel : ObservableObject
         instance.X = Math.Round(x, 1);
         instance.Y = Math.Round(y, 1);
         IsDirty = true;
-        Simulator.Invalidate();
         RebuildLayout(reuseRoutes: _dragActive);
         _dragReusedRoutes |= _dragActive;
         RefreshSimStatus();
@@ -1127,7 +1126,7 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         instance.X += dx;
         instance.Y += dy;
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
     }
 
     public void NudgeSelection(double dx, double dy)
@@ -1148,7 +1147,7 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
 
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
     }
 
     public void SetInstanceState(string instanceId, double x, double y)
@@ -1168,7 +1167,6 @@ public sealed class EditorViewModel : ObservableObject
         instance.X = Math.Round(x, 1);
         instance.Y = Math.Round(y, 1);
         IsDirty = true;
-        Simulator.Invalidate();
         RebuildLayout();
         RefreshSimStatus();
     }
@@ -1690,7 +1688,7 @@ public sealed class EditorViewModel : ObservableObject
             ResetFormatForm();
         }
 
-        AfterMutation(structural: true);
+        AfterMutation(structural: true, invalidateSimulation: false);
         StatusText = editing
             ? $"Updated numeric format '{format.Name}' ({format.Id})"
             : $"Added numeric format '{format.Name}' ({format.Id})";
@@ -1961,7 +1959,7 @@ public sealed class EditorViewModel : ObservableObject
             RaisePropertyChanged(nameof(FormatSaveButtonText));
         }
 
-        AfterMutation(structural: true);
+        AfterMutation(structural: true, invalidateSimulation: false);
         StatusText = $"Removed numeric format '{format.Name}'";
     }
 
@@ -2030,7 +2028,7 @@ public sealed class EditorViewModel : ObservableObject
             NewLaneName = string.Empty;
         }
 
-        AfterMutation(structural: true);
+        AfterMutation(structural: true, invalidateSimulation: false);
         string note = chosenFormat is null ||
             string.Equals(selected[0].DomainId, chosenFormat.DomainId, StringComparison.Ordinal)
             ? string.Empty
@@ -2113,7 +2111,7 @@ public sealed class EditorViewModel : ObservableObject
             RaisePropertyChanged(nameof(LaneSaveButtonText));
         }
 
-        AfterMutation(structural: true);
+        AfterMutation(structural: true, invalidateSimulation: false);
         StatusText = $"Removed numeric lane '{lane.Name}'";
     }
 
@@ -2253,7 +2251,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         net.WireColor = normalized;
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
         StatusText = normalized is null ? "Wire color set to automatic" : $"Wire color set to {normalized}";
     }
 
@@ -2274,7 +2272,7 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         net.RoutePoints.Add(new NetWaypoint(Math.Round(point.X, 1), Math.Round(point.Y, 1)));
         SelectNet(net.Id);
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
         StatusText = "Added wire bendpoint";
     }
 
@@ -2308,7 +2306,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         net.RoutePoints.RemoveAt(index);
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
         StatusText = "Removed wire bendpoint";
     }
 
@@ -2322,7 +2320,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         net.RoutePoints.Clear();
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
         StatusText = "Wire route reset to automatic";
     }
 
@@ -3557,7 +3555,7 @@ public sealed class EditorViewModel : ObservableObject
 
                     PushUndo();
                     net.WireColor = normalized;
-                    AfterMutation(structural: false);
+                    AfterMutation(structural: false, invalidateSimulation: false);
                     return true;
                 }));
             Fields.Add(new EditableField(
@@ -3588,7 +3586,7 @@ public sealed class EditorViewModel : ObservableObject
                 {
                     PushUndo();
                     DefinitionEditor.RenameDefinition(Definition, value);
-                    AfterMutation(structural: true);
+                    AfterMutation(structural: true, invalidateSimulation: false);
                     return true;
                 }));
             Fields.Add(new EditableField(
@@ -3598,7 +3596,7 @@ public sealed class EditorViewModel : ObservableObject
                 {
                     PushUndo();
                     Definition.Description = string.IsNullOrWhiteSpace(value) ? null : value;
-                    AfterMutation(structural: false);
+                    AfterMutation(structural: false, invalidateSimulation: false);
                     return true;
                 }));
             Fields.Add(new EditableField("Instances", Definition.Instances.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
@@ -3725,7 +3723,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         mutate(instance);
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
         StatusText = $"Updated {what} on {instanceId}";
         return true;
     }
@@ -3769,10 +3767,19 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
-    private void AfterMutation(bool structural)
+    /// <summary>
+    /// Commits an edit to the UI. <paramref name="invalidateSimulation"/> is false for
+    /// presentation-only changes (positions, labels, colors, routes, numeric lanes),
+    /// which must not discard the running engine or its drive history.
+    /// </summary>
+    private void AfterMutation(bool structural, bool invalidateSimulation = true)
     {
         IsDirty = true;
-        Simulator.Retarget(_project, Definition);
+        if (invalidateSimulation)
+        {
+            Simulator.Retarget(_project, Definition);
+        }
+
         RebuildLayout();
         if (structural)
         {

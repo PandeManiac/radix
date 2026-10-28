@@ -29,6 +29,43 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void PresentationEditsPreserveCompiledSimulationState()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        viewModel.BeginSimulation();
+        viewModel.AdvanceTicksText = "100";
+        viewModel.AdvanceSimulation();
+        long time = viewModel.Simulator.Now;
+        Assert.True(viewModel.Simulator.IsCompiled);
+
+        ComponentInstance instance = viewModel.Definition.Instances[0];
+        viewModel.BeginDrag();
+        viewModel.MoveInstance(instance.Id, instance.X + 12, instance.Y + 8);
+        viewModel.EndDrag();
+        Assert.True(viewModel.Simulator.IsCompiled);
+        Assert.Equal(time, viewModel.Simulator.Now);
+
+        viewModel.NudgeInstance(instance.Id, 5, 0);
+        Assert.True(viewModel.Simulator.IsCompiled);
+        Assert.Equal(time, viewModel.Simulator.Now);
+
+        string netId = viewModel.Layout!.Wires.First().NetId;
+        viewModel.SetNetWireColor(netId, "#123456");
+        Assert.True(viewModel.Simulator.IsCompiled);
+        Assert.Equal(time, viewModel.Simulator.Now);
+
+        viewModel.SelectNet(netId);
+        viewModel.AddNetWaypoint(netId, viewModel.Layout!.Wires.First(wire => wire.NetId == netId).LabelPoint);
+        Assert.True(viewModel.Simulator.IsCompiled);
+        Assert.Equal(time, viewModel.Simulator.Now);
+
+        viewModel.SelectInstance(instance.Id);
+        viewModel.DeleteSelection();
+        Assert.False(viewModel.Simulator.IsCompiled);
+        Assert.Equal(0, viewModel.Simulator.Now);
+    }
+
+    [Fact]
     public void PlacingAndDeletingPartIsUndoable()
     {
         var viewModel = CreateEmptyEditor();
