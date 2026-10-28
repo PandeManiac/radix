@@ -157,23 +157,13 @@ public static class SimulationScriptRunner
                 bool matched = false;
                 while (true)
                 {
-                    mismatches.Clear();
-                    foreach (ScriptPinExpectation expectation in window.PinExpectations)
-                    {
-                        if (CheckPin(engine, expectation) is { } message)
-                        {
-                            mismatches.Add(message);
-                        }
-                    }
-
-                    foreach (ScriptLaneExpectation expectation in window.LaneExpectations)
-                    {
-                        if (CheckLane(project, definition, engine, expectation) is { } message)
-                        {
-                            mismatches.Add(message);
-                        }
-                    }
-
+                    CollectMismatches(
+                        project,
+                        definition,
+                        engine,
+                        window.PinExpectations,
+                        window.LaneExpectations,
+                        mismatches);
                     if (mismatches.Count == 0)
                     {
                         matched = true;
@@ -199,6 +189,47 @@ public static class SimulationScriptRunner
                         stepNumber,
                         engine.Now,
                         $"window assertion failed: {reason}. Last values: {string.Join("; ", mismatches)}."));
+                }
+            }
+
+            if (step.Stability is { } stability)
+            {
+                long deadline = step.At + stability.Ticks;
+                var mismatches = new List<string>();
+                while (true)
+                {
+                    CollectMismatches(
+                        project,
+                        definition,
+                        engine,
+                        stability.PinExpectations,
+                        stability.LaneExpectations,
+                        mismatches);
+                    if (mismatches.Count > 0)
+                    {
+                        failures.Add(new ScriptFailure(
+                            stepNumber,
+                            engine.Now,
+                            $"stable assertion failed at t={engine.Now}: {string.Join("; ", mismatches)}."));
+                        break;
+                    }
+
+                    if (engine.Now >= deadline)
+                    {
+                        break;
+                    }
+
+                    if (engine.IsHalted)
+                    {
+                        failures.Add(new ScriptFailure(
+                            stepNumber,
+                            engine.Now,
+                            $"stable assertion needs the simulation to run to t={deadline}, " +
+                            $"but it halted at t={engine.Now}: {engine.HaltReason}"));
+                        break;
+                    }
+
+                    engine.AdvanceTo(engine.Now + 1);
                 }
             }
 
@@ -231,6 +262,32 @@ public static class SimulationScriptRunner
             engine.EventsProcessed,
             engine.IsHalted,
             engine.HaltReason);
+    }
+
+    private static void CollectMismatches(
+        CircuitProject project,
+        CircuitDefinition definition,
+        SimulationEngine engine,
+        IReadOnlyList<ScriptPinExpectation> pinExpectations,
+        IReadOnlyList<ScriptLaneExpectation> laneExpectations,
+        List<string> mismatches)
+    {
+        mismatches.Clear();
+        foreach (ScriptPinExpectation expectation in pinExpectations)
+        {
+            if (CheckPin(engine, expectation) is { } message)
+            {
+                mismatches.Add(message);
+            }
+        }
+
+        foreach (ScriptLaneExpectation expectation in laneExpectations)
+        {
+            if (CheckLane(project, definition, engine, expectation) is { } message)
+            {
+                mismatches.Add(message);
+            }
+        }
     }
 
     private static void ApplyDrive(

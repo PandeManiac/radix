@@ -79,6 +79,31 @@ public sealed class ScriptWindow
 }
 
 /// <summary>
+/// A held-value assertion: the expected values must match at every tick from the
+/// step's tick through <c>At + Ticks</c> inclusive. Used to prove that a value is
+/// stable, not merely eventually reached.
+/// </summary>
+public sealed class ScriptStability
+{
+    public ScriptStability(
+        long ticks,
+        IReadOnlyList<ScriptPinExpectation> pinExpectations,
+        IReadOnlyList<ScriptLaneExpectation> laneExpectations)
+    {
+        Ticks = ticks;
+        PinExpectations = pinExpectations;
+        LaneExpectations = laneExpectations;
+    }
+
+    /// <summary>Number of ticks after the step's tick that the values must hold, inclusive.</summary>
+    public long Ticks { get; }
+
+    public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
+
+    public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
+}
+
+/// <summary>
 /// One ordered step. The runner advances to <see cref="At"/>, applies drives, settles
 /// zero-delay events at that timestamp, then checks expectations.
 /// </summary>
@@ -91,7 +116,8 @@ public sealed class SimulationScriptStep
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
         bool? expectHalted,
         string? description,
-        ScriptWindow? window = null)
+        ScriptWindow? window = null,
+        ScriptStability? stability = null)
     {
         At = at;
         Drives = drives;
@@ -100,6 +126,7 @@ public sealed class SimulationScriptStep
         ExpectHalted = expectHalted;
         Description = description;
         Window = window;
+        Stability = stability;
     }
 
     /// <summary>Absolute simulated tick. Missing values default to the previous step's tick.</summary>
@@ -119,9 +146,12 @@ public sealed class SimulationScriptStep
     /// <summary>Optional eventual assertion that may advance simulated time.</summary>
     public ScriptWindow? Window { get; }
 
+    /// <summary>Optional held-value assertion over an inclusive interval of ticks.</summary>
+    public ScriptStability? Stability { get; }
+
     public bool HasActions =>
         Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
-        ExpectHalted is not null || Window is not null;
+        ExpectHalted is not null || Window is not null || Stability is not null;
 }
 
 /// <summary>
@@ -231,7 +261,20 @@ public sealed class SimulationScript
             var drives = MapDrives(step.Set, stepNumber);
             var pinExpectations = MapExpectations(step.Expect, stepNumber, "expect");
             var laneExpectations = MapLaneExpectations(step.ExpectLane, stepNumber, "expectLane");
+            if (step.Within is not null && step.Stable is not null)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} has both 'within' and 'stable'; a step can wait for a value or require it to hold, not both.");
+            }
+
+            if (step.Stable is not null && step.ExpectHalted == true)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} cannot combine 'stable' with 'expectHalted: true'; a held-value window needs the simulation to run to its deadline.");
+            }
+
             ScriptWindow? window = MapWindow(step.Within, stepNumber, at);
+            ScriptStability? stability = MapStability(step.Stable, stepNumber, at);
 
             // A bare step is a deliberate advance-only marker; it is useful for
             // separating phases and lets later steps inherit this tick.
@@ -242,7 +285,8 @@ public sealed class SimulationScript
                 laneExpectations,
                 step.ExpectHalted,
                 step.Description,
-                window));
+                window,
+                stability));
         }
 
         return new SimulationScript(
@@ -339,32 +383,52 @@ public sealed class SimulationScript
             return null;
         }
 
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes) =
+            MapWindowContents(source, stepNumber, at, "within");
+        return new ScriptWindow(ticks, pins, lanes);
+    }
+
+    private static ScriptStability? MapStability(WindowDto? source, int stepNumber, long at)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes) =
+            MapWindowContents(source, stepNumber, at, "stable");
+        return new ScriptStability(ticks, pins, lanes);
+    }
+
+    private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes)
+        MapWindowContents(WindowDto source, int stepNumber, long at, string field)
+    {
         if (source.Ticks is null)
         {
-            throw new SimulationScriptException($"Step {stepNumber} 'within' needs an explicit 'ticks' value.");
+            throw new SimulationScriptException($"Step {stepNumber} '{field}' needs an explicit 'ticks' value.");
         }
 
         long ticks = source.Ticks.Value;
         if (ticks < 0)
         {
-            throw new SimulationScriptException($"Step {stepNumber} 'within.ticks' must be non-negative.");
+            throw new SimulationScriptException($"Step {stepNumber} '{field}.ticks' must be non-negative.");
         }
 
         if (ticks > long.MaxValue - at)
         {
             throw new SimulationScriptException(
-                $"Step {stepNumber} 'within.ticks' moves the deadline past the maximum simulated time.");
+                $"Step {stepNumber} '{field}.ticks' moves the deadline past the maximum simulated time.");
         }
 
-        var pinExpectations = MapExpectations(source.Expect, stepNumber, "within.expect");
-        var laneExpectations = MapLaneExpectations(source.ExpectLane, stepNumber, "within.expectLane");
+        var pinExpectations = MapExpectations(source.Expect, stepNumber, $"{field}.expect");
+        var laneExpectations = MapLaneExpectations(source.ExpectLane, stepNumber, $"{field}.expectLane");
         if (pinExpectations.Count == 0 && laneExpectations.Count == 0)
         {
             throw new SimulationScriptException(
-                $"Step {stepNumber} 'within' needs at least one 'expect' or 'expectLane' entry.");
+                $"Step {stepNumber} '{field}' needs at least one 'expect' or 'expectLane' entry.");
         }
 
-        return new ScriptWindow(ticks, pinExpectations, laneExpectations);
+        return (ticks, pinExpectations, laneExpectations);
     }
 
     private static string NormalizeId(string id, string kind, int stepNumber, string field)
@@ -475,6 +539,8 @@ public sealed class SimulationScript
         public bool? ExpectHalted { get; set; }
 
         public WindowDto? Within { get; set; }
+
+        public WindowDto? Stable { get; set; }
     }
 
     private sealed class WindowDto

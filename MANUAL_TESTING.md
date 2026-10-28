@@ -207,7 +207,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 These steps use a terminal only; they never open a window. Run from the repository root.
 
-1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 5 step(s) through t=50`, exit code 0. The capture is asserted with `"within": { "ticks": 10, ... }`, so the script waits for the transport delay instead of pinning one tick.
+1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 4 step(s) through t=50`, exit code 0. The capture is asserted with `"within": { "ticks": 10, ... }`, so the script waits for the transport delay instead of pinning one tick; the held low phase is asserted with `"stable": { "ticks": 10, ... }`, which checks every tick from 40 through 50.
 2. Run `dotnet run --project src/Radix.Cli -- test examples/accumulator-cpu.radix examples/tests/accumulator.radixtest`. Expected: PASS; the signed `Result` lane is `-1` after LOAD 15 and `0` after adding 1, with `CARRY=1`.
 3. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-adder-2.radix examples/tests/balanced-ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0. The step expectations cover sums 8, −8, 0, 2, and 1 through the three-trit `A + B` lane.
 4. Run `dotnet run --project src/Radix.Cli -- simulate examples/balanced-ternary-adder-2.radix --set a0=2 --set a1=2 --set b0=2 --set b1=2 --ticks 30 --bus s0,s1,cout --format balanced-ternary`. Expected: the decoded bus prints `8`.
@@ -228,6 +228,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 19. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-memory.radix examples/tests/ternary-memory.radixtest`. Expected: `PASS: 10 step(s) through t=680`, exit code 0; word 5 holds 8, word 0 holds 3, and WE=1 leaves word 5 intact while D changes.
 20. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-stack-machine.radix examples/tests/ternary-stack-machine.radixtest`. Expected: `PASS: 30 step(s) through t=3480`, exit code 0; TOS goes 0 → 2 → 3 → 2 → 5 → 5 → 5 → 5 → 0, SP returns to 0, and OUT becomes 5.
 21. Run `dotnet run --project src/Radix.Cli -- test examples/four-state-bus.radix examples/tests/four-state-bus.radixtest`. Expected: `PASS: 14 step(s) through t=122`, exit code 0, plus one `WARNING RAD101` for the bus net on the first run; the warning does not fail the script.
+22. Copy the DFF script to a scratch file and change its final `stable` expectation to `"q": 0`. Expected: `FAIL`, one line naming `step 4 (t=40)` with `stable assertion failed at t=40` and `pin 'q': expected 0 (0), got 1 (1)`; exit code 1. This shows a stability window checks its starting tick and every tick through its deadline, not only the end.
 
 ## 14. Ternary multi-trit addition
 
@@ -413,7 +414,7 @@ Do not file these as new failures until they change in the README:
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
-- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts that values converge at some integer tick, not stability, glitch freedom, or a waveform shape;
+- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and neither expresses waveform-edge order, glitch counts, or minimum setup/hold constraints;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.

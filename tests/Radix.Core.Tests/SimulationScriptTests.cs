@@ -330,6 +330,139 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void StableWindowPassesForEveryTickAndLaneInTheInterval()
+    {
+        var builder = new ProjectBuilder("stable lane");
+        DefinitionBuilder definition = builder.Define("lane", "Stable lane");
+        Net input = definition.AddPin("a", "A", PinDirection.Input, "binary");
+        Net output = definition.AddPin("y0", "Y0", PinDirection.Output, "binary");
+        definition.AddPrimitive("buf", new LookupSpec(1, [0, 1], delayTicks: 3));
+        definition.Connect(input, definition.Pin("buf", "in0"));
+        definition.Connect(output, definition.Pin("buf", "out"));
+        definition.AddNumericLane("value", "Value", "unsigned-binary", "y0");
+
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "a": 1 } },
+                {
+                  "at": 3,
+                  "stable": { "ticks": 10, "expect": { "a": 1, "y0": 1 }, "expectLane": { "value": 1 } }
+                },
+                { "at": 20 }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(builder.Build("lane"), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(20, result.FinalTime);
+        Assert.Equal(3, result.StepsExecuted);
+    }
+
+    [Fact]
+    public void StableWindowFailsAtTheFirstDivergingTick()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "stable": { "ticks": 10, "expect": { "y": 0 } } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(WaveformProject(), script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(10, failure.At);
+        Assert.Contains("stable assertion failed at t=10", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("pin 'y': expected 0 (0), got 1 (1)", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(10, result.FinalTime);
+    }
+
+    [Fact]
+    public void StableWindowFailureAtItsStartDoesNotAdvance()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 0 }, "stable": { "ticks": 5, "expect": { "q": 1 } } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        Assert.Contains("stable assertion failed at t=0", result.Failures[0].Message, StringComparison.Ordinal);
+        Assert.Equal(0, result.FinalTime);
+    }
+
+    [Fact]
+    public void RejectsMalformedStableWindows()
+    {
+        Assert.Contains(
+            "'stable' needs an explicit 'ticks' value",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "stable": { "expect": { "q": 1 } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'stable' needs at least one",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "stable": { "ticks": 5 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "both 'within' and 'stable'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    {
+                      "within": { "ticks": 5, "expect": { "q": 1 } },
+                      "stable": { "ticks": 5, "expect": { "q": 1 } }
+                    }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine 'stable' with 'expectHalted: true'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    { "stable": { "ticks": 5, "expect": { "q": 1 } }, "expectHalted": true }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RejectsMalformedWindows()
     {
         Assert.Contains(
@@ -440,6 +573,16 @@ public sealed class SimulationScriptTests
         }
 
         throw new DirectoryNotFoundException("Could not locate the repository's examples directory.");
+    }
+
+    private static CircuitProject WaveformProject()
+    {
+        var builder = new ProjectBuilder("waveform");
+        DefinitionBuilder definition = builder.Define("wave", "Wave");
+        Net output = definition.AddPin("y", "Y", PinDirection.Output, "binary");
+        definition.AddPrimitive("w", new WaveformSpec([10, 10], [0, 1]));
+        definition.Connect(output, definition.Pin("w", "out"));
+        return builder.Build("wave");
     }
 
     private static CircuitProject InverterLoopProject()
