@@ -58,6 +58,7 @@
 
           <Border Width="1" Background="{DynamicResource App.Border}" Margin="6,3" />
           <Button Classes="tool" Content="Fit view" Command="{Binding FitCommand}" />
+          <Button Classes="tool" Content="Find…" Command="{Binding OpenSearchCommand}" ToolTip.Tip="Search every definition, instance, and net (Ctrl+P)" />
         </StackPanel>
 
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -906,6 +907,110 @@
           <TextBlock Text="{Binding DiagnosticSummary}" FontSize="10.5" Foreground="{DynamicResource App.TextMuted}" />
         </StackPanel>
       </Grid>
+    </Border>
+
+    <!-- Project-wide find palette -->
+    <Border
+        Grid.Row="0"
+        Grid.RowSpan="3"
+        ZIndex="100"
+        IsVisible="{Binding IsSearchOpen}"
+        Background="#66000000"
+        PointerPressed="SearchBackdrop_PointerPressed">
+      <Border
+          Width="700"
+          MaxHeight="540"
+          HorizontalAlignment="Center"
+          VerticalAlignment="Top"
+          Margin="0,78,0,0"
+          Background="{DynamicResource App.PanelBackground}"
+          BorderBrush="{DynamicResource App.Border}"
+          BorderThickness="1"
+          CornerRadius="8"
+          BoxShadow="0 18 48 0 #55000000">
+        <Grid RowDefinitions="Auto,Auto,*,Auto">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="12,10,12,4">
+            <TextBox
+                x:Name="SearchBox"
+                Watermark="Search definitions, instances, and nets…"
+                Text="{Binding SearchQuery, Mode=TwoWay}"
+                FontSize="14"
+                Padding="8,6"
+                ToolTip.Tip="Every whitespace-separated term must match; Enter opens the selected result" />
+            <Button
+                Grid.Column="1"
+                Classes="tool"
+                Content="×"
+                Command="{Binding CloseSearchCommand}"
+                FontSize="16"
+                Padding="9,4"
+                ToolTip.Tip="Close search (Esc)" />
+          </Grid>
+          <TextBlock
+              Grid.Row="1"
+              Text="{Binding SearchSummary}"
+              Classes="muted"
+              FontSize="10"
+              Margin="14,0,14,6" />
+          <Grid Grid.Row="2" Margin="8,0" MinHeight="80">
+            <ListBox
+                x:Name="SearchResultsList"
+                ItemsSource="{Binding SearchResults}"
+                SelectedItem="{Binding SelectedSearchItem, Mode=TwoWay}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                MaxHeight="390"
+                DoubleTapped="SearchResults_DoubleTapped">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProjectSearchItem">
+                  <Grid ColumnDefinitions="46,*,Auto" ColumnSpacing="8" Margin="2,3">
+                    <TextBlock
+                        Text="{Binding KindLabel}"
+                        FontSize="9"
+                        FontWeight="Bold"
+                        Foreground="{DynamicResource App.Accent}"
+                        VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="1">
+                      <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="9.5" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock
+                        Grid.Column="2"
+                        Text="{Binding Context}"
+                        FontFamily="monospace"
+                        FontSize="9.5"
+                        Foreground="{DynamicResource App.TextMuted}"
+                        VerticalAlignment="Center"
+                        MaxWidth="190"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip.Tip="{Binding Context}" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock
+                Text="No definition, instance, or net matches these terms."
+                Classes="muted"
+                FontSize="10.5"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                IsVisible="{Binding !HasSearchResults}" />
+          </Grid>
+          <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="14,7,14,9">
+            <TextBlock
+                Text="↑ ↓ navigate · Enter open · Esc close · double-click a row"
+                Classes="muted"
+                FontSize="9.5" />
+            <TextBlock
+                Grid.Column="1"
+                Text="DEF definition · PART instance · NET wire"
+                Classes="muted"
+                FontSize="9.5" />
+          </Grid>
+        </Grid>
+      </Border>
     </Border>
   </Grid>
 </Window>

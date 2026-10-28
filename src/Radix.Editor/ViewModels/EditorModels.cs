@@ -4,6 +4,7 @@ using Radix.Core;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
+using Radix.Editor.Services;
 
 namespace Radix.Editor.ViewModels;
 
@@ -151,6 +152,33 @@ public sealed class PaletteItem
     public string Description { get; }
 
     public ICommand PlaceCommand { get; }
+}
+
+/// <summary>
+/// One project-wide search row. It wraps an immutable navigation target with the
+/// command that opens it, so the list can be rebound without retaining stale model
+/// objects.
+/// </summary>
+public sealed class ProjectSearchItem
+{
+    public ProjectSearchItem(ProjectSearchResult result, Action activate)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        Result = result;
+        ActivateCommand = new RelayCommand(activate);
+    }
+
+    public ProjectSearchResult Result { get; }
+
+    public string KindLabel => Result.KindLabel;
+
+    public string Title => Result.Title;
+
+    public string Detail => Result.Detail;
+
+    public string Context => Result.Context;
+
+    public ICommand ActivateCommand { get; }
 }
 
 public sealed class IoValueOption

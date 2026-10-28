@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Radix.Editor.Controls;
 using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
@@ -44,16 +45,55 @@ public partial class MainWindow : Window
         if (_watchedViewModel is not null)
         {
             _watchedViewModel.RecentProjectOpenRequested -= ViewModel_RecentProjectOpenRequested;
+            _watchedViewModel.SearchOpened -= ViewModel_SearchOpened;
         }
 
         _watchedViewModel = ViewModel;
         if (_watchedViewModel is not null)
         {
             _watchedViewModel.RecentProjectOpenRequested += ViewModel_RecentProjectOpenRequested;
+            _watchedViewModel.SearchOpened += ViewModel_SearchOpened;
         }
     }
 
     private void ViewModel_RecentProjectOpenRequested(string path) => _ = OpenRecentProjectAsync(path);
+
+    private void ViewModel_SearchOpened()
+    {
+        // The palette becomes visible during this event; post focus so layout has run.
+        Dispatcher.UIThread.Post(() =>
+        {
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            ScrollSearchSelection();
+        });
+    }
+
+    private void SearchBackdrop_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, sender) && ViewModel is EditorViewModel viewModel)
+        {
+            viewModel.CloseSearch();
+            e.Handled = true;
+        }
+    }
+
+    private void SearchResults_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is Control { DataContext: ProjectSearchItem item })
+        {
+            item.ActivateCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    private void ScrollSearchSelection()
+    {
+        if (ViewModel is EditorViewModel { SelectedSearchItem: { } item })
+        {
+            SearchResultsList.ScrollIntoView(item);
+        }
+    }
 
     private async Task OpenRecentProjectAsync(string path)
     {
@@ -428,6 +468,46 @@ public partial class MainWindow : Window
 
     private async void Window_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (ViewModel is EditorViewModel palette && palette.IsSearchOpen)
+        {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && (e.Key is Key.P or Key.K))
+            {
+                e.Handled = true;
+                palette.CloseSearch();
+                return;
+            }
+
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    e.Handled = true;
+                    palette.CloseSearch();
+                    return;
+                case Key.Enter:
+                    e.Handled = true;
+                    palette.ActivateSelectedSearch();
+                    return;
+                case Key.Down:
+                    e.Handled = true;
+                    palette.MoveSearchSelection(1);
+                    ScrollSearchSelection();
+                    return;
+                case Key.Up:
+                    e.Handled = true;
+                    palette.MoveSearchSelection(-1);
+                    ScrollSearchSelection();
+                    return;
+            }
+        }
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && (e.Key is Key.P or Key.K) &&
+            ViewModel is EditorViewModel openSearch)
+        {
+            e.Handled = true;
+            openSearch.OpenSearch();
+            return;
+        }
+
         if (e.Key == Key.Delete && e.Source is not TextBox && ViewModel is EditorViewModel delete)
         {
             e.Handled = true;

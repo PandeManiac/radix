@@ -80,6 +80,10 @@ public sealed class EditorViewModel : ObservableObject
     private string _librarySearch = string.Empty;
     private string _netSearch = string.Empty;
     private string _netListSummary = string.Empty;
+    private bool _isSearchOpen;
+    private string _searchQuery = string.Empty;
+    private ProjectSearchItem? _selectedSearchItem;
+    private string _searchSummary = string.Empty;
     private ClipboardPayload? _clipboard;
     private int _pasteOffset;
     private string? _savedProjectJson;
@@ -230,6 +234,8 @@ public sealed class EditorViewModel : ObservableObject
         CancelLaneEditCommand = new RelayCommand(CancelNumericLaneEdit);
         AddNumericFormatCommand = new RelayCommand(AddCustomNumericFormat);
         CancelFormatEditCommand = new RelayCommand(CancelCustomNumericFormatEdit);
+        OpenSearchCommand = new RelayCommand(OpenSearch);
+        CloseSearchCommand = new RelayCommand(CloseSearch);
 
         RefreshAll(fit: false);
         ResetDefinitionHistory();
@@ -250,6 +256,9 @@ public sealed class EditorViewModel : ObservableObject
     /// same unsaved-changes prompt as the Open button is used.
     /// </summary>
     public event Action<string>? RecentProjectOpenRequested;
+
+    /// <summary>Raised after the find palette opens so the window can focus its query box.</summary>
+    public event Action? SearchOpened;
 
     /// <summary>Raised after a project is written successfully, so recovery can be cleared.</summary>
     public event Action? ProjectSaved;
@@ -310,6 +319,8 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<IoPinViewModel> IoPins { get; } = [];
 
     public ObservableCollection<NetListItem> NetList { get; } = [];
+
+    public ObservableCollection<ProjectSearchItem> SearchResults { get; } = [];
 
     public ObservableCollection<NumericLaneListItem> NumericLanes { get; } = [];
 
@@ -804,6 +815,36 @@ public sealed class EditorViewModel : ObservableObject
 
     public bool HasNetList => NetList.Count > 0;
 
+    /// <summary>True while the project-wide find palette is showing.</summary>
+    public bool IsSearchOpen => _isSearchOpen;
+
+    /// <summary>Find query; every whitespace-separated term must match a target.</summary>
+    public string SearchQuery
+    {
+        get => _searchQuery;
+        set
+        {
+            if (SetField(ref _searchQuery, value))
+            {
+                RefreshSearchResults();
+            }
+        }
+    }
+
+    public ProjectSearchItem? SelectedSearchItem
+    {
+        get => _selectedSearchItem;
+        set => SetField(ref _selectedSearchItem, value);
+    }
+
+    public string SearchSummary => _searchSummary;
+
+    public bool HasSearchResults => SearchResults.Count > 0;
+
+    public ICommand OpenSearchCommand { get; }
+
+    public ICommand CloseSearchCommand { get; }
+
     public bool HasNumericLanes => NumericLanes.Count > 0;
 
     public string NewLaneName
@@ -1125,6 +1166,138 @@ public sealed class EditorViewModel : ObservableObject
         VisualInvalidated?.Invoke();
     }
 
+    /// <summary>
+    /// Opens the project-wide find palette with a fresh query. Results are computed
+    /// from the current project only; opening the palette never mutates it.
+    /// </summary>
+    public void OpenSearch()
+    {
+        if (!_isSearchOpen)
+        {
+            _isSearchOpen = true;
+            RaisePropertyChanged(nameof(IsSearchOpen));
+        }
+
+        _searchQuery = string.Empty;
+        RaisePropertyChanged(nameof(SearchQuery));
+        RefreshSearchResults();
+        SearchOpened?.Invoke();
+    }
+
+    public void CloseSearch()
+    {
+        if (!_isSearchOpen)
+        {
+            return;
+        }
+
+        _isSearchOpen = false;
+        RaisePropertyChanged(nameof(IsSearchOpen));
+        SelectedSearchItem = null;
+    }
+
+    /// <summary>Moves the palette selection by one row, clamped at both ends.</summary>
+    public void MoveSearchSelection(int delta)
+    {
+        if (SearchResults.Count == 0)
+        {
+            return;
+        }
+
+        int current = SelectedSearchItem is null ? -1 : SearchResults.IndexOf(SelectedSearchItem);
+        int next = Math.Clamp(current + delta, 0, SearchResults.Count - 1);
+        SelectedSearchItem = SearchResults[next];
+    }
+
+    public void ActivateSelectedSearch()
+    {
+        if (SelectedSearchItem is { } item)
+        {
+            ActivateSearchResult(item.Result);
+        }
+    }
+
+    /// <summary>
+    /// Opens and selects the target named by a search row. Missing targets are
+    /// reported instead of guessed, matching diagnostic navigation. Presentation
+    /// only: no connectivity or simulation state changes.
+    /// </summary>
+    public bool ActivateSearchResult(ProjectSearchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (_project.FindDefinition(result.DefinitionId) is null)
+        {
+            CloseSearch();
+            StatusText = $"Search target '{result.DefinitionId}' no longer exists.";
+            return false;
+        }
+
+        CloseSearch();
+        OpenDefinition(result.DefinitionId);
+
+        if (result.Kind == ProjectSearchKind.Definition)
+        {
+            StatusText = $"Found definition '{Definition.Name}' ({Definition.Id})";
+            return true;
+        }
+
+        if (result.InstanceId is string instanceId)
+        {
+            ComponentInstance? instance = Definition.FindInstance(instanceId);
+            if (instance is null)
+            {
+                StatusText = $"Search target instance '{instanceId}' no longer exists.";
+                return false;
+            }
+
+            Rect? bounds = Layout?.Components.FirstOrDefault(box =>
+                string.Equals(box.Instance.Id, instanceId, StringComparison.Ordinal))?.Bounds;
+            SelectInstance(instanceId);
+            FocusBounds(bounds);
+            StatusText = $"Found instance '{instanceId}' in {Definition.Name}";
+            return true;
+        }
+
+        if (result.NetId is string netId)
+        {
+            Net? net = Definition.FindNet(netId);
+            if (net is null)
+            {
+                StatusText = $"Search target net '{netId}' no longer exists.";
+                return false;
+            }
+
+            SelectNet(netId);
+            FocusBounds(BoundsOfNet(netId));
+            StatusText = $"Found net '{netId}' in {Definition.Name}";
+            return true;
+        }
+
+        StatusText = "Search target has no circuit location.";
+        return false;
+    }
+
+    private void RefreshSearchResults()
+    {
+        ProjectSearchResults found = ProjectSearch.Search(_project, Definition.Id, _searchQuery);
+        SearchResults.Clear();
+        foreach (ProjectSearchResult result in found.Items)
+        {
+            SearchResults.Add(new ProjectSearchItem(result, () => ActivateSearchResult(result)));
+        }
+
+        SelectedSearchItem = SearchResults.FirstOrDefault();
+        RaisePropertyChanged(nameof(HasSearchResults));
+        _searchSummary = _searchQuery.Trim().Length == 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{found.TotalMatches} definitions")
+            : found.TotalMatches == 0
+                ? "No matches"
+                : found.IsTruncated
+                    ? string.Create(CultureInfo.InvariantCulture, $"{found.Items.Count} of {found.TotalMatches} matches")
+                    : string.Create(CultureInfo.InvariantCulture, $"{found.TotalMatches} match{(found.TotalMatches == 1 ? string.Empty : "es")}");
+        RaisePropertyChanged(nameof(SearchSummary));
+    }
+
     public void ClearSelection()
     {
         _selectedInstance = null;
@@ -1359,6 +1532,7 @@ public sealed class EditorViewModel : ObservableObject
 
     public void NewProject()
     {
+        CloseSearch();
         CancelDomainEdit();
         ClearTestScriptResult();
         var project = CircuitProject.CreateEmpty("Untitled");
@@ -1392,6 +1566,7 @@ public sealed class EditorViewModel : ObservableObject
         try
         {
             CircuitProject loaded = ProjectSerializer.Load(path);
+            CloseSearch();
             CancelDomainEdit();
             ClearTestScriptResult();
             _project = loaded;
@@ -4354,6 +4529,10 @@ public sealed class EditorViewModel : ObservableObject
         RefreshSimStatus();
         RefreshEvents();
         UpdateCommandStates();
+        if (_isSearchOpen)
+        {
+            RefreshSearchResults();
+        }
         RaisePropertyChanged(nameof(DefinitionTitle));
         RaisePropertyChanged(nameof(ProjectSubtitle));
         RaisePropertyChanged(nameof(ProjectTitle));

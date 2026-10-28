@@ -21,7 +21,8 @@ The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git
 - `workbench-domain-policy.png` (signal-domain inspector with a priority table);
 - `workbench-diagnostics-locate.png` (Diagnostics tab with a Locate action);
 - `workbench-net-navigator.png` (filtered net list with live values);
-- `workbench-interface-reorder.png` (interface rows with move controls).
+- `workbench-interface-reorder.png` (interface rows with move controls);
+- `workbench-search-palette.png` (project-wide find over the counter, with cross-hierarchy net rows).
 
 Launch the editor only when you are ready to use it:
 
@@ -47,6 +48,16 @@ Expected first screen: the light workbench (or your saved theme), the **4-bit bi
 7. Return to **Waveform**. Hover across the plot. Expected: a dashed time cursor follows the pointer, the top stamp reads `t=<tick>` for that position, and the right-hand value column shows each net's value at that tick rather than the latest value. Click at a tick: expected a solid blue **A** line and a header summary `A=<tick>`, with values at A. Shift+click another tick: expected an orange **B** line, the summary gains `B=<tick> · Δ=<ticks>`, and each row's right-hand value reads `Avalue/Bvalue`. Move outside the plot: the dashed hover cursor clears while both pinned markers stay. Right-click inside the plot: both lines and the summary disappear; double-click refits the trace and also clears markers. Change a driven input, advance, and hover an earlier tick: the old value must still read correctly because the snapshot holds the recorded changes. Wheel over the plot to zoom around the pointer. Expected: the tick labels narrow to the chosen range (for example `t=60`…`t=120`), the clock edges stay aligned with the narrower labels, and the header hint names the controls. Drag left or right to pan; the range must stop at tick 0 and at the simulation end. Click **Advance** while zoomed: the window must stay where it is. Double-click the plot: the full 0…current trace returns and later advances follow the end again. Click **Begin** (simulation reset) while zoomed: the whole new trace must be shown.
 
 If counter values differ, record the values and diagnostics; this is a correctness failure.
+
+### Project-wide find
+
+1. Press `Ctrl+P` (or click **Find…** in the toolbar). Expected: a centered search palette covers the workbench, the query box has focus, and the summary reads the project's definition count. `Esc`, the `×` button, or a click on the dimmed backdrop closes it without changing the project.
+2. Type `clk`. Expected: rows from every definition, each labeled `NET` and naming its owning definition on the right; nets in the open definition rank first. The summary reports the full match count. Scroll the list; the panel stays fixed and the rows scroll inside it.
+3. Clear the query and type `carry gate`. Expected: only targets whose combined fields contain both terms remain; ordinary matches show `PART` or `NET`, and a nonsensical query such as `zzzz` shows “No definition, instance, or net matches these terms.”
+4. Type `q0_net`, press `↓` a few times and `↑`, then `Enter`. Expected: the owning definition opens, the target instance or net is selected, the canvas centers on it, the status bar names the target, and the palette closes. Repeat with a definition name and confirm it opens directly without changing the simulation.
+5. Open a net result from another definition, then use `←`/`→` hierarchy navigation. Expected: the normal definition trail records the search jump like any other navigation.
+6. Reopen the palette with `Ctrl+K` and double-click a row. Expected: it behaves like `Enter`; double-clicking outside the panel does not activate a hidden row.
+7. Before and after a search jump, check the simulation time and values. Expected: neither changes. Searching must not dirty the project. Switch to Dark and repeat steps 1–2: the panel, selected row, kind labels, and context text must remain legible.
 
 ### Project settings
 
@@ -487,6 +498,7 @@ Do not file these as new failures until they change in the README:
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; filtered `edges` and ordered `sequence` blocks cover direction and order; `expectRelation` compares two pins or nets with one typed operator and requires a shared domain; value assertions, `expectRelation`, `transitions.expectNet`, `edges.expectNet`, and sequence `net` items all read authored internal nets as well as interface pins. The CLI can run a folder as a suite, and the editor can run one script or a folder; both editor paths run against a snapshot on a background thread and check cancellation inside long windows as well as between scripts. The suite result lists only failing or errored scripts individually. The editor's result panel is transient, and a structural or behaviour-affecting edit marks it stale; presentation-only moves, labels, colors, and routes do not. Rerun after any stale notice for a current verdict;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
+- project-wide find is literal substring matching over definitions, instances, and nets; it is not fuzzy, does not index pin names, signal values, or files on disk, caps its visible list at 60 rows, and has no recent-search history. The open definition only breaks ties and never narrows the search;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.
 
 ## Isolation statement

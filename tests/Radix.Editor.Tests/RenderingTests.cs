@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using System.Runtime.InteropServices;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
@@ -51,6 +53,65 @@ public sealed class RenderingTests
         window.Close();
 
         Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
+    public void FindPaletteRendersMixedProjectResults()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        viewModel.OpenSearch();
+        viewModel.SearchQuery = "clk";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(viewModel.IsSearchOpen);
+        Assert.NotEmpty(viewModel.SearchResults);
+        Assert.NotNull(window.FindControl<TextBox>("SearchBox"));
+        Assert.NotNull(window.FindControl<ListBox>("SearchResultsList"));
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-search-palette.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
+    public void FindPaletteOpensAndActivatesFromTheKeyboard()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        window.KeyPressQwerty(PhysicalKey.P, RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(viewModel.IsSearchOpen);
+        Assert.True(window.FindControl<TextBox>("SearchBox")!.IsFocused);
+
+        viewModel.SearchQuery = "clk";
+        Dispatcher.UIThread.RunJobs();
+        window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, "\r");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(viewModel.IsSearchOpen);
+        Assert.False(string.IsNullOrEmpty(viewModel.SelectedNetId));
+
+        window.KeyPressQwerty(PhysicalKey.K, RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(viewModel.IsSearchOpen);
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, "\u001b");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(viewModel.IsSearchOpen);
+
+        window.Close();
     }
 
     [AvaloniaFact]
