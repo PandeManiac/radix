@@ -657,7 +657,7 @@
           </TabItem>
 
           <TabItem Header="Sweep">
-            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="10,8,12,10">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Margin="10,8,12,10">
               <TextBlock
                 Text="Drives every combination of the current definition's input pins and reads its outputs after settling. Each row restarts from power-on state, so sequential circuits are not chained between rows."
                 Classes="muted"
@@ -679,7 +679,31 @@
                 FontSize="10"
                 TextWrapping="Wrap"
                 Margin="0,0,0,5" />
-              <Border Grid.Row="3" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
+              <Border
+                Grid.Row="3"
+                IsVisible="{Binding IsSweepRunning}"
+                Background="{DynamicResource App.AccentSoft}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="8,6"
+                Margin="0,0,0,6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Sweeping…" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
+                    <ProgressBar
+                      Minimum="0"
+                      Maximum="100"
+                      Value="{Binding SweepProgressValue}"
+                      Height="6"
+                      Foreground="{DynamicResource App.Accent}"
+                      Background="{DynamicResource App.SubtleBackground}" />
+                    <TextBlock Text="{Binding SweepProgressText}" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="tool" Content="Cancel" Command="{Binding CancelSweepCommand}" VerticalAlignment="Center" />
+                </Grid>
+              </Border>
+              <Border Grid.Row="4" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
                 <Grid>
                   <TextBlock
                     Text="No sweep yet. Set the settle window and run it to see every input combination."

@@ -21,6 +21,12 @@ public sealed record SweepPort(string PinId, string Name, SignalDomain Domain);
 /// <summary>One input combination and the outputs observed after settling.</summary>
 public sealed record SweepRow(IReadOnlyList<int> Inputs, IReadOnlyList<int> Outputs);
 
+/// <summary>How many sweep rows have finished, for a progress display.</summary>
+public readonly record struct SweepProgress(int CompletedRows, int TotalRows)
+{
+    public double Fraction => TotalRows <= 0 ? 0 : (double)CompletedRows / TotalRows;
+}
+
 /// <summary>Rows are ordered by input declaration: the first input changes slowest.</summary>
 public sealed class InputSweepResult
 {
@@ -66,9 +72,12 @@ public static class InputSweep
         CircuitProject project,
         string? definitionId = null,
         long settleTicks = 0,
-        int maxRows = DefaultMaxRows)
+        int maxRows = DefaultMaxRows,
+        IProgress<SweepProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
+        cancellationToken.ThrowIfCancellationRequested();
         if (settleTicks < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(settleTicks), "Settle ticks must be non-negative.");
@@ -126,11 +135,15 @@ public static class InputSweep
             RecordTrace = false,
         };
         var engine = new SimulationEngine(circuit, options);
-        var rows = new List<SweepRow>((int)rowCount);
+        int totalRows = (int)rowCount;
+        int reportEvery = Math.Max(1, totalRows / 100);
+        var rows = new List<SweepRow>(totalRows);
         var combination = new int[inputs.Count];
+        progress?.Report(new SweepProgress(0, totalRows));
 
         for (long row = 0; row < rowCount; row++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             engine.Reset();
             engine.AdvanceTo(0);
             for (int i = 0; i < inputs.Count; i++)
@@ -159,6 +172,13 @@ public static class InputSweep
             }
 
             rows.Add(new SweepRow(inputValues, outputValues));
+
+            long completed = row + 1;
+            if (progress is not null &&
+                (completed == rowCount || completed % reportEvery == 0))
+            {
+                progress.Report(new SweepProgress((int)completed, totalRows));
+            }
 
             for (int i = inputs.Count - 1; i >= 0; i--)
             {

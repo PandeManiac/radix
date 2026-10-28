@@ -108,6 +108,13 @@ public sealed class EditorViewModel : ObservableObject
     private string _sweepSummary = string.Empty;
     private bool _hasSweepResult;
     private bool _hasSweepError;
+    private bool _isSweepRunning;
+    private string _sweepProgressText = string.Empty;
+    private double _sweepProgressValue;
+    private int _sweepGeneration;
+    private CancellationTokenSource? _sweepCancellation;
+    private readonly RelayCommand _runSweepCommand;
+    private readonly RelayCommand _cancelSweepCommand;
     private bool _hasLookupTable;
     private string _lookupTableSummary = string.Empty;
     private string? _lookupTableInstanceId;
@@ -185,7 +192,12 @@ public sealed class EditorViewModel : ObservableObject
         SettleCommand = new RelayCommand(Settle);
         ClearDrivesCommand = new RelayCommand(ClearDrives);
         ClearTestScriptResultCommand = new RelayCommand(ClearTestScriptResult);
-        RunSweepCommand = new RelayCommand(() => RunSweep());
+        _runSweepCommand = new RelayCommand(
+            () => _ = RunSweepAsync(),
+            () => !IsSweepRunning);
+        RunSweepCommand = _runSweepCommand;
+        _cancelSweepCommand = new RelayCommand(CancelSweep, () => IsSweepRunning);
+        CancelSweepCommand = _cancelSweepCommand;
         ClearSweepResultCommand = new RelayCommand(ClearSweepResult);
         ApplyProjectSettingsCommand = new RelayCommand(() => ApplyProjectSettings());
         ReloadProjectSettingsCommand = new RelayCommand(ReloadProjectSettings);
@@ -407,6 +419,8 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ClearSweepResultCommand { get; }
 
+    public ICommand CancelSweepCommand { get; }
+
     public ICommand ApplyProjectSettingsCommand { get; }
 
     public ICommand ReloadProjectSettingsCommand { get; }
@@ -557,6 +571,36 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasSweepError;
         private set => SetField(ref _hasSweepError, value);
+    }
+
+    /// <summary>True while a sweep runs on a background thread.</summary>
+    public bool IsSweepRunning
+    {
+        get => _isSweepRunning;
+        private set
+        {
+            if (!SetField(ref _isSweepRunning, value))
+            {
+                return;
+            }
+
+            _runSweepCommand?.RaiseCanExecuteChanged();
+            _cancelSweepCommand?.RaiseCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Completed and total sweep rows while a run is in progress.</summary>
+    public string SweepProgressText
+    {
+        get => _sweepProgressText;
+        private set => SetField(ref _sweepProgressText, value);
+    }
+
+    /// <summary>Progress as a percentage from 0 to 100 for the progress bar.</summary>
+    public double SweepProgressValue
+    {
+        get => _sweepProgressValue;
+        private set => SetField(ref _sweepProgressValue, value);
     }
 
     public string ZoomText => "100%";
@@ -1372,11 +1416,20 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>
     /// Sweeps every interface-input combination of the current definition in an
-    /// isolated engine, leaving the live simulation untouched. Results are cleared
-    /// whenever the project changes so a table can never describe stale structure.
+    /// isolated engine, leaving the live simulation untouched. The sweep runs on a
+    /// background thread against a serialized snapshot, so editing the live project
+    /// cannot race it; results are cleared whenever the project changes so a table can
+    /// never describe stale structure.
     /// </summary>
-    public bool RunSweep()
+    public async Task<bool> RunSweepAsync(
+        IProgress<SweepProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
+        if (IsSweepRunning)
+        {
+            return false;
+        }
+
         ClearSweepResult();
         if (!int.TryParse(SweepSettleTicksText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int settle) ||
             settle < 0)
@@ -1390,38 +1443,140 @@ public sealed class EditorViewModel : ObservableObject
             return FailSweep("max rows must be a positive integer.");
         }
 
+        int generation = _sweepGeneration;
+        string definitionId = Definition.Id;
+        string definitionName = Definition.Name;
+        SynchronizationContext? progressContext = SynchronizationContext.Current;
+        var sink = new InlineProgress<SweepProgress>(report =>
+        {
+            progress?.Report(report);
+            if (progressContext is null)
+            {
+                UpdateSweepProgress(generation, report);
+            }
+            else
+            {
+                progressContext.Post(_ => UpdateSweepProgress(generation, report), null);
+            }
+        });
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _sweepCancellation = linked;
+        IsSweepRunning = true;
+        SweepProgressText = "Preparing sweep…";
+        SweepProgressValue = 0;
         try
         {
-            InputSweepResult result = InputSweep.Run(_project, Definition.Id, settle, maxRows);
+            // Snapshot on the UI thread before yielding, so the background sweep sees a
+            // consistent project even if the user keeps editing the live one.
+            string snapshotJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            InputSweepResult result = await Task.Run(
+                () =>
+                {
+                    CircuitProject snapshot = ProjectSerializer.LoadFromString(snapshotJson, validate: false);
+                    return InputSweep.Run(snapshot, definitionId, settle, maxRows, sink, linked.Token);
+                },
+                linked.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            if (generation != _sweepGeneration)
+            {
+                return false;
+            }
+
             SweepResultText = InputSweepTable.Format(result);
             SweepSummary = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{Definition.Id} · {result.Inputs.Count} input(s) → {result.Outputs.Count} output(s) · " +
+                $"{result.DefinitionId} · {result.Inputs.Count} input(s) → {result.Outputs.Count} output(s) · " +
                 $"{result.Rows.Count} row(s) · settle {result.SettleTicks} tick(s)");
             HasSweepResult = true;
             StatusText = string.Create(
                 CultureInfo.InvariantCulture,
-                $"Sweep: {result.Rows.Count} row(s) on {Definition.Name}");
+                $"Sweep: {result.Rows.Count} row(s) on {definitionName}");
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            if (generation == _sweepGeneration && IsSweepRunning)
+            {
+                SweepSummary = "Sweep cancelled.";
+                HasSweepResult = false;
+                HasSweepError = false;
+                StatusText = "Sweep cancelled.";
+            }
+
+            return false;
         }
         catch (InputSweepException exception)
         {
-            return FailSweep(exception.Message);
+            return generation == _sweepGeneration && FailSweep(exception.Message);
         }
         catch (CircuitValidationException exception)
         {
             Diagnostic? first = exception.Diagnostics.FirstOrDefault(d =>
                 d.Severity == DiagnosticSeverity.Error);
-            return FailSweep(first?.Message ?? exception.Message);
+            return generation == _sweepGeneration && FailSweep(first?.Message ?? exception.Message);
+        }
+        catch (ProjectFormatException exception)
+        {
+            return generation == _sweepGeneration && FailSweep(exception.Message);
         }
         catch (ArgumentException exception)
         {
-            return FailSweep(exception.Message);
+            return generation == _sweepGeneration && FailSweep(exception.Message);
         }
+        catch (Exception exception)
+        {
+            return generation == _sweepGeneration && FailSweep(exception.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_sweepCancellation, linked))
+            {
+                _sweepCancellation = null;
+            }
+
+            if (generation == _sweepGeneration)
+            {
+                IsSweepRunning = false;
+                SweepProgressText = string.Empty;
+                SweepProgressValue = 0;
+            }
+        }
+    }
+
+    private void UpdateSweepProgress(int generation, SweepProgress report)
+    {
+        if (generation != _sweepGeneration || !IsSweepRunning)
+        {
+            return;
+        }
+
+        SweepProgressText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.CompletedRows} / {report.TotalRows} rows");
+        SweepProgressValue = report.Fraction * 100;
+    }
+
+    /// <summary>Requests cancellation of a running sweep; the result panel reports it.</summary>
+    public void CancelSweep()
+    {
+        if (!IsSweepRunning)
+        {
+            return;
+        }
+
+        _sweepCancellation?.Cancel();
+        StatusText = "Cancelling sweep…";
     }
 
     public void ClearSweepResult()
     {
+        _sweepGeneration++;
+        _sweepCancellation?.Cancel();
+        _sweepCancellation = null;
+        IsSweepRunning = false;
+        SweepProgressText = string.Empty;
+        SweepProgressValue = 0;
         SweepResultText = string.Empty;
         SweepSummary = string.Empty;
         HasSweepResult = false;
@@ -1435,6 +1590,11 @@ public sealed class EditorViewModel : ObservableObject
         HasSweepError = true;
         StatusText = "Sweep failed: " + message;
         return false;
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 
     public void OpenRecentProject(string path) => RecentProjectOpenRequested?.Invoke(path);

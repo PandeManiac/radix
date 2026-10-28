@@ -1,5 +1,6 @@
 using Avalonia;
 using Radix.Core;
+using Radix.Core.Analysis;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
@@ -1850,12 +1851,14 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
-    public void SweepRendersEveryInputCombinationOfTheCurrentDefinition()
+    public async Task SweepRendersEveryInputCombinationOfTheCurrentDefinition()
     {
         EditorViewModel viewModel = CreateLookupEditor();
         viewModel.SweepSettleTicksText = "2";
 
-        Assert.True(viewModel.RunSweep());
+        Assert.True(await viewModel.RunSweepAsync());
+        Assert.False(viewModel.IsSweepRunning);
+        Assert.Equal(string.Empty, viewModel.SweepProgressText);
 
         Assert.True(viewModel.HasSweepResult);
         Assert.False(viewModel.HasSweepError);
@@ -1870,19 +1873,19 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
-    public void SweepRejectsBadLimitsAndOversizedInputSpaces()
+    public async Task SweepRejectsBadLimitsAndOversizedInputSpaces()
     {
         EditorViewModel viewModel = CreateLookupEditor();
 
         viewModel.SweepSettleTicksText = "-1";
-        Assert.False(viewModel.RunSweep());
+        Assert.False(await viewModel.RunSweepAsync());
         Assert.True(viewModel.HasSweepError);
         Assert.Contains("settle ticks", viewModel.SweepSummary, StringComparison.Ordinal);
         Assert.Equal(string.Empty, viewModel.SweepResultText);
 
         viewModel.SweepSettleTicksText = "2";
         viewModel.SweepMaxRowsText = "2";
-        Assert.False(viewModel.RunSweep());
+        Assert.False(await viewModel.RunSweepAsync());
         Assert.True(viewModel.HasSweepError);
         Assert.Contains("above the limit of 2", viewModel.SweepSummary, StringComparison.Ordinal);
 
@@ -1893,10 +1896,10 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
-    public void SweepResultIsDroppedByStructuralEditsButSurvivesPresentationEdits()
+    public async Task SweepResultIsDroppedByStructuralEditsButSurvivesPresentationEdits()
     {
         EditorViewModel viewModel = CreateLookupEditor();
-        Assert.True(viewModel.RunSweep());
+        Assert.True(await viewModel.RunSweepAsync());
 
         ComponentInstance gate = viewModel.Definition.FindInstance("g")!;
         viewModel.NudgeInstance(gate.Id, 8, 0);
@@ -1905,6 +1908,29 @@ public sealed class EditorViewModelTests
         viewModel.PlaceLibraryComponent(ComponentCatalog.Components.First(c => c.Name == "NOT gate"));
         Assert.False(viewModel.HasSweepResult);
         Assert.Equal(string.Empty, viewModel.SweepResultText);
+    }
+
+    [Fact]
+    public async Task SweepCanBeCancelledAndRestoresIdleState()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        var cancelling = new InlineProgress<SweepProgress>(report =>
+        {
+            if (report.CompletedRows >= 1)
+            {
+                viewModel.CancelSweep();
+            }
+        });
+
+        bool completed = await viewModel.RunSweepAsync(cancelling);
+
+        Assert.False(completed);
+        Assert.False(viewModel.IsSweepRunning);
+        Assert.False(viewModel.HasSweepResult);
+        Assert.Equal(string.Empty, viewModel.SweepResultText);
+        Assert.Equal("Sweep cancelled.", viewModel.SweepSummary);
+        Assert.True(viewModel.RunSweepCommand.CanExecute(null));
+        Assert.False(viewModel.CancelSweepCommand.CanExecute(null));
     }
 
     private static EditorViewModel CreateLookupEditor()
@@ -1956,6 +1982,11 @@ public sealed class EditorViewModelTests
 
     private static string PinValue(EditorViewModel viewModel, string pinId) =>
         viewModel.IoPins.Single(p => p.PinId == pinId).ValueText;
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
 
     private static string AddInputPin(
         EditorViewModel viewModel,

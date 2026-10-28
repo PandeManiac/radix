@@ -106,6 +106,46 @@ public sealed class InputSweepTests
     }
 
     [Fact]
+    public void SweepReportsProgressAndHonorsCancellation()
+    {
+        CircuitProject project = BinaryGate([0, 0, 0, 1]);
+        var reports = new List<SweepProgress>();
+
+        InputSweepResult result = InputSweep.Run(
+            project,
+            "and",
+            progress: new InlineProgress<SweepProgress>(reports.Add));
+
+        Assert.Equal(4, result.Rows.Count);
+        Assert.Equal(0, reports[0].CompletedRows);
+        Assert.Equal(4, reports[^1].CompletedRows);
+        Assert.Equal(4, reports[^1].TotalRows);
+        Assert.Equal(1.0, reports[^1].Fraction);
+        Assert.Equal([1, 2, 3, 4], reports.Skip(1).Select(report => report.CompletedRows).ToArray());
+
+        using var cancellation = new CancellationTokenSource();
+        var cancelling = new InlineProgress<SweepProgress>(report =>
+        {
+            if (report.CompletedRows >= 1)
+            {
+                cancellation.Cancel();
+            }
+        });
+        Assert.Throws<OperationCanceledException>(() => InputSweep.Run(
+            project,
+            "and",
+            progress: cancelling,
+            cancellationToken: cancellation.Token));
+
+        using var alreadyCancelled = new CancellationTokenSource();
+        alreadyCancelled.Cancel();
+        Assert.Throws<OperationCanceledException>(() => InputSweep.Run(
+            project,
+            "and",
+            cancellationToken: alreadyCancelled.Token));
+    }
+
+    [Fact]
     public void SweepRejectsUnknownDefinitionsAndInvalidLimits()
     {
         CircuitProject project = BinaryGate([0, 1]);
@@ -116,6 +156,11 @@ public sealed class InputSweepTests
             StringComparison.Ordinal);
         Assert.Throws<ArgumentOutOfRangeException>(() => InputSweep.Run(project, "and", settleTicks: -1));
         Assert.Throws<ArgumentOutOfRangeException>(() => InputSweep.Run(project, "and", maxRows: 0));
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 
     private static CircuitProject BinaryGate(IEnumerable<int> table)

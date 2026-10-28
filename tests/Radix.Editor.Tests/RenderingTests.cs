@@ -533,7 +533,7 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
-    public void SweepTabRendersTableInDarkTheme()
+    public async Task SweepTabRendersTableInDarkTheme()
     {
         Application? application = Application.Current;
         Assert.NotNull(application);
@@ -554,7 +554,7 @@ public sealed class RenderingTests
             root.Connect(y, root.Pin("g", "out"));
             var viewModel = new EditorViewModel(builder.Build("root"));
             viewModel.SweepSettleTicksText = "2";
-            Assert.True(viewModel.RunSweep());
+            Assert.True(await viewModel.RunSweepAsync());
 
             window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
             window.Show();

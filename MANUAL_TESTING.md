@@ -271,6 +271,8 @@ These steps use a terminal only; they never open a window. Run from the reposito
 4. Set settle ticks back to `10` and max rows to `4`, then run. Expected: `Sweep error: Sweep needs at least 8 rows, above the limit of 4. Reduce the input set or raise --max-rows.` in the error colour, with no table. **Clear** removes the message.
 5. Run a sweep, then drag a part to a new position. Expected: the table remains, because position is presentation only. Delete a part instead: the table disappears as soon as the edit commits, so it never describes stale wiring.
 6. Open a definition with ternary input pins and run a sweep. Expected: rows enumerate that pin's own domain labels (for example `-`, `0`, `+`) in declaration order, with no assumption that inputs are binary.
+7. Open `examples/8-bit-alu.radix`, set max rows to `262144`, and click **Run sweep**. Expected: a progress panel appears with **Cancel**, the progress bar and `x / 262144 rows` update, and **Run sweep** is disabled while the canvas remains interactive. Click **Cancel**. Expected: the run stops promptly, the panel reports `Sweep cancelled.`, no partial table appears, and **Run sweep** becomes enabled again. This requires enough input pins that the sweep does not finish instantly; adjust max rows only to exceed the product of the input domain sizes.
+8. Start the same large sweep again, then drag a part during the run. Expected: the drag remains responsive and the sweep continues, because placement is presentation-only. Delete a part instead: the run is cancelled immediately and no table appears. Structural edits invalidate the snapshot; presentation edits do not.
 
 ## 14. Ternary multi-trit addition
 
@@ -468,7 +470,7 @@ Do not file these as new failures until they change in the README:
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
-- a workbench sweep runs synchronously on the UI thread: the row limit bounds the work and rejects oversized products before simulating, but the window is unresponsive while a large permitted sweep runs;
+- a workbench sweep runs on a background thread but checks cancellation only between rows; a single expensive row can delay cancellation, and very large permitted sweeps still consume CPU until stopped. Drag and presentation edits leave a run alone; structural edits cancel it because its snapshot is then obsolete;
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; filtered `edges` and ordered `sequence` blocks cover direction and order; value assertions, `transitions.expectNet`, `edges.expectNet`, and sequence `net` items all read authored internal nets as well as interface pins. The editor's result panel is transient and is not marked stale when the circuit is edited afterward; rerun for a current result;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
