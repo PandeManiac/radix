@@ -60,7 +60,7 @@
     <Grid Grid.Row="1" ColumnDefinitions="306,*,382" Margin="8">
       <!-- Left panel -->
       <Border Grid.Column="0" Background="{DynamicResource App.PanelBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6" Padding="8">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer x:Name="LeftScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
             <TextBlock Text="{Binding ProjectTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" Margin="4,4,4,0" />
             <TextBlock Text="{Binding ProjectSubtitle}" Classes="muted" FontSize="10.5" Margin="4,1,4,2" TextWrapping="Wrap" />
@@ -117,7 +117,7 @@
                 <DataTemplate x:DataType="vm:PinListItem">
                   <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="5,3" Margin="0,2">
                     <StackPanel Spacing="3">
-                      <Grid ColumnDefinitions="24,*,Auto,Auto">
+                      <Grid ColumnDefinitions="24,*,Auto,Auto,Auto,Auto">
                         <TextBlock Text="{Binding DirectionText}" FontSize="9" Foreground="{DynamicResource App.TextSecondary}" VerticalAlignment="Center" />
                         <TextBox
                             Grid.Column="1"
@@ -127,8 +127,10 @@
                             LostFocus="PinName_LostFocus"
                             KeyDown="PinName_KeyDown"
                             ToolTip.Tip="Pin display name; press Enter or leave the field to commit" />
-                        <Button Grid.Column="2" Classes="tool" Content="⇄" Click="PinDirection_Click" Padding="5,1" ToolTip.Tip="Flip input/output direction" />
-                        <Button Grid.Column="3" Classes="tool" Content="×" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove pin and its net" Padding="5,1" />
+                        <Button Grid.Column="2" Classes="tool" Content="↑" Command="{Binding MoveUpCommand}" Padding="4,1" ToolTip.Tip="Move pin up; declaration order affects canvas layout and the default order of new numeric lanes" />
+                        <Button Grid.Column="3" Classes="tool" Content="↓" Command="{Binding MoveDownCommand}" Padding="4,1" ToolTip.Tip="Move pin down; net bindings follow the pin ID, not its position" />
+                        <Button Grid.Column="4" Classes="tool" Content="⇄" Click="PinDirection_Click" Padding="5,1" ToolTip.Tip="Flip input/output direction" />
+                        <Button Grid.Column="5" Classes="tool" Content="×" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove pin and its net" Padding="5,1" />
                       </Grid>
                       <ComboBox
                           ItemsSource="{Binding Domains}"

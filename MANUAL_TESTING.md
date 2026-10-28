@@ -20,7 +20,8 @@ The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git
 - `workbench-lane-editor.png` (numeric lane loaded into the edit form);
 - `workbench-domain-policy.png` (signal-domain inspector with a priority table);
 - `workbench-diagnostics-locate.png` (Diagnostics tab with a Locate action);
-- `workbench-net-navigator.png` (filtered net list with live values).
+- `workbench-net-navigator.png` (filtered net list with live values);
+- `workbench-interface-reorder.png` (interface rows with move controls).
 
 Launch the editor only when you are ready to use it:
 
@@ -104,7 +105,8 @@ If counter values differ, record the values and diagnostics; this is a correctne
 4. Undo. Expected: pin, binding, and generated net label are removed together.
 5. In the Interface list, edit a pin's name and press Enter. Expected: the name updates, its bound net label follows when the net was using the old name, and one undo restores both.
 6. Click `⇄` on a pin. Expected: its direction flips in the Interface list, I/O PINS, and any instance of this definition. Change its domain with the picker. Expected: the pin's port net adopts the same domain and an incompatible existing connection is reported in Diagnostics rather than silently rewritten.
-7. Remove a pin, then undo. Expected: the pin, binding, generated net, and its wire all return in one step. If the definition has instances elsewhere, their nets lose references to that pin (and empty unbound nets disappear); the status bar reports how many dangling connections were pruned, and undo restores everything.
+7. Move a pin with `↑`/`↓`. Expected: it changes position in the Interface list and on every instance; its bound net and lane pin lists are unchanged, `↑` is disabled on the first pin and `↓` on the last, and one undo restores the previous order. Add a numeric lane afterward and verify the default pin order follows the new declaration order.
+8. Remove a pin, then undo. Expected: the pin, binding, generated net, and its wire all return in one step. If the definition has instances elsewhere, their nets lose references to that pin (and empty unbound nets disappear); the status bar reports how many dangling connections were pruned, and undo restores everything.
 
 ## 7. Numeric lanes
 
@@ -112,7 +114,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 2. Begin, then advance 100 ticks. Expected: the lane value tracks the four Q outputs as an unsigned binary number (`5` at t=100), and the value changes when you advance again. A fixed **NUMERIC LANES** legend at the lower-left of the canvas mirrors the value; it stays readable while zooming and panning.
 3. Expected: the output-only `Count` lane has no drive box. Attempting to drive it through code reports that every pin must be an input.
 4. Delete the lane, then undo. Expected: it returns, one undo step.
-5. Add a lane: select `Unsigned binary`, tick `Q0`..`Q3` in a different order check sequence, enter a name, click **Add numeric lane**. Expected: the lane uses declaration order (Q0 first, least significant) regardless of tick order, and the card explains the grouping.
+5. Add a lane: select `Unsigned binary`, tick `Q0`..`Q3` in a different order check sequence, enter a name, click **Add numeric lane**. Expected: the lane uses declaration order (Q0 first, least significant) regardless of tick order, and the card explains the grouping. Move a pin with `↑`/`↓` before adding another lane to verify the new default order; existing lanes keep the order saved with them.
 6. Edit a lane: click **Edit** on a lane card. Expected: the form shows that lane's name, format, and ticked pins, the button changes to **Update numeric lane**, and **Cancel lane edit** appears. Change the name, choose another format, untick one pin, and click **Update numeric lane**. Expected: the same card updates in place, keeps its lane, and all three changes land as one undo step. Undo restores the name, format, and pin set together. Repeat, change fields, then click **Cancel lane edit**. Expected: the lane and project are unchanged, the form returns to add mode, and the button reads **Add numeric lane**. Before saving an edit, clear every pin and click **Update numeric lane**. Expected: refused with a message, and the form stays in edit mode so the draft is not lost. Remove the lane while editing it. Expected: the lane disappears and the form exits edit mode.
 7. Add a lane with mixed domains (one binary and one ternary pin). Expected: refused with a message that a lane groups one domain; no lane is created.
 8. Open `examples/accumulator-cpu.radix`. Begin, type `9` in the **Data** lane box, and press Enter. Expected: `D0`/`D3` become 1 and `D1`/`D2` become 0 (9 = 1001 binary, first pin least significant), and the lane reads `9`. Click **Drive** instead of pressing Enter and verify the same result.

@@ -1878,6 +1878,28 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = $"Removed pin {name}{extra}";
     }
 
+    /// <summary>
+    /// Changes interface declaration order. Pin refs are stable IDs, so existing
+    /// connections and lane pin lists are untouched; new lanes read the new order.
+    /// </summary>
+    public void MovePin(string pinId, int offset)
+    {
+        if (Definition.FindPin(pinId) is not PinDeclaration pin)
+        {
+            return;
+        }
+
+        PushUndo();
+        if (!DefinitionEditor.MovePin(Definition, pinId, offset))
+        {
+            _undo.Pop();
+            return;
+        }
+
+        AfterMutation(structural: true);
+        StatusText = $"Moved interface pin '{pin.Name}' {(offset < 0 ? "up" : "down")}";
+    }
+
     public void ChangeNetDomain(string domainId)
     {
         if (_selectedNet is null || _project.FindDomain(domainId) is null ||
@@ -2714,14 +2736,19 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshPins()
     {
         Pins.Clear();
-        foreach (PinDeclaration pin in Definition.Pins)
+        for (int i = 0; i < Definition.Pins.Count; i++)
         {
+            PinDeclaration pin = Definition.Pins[i];
             string pinId = pin.Id;
+            bool canMoveUp = i > 0;
+            bool canMoveDown = i < Definition.Pins.Count - 1;
             Net? net = Definition.FindPortNet(pinId);
             Pins.Add(new PinListItem(
                 pin,
                 net?.Label ?? net?.Id ?? "unbound",
                 Domains,
+                new RelayCommand(() => MovePin(pinId, -1), () => canMoveUp),
+                new RelayCommand(() => MovePin(pinId, 1), () => canMoveDown),
                 new RelayCommand(() => RemovePin(pinId))));
         }
     }

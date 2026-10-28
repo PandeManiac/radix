@@ -226,6 +226,63 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void InterfacePinsCanBeReorderedWithoutChangingBindingsOrLanes()
+    {
+        var viewModel = CreateEmptyEditor();
+        string a = AddInputPin(viewModel, "A");
+        string b = AddInputPin(viewModel, "B");
+        string c = AddInputPin(viewModel, "C");
+        var portNets = viewModel.Definition.Pins.ToDictionary(
+            pin => pin.Id,
+            pin => viewModel.Definition.FindPortNet(pin.Id)!.Id);
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = true;
+        }
+
+        viewModel.NewLaneName = "Inputs";
+        viewModel.AddNumericLane();
+        NumericLane lane = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal([a, b, c], lane.PinIds);
+
+        Assert.False(viewModel.Pins[0].MoveUpCommand.CanExecute(null));
+        Assert.False(viewModel.Pins[^1].MoveDownCommand.CanExecute(null));
+
+        viewModel.Pins.Single(pin => pin.Id == c).MoveUpCommand.Execute(null);
+        Assert.Equal([a, c, b], viewModel.Definition.Pins.Select(pin => pin.Id));
+        viewModel.Pins.Single(pin => pin.Id == c).MoveUpCommand.Execute(null);
+        Assert.Equal([c, a, b], viewModel.Definition.Pins.Select(pin => pin.Id));
+        Assert.Equal([a, b, c], lane.PinIds);
+        Assert.Equal(
+            portNets,
+            viewModel.Definition.Pins.ToDictionary(pin => pin.Id, pin => viewModel.Definition.FindPortNet(pin.Id)!.Id));
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = true;
+        }
+
+        viewModel.NewLaneName = "Reordered";
+        viewModel.AddNumericLane();
+        NumericLane reordered = viewModel.Definition.NumericLanes.Single(candidate => candidate.Name == "Reordered");
+        Assert.Equal([c, a, b], reordered.PinIds);
+
+        CircuitProject loaded = Core.Serialization.ProjectSerializer.LoadFromString(
+            Core.Serialization.ProjectSerializer.SaveToString(viewModel.Project),
+            validate: false);
+        Assert.Equal(
+            [c, a, b],
+            loaded.RequireDefinition(viewModel.Definition.Id).Pins.Select(pin => pin.Id));
+
+        viewModel.Undo();
+        viewModel.Undo();
+        viewModel.Undo();
+        Assert.Equal([a, b, c], viewModel.Definition.Pins.Select(pin => pin.Id));
+        Assert.Single(viewModel.Definition.NumericLanes);
+    }
+
+    [Fact]
     public void NewProjectContainsStandardDomainAndRoot()
     {
         var viewModel = CreateEmptyEditor();

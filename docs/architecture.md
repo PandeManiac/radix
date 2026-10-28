@@ -296,6 +296,7 @@ Editor-side structural rules:
 - A net bound to an interface pin cannot be deleted directly; remove the pin first.
 - Extracting a selection moves wholly-internal nets into the new definition, turns boundary nets into directional pins, and replaces the selected instances with one instance. A boundary net with active drivers on both sides is refused because the interface model has no inout direction.
 - Promoting a net binds the existing net to a new interface pin; it does not create or merge nets.
+- Interface declaration order is presentation order: nets and lane pin lists reference stable pin IDs, so moving a pin changes canvas layout and the default order offered to new lanes but never reconnects anything.
 - Paste and library import are captured as one undo step. Both operate on deep copies so a refused operation cannot leave half-mutated connectivity.
 
 ### 10.3 Simulation root choice

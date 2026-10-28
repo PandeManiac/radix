@@ -72,6 +72,31 @@ public static class DefinitionEditor
         return pin;
     }
 
+    /// <summary>
+    /// Moves an interface pin within the declaration order. Order affects canvas
+    /// pin layout and the default order of new numeric lanes; nets bind by pin ID,
+    /// so connectivity is unchanged.
+    /// </summary>
+    public static bool MovePin(CircuitDefinition definition, string pinId, int offset)
+    {
+        int index = definition.Pins.FindIndex(pin => string.Equals(pin.Id, pinId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        int target = index + offset;
+        if (target < 0 || target >= definition.Pins.Count || offset == 0)
+        {
+            return false;
+        }
+
+        PinDeclaration pin = definition.Pins[index];
+        definition.Pins.RemoveAt(index);
+        definition.Pins.Insert(target, pin);
+        return true;
+    }
+
     public static bool RemovePin(CircuitDefinition definition, string pinId)
     {
         PinDeclaration? pin = definition.FindPin(pinId);

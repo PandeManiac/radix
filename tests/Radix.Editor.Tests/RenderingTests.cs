@@ -220,6 +220,44 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void InterfacePinReorderControlsRenderAndExecute()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var scroll = Assert.IsType<ScrollViewer>(window.FindControl<ScrollViewer>("LeftScroll"));
+        scroll.ScrollToEnd();
+        Dispatcher.UIThread.RunJobs();
+
+        List<Button> up = window.GetVisualDescendants()
+            .OfType<Button>()
+            .Where(button => button.Content is "↑")
+            .ToList();
+        List<Button> down = window.GetVisualDescendants()
+            .OfType<Button>()
+            .Where(button => button.Content is "↓")
+            .ToList();
+        Assert.Equal(viewModel.Definition.Pins.Count, up.Count);
+        Assert.Equal(viewModel.Definition.Pins.Count, down.Count);
+        Assert.True(up[0].Command?.CanExecute(null) == false);
+        Assert.True(down[^1].Command?.CanExecute(null) == false);
+        Assert.True(up[1].Command?.CanExecute(null) == true);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-interface-reorder.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void NetNavigatorRendersFilteredRowsAndLiveValues()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());

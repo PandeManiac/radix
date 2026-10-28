@@ -50,6 +50,8 @@ public sealed class PinListItem
         PinDeclaration pin,
         string netLabel,
         IReadOnlyList<DomainChoice> domains,
+        ICommand moveUpCommand,
+        ICommand moveDownCommand,
         ICommand removeCommand)
     {
         Id = pin.Id;
@@ -59,6 +61,8 @@ public sealed class PinListItem
         NetLabel = netLabel;
         Domains = domains;
         SelectedDomain = domains.FirstOrDefault(domain => domain.Id == pin.DomainId);
+        MoveUpCommand = moveUpCommand;
+        MoveDownCommand = moveDownCommand;
         RemoveCommand = removeCommand;
     }
 
@@ -77,6 +81,10 @@ public sealed class PinListItem
     public DomainChoice? SelectedDomain { get; set; }
 
     public string Summary => $"{DirectionText} · {DomainId} · {NetLabel}";
+
+    public ICommand MoveUpCommand { get; }
+
+    public ICommand MoveDownCommand { get; }
 
     public ICommand RemoveCommand { get; }
 }
