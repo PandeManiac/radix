@@ -75,6 +75,22 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void NetChangedReportsEachResolvedTransitionInOrder()
+    {
+        SimulationEngine engine = Engine(TestCircuits.ClockRoot([5, 5], [0, 1]));
+        var changes = new List<NetChange>();
+        engine.NetChanged += changes.Add;
+
+        engine.AdvanceTo(10);
+
+        Assert.Equal(3, changes.Count);
+        Assert.Equal(engine.NetTransitions, changes.Count);
+        Assert.Equal([0L, 5L, 10L], changes.Select(change => change.Time).ToArray());
+        Assert.Equal([-1, 0, 1], changes.Select(change => change.OldValue).ToArray());
+        Assert.Equal([0, 1, 0], changes.Select(change => change.NewValue).ToArray());
+    }
+
+    [Fact]
     public void PriorityDomainCombinesDrivers()
     {
         var builder = new ProjectBuilder("multi driver");

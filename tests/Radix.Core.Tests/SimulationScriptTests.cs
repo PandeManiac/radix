@@ -412,6 +412,172 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void TransitionWindowCountsTheStartingDriveAndTheEdgeItCauses()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 1 } },
+                {
+                  "at": 20,
+                  "set": { "clk": 1 },
+                  "transitions": { "ticks": 20, "expect": { "clk": 1, "q": 1, "qn": 1 } }
+                },
+                { "at": 40, "expect": { "q": 1, "qn": 0 } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(40, result.FinalTime);
+        Assert.Equal(3, result.StepsExecuted);
+    }
+
+    [Fact]
+    public void TransitionWindowCountsZeroAcrossAStableInterval()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 1 } },
+                { "at": 20, "set": { "clk": 1 }, "within": { "ticks": 10, "expect": { "q": 1 } } },
+                { "at": 40, "transitions": { "ticks": 20, "expect": { "clk": 0, "q": 0, "qn": 0 } } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(60, result.FinalTime);
+    }
+
+    [Fact]
+    public void TransitionWindowFailureReportsExpectedAndObservedCounts()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "d": 1 } },
+                {
+                  "at": 20,
+                  "set": { "clk": 1 },
+                  "transitions": { "ticks": 10, "expect": { "q": 2 } }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(30, failure.At);
+        Assert.Contains(
+            "pin 'q': expected 2 transition(s) between t=20 and t=30, observed 1",
+            failure.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TransitionWindowRejectsUnknownPinsAsFailures()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "transitions": { "ticks": 5, "expect": { "nope": 0 } } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        Assert.Contains("unknown interface pin 'nope'", result.Failures[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMalformedTransitionWindows()
+    {
+        Assert.Contains(
+            "'transitions' needs an explicit 'ticks' value",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "transitions": { "expect": { "q": 1 } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "must be a non-negative integer count",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "transitions": { "ticks": 5, "expect": { "q": -1 } } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "'transitions' needs at least one",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "transitions": { "ticks": 5, "expect": {} } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine 'transitions' with 'within' or 'stable'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    {
+                      "stable": { "ticks": 5, "expect": { "q": 1 } },
+                      "transitions": { "ticks": 5, "expect": { "q": 0 } }
+                    }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "cannot combine a timing window with 'expectHalted: true'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [
+                    { "transitions": { "ticks": 5, "expect": { "q": 0 } }, "expectHalted": true }
+                  ]
+                }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RejectsMalformedStableWindows()
     {
         Assert.Contains(
@@ -448,7 +614,7 @@ public sealed class SimulationScriptTests
             StringComparison.Ordinal);
 
         Assert.Contains(
-            "cannot combine 'stable' with 'expectHalted: true'",
+            "cannot combine a timing window with 'expectHalted: true'",
             Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
                 """
                 {

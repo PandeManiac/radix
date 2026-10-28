@@ -31,7 +31,12 @@
     { "at": 590, "set": { "clk": 2 } },
     { "at": 620, "expect": { "t0": 2, "t1": 2 }, "expectLane": { "count": 8 } },
     { "at": 630, "set": { "clk": 0 } },
-    { "at": 670, "set": { "clk": 2 } },
+    {
+      "at": 670,
+      "set": { "clk": 2 },
+      "transitions": { "ticks": 30, "expect": { "clk": 1, "t0": 1, "t1": 1 } },
+      "description": "the wrap edge changes both trits exactly once"
+    },
     { "at": 700, "expect": { "t0": 0, "t1": 0 }, "expectLane": { "count": 0 }, "description": "wraps after the ninth state" }
   ]
 }

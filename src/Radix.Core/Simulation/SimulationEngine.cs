@@ -83,6 +83,12 @@ public sealed class SimulationEngine
     /// <summary>Bounded trace of all recorded net transitions since reset.</summary>
     public SimulationTrace Trace => _trace;
 
+    /// <summary>
+    /// Raised synchronously after a net's resolved value changes. Observers run inside
+    /// the event loop, so they must be fast and must not mutate the engine.
+    /// </summary>
+    public event Action<NetChange>? NetChanged;
+
     /// <summary>Runtime warnings/errors (driver conflicts, non-convergence).</summary>
     public IReadOnlyList<Diagnostic> RuntimeDiagnostics => _runtimeDiagnostics;
 
@@ -317,6 +323,8 @@ public sealed class SimulationEngine
         {
             _trace.Add(new NetChange(_now, netIndex, oldValue, resolution.Value));
         }
+
+        NetChanged?.Invoke(new NetChange(_now, netIndex, oldValue, resolution.Value));
 
         foreach (int componentIndex in net.SinkComponents)
         {

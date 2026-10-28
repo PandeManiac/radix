@@ -217,7 +217,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 8. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
 9. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
 10. Run `RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --filter FullyQualifiedName~LayoutBenchmarkTests --logger "console;verbosity=detailed"`. Expected: one passing test and one line per size (`200`, `500`, `1,000` gates) in the form `1000 gates: construct … ms, canonical frames … ms, reused frames … ms, final rebuild … ms`. Reused frames must be far below canonical frames; exact milliseconds depend on the machine. With the variable unset, the test passes without printing.
-11. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-counter.radix examples/tests/ternary-counter.radixtest`. Expected: `PASS: 28 step(s) through t=700`, exit code 0; the script walks all nine counts and checks the wrap to 0.
+11. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-counter.radix examples/tests/ternary-counter.radixtest`. Expected: `PASS: 28 step(s) through t=700`, exit code 0; the script walks all nine counts, checks the wrap to 0, and requires exactly one CLK, T0, and T1 change on the wrap edge.
 12. Run `dotnet run --project src/Radix.Cli -- simulate examples/ternary-counter.radix --ticks 100 --schedule 0:clk=0 --schedule 20:clk=2 --schedule 60:clk=0 --bus t0,t1 --format unsigned-ternary`. Expected: the decoded bus prints `1`; the two flip-flops sample the increment only on the 0→2 clock edge.
 13. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-adder-2.radix examples/tests/ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0, covering sums 16, 9, 8, and 0.
 14. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-accumulator.radix examples/tests/ternary-accumulator.radixtest`. Expected: `PASS: 17 step(s) through t=410`, exit code 0; the `Result` lane goes 5 → 8 → 3 (wrap) → 3 (hold) → 8.
@@ -229,6 +229,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 20. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-stack-machine.radix examples/tests/ternary-stack-machine.radixtest`. Expected: `PASS: 30 step(s) through t=3480`, exit code 0; TOS goes 0 → 2 → 3 → 2 → 5 → 5 → 5 → 5 → 0, SP returns to 0, and OUT becomes 5.
 21. Run `dotnet run --project src/Radix.Cli -- test examples/four-state-bus.radix examples/tests/four-state-bus.radixtest`. Expected: `PASS: 14 step(s) through t=122`, exit code 0, plus one `WARNING RAD101` for the bus net on the first run; the warning does not fail the script.
 22. Copy the DFF script to a scratch file and change its final `stable` expectation to `"q": 0`. Expected: `FAIL`, one line naming `step 4 (t=40)` with `stable assertion failed at t=40` and `pin 'q': expected 0 (0), got 1 (1)`; exit code 1. This shows a stability window checks its starting tick and every tick through its deadline, not only the end.
+23. Copy the ternary counter script to a scratch file and change `"t0": 1` in its `transitions` block to `"t0": 0`. Expected: `FAIL`, one line naming `step 27 (t=700)` with `pin 't0': expected 0 transition(s) between t=670 and t=700, observed 1`; exit code 1. This shows transition counts cover the whole interval, including the drive at its start.
 
 ## 14. Ternary multi-trit addition
 
@@ -414,7 +415,7 @@ Do not file these as new failures until they change in the README:
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;
 - the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
-- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and neither expresses waveform-edge order, glitch counts, or minimum setup/hold constraints;
+- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; they do not express edge direction, edge order, or minimum setup/hold constraints;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.

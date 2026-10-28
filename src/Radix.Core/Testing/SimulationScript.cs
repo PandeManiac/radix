@@ -103,6 +103,29 @@ public sealed class ScriptStability
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
 }
 
+/// <summary>Expected number of value changes on one interface pin over an interval.</summary>
+public sealed record ScriptTransitionExpectation(string PinId, long Count);
+
+/// <summary>
+/// A transition-count assertion: every observed interface pin must change value
+/// exactly <see cref="ScriptTransitionExpectation.Count"/> times between the step's
+/// tick and <c>At + Ticks</c>, inclusive, after this step's drives are applied.
+/// </summary>
+public sealed class ScriptTransitionWindow
+{
+    public ScriptTransitionWindow(
+        long ticks,
+        IReadOnlyList<ScriptTransitionExpectation> pinExpectations)
+    {
+        Ticks = ticks;
+        PinExpectations = pinExpectations;
+    }
+
+    public long Ticks { get; }
+
+    public IReadOnlyList<ScriptTransitionExpectation> PinExpectations { get; }
+}
+
 /// <summary>
 /// One ordered step. The runner advances to <see cref="At"/>, applies drives, settles
 /// zero-delay events at that timestamp, then checks expectations.
@@ -117,7 +140,8 @@ public sealed class SimulationScriptStep
         bool? expectHalted,
         string? description,
         ScriptWindow? window = null,
-        ScriptStability? stability = null)
+        ScriptStability? stability = null,
+        ScriptTransitionWindow? transitions = null)
     {
         At = at;
         Drives = drives;
@@ -127,6 +151,7 @@ public sealed class SimulationScriptStep
         Description = description;
         Window = window;
         Stability = stability;
+        Transitions = transitions;
     }
 
     /// <summary>Absolute simulated tick. Missing values default to the previous step's tick.</summary>
@@ -149,9 +174,13 @@ public sealed class SimulationScriptStep
     /// <summary>Optional held-value assertion over an inclusive interval of ticks.</summary>
     public ScriptStability? Stability { get; }
 
+    /// <summary>Optional transition-count assertion over an inclusive interval of ticks.</summary>
+    public ScriptTransitionWindow? Transitions { get; }
+
     public bool HasActions =>
         Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
-        ExpectHalted is not null || Window is not null || Stability is not null;
+        ExpectHalted is not null || Window is not null || Stability is not null ||
+        Transitions is not null;
 }
 
 /// <summary>
@@ -267,14 +296,21 @@ public sealed class SimulationScript
                     $"Step {stepNumber} has both 'within' and 'stable'; a step can wait for a value or require it to hold, not both.");
             }
 
-            if (step.Stable is not null && step.ExpectHalted == true)
+            if (step.Transitions is not null && (step.Within is not null || step.Stable is not null))
             {
                 throw new SimulationScriptException(
-                    $"Step {stepNumber} cannot combine 'stable' with 'expectHalted: true'; a held-value window needs the simulation to run to its deadline.");
+                    $"Step {stepNumber} cannot combine 'transitions' with 'within' or 'stable'; only one timing block may advance the step.");
+            }
+
+            if ((step.Stable is not null || step.Transitions is not null) && step.ExpectHalted == true)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} cannot combine a timing window with 'expectHalted: true'; the window needs the simulation to run to its deadline.");
             }
 
             ScriptWindow? window = MapWindow(step.Within, stepNumber, at);
             ScriptStability? stability = MapStability(step.Stable, stepNumber, at);
+            ScriptTransitionWindow? transitions = MapTransitions(step.Transitions, stepNumber, at);
 
             // A bare step is a deliberate advance-only marker; it is useful for
             // separating phases and lets later steps inherit this tick.
@@ -286,7 +322,8 @@ public sealed class SimulationScript
                 step.ExpectHalted,
                 step.Description,
                 window,
-                stability));
+                stability,
+                transitions));
         }
 
         return new SimulationScript(
@@ -398,6 +435,55 @@ public sealed class SimulationScript
         (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes) =
             MapWindowContents(source, stepNumber, at, "stable");
         return new ScriptStability(ticks, pins, lanes);
+    }
+
+    private static ScriptTransitionWindow? MapTransitions(TransitionsDto? source, int stepNumber, long at)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        if (source.Ticks is null)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'transitions' needs an explicit 'ticks' value.");
+        }
+
+        long ticks = source.Ticks.Value;
+        if (ticks < 0)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} 'transitions.ticks' must be non-negative.");
+        }
+
+        if (ticks > long.MaxValue - at)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'transitions.ticks' moves the deadline past the maximum simulated time.");
+        }
+
+        if (source.Expect is null || source.Expect.Count == 0)
+        {
+            throw new SimulationScriptException(
+                $"Step {stepNumber} 'transitions' needs at least one 'expect' entry.");
+        }
+
+        var expectations = new List<ScriptTransitionExpectation>(source.Expect.Count);
+        foreach ((string pinId, JsonElement element) in source.Expect)
+        {
+            if (element.ValueKind != JsonValueKind.Number ||
+                !element.TryGetInt64(out long count) ||
+                count < 0)
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} 'transitions.expect.{pinId}' must be a non-negative integer count.");
+            }
+
+            expectations.Add(new ScriptTransitionExpectation(
+                NormalizeId(pinId, "pin", stepNumber, "transitions.expect"),
+                count));
+        }
+
+        return new ScriptTransitionWindow(ticks, expectations);
     }
 
     private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes)
@@ -541,6 +627,15 @@ public sealed class SimulationScript
         public WindowDto? Within { get; set; }
 
         public WindowDto? Stable { get; set; }
+
+        public TransitionsDto? Transitions { get; set; }
+    }
+
+    private sealed class TransitionsDto
+    {
+        public long? Ticks { get; set; }
+
+        public Dictionary<string, JsonElement>? Expect { get; set; }
     }
 
     private sealed class WindowDto

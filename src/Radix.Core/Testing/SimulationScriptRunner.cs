@@ -94,6 +94,17 @@ public static class SimulationScriptRunner
         var engine = new SimulationEngine(circuit, options);
         CircuitDefinition definition = project.RequireDefinition(definitionId);
 
+        var transitionCounts = new Dictionary<int, long>();
+        bool observesTransitions = script.Steps.Any(step => step.Transitions is not null);
+        if (observesTransitions)
+        {
+            engine.NetChanged += change =>
+            {
+                transitionCounts.TryGetValue(change.Net, out long count);
+                transitionCounts[change.Net] = count + 1;
+            };
+        }
+
         var failures = new List<ScriptFailure>();
         int stepsExecuted = 0;
         for (int i = 0; i < script.Steps.Count; i++)
@@ -110,6 +121,13 @@ public static class SimulationScriptRunner
             }
 
             engine.AdvanceTo(step.At);
+            if (observesTransitions)
+            {
+                // The interval starts at this step, including changes caused by its
+                // drives at this tick but excluding earlier activity.
+                transitionCounts.Clear();
+            }
+
             if (!engine.IsHalted)
             {
                 foreach (ScriptDrive drive in step.Drives)
@@ -230,6 +248,56 @@ public static class SimulationScriptRunner
                     }
 
                     engine.AdvanceTo(engine.Now + 1);
+                }
+            }
+
+            if (step.Transitions is { } transitions)
+            {
+                long deadline = step.At + transitions.Ticks;
+                var observed = new List<(ScriptTransitionExpectation Expectation, int Net)>();
+                bool pinsValid = true;
+                foreach (ScriptTransitionExpectation expectation in transitions.PinExpectations)
+                {
+                    if (!TryFindPort(engine, expectation.PinId, out _, out CompiledPort port, out string error))
+                    {
+                        failures.Add(new ScriptFailure(stepNumber, step.At, error));
+                        pinsValid = false;
+                        continue;
+                    }
+
+                    observed.Add((expectation, port.Net));
+                }
+
+                if (pinsValid)
+                {
+                    if (engine.Now < deadline)
+                    {
+                        engine.AdvanceTo(deadline);
+                    }
+
+                    if (engine.IsHalted)
+                    {
+                        failures.Add(new ScriptFailure(
+                            stepNumber,
+                            engine.Now,
+                            $"transition window needs the simulation to keep running through t={deadline}, " +
+                            $"but it halted at t={engine.Now}: {engine.HaltReason}"));
+                    }
+                    else
+                    {
+                        foreach ((ScriptTransitionExpectation expectation, int net) in observed)
+                        {
+                            long actual = transitionCounts.GetValueOrDefault(net);
+                            if (actual != expectation.Count)
+                            {
+                                failures.Add(new ScriptFailure(
+                                    stepNumber,
+                                    deadline,
+                                    $"pin '{expectation.PinId}': expected {expectation.Count.ToString(CultureInfo.InvariantCulture)} " +
+                                    $"transition(s) between t={step.At} and t={deadline}, observed {actual.ToString(CultureInfo.InvariantCulture)}."));
+                            }
+                        }
+                    }
                 }
             }
 
