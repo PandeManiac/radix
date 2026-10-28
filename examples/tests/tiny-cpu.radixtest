@@ -2,7 +2,7 @@
   "format": "radix-test",
   "version": 1,
   "name": "Tiny CPU pushes, pops, calls, and returns",
-  "description": "Stores 5 at RAM[8], pushes and pops 9, calls a subroutine that computes 5+9, then returns through the stack to the halt loop.",
+  "description": "Stores 5 at RAM[8], pushes and pops 9, calls a subroutine that loads RAM[8] directly, adds RAM[9] indirectly, then returns through the stack to the halt loop.",
   "definition": "demo.tiny-cpu",
   "steps": [
     { "at": 0, "set": { "clk": 0, "reset": 0 } },
@@ -64,7 +64,7 @@
     {
       "at": 780,
       "expect": { "carry": 0, "zero": 0 },
-      "expectLane": { "pc": 12, "sp": 1, "acc": 9, "mem": 5, "instruction": 136, "opcode": 8, "operand": 8 }
+      "expectLane": { "pc": 12, "sp": 1, "acc": 9, "mem": 5, "instruction": 232, "opcode": 14, "operand": 8 }
     },
     { "at": 790, "set": { "clk": 0 } },
     { "at": 830, "set": { "clk": 1 } },

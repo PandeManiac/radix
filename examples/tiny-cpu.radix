@@ -9796,7 +9796,7 @@
     {
       "id": "demo.tiny-cpu",
       "name": "Tiny CPU",
-      "description": "A 4-bit accumulator CPU with a 16-word instruction ROM and a 16x4 RAM. Opcodes: 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, 5 OR #, 6 JMP, 7 JZ, 8 LDA@ addr, 9 ADD@ addr, 10 PUSH, 11 POP, 12 CALL addr, 13 RET. SP starts at 0 and points to the next free stack slot; PUSH/CALL increment it and POP/RET decrement it. CLR is synchronous with the next rising CLK edge; it clears PC, ACC, CARRY, and SP but leaves RAM contents intact. Instructions are opcode(4) | operand(4).",
+      "description": "A 4-bit accumulator CPU with a 16-word instruction ROM and a 16x4 RAM. Opcodes: 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, 5 OR #, 6 JMP, 7 JZ, 8 LDA@ addr, 9 ADD@ addr, 10 PUSH, 11 POP, 12 CALL addr, 13 RET, 14 LDA addr, 15 ADD addr. LDA@ and ADD@ read RAM[operand]; the non-@ forms use the operand directly. SP starts at 0 and points to the next free stack slot; PUSH/CALL increment it and POP/RET decrement it. STACK_ERROR latches when PUSH/CALL happens at SP=15 or POP/RET happens at SP=0; reset clears it. This only detects pointer wrap, not a software stack colliding with data. CLR is synchronous with the next rising CLK edge; it clears PC, ACC, CARRY, SP, and STACK_ERROR but leaves RAM contents intact. Instructions are opcode(4) | operand(4).",
       "pins": [
         {
           "id": "clk",
@@ -9963,6 +9963,12 @@
         {
           "id": "zero",
           "name": "ZERO",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "stack_error",
+          "name": "STACK_ERROR",
           "direction": "output",
           "domain": "binary"
         }
@@ -10144,7 +10150,7 @@
               0,
               0,
               0,
-              0,
+              1,
               0,
               0,
               0
@@ -10172,7 +10178,7 @@
               0,
               0,
               0,
-              0,
+              1,
               0,
               1,
               0
@@ -10575,6 +10581,62 @@
           "y": 1040
         },
         {
+          "id": "ctl_lda_direct",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 1120
+        },
+        {
+          "id": "ctl_add_direct",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 1200
+        },
+        {
           "id": "zero_flag",
           "primitive": {
             "kind": "lookup",
@@ -10630,6 +10692,12 @@
           "id": "or_load_memory",
           "definition": "std.or",
           "x": 840,
+          "y": 1160
+        },
+        {
+          "id": "or_load_memory_direct",
+          "definition": "std.or",
+          "x": 1060,
           "y": 1160
         },
         {
@@ -10829,6 +10897,18 @@
           "definition": "std.or",
           "x": 1120,
           "y": 520
+        },
+        {
+          "id": "or_add_active_direct",
+          "definition": "std.or",
+          "x": 1340,
+          "y": 520
+        },
+        {
+          "id": "or_add_memory",
+          "definition": "std.or",
+          "x": 1340,
+          "y": 640
         },
         {
           "id": "acc_add",
@@ -11051,6 +11131,98 @@
           "definition": "std.dff",
           "x": 2420,
           "y": 620
+        },
+        {
+          "id": "sp_zero",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 1680
+        },
+        {
+          "id": "sp_max",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 1760
+        },
+        {
+          "id": "and_stack_underflow",
+          "definition": "std.and",
+          "x": 840,
+          "y": 1680
+        },
+        {
+          "id": "and_stack_overflow",
+          "definition": "std.and",
+          "x": 840,
+          "y": 1760
+        },
+        {
+          "id": "or_stack_fault",
+          "definition": "std.or",
+          "x": 1060,
+          "y": 1720
+        },
+        {
+          "id": "or_stack_fault_held",
+          "definition": "std.or",
+          "x": 1280,
+          "y": 1720
+        },
+        {
+          "id": "mux_stack_fault_reset",
+          "definition": "std.mux2",
+          "x": 1500,
+          "y": 1720
+        },
+        {
+          "id": "ff_stack_error",
+          "definition": "std.dff",
+          "x": 1720,
+          "y": 1720
         }
       ],
       "nets": [
@@ -11077,6 +11249,10 @@
             {
               "instance": "ff_carry",
               "pin": "clk"
+            },
+            {
+              "instance": "ff_stack_error",
+              "pin": "clk"
             }
           ]
         },
@@ -11098,6 +11274,10 @@
             },
             {
               "instance": "mux_carry_reset",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_stack_fault_reset",
               "pin": "s"
             }
           ]
@@ -11204,6 +11384,14 @@
             {
               "instance": "mux_stack_addr0",
               "pin": "a"
+            },
+            {
+              "instance": "sp_zero",
+              "pin": "in3"
+            },
+            {
+              "instance": "sp_max",
+              "pin": "in3"
             }
           ]
         },
@@ -11309,6 +11497,14 @@
             {
               "instance": "mux_stack_addr1",
               "pin": "a"
+            },
+            {
+              "instance": "sp_zero",
+              "pin": "in2"
+            },
+            {
+              "instance": "sp_max",
+              "pin": "in2"
             }
           ]
         },
@@ -11414,6 +11610,14 @@
             {
               "instance": "mux_stack_addr2",
               "pin": "a"
+            },
+            {
+              "instance": "sp_zero",
+              "pin": "in1"
+            },
+            {
+              "instance": "sp_max",
+              "pin": "in1"
             }
           ]
         },
@@ -11519,6 +11723,14 @@
             {
               "instance": "mux_stack_addr3",
               "pin": "a"
+            },
+            {
+              "instance": "sp_zero",
+              "pin": "in0"
+            },
+            {
+              "instance": "sp_max",
+              "pin": "in0"
             }
           ]
         },
@@ -11722,6 +11934,14 @@
             {
               "instance": "ctl_ret",
               "pin": "in3"
+            },
+            {
+              "instance": "ctl_lda_direct",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_add_direct",
+              "pin": "in3"
             }
           ]
         },
@@ -11784,6 +12004,14 @@
             },
             {
               "instance": "ctl_ret",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_lda_direct",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_add_direct",
               "pin": "in2"
             }
           ]
@@ -11848,6 +12076,14 @@
             {
               "instance": "ctl_ret",
               "pin": "in1"
+            },
+            {
+              "instance": "ctl_lda_direct",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_add_direct",
+              "pin": "in1"
             }
           ]
         },
@@ -11910,6 +12146,14 @@
             },
             {
               "instance": "ctl_ret",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_lda_direct",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_add_direct",
               "pin": "in0"
             }
           ]
@@ -12033,6 +12277,21 @@
           ]
         },
         {
+          "id": "stack_error_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "or_stack_fault_held",
+              "pin": "a"
+            },
+            {
+              "instance": "ff_stack_error",
+              "pin": "q"
+            }
+          ]
+        },
+        {
           "id": "const_zero",
           "domain": "binary",
           "pins": [
@@ -12054,6 +12313,10 @@
             },
             {
               "instance": "mux_carry_reset",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_stack_fault_reset",
               "pin": "b"
             }
           ]
@@ -12245,20 +12508,8 @@
               "pin": "b"
             },
             {
-              "instance": "mux_add_b0",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_add_b1",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_add_b2",
-              "pin": "s"
-            },
-            {
-              "instance": "mux_add_b3",
-              "pin": "s"
+              "instance": "or_add_memory",
+              "pin": "a"
             }
           ]
         },
@@ -12359,6 +12610,38 @@
           ]
         },
         {
+          "id": "ctl_lda_direct_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_lda_direct",
+              "pin": "out"
+            },
+            {
+              "instance": "or_load_memory_direct",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ctl_add_direct_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_add_direct",
+              "pin": "out"
+            },
+            {
+              "instance": "or_add_active_direct",
+              "pin": "b"
+            },
+            {
+              "instance": "or_add_memory",
+              "pin": "b"
+            }
+          ]
+        },
+        {
           "id": "stack_push_call",
           "domain": "binary",
           "pins": [
@@ -12373,6 +12656,10 @@
             {
               "instance": "or_ram_write",
               "pin": "b"
+            },
+            {
+              "instance": "and_stack_overflow",
+              "pin": "a"
             }
           ]
         },
@@ -12415,6 +12702,10 @@
             {
               "instance": "mux_stack_addr3",
               "pin": "s"
+            },
+            {
+              "instance": "and_stack_underflow",
+              "pin": "a"
             }
           ]
         },
@@ -12479,11 +12770,25 @@
           ]
         },
         {
-          "id": "load_memory",
+          "id": "load_memory_base",
           "domain": "binary",
           "pins": [
             {
               "instance": "or_load_memory",
+              "pin": "y"
+            },
+            {
+              "instance": "or_load_memory_direct",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "load_memory",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_load_memory_direct",
               "pin": "y"
             },
             {
@@ -13059,11 +13364,25 @@
           ]
         },
         {
-          "id": "add_active",
+          "id": "add_active_base",
           "domain": "binary",
           "pins": [
             {
               "instance": "or_add_active",
+              "pin": "y"
+            },
+            {
+              "instance": "or_add_active_direct",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "add_active",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_add_active_direct",
               "pin": "y"
             },
             {
@@ -13084,6 +13403,32 @@
             },
             {
               "instance": "mux_carry",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "add_memory_operand",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_add_memory",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_add_b0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_add_b1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_add_b2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_add_b3",
               "pin": "s"
             }
           ]
@@ -13633,6 +13978,104 @@
               "pin": "d"
             }
           ]
+        },
+        {
+          "id": "sp_zero_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "sp_zero",
+              "pin": "out"
+            },
+            {
+              "instance": "and_stack_underflow",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "sp_max_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "sp_max",
+              "pin": "out"
+            },
+            {
+              "instance": "and_stack_overflow",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "stack_underflow",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_stack_underflow",
+              "pin": "y"
+            },
+            {
+              "instance": "or_stack_fault",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "stack_overflow",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_stack_overflow",
+              "pin": "y"
+            },
+            {
+              "instance": "or_stack_fault",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "stack_fault_now",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_stack_fault",
+              "pin": "y"
+            },
+            {
+              "instance": "or_stack_fault_held",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "stack_fault_held",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_stack_fault_held",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_stack_fault_reset",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "stack_fault_next",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_stack_fault_reset",
+              "pin": "y"
+            },
+            {
+              "instance": "ff_stack_error",
+              "pin": "d"
+            }
+          ]
         }
       ],
       "ports": [
@@ -13747,6 +14190,10 @@
         {
           "pin": "zero",
           "net": "zero_net"
+        },
+        {
+          "pin": "stack_error",
+          "net": "stack_error_net"
         }
       ],
       "numericLanes": [

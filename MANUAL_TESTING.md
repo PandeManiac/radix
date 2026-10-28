@@ -213,7 +213,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
 1. Open `examples/tiny-cpu.radix`. Expected: the canvas shows the ROM, decoder, program counter, accumulator, RAM, stack pointer, and a fixed lane legend; **OPCODE**, **OPERAND**, **INSTRUCTION**, **PC**, **ACC**, **SP**, and **MEM** appear in the inspector.
-2. Click **Begin**, then drive `CLK = 0` and `RESET = 0`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `MEM = 0`, `ZERO = 1`, `IR = 21` (0x15), opcode 1, operand 5.
+2. Click **Begin**, then drive `CLK = 0` and `RESET = 0`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `MEM = 0`, `STACK_ERROR = 0`, `ZERO = 1`, `IR = 21` (0x15), opcode 1, operand 5.
 3. For each rising edge, set `CLK = 1`, click **Settle**, check the row below, then set `CLK = 0`. Expected sequence:
 
 | Edge | PC | IR | Op | Operand | ACC | SP | MEM | Notes |
@@ -225,14 +225,15 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 | 5 | 5 | 176 (0xB0) | 11 | 0 | 0 | 1 | 9 | LDA 0 done; stack top visible |
 | 6 | 6 | 57 (0x39) | 3 | 9 | 9 | 0 | 0 | POP restored 9; SP rewound |
 | 7 | 7 | 204 (0xCC) | 12 | 12 | 9 | 0 | 9 | STA 9 stored 9; CALL fetched |
-| 8 | 12 | 136 (0x88) | 8 | 8 | 9 | 1 | 5 | CALL pushed return address 8 |
-| 9 | 13 | 153 (0x99) | 9 | 9 | 5 | 1 | 9 | LDA@ 8 loaded 5 |
+| 8 | 12 | 232 (0xE8) | 14 | 8 | 9 | 1 | 5 | CALL pushed return address 8 |
+| 9 | 13 | 153 (0x99) | 9 | 9 | 5 | 1 | 9 | LDA 8 direct loaded 5 |
 | 10 | 14 | 208 (0xD0) | 13 | 0 | 14 | 1 | 8 | ADD@ 9 made 14; stack top is 8 |
 | 11 | 8 | 104 (0x68) | 6 | 8 | 14 | 0 | 5 | RET returned to PC 8 |
 | 12 | 8 | 104 (0x68) | 6 | 8 | 14 | 0 | 5 | JMP 8 halt loop holds state |
 
-4. Drive `RESET = 1`, raise `CLK`, then lower `CLK`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `CARRY = 0`; RAM contents are retained, and the machine restarts at instruction 0. Drive `RESET = 0` before continuing.
-5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, and zero; no errors or warnings appear.
+4. Drive `RESET = 1`, raise `CLK`, then lower `CLK`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `CARRY = 0`, `STACK_ERROR = 0`; RAM contents are retained, and the machine restarts at instruction 0. Drive `RESET = 0` before continuing.
+5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
+6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
 ## 15. Known limitations to verify as *limitations*
 
@@ -243,6 +244,7 @@ Do not file these as new failures until they change in the README:
 - library equivalence ignores labels/layout and numeric-lane presentation; conflicting IDs are renamed rather than offering a merge dialog;
 - selection, external drive history, and waveform history are not saved; viewport and active definition are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
+- the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;

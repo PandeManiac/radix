@@ -279,8 +279,8 @@ public static class ExampleProjects
             0x00, // 9
             0x00, // 10
             0x00, // 11
-            0x88, // 12: LDA@ 8 -> 5
-            0x99, // 13: ADD@ 9 -> 14
+            0xE8, // 12: LDA 8 direct -> RAM[8] = 5
+            0x99, // 13: ADD@ 9 -> 5 + RAM[9] = 14
             0xD0, // 14: RET to 8
             0x00, // 15
         ];
@@ -295,10 +295,15 @@ public static class ExampleProjects
         root.Definition.Description =
             "A 4-bit accumulator CPU with a 16-word instruction ROM and a 16x4 RAM. " +
             "Opcodes: 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, 5 OR #, 6 JMP, 7 JZ, " +
-            "8 LDA@ addr, 9 ADD@ addr, 10 PUSH, 11 POP, 12 CALL addr, 13 RET. " +
+            "8 LDA@ addr, 9 ADD@ addr, 10 PUSH, 11 POP, 12 CALL addr, 13 RET, " +
+            "14 LDA addr, 15 ADD addr. " +
+            "LDA@ and ADD@ read RAM[operand]; the non-@ forms use the operand directly. " +
             "SP starts at 0 and points to the next free stack slot; PUSH/CALL increment it " +
-            "and POP/RET decrement it. CLR is synchronous with the next rising CLK edge; " +
-            "it clears PC, ACC, CARRY, and SP but leaves RAM contents intact. " +
+            "and POP/RET decrement it. STACK_ERROR latches when PUSH/CALL happens at SP=15 " +
+            "or POP/RET happens at SP=0; reset clears it. This only detects pointer wrap, " +
+            "not a software stack colliding with data. " +
+            "CLR is synchronous with the next rising CLK edge; it clears PC, ACC, CARRY, " +
+            "SP, and STACK_ERROR but leaves RAM contents intact. " +
             "Instructions are opcode(4) | operand(4).";
 
         Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BinaryId);
@@ -339,6 +344,9 @@ public static class ExampleProjects
             0);
         Net zero = root.SetInitial(
             root.AddPin("zero", "ZERO", PinDirection.Output, StandardDomains.BinaryId),
+            0);
+        Net stackError = root.SetInitial(
+            root.AddPin("stack_error", "STACK_ERROR", PinDirection.Output, StandardDomains.BinaryId),
             0);
 
         root.AddNumericLane("acc", "Accumulator", NumericFormats.UnsignedBinary.Id, "acc0", "acc1", "acc2", "acc3");
@@ -411,6 +419,23 @@ public static class ExampleProjects
         Net ctlPop = Decode("ctl_pop", 11, 880);
         Net ctlCall = Decode("ctl_call", 12, 960);
         Net ctlRet = Decode("ctl_ret", 13, 1040);
+        Net ctlLdaDirect = Decode("ctl_lda_direct", 14, 1120);
+        Net ctlAddDirect = Decode("ctl_add_direct", 15, 1200);
+
+        Net DecodeStackPointer(string id, int value, double y)
+        {
+            int[] table = new int[16];
+            table[value] = 1;
+            root.AddPrimitive(id, new LookupSpec(4, table), 560, y);
+            for (int input = 0; input < 4; input++)
+            {
+                root.Connect(sp[3 - input], root.Pin(id, $"in{input}"));
+            }
+
+            Net signal = root.AddNet($"{id}_net", StandardDomains.BinaryId);
+            root.Connect(signal, root.Pin(id, PrimitiveShapes.OutputPinId));
+            return signal;
+        }
 
         int[] zeroTable = new int[16];
         zeroTable[0] = 1;
@@ -440,17 +465,25 @@ public static class ExampleProjects
         root.Connect(stackRead, root.Pin("or_stack_op", "b"));
         root.Connect(stackOp, root.Pin("or_stack_op", "y"));
 
+        // STA, PUSH, and CALL write the RAM. LDA@, LDA direct, and POP all select
+        // the read port as the accumulator source.
         Net ramWrite = root.AddNet("ram_write", StandardDomains.BinaryId);
         root.AddInstance("or_ram_write", "std.or", 840, 1040);
         root.Connect(ctlSta, root.Pin("or_ram_write", "a"));
         root.Connect(stackPushCall, root.Pin("or_ram_write", "b"));
         root.Connect(ramWrite, root.Pin("or_ram_write", "y"));
 
-        Net loadMemory = root.AddNet("load_memory", StandardDomains.BinaryId);
+        Net loadMemoryBase = root.AddNet("load_memory_base", StandardDomains.BinaryId);
         root.AddInstance("or_load_memory", "std.or", 840, 1160);
         root.Connect(ctlLdaMem, root.Pin("or_load_memory", "a"));
         root.Connect(ctlPop, root.Pin("or_load_memory", "b"));
-        root.Connect(loadMemory, root.Pin("or_load_memory", "y"));
+        root.Connect(loadMemoryBase, root.Pin("or_load_memory", "y"));
+
+        Net loadMemory = root.AddNet("load_memory", StandardDomains.BinaryId);
+        root.AddInstance("or_load_memory_direct", "std.or", 1060, 1160);
+        root.Connect(loadMemoryBase, root.Pin("or_load_memory_direct", "a"));
+        root.Connect(ctlLdaDirect, root.Pin("or_load_memory_direct", "b"));
+        root.Connect(loadMemory, root.Pin("or_load_memory_direct", "y"));
 
         // PC increments every cycle. Calls and jumps replace it with the operand;
         // RET replaces it with the word popped from the stack.
@@ -574,11 +607,23 @@ public static class ExampleProjects
         root.Connect(ramWrite, root.Pin("ram", "we"));
         root.Connect(clk, root.Pin("ram", "clk"));
 
-        Net addActive = root.AddNet("add_active", StandardDomains.BinaryId);
+        Net addActiveBase = root.AddNet("add_active_base", StandardDomains.BinaryId);
         root.AddInstance("or_add_active", "std.or", 1120, 520);
         root.Connect(ctlAdd, root.Pin("or_add_active", "a"));
         root.Connect(ctlAddMem, root.Pin("or_add_active", "b"));
-        root.Connect(addActive, root.Pin("or_add_active", "y"));
+        root.Connect(addActiveBase, root.Pin("or_add_active", "y"));
+
+        Net addActive = root.AddNet("add_active", StandardDomains.BinaryId);
+        root.AddInstance("or_add_active_direct", "std.or", 1340, 520);
+        root.Connect(addActiveBase, root.Pin("or_add_active_direct", "a"));
+        root.Connect(ctlAddDirect, root.Pin("or_add_active_direct", "b"));
+        root.Connect(addActive, root.Pin("or_add_active_direct", "y"));
+
+        Net addMemoryOperand = root.AddNet("add_memory_operand", StandardDomains.BinaryId);
+        root.AddInstance("or_add_memory", "std.or", 1340, 640);
+        root.Connect(ctlAddMem, root.Pin("or_add_memory", "a"));
+        root.Connect(ctlAddDirect, root.Pin("or_add_memory", "b"));
+        root.Connect(addMemoryOperand, root.Pin("or_add_memory", "y"));
 
         Net accCarry = root.AddNet("acc_carry", StandardDomains.BinaryId);
         root.AddInstance("acc_add", "std.ripple-adder-4", 900, 620);
@@ -588,7 +633,7 @@ public static class ExampleProjects
             root.AddInstance($"mux_add_b{i}", "std.mux2", 680, 620 + (i * 120));
             root.Connect(instruction[i], root.Pin($"mux_add_b{i}", "a"));
             root.Connect(memory[i], root.Pin($"mux_add_b{i}", "b"));
-            root.Connect(ctlAddMem, root.Pin($"mux_add_b{i}", "s"));
+            root.Connect(addMemoryOperand, root.Pin($"mux_add_b{i}", "s"));
             root.Connect(addOperand, root.Pin($"mux_add_b{i}", "y"));
 
             root.Connect(acc[i], root.Pin("acc_add", $"a{i}"));
@@ -677,6 +722,48 @@ public static class ExampleProjects
         root.Connect(carryNext, root.Pin("ff_carry", "d"));
         root.Connect(clk, root.Pin("ff_carry", "clk"));
         root.Connect(carry, root.Pin("ff_carry", "q"));
+
+        // Stack-limit detection: PUSH/CALL at SP=15 would wrap to 0, and POP/RET at
+        // SP=0 would wrap to 15. The condition is latched until reset so a single
+        // bad stack operation remains visible after the instruction retires.
+        Net spZero = DecodeStackPointer("sp_zero", 0, 1680);
+        Net spMax = DecodeStackPointer("sp_max", 15, 1760);
+
+        Net stackUnderflow = root.AddNet("stack_underflow", StandardDomains.BinaryId);
+        root.AddInstance("and_stack_underflow", "std.and", 840, 1680);
+        root.Connect(stackRead, root.Pin("and_stack_underflow", "a"));
+        root.Connect(spZero, root.Pin("and_stack_underflow", "b"));
+        root.Connect(stackUnderflow, root.Pin("and_stack_underflow", "y"));
+
+        Net stackOverflow = root.AddNet("stack_overflow", StandardDomains.BinaryId);
+        root.AddInstance("and_stack_overflow", "std.and", 840, 1760);
+        root.Connect(stackPushCall, root.Pin("and_stack_overflow", "a"));
+        root.Connect(spMax, root.Pin("and_stack_overflow", "b"));
+        root.Connect(stackOverflow, root.Pin("and_stack_overflow", "y"));
+
+        Net stackFaultNow = root.AddNet("stack_fault_now", StandardDomains.BinaryId);
+        root.AddInstance("or_stack_fault", "std.or", 1060, 1720);
+        root.Connect(stackUnderflow, root.Pin("or_stack_fault", "a"));
+        root.Connect(stackOverflow, root.Pin("or_stack_fault", "b"));
+        root.Connect(stackFaultNow, root.Pin("or_stack_fault", "y"));
+
+        Net stackFaultHeld = root.AddNet("stack_fault_held", StandardDomains.BinaryId);
+        root.AddInstance("or_stack_fault_held", "std.or", 1280, 1720);
+        root.Connect(stackError, root.Pin("or_stack_fault_held", "a"));
+        root.Connect(stackFaultNow, root.Pin("or_stack_fault_held", "b"));
+        root.Connect(stackFaultHeld, root.Pin("or_stack_fault_held", "y"));
+
+        Net stackFaultNext = root.AddNet("stack_fault_next", StandardDomains.BinaryId);
+        root.AddInstance("mux_stack_fault_reset", "std.mux2", 1500, 1720);
+        root.Connect(stackFaultHeld, root.Pin("mux_stack_fault_reset", "a"));
+        root.Connect(constZero, root.Pin("mux_stack_fault_reset", "b"));
+        root.Connect(reset, root.Pin("mux_stack_fault_reset", "s"));
+        root.Connect(stackFaultNext, root.Pin("mux_stack_fault_reset", "y"));
+
+        root.AddInstance("ff_stack_error", StandardLibrary.DFlipFlopId, 1720, 1720);
+        root.Connect(stackFaultNext, root.Pin("ff_stack_error", "d"));
+        root.Connect(clk, root.Pin("ff_stack_error", "clk"));
+        root.Connect(stackError, root.Pin("ff_stack_error", "q"));
 
         return builder.Build("demo.tiny-cpu");
     }

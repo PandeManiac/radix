@@ -156,6 +156,7 @@ public sealed class ExampleTests
         Assert.Equal(0, ReadLane(engine, "sp", 4));
         Assert.Equal(0, ReadLane(engine, "mem", 4));
         Assert.Equal(1, engine.Read("zero"));
+        Assert.Equal(0, engine.Read("stack_error"));
 
         (int Pc, int Ir, int Acc, int Sp, int Mem)[] states =
         [
@@ -165,9 +166,9 @@ public sealed class ExampleTests
             (4, 0x10, 9, 1, 9),    // PUSH wrote 9 and advanced SP
             (5, 0xB0, 0, 1, 9),    // LDA 0 executed; stack top visible
             (6, 0x39, 9, 0, 0),    // POP restored 9 and rewound SP
-            (7, 0xCC, 9, 0, 9),    // STA 9 stored 9; CALL fetched
-            (12, 0x88, 9, 1, 5),   // CALL pushed return address 8
-            (13, 0x99, 5, 1, 9),   // LDA@ 8 loaded 5
+            (7, 0xCC, 9, 0, 9),    // STA 9 stored 9; CALL 12 fetched
+            (12, 0xE8, 9, 1, 5),   // CALL pushed return address 8
+            (13, 0x99, 5, 1, 9),   // LDA 8 loaded RAM[8] = 5
             (14, 0xD0, 14, 1, 8),  // ADD@ 9 added 9; stack top is return address
             (8, 0x68, 14, 0, 5),   // RET returned to PC 8
             (8, 0x68, 14, 0, 5),   // JMP 8 loops
@@ -185,6 +186,84 @@ public sealed class ExampleTests
             Assert.False(engine.IsHalted, engine.HaltReason);
         }
 
+        Assert.Empty(engine.RuntimeDiagnostics);
+        Assert.Equal(0, engine.Read("stack_error"));
+    }
+
+    [Fact]
+    public void TinyCpuLoadsAndAddsMemoryDirectly()
+    {
+        int[] program =
+        [
+            0x15, // 0: LDA 5
+            0x38, // 1: STA 8 (RAM[8] = 5)
+            0xE8, // 2: LDA 8 direct -> 5
+            0xF8, // 3: ADD 8 direct -> 10
+            0x44, // 4: JMP 4
+            0x44, // 5: halt loop
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(program), "demo.tiny-cpu");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(80);
+
+        PulseClock(engine);
+        PulseClock(engine);
+        Assert.Equal(2, ReadLane(engine, "pc", 4));
+
+        PulseClock(engine);
+        Assert.Equal(5, ReadLane(engine, "acc", 4));
+        Assert.Equal(0xF8, ReadLane(engine, "ir", 8));
+
+        PulseClock(engine);
+        Assert.Equal(10, ReadLane(engine, "acc", 4));
+        Assert.Equal(4, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, engine.Read("stack_error"));
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void TinyCpuFlagsStackUnderflowAndClearsItWithReset()
+    {
+        int[] program = Enumerable.Repeat(0xB0, 16).ToArray(); // POP at SP=0
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(program), "demo.tiny-cpu");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(80);
+        Assert.Equal(0, engine.Read("stack_error"));
+
+        PulseClock(engine);
+        Assert.Equal(15, ReadLane(engine, "sp", 4));
+        Assert.Equal(1, engine.Read("stack_error"));
+
+        engine.Drive("reset", 1);
+        engine.Settle(40);
+        PulseClock(engine);
+        Assert.Equal(0, ReadLane(engine, "sp", 4));
+        Assert.Equal(0, engine.Read("stack_error"));
+    }
+
+    [Fact]
+    public void TinyCpuFlagsStackOverflowAfterSixteenPushes()
+    {
+        int[] program = Enumerable.Repeat(0xA0, 16).ToArray(); // PUSH repeatedly
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(program), "demo.tiny-cpu");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(80);
+
+        for (int i = 0; i < 15; i++)
+        {
+            PulseClock(engine);
+        }
+
+        Assert.Equal(15, ReadLane(engine, "sp", 4));
+        Assert.Equal(0, engine.Read("stack_error"));
+
+        PulseClock(engine);
+        Assert.Equal(0, ReadLane(engine, "sp", 4));
+        Assert.Equal(1, engine.Read("stack_error"));
         Assert.Empty(engine.RuntimeDiagnostics);
     }
 
