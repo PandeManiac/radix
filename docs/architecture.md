@@ -304,6 +304,8 @@ The editor compiles the **currently edited definition** as the root. This lets a
 
 Consequence: navigating to a subcircuit does not show the parent's surrounding state. This is intentional but should be made visible in UI copy; the definition header identifies the simulated root.
 
+Diagnostic navigation is read-only. A `Diagnostic` may carry definition, instance, net, and pin IDs; the Diagnostics tab turns those into a **Locate** action that opens the owning definition, selects the named instance or net, and centers the canvas on it. Project-wide messages have no action. Navigation never mutates the project or the simulation, and a target that disappeared is reported instead of guessed.
+
 ### 10.4 Visual model
 
 Automatic layout derives:

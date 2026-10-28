@@ -853,6 +853,62 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void DiagnosticsNavigateToDefinitionInstanceAndNet()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateAccumulatorCpuDemo());
+        CircuitDefinition root = viewModel.Project.RequireDefinition("demo.accumulator");
+        string instanceId = root.Instances[0].Id;
+        string netId = root.Nets[0].Id;
+        string otherDefinitionId = viewModel.Project.Definitions.First(definition => definition.Id != root.Id).Id;
+        viewModel.OpenDefinition(otherDefinitionId);
+        var focus = new List<Rect>();
+        viewModel.FocusRequested += bounds => focus.Add(bounds);
+
+        Assert.True(viewModel.NavigateToDiagnostic(
+            new Diagnostic("RAD900", DiagnosticSeverity.Warning, "instance target", root.Id, instanceId)));
+        Assert.Equal(root.Id, viewModel.Definition.Id);
+        Assert.Equal(instanceId, viewModel.SelectedInstanceId);
+        Assert.NotEmpty(focus);
+        Assert.Contains("RAD900", viewModel.StatusText, StringComparison.Ordinal);
+
+        Assert.True(viewModel.NavigateToDiagnostic(
+            new Diagnostic("RAD901", DiagnosticSeverity.Warning, "net target", root.Id, NetId: netId)));
+        Assert.Equal(netId, viewModel.SelectedNetId);
+        Assert.Contains("Located net", viewModel.StatusText, StringComparison.Ordinal);
+
+        Assert.False(viewModel.NavigateToDiagnostic(
+            new Diagnostic("RAD902", DiagnosticSeverity.Info, "project-wide")));
+        Assert.Contains("no circuit location", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+
+        Assert.False(viewModel.NavigateToDiagnostic(
+            new Diagnostic("RAD903", DiagnosticSeverity.Error, "missing definition", "no.such.definition")));
+        Assert.Contains("no longer exists", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DiagnosticLocateCommandSelectsTheReportedNet()
+    {
+        var project = CircuitProject.CreateEmpty("broken");
+        var root = new CircuitDefinition { Id = "main", Name = "Main" };
+        project.Definitions.Add(root);
+        project.RootDefinitionId = root.Id;
+        StandardLibrary.Install(project);
+        var broken = new Net { Id = "broken_net", DomainId = StandardDomains.BinaryId };
+        broken.Pins.Add(new PinRef("missing", "out"));
+        root.Nets.Add(broken);
+
+        var viewModel = new EditorViewModel(project);
+        DiagnosticItem item = Assert.Single(viewModel.Diagnostics, candidate => candidate.Code == "RAD077");
+        Assert.True(item.CanLocate);
+        Assert.Equal("broken_net", item.Diagnostic.NetId);
+
+        item.LocateCommand.Execute(null);
+
+        Assert.Equal("broken_net", viewModel.SelectedNetId);
+        Assert.Contains("Located net", viewModel.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ViewMetadataRoundTripsWithoutDirtyingTheProject()
     {
         var viewModel = CreateEmptyEditor();

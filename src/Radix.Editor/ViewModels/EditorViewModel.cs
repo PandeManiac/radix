@@ -147,6 +147,9 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>Raised after loading a project that has a saved viewport.</summary>
     public event Action? ViewRestoreRequested;
 
+    /// <summary>Raised with world bounds that should be centered after navigation.</summary>
+    public event Action<Rect>? FocusRequested;
+
     public CircuitProject Project => _project;
 
     /// <summary>
@@ -726,6 +729,94 @@ public sealed class EditorViewModel : ObservableObject
         RaiseSelectionChanged();
         RefreshInspector();
         VisualInvalidated?.Invoke();
+    }
+
+    /// <summary>
+    /// Opens the diagnostic's definition and selects the instance or net it names.
+    /// Presentation focus only: no project structure or simulation state is changed.
+    /// </summary>
+    public bool NavigateToDiagnostic(Diagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+        if (diagnostic.DefinitionId is string definitionId)
+        {
+            if (_project.FindDefinition(definitionId) is null)
+            {
+                StatusText = $"Definition '{definitionId}' from {diagnostic.Code} no longer exists.";
+                return false;
+            }
+
+            OpenDefinition(definitionId);
+        }
+
+        if (diagnostic.InstanceId is string instanceId &&
+            Definition.FindInstance(instanceId) is ComponentInstance instance)
+        {
+            Rect? bounds = Layout?.Components
+                .FirstOrDefault(box => string.Equals(box.Instance.Id, instance.Id, StringComparison.Ordinal))
+                ?.Bounds;
+            SelectInstance(instance.Id);
+            FocusBounds(bounds);
+            StatusText = $"Located instance '{instance.Id}' ({diagnostic.Code})";
+            return true;
+        }
+
+        if (diagnostic.NetId is string netId && Definition.FindNet(netId) is Net net)
+        {
+            SelectNet(net.Id);
+            FocusBounds(BoundsOfNet(net.Id));
+            StatusText = $"Located net '{net.Id}' ({diagnostic.Code})";
+            return true;
+        }
+
+        if (diagnostic.PinId is string pinId)
+        {
+            if (Definition.FindPortNet(pinId) is Net portNet)
+            {
+                SelectNet(portNet.Id);
+                FocusBounds(BoundsOfNet(portNet.Id));
+                StatusText = $"Located interface pin '{pinId}' ({diagnostic.Code})";
+                return true;
+            }
+
+            if (Definition.FindPin(pinId) is PinDeclaration pin)
+            {
+                StatusText = $"Interface pin '{pin.Name}' has no net to select.";
+                return false;
+            }
+        }
+
+        if (diagnostic.DefinitionId is not null)
+        {
+            StatusText = $"Opened definition '{Definition.Name}' for {diagnostic.Code}; its target is gone.";
+            return true;
+        }
+
+        StatusText = $"{diagnostic.Code} has no circuit location.";
+        return false;
+    }
+
+    private void FocusBounds(Rect? bounds)
+    {
+        if (bounds is Rect rect)
+        {
+            FocusRequested?.Invoke(rect);
+        }
+    }
+
+    private Rect? BoundsOfNet(string netId)
+    {
+        NetWire? wire = Layout?.FindWire(netId);
+        if (wire is null || wire.Points.Count == 0)
+        {
+            return null;
+        }
+
+        double minX = wire.Points.Min(point => point.X);
+        double minY = wire.Points.Min(point => point.Y);
+        double maxX = wire.Points.Max(point => point.X);
+        double maxY = wire.Points.Max(point => point.Y);
+        return new Rect(minX, minY, maxX - minX, maxY - minY);
     }
 
     private ComponentInstance? FindSelectedInstance()
@@ -3257,7 +3348,7 @@ public sealed class EditorViewModel : ObservableObject
         Diagnostics.Clear();
         foreach (Diagnostic diagnostic in bag.Take(250))
         {
-            Diagnostics.Add(new DiagnosticItem(diagnostic));
+            Diagnostics.Add(CreateDiagnosticItem(diagnostic));
         }
 
         RaisePropertyChanged(nameof(DiagnosticSummary));
@@ -3268,11 +3359,14 @@ public sealed class EditorViewModel : ObservableObject
         Diagnostics.Clear();
         foreach (Diagnostic diagnostic in Simulator.AllDiagnostics().Take(250))
         {
-            Diagnostics.Add(new DiagnosticItem(diagnostic));
+            Diagnostics.Add(CreateDiagnosticItem(diagnostic));
         }
 
         RaisePropertyChanged(nameof(DiagnosticSummary));
     }
+
+    private DiagnosticItem CreateDiagnosticItem(Diagnostic diagnostic) =>
+        new(diagnostic, new RelayCommand(() => NavigateToDiagnostic(diagnostic)));
 
     private void RefreshWaveform()
     {

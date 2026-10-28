@@ -70,6 +70,26 @@ public sealed class Viewport
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Pans so the center of <paramref name="worldBounds"/> sits at the surface center.
+    /// Scale is left unchanged; this is used to reveal a selected diagnostic target.
+    /// </summary>
+    public void CenterOn(Rect worldBounds, Size surface)
+    {
+        if (!double.IsFinite(worldBounds.X) || !double.IsFinite(worldBounds.Y) ||
+            !double.IsFinite(worldBounds.Width) || !double.IsFinite(worldBounds.Height) ||
+            surface.Width <= 1 || surface.Height <= 1)
+        {
+            return;
+        }
+
+        Point center = worldBounds.Center;
+        Offset = new Point(
+            (surface.Width / 2) - (center.X * Scale),
+            (surface.Height / 2) - (center.Y * Scale));
+        Changed?.Invoke();
+    }
+
     public void Fit(Rect worldBounds, Size surface, double margin = 50)
     {
         if (worldBounds.Width <= 0 || worldBounds.Height <= 0 ||

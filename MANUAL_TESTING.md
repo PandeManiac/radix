@@ -18,7 +18,8 @@ The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git
 - `workbench-waveform-dark.png`;
 - `workbench-accumulator-lanes.png` (scrolled numeric-lane inspector with a drive control);
 - `workbench-lane-editor.png` (numeric lane loaded into the edit form);
-- `workbench-domain-policy.png` (signal-domain inspector with a priority table).
+- `workbench-domain-policy.png` (signal-domain inspector with a priority table);
+- `workbench-diagnostics-locate.png` (Diagnostics tab with a Locate action).
 
 Launch the editor only when you are ready to use it:
 
@@ -165,8 +166,9 @@ If counter values differ, record the values and diagnostics; this is a correctne
 2. Double-click the ripple-carry adder, then a full adder, then a half adder. Expected: nested internals render and the definition header identifies the current simulation root.
 3. Return to the root and verify simulation resets for the new root.
 4. Open a deliberately malformed file (change `"version": 5` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
-5. Save a project and inspect the JSON. Expected: `"version": 5`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
-6. Load a version 1, 2, 3, or 4 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 5.
+5. Trigger a located diagnostic (for example, drive one single-driver net from two outputs, or reopen a project whose Diagnostics lists a located error), switch to **Diagnostics**, and click **Locate** on the message. Expected: the status bar names the code, the owning definition opens when needed, the named instance or net is selected, and the canvas centers on it without changing the circuit. A project-wide message has no **Locate** button.
+6. Save a project and inspect the JSON. Expected: `"version": 5`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
+7. Load a version 1, 2, 3, or 4 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 5.
 
 ## 12. Unsaved changes and window behavior
 

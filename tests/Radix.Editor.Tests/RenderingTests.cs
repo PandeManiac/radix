@@ -6,7 +6,10 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Radix.Core.Model;
+using Radix.Core.Signals;
 using Radix.Editor.Controls;
+using Radix.Editor.Rendering;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -265,6 +268,47 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void DiagnosticsTabRendersLocateActionForLocatedProblems()
+    {
+        var project = CircuitProject.CreateEmpty("broken");
+        var root = new CircuitDefinition { Id = "main", Name = "Main" };
+        project.Definitions.Add(root);
+        project.RootDefinitionId = root.Id;
+        StandardLibrary.Install(project);
+        var broken = new Net { Id = "broken_net", DomainId = StandardDomains.BinaryId };
+        broken.Pins.Add(new PinRef("missing", "out"));
+        root.Nets.Add(broken);
+
+        var viewModel = new EditorViewModel(project);
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var tabs = window.FindControl<TabControl>("RightTabs");
+        Assert.NotNull(tabs);
+        tabs!.SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+
+        Button locate = Assert.Single(
+            window.GetVisualDescendants().OfType<Button>(),
+            button => button.Content is "Locate");
+        Assert.True(locate.IsVisible);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-diagnostics-locate.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        locate.Command!.Execute(null);
+        Assert.Equal("broken_net", viewModel.SelectedNetId);
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void EmptyProjectCanvasRendersHint()
     {
         var project = Core.Model.CircuitProject.CreateEmpty("Empty");
@@ -336,6 +380,20 @@ public sealed class RenderingTests
         {
             application.RequestedThemeVariant = previous;
         }
+    }
+
+    [Fact]
+    public void ViewportCenterOnPlacesWorldCenterAtSurfaceCenter()
+    {
+        var viewport = new Viewport();
+        viewport.Restore(2.0, new Point(10, 20));
+
+        viewport.CenterOn(new Rect(100, 50, 40, 20), new Size(800, 600));
+
+        Point screen = viewport.WorldToScreen(new Point(120, 60));
+        Assert.Equal(400, screen.X, 3);
+        Assert.Equal(300, screen.Y, 3);
+        Assert.Equal(2.0, viewport.Scale, 3);
     }
 
     [AvaloniaFact]

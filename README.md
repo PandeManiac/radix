@@ -61,6 +61,7 @@ The editor opens the 4-bit counter example. It is a normal desktop application w
 - **Simulate** with Begin, Advance, Event, Clock, and Settle. The current definition is compiled as the simulation root, so a reusable component can be tested in isolation.
 - **Drive inputs** from the I/O PINS section. Each input shows its domain values as buttons.
 - **Inspect signals** on the canvas badges, the I/O section, the Waveform tab, and the Trace tab.
+- **Locate a problem** in the Diagnostics tab: messages that name a definition, instance, net, or pin have a **Locate** action that opens the owning definition, selects the target, and centers it on the canvas. Project-wide messages have no action.
 - **Undo/redo** uses whole-project snapshots. Structural changes invalidate the running simulation, as do parameter changes.
 - **Create domains** (for example a five-value logic or a radix-5 digit set) in the Inspect tab. Values are arbitrary labels; no arithmetic semantics are attached. Choose a **Single driver** policy, or a **Priority table** with one priority per value and a conflict index for equal-priority disagreements; the list shows each domain's values and resolution policy.
 - **Choose a theme** with the Auto/Light/Dark selector in the toolbar. Auto follows the operating system; the choice is persisted per user. Canvas, wires, waveform, inspectors, menus, and diagnostics share one semantic token set.
@@ -196,9 +197,9 @@ docs/                    architecture, project format, test scripts, benchmarks
 ## Testing summary
 
 - Kernel and library tests: **171 passing**.
-- Editor tests: **60 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, canvas lane legend, lane editor, custom-format editor, and domain-policy editor.
+- Editor tests: **64 passing**, including offscreen Skia screenshots of the light workbench, dark workbench, waveform tab, dark waveform tab, numeric-lane inspector, canvas lane legend, lane editor, custom-format editor, domain-policy editor, and diagnostics Locate action.
 - Tests cover simultaneous events, transport delays, zero-delay divergence, legitimate sequential feedback, hierarchy, ports, custom domains, serialization round trips, malformed projects, built-in and custom numeric formats, exhaustive encode/decode ranges, scripted drive/assert runs, determinism, randomized differential comparison against a reference evaluator, RAM write/read/hold behavior, and the tiny CPU's fetch/decode/execute loop including memory operations, nested calls, a taken branch, and reset.
-- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, in-place lane editing with stable IDs and cancellation, custom-format authoring and in-place editing, single-driver and priority-domain authoring with validation, saved viewport restoration, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
+- Editor tests cover wire geometry (no segments through component bodies), bendpoint undo/persistence, theming, copy/paste internal nets, search, extraction with simulation, net promotion, numeric-lane decoding and driving, in-place lane editing with stable IDs and cancellation, custom-format authoring and in-place editing, single-driver and priority-domain authoring with validation, diagnostic navigation to definitions, instances, and nets, viewport centering, saved viewport restoration, and library import/export collision rules. GUI tests still do not replace human interaction; use [MANUAL_TESTING.md](MANUAL_TESTING.md) for the interactive pass.
 
 ## Near-term roadmap
 

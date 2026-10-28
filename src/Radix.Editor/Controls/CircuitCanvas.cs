@@ -127,6 +127,7 @@ public sealed class CircuitCanvas : Control
             _viewModel.VisualInvalidated += OnVisualInvalidated;
             _viewModel.FitRequested += OnFitRequested;
             _viewModel.ViewRestoreRequested += OnViewRestoreRequested;
+            _viewModel.FocusRequested += OnFocusRequested;
             _needsInitialFit = true;
             if (Bounds.Width > 20 && Bounds.Height > 20)
             {
@@ -147,6 +148,7 @@ public sealed class CircuitCanvas : Control
             _viewModel.VisualInvalidated -= OnVisualInvalidated;
             _viewModel.FitRequested -= OnFitRequested;
             _viewModel.ViewRestoreRequested -= OnViewRestoreRequested;
+            _viewModel.FocusRequested -= OnFocusRequested;
             _viewModel = null;
         }
     }
@@ -156,6 +158,15 @@ public sealed class CircuitCanvas : Control
     private void OnFitRequested() => FitToContent();
 
     private void OnViewRestoreRequested() => TryApplySavedView();
+
+    private void OnFocusRequested(Rect bounds)
+    {
+        if (Bounds.Width > 1 && Bounds.Height > 1)
+        {
+            Viewport.CenterOn(bounds, Bounds.Size);
+            InvalidateVisual();
+        }
+    }
 
     private void OnViewportChanged() =>
         _viewModel?.SyncViewport(Viewport.Scale, Viewport.Offset.X, Viewport.Offset.Y);

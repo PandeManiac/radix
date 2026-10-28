@@ -163,14 +163,22 @@ public sealed class SpeedOption
 
 public sealed class DiagnosticItem
 {
-    public DiagnosticItem(Diagnostic diagnostic)
+    public DiagnosticItem(Diagnostic diagnostic, ICommand locateCommand)
     {
+        Diagnostic = diagnostic;
         Severity = diagnostic.Severity;
         Code = diagnostic.Code;
         Message = diagnostic.Message;
         Location = diagnostic.Location;
         Display = diagnostic.ToString();
+        LocateCommand = locateCommand;
+        CanLocate = diagnostic.DefinitionId is not null ||
+            diagnostic.InstanceId is not null ||
+            diagnostic.NetId is not null ||
+            diagnostic.PinId is not null;
     }
+
+    public Diagnostic Diagnostic { get; }
 
     public DiagnosticSeverity Severity { get; }
 
@@ -185,6 +193,11 @@ public sealed class DiagnosticItem
     public string Location { get; }
 
     public string Display { get; }
+
+    public ICommand LocateCommand { get; }
+
+    /// <summary>True when the diagnostic names something in the circuit.</summary>
+    public bool CanLocate { get; }
 }
 
 public readonly record struct WaveValueChange(long Time, int Value);
