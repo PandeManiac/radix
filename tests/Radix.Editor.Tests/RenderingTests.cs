@@ -596,6 +596,34 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void ProjectSettingsPanelBindsAndApplies()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var tabs = window.FindControl<TabControl>("RightTabs");
+        Assert.NotNull(tabs);
+        tabs!.SelectedIndex = 0;
+        Dispatcher.UIThread.RunJobs();
+
+        TextBox advance = Assert.IsType<TextBox>(window.FindControl<TextBox>("DefaultAdvanceTicksBox"));
+        Assert.True(advance.IsEffectivelyVisible);
+        Assert.Equal("10", advance.Text);
+
+        viewModel.DefaultAdvanceTicksText = "30";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("30", advance.Text);
+
+        Button apply = Assert.Single(
+            window.GetVisualDescendants().OfType<Button>(),
+            button => button.Content is "Apply settings");
+        Assert.True(apply.IsEffectivelyVisible);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void EmptyProjectCanvasRendersHint()
     {
         var project = Core.Model.CircuitProject.CreateEmpty("Empty");

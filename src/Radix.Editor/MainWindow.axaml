@@ -511,6 +511,34 @@
                   <TextBlock Text="Name" Classes="muted" FontSize="10.5" />
                   <TextBlock Grid.Column="1" Text="{Binding Project.Name}" FontSize="11.5" />
                 </Grid>
+
+                <TextBlock Text="SIMULATION SETTINGS" Classes="section" />
+                <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,2,0,0">
+                  <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
+                      <TextBlock Text="Default advance" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Ticks used by Advance after reopening this project" />
+                      <TextBox x:Name="DefaultAdvanceTicksBox" Grid.Column="1" Text="{Binding DefaultAdvanceTicksText, Mode=TwoWay}" ToolTip.Tip="Whole number of ticks, 1..1,000,000" />
+                      <TextBlock Grid.Column="2" Text="ticks" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
+                      <TextBlock Text="Zero-delay guard" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Maximum evaluations of one component at one tick before the engine reports non-convergence" />
+                      <TextBox x:Name="EvaluationGuardBox" Grid.Column="1" Text="{Binding EvaluationGuardText, Mode=TwoWay}" ToolTip.Tip="Whole number, 1..1,000,000; too low halts legitimate zero-delay chains" />
+                      <TextBlock Grid.Column="2" Text="evals" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
+                      <TextBlock Text="Trace capacity" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Net changes retained for the waveform and Trace tabs; zero disables recording" />
+                      <TextBox Grid.Column="1" Text="{Binding TraceCapacityText, Mode=TwoWay}" ToolTip.Tip="Whole number, 0..100,000,000; zero disables recording" />
+                      <TextBlock Grid.Column="2" Text="changes" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
+                    </Grid>
+                    <CheckBox Content="Record net transitions" IsChecked="{Binding RecordNetTransitions, Mode=TwoWay}" FontSize="10.5" ToolTip.Tip="Record transitions for the waveform and Trace tabs; capacity zero still disables recording" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="Apply settings" Command="{Binding ApplyProjectSettingsCommand}" ToolTip.Tip="Validate and save these settings as one undo step; the running simulation is reset" />
+                      <Button Classes="tool" Content="Revert" Command="{Binding ReloadProjectSettingsCommand}" ToolTip.Tip="Discard unapplied edits and reload the saved settings" />
+                    </StackPanel>
+                    <TextBlock Text="Saved with the project. Applying resets the simulation because engine options are fixed when it starts." Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
                 <TextBlock Text="Changes are committed as one undo step when you leave a field." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,6,0,0" />
 
                 <TextBlock Text="SIGNAL DOMAINS" Classes="section" />

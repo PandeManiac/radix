@@ -48,6 +48,15 @@ Expected first screen: the light workbench (or your saved theme), the **4-bit bi
 
 If counter values differ, record the values and diagnostics; this is a correctness failure.
 
+### Project settings
+
+1. In **Inspect**, scroll to **SIMULATION SETTINGS**. Expected: default advance `10`, zero-delay guard `64`, trace capacity `500000`, and **Record net transitions** checked.
+2. Change default advance to `25` and click **Apply settings**. Expected: status reports the settings were applied, the project is marked modified, and **Trace** and **Waveform** are empty because the simulation was reset.
+3. Save and reopen the project. Expected: default advance is still `25`, and the Advance box starts at `25` for the reopened project. Click **Revert** after typing another value: the field returns to `25` without changing the project.
+4. Set default advance to `0` and click **Apply settings**. Expected: no change is committed; the status bar explains that whole numbers in range are required and names the advance range.
+5. Set trace capacity to `0`, apply, and click **Begin** then **Advance**. Expected: the Trace tab stays empty and the waveform shows no recorded transitions, because recording is disabled. Restore capacity to `500000`, apply, Begin, and Advance; transitions return.
+6. Change a setting, apply, then press `Ctrl+Z`. Expected: the previous settings return in both the project and the fields, as one undo step.
+
 ## 2. Themes
 
 1. Use the toolbar **Auto / Light / Dark** selector.

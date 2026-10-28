@@ -65,6 +65,10 @@ public sealed class EditorViewModel : ObservableObject
     private string _newPinName = string.Empty;
     private bool _newPinIsInput = true;
     private string _advanceTicksText = "10";
+    private string _defaultAdvanceTicksText = "10";
+    private string _evaluationGuardText = "64";
+    private string _traceCapacityText = "500000";
+    private bool _recordNetTransitions = true;
     private string _newDomainName = string.Empty;
     private string _newDomainValues = "0 1 2";
     private string _newDomainPriorities = "1 1 1";
@@ -183,6 +187,8 @@ public sealed class EditorViewModel : ObservableObject
         ClearTestScriptResultCommand = new RelayCommand(ClearTestScriptResult);
         RunSweepCommand = new RelayCommand(() => RunSweep());
         ClearSweepResultCommand = new RelayCommand(ClearSweepResult);
+        ApplyProjectSettingsCommand = new RelayCommand(() => ApplyProjectSettings());
+        ReloadProjectSettingsCommand = new RelayCommand(ReloadProjectSettings);
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
         CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
         AddNumericLaneCommand = new RelayCommand(AddNumericLane);
@@ -400,6 +406,10 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand RunSweepCommand { get; }
 
     public ICommand ClearSweepResultCommand { get; }
+
+    public ICommand ApplyProjectSettingsCommand { get; }
+
+    public ICommand ReloadProjectSettingsCommand { get; }
 
     public ICommand FitCommand { get; }
 
@@ -828,6 +838,33 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _advanceTicksText;
         set => SetField(ref _advanceTicksText, value);
+    }
+
+    /// <summary>Saved default for the editor's Advance action, in ticks.</summary>
+    public string DefaultAdvanceTicksText
+    {
+        get => _defaultAdvanceTicksText;
+        set => SetField(ref _defaultAdvanceTicksText, value);
+    }
+
+    /// <summary>Zero-delay convergence guard: evaluations per component per tick.</summary>
+    public string EvaluationGuardText
+    {
+        get => _evaluationGuardText;
+        set => SetField(ref _evaluationGuardText, value);
+    }
+
+    /// <summary>Waveform trace ring capacity; zero disables recording.</summary>
+    public string TraceCapacityText
+    {
+        get => _traceCapacityText;
+        set => SetField(ref _traceCapacityText, value);
+    }
+
+    public bool RecordNetTransitions
+    {
+        get => _recordNetTransitions;
+        set => SetField(ref _recordNetTransitions, value);
     }
 
     public string NewDomainName
@@ -3383,6 +3420,62 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = $"Simulation reset to t=0 · {Simulator.EventsProcessed} events";
     }
 
+    /// <summary>
+    /// Commits the project's simulation settings as one undo step. Ranges are
+    /// validated here rather than clamped silently, so a typo cannot change the
+    /// convergence guard without the author noticing. The running engine is dropped
+    /// because its options were fixed when it was created.
+    /// </summary>
+    public bool ApplyProjectSettings()
+    {
+        if (!TryParseSetting(DefaultAdvanceTicksText, 1, 1_000_000, out long advance) ||
+            !TryParseSetting(EvaluationGuardText, 1, 1_000_000, out long guard) ||
+            !TryParseSetting(TraceCapacityText, 0, 100_000_000, out long capacity))
+        {
+            StatusText = "Project settings not applied: enter whole numbers in range " +
+                "(advance 1..1,000,000; guard 1..1,000,000; trace capacity 0..100,000,000).";
+            return false;
+        }
+
+        ProjectSettings settings = _project.Settings;
+        if (settings.DefaultAdvanceTicks == advance &&
+            settings.MaxEvaluationsPerComponentPerTimestamp == (int)guard &&
+            settings.MaxRecordedNetChanges == (int)capacity &&
+            settings.TraceAllNets == RecordNetTransitions)
+        {
+            StatusText = "Project settings unchanged";
+            return true;
+        }
+
+        PushUndo();
+        settings.DefaultAdvanceTicks = advance;
+        settings.MaxEvaluationsPerComponentPerTimestamp = (int)guard;
+        settings.MaxRecordedNetChanges = (int)capacity;
+        settings.TraceAllNets = RecordNetTransitions;
+        AfterMutation(structural: false, invalidateSimulation: true, LayoutRefreshMode.None);
+        StatusText = "Project settings applied";
+        return true;
+    }
+
+    public void ReloadProjectSettings()
+    {
+        RefreshProjectSettingsFields();
+        StatusText = "Project settings reloaded";
+    }
+
+    private void RefreshProjectSettingsFields()
+    {
+        DefaultAdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
+        EvaluationGuardText = _project.Settings.MaxEvaluationsPerComponentPerTimestamp.ToString(CultureInfo.InvariantCulture);
+        TraceCapacityText = _project.Settings.MaxRecordedNetChanges.ToString(CultureInfo.InvariantCulture);
+        RecordNetTransitions = _project.Settings.TraceAllNets;
+    }
+
+    private static bool TryParseSetting(string text, long min, long max, out long value) =>
+        long.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value) &&
+        value >= min &&
+        value <= max;
+
     public void AdvanceSimulation()
     {
         if (!EnsureSimulation())
@@ -3582,6 +3675,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         ClearSweepResult();
         EnsureProjectShape();
+        RefreshProjectSettingsFields();
         if (_project.FindDefinition(_definitionId) is null)
         {
             _definitionId = _project.RootDefinitionId;

@@ -1808,6 +1808,48 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void ProjectSettingsLoadApplyUndoAndRejectInvalidValues()
+    {
+        var project = CircuitProject.CreateEmpty("Settings");
+        project.Definitions.Add(new CircuitDefinition { Id = "main", Name = "Main" });
+        project.RootDefinitionId = "main";
+        StandardLibrary.Install(project);
+        project.Settings.DefaultAdvanceTicks = 42;
+        project.Settings.MaxEvaluationsPerComponentPerTimestamp = 96;
+        project.Settings.MaxRecordedNetChanges = 1234;
+        project.Settings.TraceAllNets = false;
+
+        var viewModel = new EditorViewModel(project);
+        Assert.Equal("42", viewModel.DefaultAdvanceTicksText);
+        Assert.Equal("96", viewModel.EvaluationGuardText);
+        Assert.Equal("1234", viewModel.TraceCapacityText);
+        Assert.False(viewModel.RecordNetTransitions);
+
+        viewModel.DefaultAdvanceTicksText = "25";
+        viewModel.EvaluationGuardText = "128";
+        viewModel.TraceCapacityText = "0";
+        viewModel.RecordNetTransitions = true;
+        Assert.True(viewModel.ApplyProjectSettings());
+        Assert.True(viewModel.IsDirty);
+        Assert.Equal(25, viewModel.Project.Settings.DefaultAdvanceTicks);
+        Assert.Equal(128, viewModel.Project.Settings.MaxEvaluationsPerComponentPerTimestamp);
+        Assert.Equal(0, viewModel.Project.Settings.MaxRecordedNetChanges);
+        Assert.True(viewModel.Project.Settings.TraceAllNets);
+
+        viewModel.Undo();
+        Assert.Equal(42, viewModel.Project.Settings.DefaultAdvanceTicks);
+        Assert.Equal("42", viewModel.DefaultAdvanceTicksText);
+
+        viewModel.DefaultAdvanceTicksText = "0";
+        Assert.False(viewModel.ApplyProjectSettings());
+        Assert.Equal(42, viewModel.Project.Settings.DefaultAdvanceTicks);
+        Assert.Contains("not applied", viewModel.StatusText, StringComparison.Ordinal);
+
+        viewModel.ReloadProjectSettings();
+        Assert.Equal("42", viewModel.DefaultAdvanceTicksText);
+    }
+
+    [Fact]
     public void SweepRendersEveryInputCombinationOfTheCurrentDefinition()
     {
         EditorViewModel viewModel = CreateLookupEditor();
