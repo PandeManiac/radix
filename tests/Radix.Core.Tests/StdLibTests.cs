@@ -384,6 +384,84 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryLatchCapturesWhenEnabledAndHoldsWhenClosed()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryLatchId);
+        engine.Drive("e", 2);
+        engine.Drive("d", 2);
+        Settle(engine, 20);
+        Assert.Equal(2, engine.Read("q"));
+        Assert.Equal(0, engine.Read("qn"));
+
+        engine.Drive("d", 1);
+        Settle(engine, 20);
+        Assert.Equal(1, engine.Read("q"));
+
+        engine.Drive("e", 0);
+        engine.Drive("d", 0);
+        Settle(engine, 20);
+        Assert.Equal(1, engine.Read("q"));
+        Assert.Equal(1, engine.Read("qn"));
+
+        engine.Drive("e", 2);
+        Settle(engine, 20);
+        Assert.Equal(0, engine.Read("q"));
+        Assert.Equal(2, engine.Read("qn"));
+    }
+
+    [Fact]
+    public void TernaryFlipFlopSamplesOnRisingEdgeOnly()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryDFlipFlopId);
+        engine.Drive("clk", 0);
+        engine.Drive("d", 2);
+        Settle(engine, 40);
+        Assert.Equal(0, engine.Read("q"));
+
+        engine.Drive("clk", 2);
+        Settle(engine, 40);
+        Assert.Equal(2, engine.Read("q"));
+        Assert.Equal(0, engine.Read("qn"));
+
+        engine.Drive("clk", 0);
+        engine.Drive("d", 1);
+        Settle(engine, 40);
+        Assert.Equal(2, engine.Read("q"));
+
+        engine.Drive("d", 0);
+        Settle(engine, 40);
+        Assert.Equal(2, engine.Read("q"));
+
+        engine.Drive("clk", 2);
+        Settle(engine, 40);
+        Assert.Equal(0, engine.Read("q"));
+    }
+
+    [Fact]
+    public void TernaryCounterCyclesThroughAllNineStates()
+    {
+        CircuitProject project = ExampleProjects.CreateTernaryCounterDemo();
+        SimulationEngine engine = Engine("demo.ternary-counter", project);
+        engine.Drive("clk", 0);
+        Settle(engine, 40);
+        Assert.Equal(0, ReadTernaryCounter(engine));
+
+        for (int expected = 1; expected <= 9; expected++)
+        {
+            engine.Drive("clk", 2);
+            Settle(engine, 60);
+            Assert.Equal(expected % 9, ReadTernaryCounter(engine));
+
+            engine.Drive("clk", 0);
+            Settle(engine, 60);
+            Assert.Equal(expected % 9, ReadTernaryCounter(engine));
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void InstallIsIdempotent()
     {
         CircuitProject project = TestFixtures.WithStandardLibrary();
@@ -406,6 +484,9 @@ public sealed class StdLibTests
             Assert.NotNull(circuit);
         }
     }
+
+    private static int ReadTernaryCounter(SimulationEngine engine) =>
+        engine.Read("t0") + (3 * engine.Read("t1"));
 
     private static int ReadBus(SimulationEngine engine, params string[] pins)
     {

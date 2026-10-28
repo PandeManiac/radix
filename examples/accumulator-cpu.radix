@@ -9226,6 +9226,74 @@
       ]
     },
     {
+      "id": "std.t-lognot",
+      "name": "Ternary NOT (Kleene)",
+      "description": "Logic negation used by the ternary latches: 0 \u003C-\u003E 2 and 1 stays unknown. Contrast std.t-not, which is digit-wise negation modulo 3.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              2,
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
       "id": "std.t-min",
       "name": "Ternary minimum",
       "pins": [
@@ -10239,6 +10307,666 @@
             "s0",
             "s1"
           ]
+        }
+      ]
+    },
+    {
+      "id": "std.t-inc",
+      "name": "Ternary increment",
+      "description": "Adds one to a ternary digit modulo 3.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              1,
+              2,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-carry",
+      "name": "Ternary carry",
+      "description": "Carry out of adding one: 1 when the digit is 2, otherwise 0.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              0,
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-add",
+      "name": "Ternary digit adder",
+      "description": "Adds two ternary digits modulo 3; carry is a separate lookup such as std.t-carry.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              2,
+              1,
+              2,
+              0,
+              2,
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-latch",
+      "name": "Ternary D latch",
+      "description": "Level-sensitive trit latch on the 0/1/2 domain. E=2 captures D, E=0 holds, and E=1 gives an unknown trit. Two cross-coupled Kleene NANDs store the trit, so the state survives the enable transition; Q/QN power up at 0/2.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "e",
+          "name": "E",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "inv_d",
+          "definition": "std.t-lognot",
+          "x": 60,
+          "y": 200
+        },
+        {
+          "id": "capture",
+          "definition": "std.t-min",
+          "x": 240,
+          "y": 40
+        },
+        {
+          "id": "release",
+          "definition": "std.t-min",
+          "x": 240,
+          "y": 240
+        },
+        {
+          "id": "nand_set",
+          "definition": "std.t-lognot",
+          "x": 440,
+          "y": 40
+        },
+        {
+          "id": "nand_reset",
+          "definition": "std.t-lognot",
+          "x": 440,
+          "y": 240
+        },
+        {
+          "id": "hold_q",
+          "definition": "std.t-min",
+          "x": 620,
+          "y": 40
+        },
+        {
+          "id": "hold_qn",
+          "definition": "std.t-min",
+          "x": 620,
+          "y": 240
+        },
+        {
+          "id": "q_bar",
+          "definition": "std.t-lognot",
+          "x": 800,
+          "y": 40
+        },
+        {
+          "id": "qn_bar",
+          "definition": "std.t-lognot",
+          "x": 800,
+          "y": 240
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "inv_d",
+              "pin": "a"
+            },
+            {
+              "instance": "capture",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "e_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "capture",
+              "pin": "b"
+            },
+            {
+              "instance": "release",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "ternary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "hold_qn",
+              "pin": "b"
+            },
+            {
+              "instance": "q_bar",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "ternary",
+          "initial": 2,
+          "pins": [
+            {
+              "instance": "hold_q",
+              "pin": "b"
+            },
+            {
+              "instance": "qn_bar",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "not_d",
+          "domain": "ternary",
+          "label": "not D",
+          "pins": [
+            {
+              "instance": "inv_d",
+              "pin": "y"
+            },
+            {
+              "instance": "release",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "set_in",
+          "domain": "ternary",
+          "label": "D and E",
+          "pins": [
+            {
+              "instance": "capture",
+              "pin": "y"
+            },
+            {
+              "instance": "nand_set",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "reset_in",
+          "domain": "ternary",
+          "label": "not D and E",
+          "pins": [
+            {
+              "instance": "release",
+              "pin": "y"
+            },
+            {
+              "instance": "nand_reset",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "set_bar",
+          "domain": "ternary",
+          "label": "set",
+          "pins": [
+            {
+              "instance": "nand_set",
+              "pin": "y"
+            },
+            {
+              "instance": "hold_q",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "reset_bar",
+          "domain": "ternary",
+          "label": "reset",
+          "pins": [
+            {
+              "instance": "nand_reset",
+              "pin": "y"
+            },
+            {
+              "instance": "hold_qn",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "q_hold",
+          "domain": "ternary",
+          "label": "set and QN",
+          "pins": [
+            {
+              "instance": "hold_q",
+              "pin": "y"
+            },
+            {
+              "instance": "q_bar",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "qn_hold",
+          "domain": "ternary",
+          "label": "reset and Q",
+          "pins": [
+            {
+              "instance": "hold_qn",
+              "pin": "y"
+            },
+            {
+              "instance": "qn_bar",
+              "pin": "a"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "e",
+          "net": "e_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-dff",
+      "name": "Ternary D flip-flop",
+      "description": "Positive-edge-triggered trit flip-flop built from two ternary latches and an inverter. Drive CLK between 0 and 2; the slave captures on 2. Q/QN power up at 0/2.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "inv",
+          "definition": "std.t-lognot",
+          "x": 80,
+          "y": 60
+        },
+        {
+          "id": "master",
+          "definition": "std.t-latch",
+          "x": 340,
+          "y": 60
+        },
+        {
+          "id": "slave",
+          "definition": "std.t-latch",
+          "x": 640,
+          "y": 220
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "a"
+            },
+            {
+              "instance": "slave",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "ternary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "ternary",
+          "initial": 2,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "qn"
+            }
+          ]
+        },
+        {
+          "id": "clk_n",
+          "domain": "ternary",
+          "label": "not clock",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "y"
+            },
+            {
+              "instance": "master",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "master_q",
+          "domain": "ternary",
+          "label": "master Q",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "q"
+            },
+            {
+              "instance": "slave",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "master_qn",
+          "domain": "ternary",
+          "label": "master QN",
+          "initial": 2,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "qn"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
         }
       ]
     },

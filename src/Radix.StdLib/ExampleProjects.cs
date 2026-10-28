@@ -15,6 +15,7 @@ public static class ExampleProjects
     public const string CounterFile = "binary-counter.radix";
     public const string BalancedTernaryFile = "balanced-ternary-half-adder.radix";
     public const string BalancedTernaryAdder2File = "balanced-ternary-adder-2.radix";
+    public const string TernaryCounterFile = "ternary-counter.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
 
@@ -25,6 +26,7 @@ public static class ExampleProjects
         new(CounterFile, "4-bit counter", "A free-running 4-bit binary counter: DFFs, a ripple-carry adder, and a waveform clock.", CreateCounterDemo()),
         new(BalancedTernaryFile, "Balanced ternary half adder", "Two-trit addition with sum and carry on a three-valued domain.", CreateBalancedTernaryHalfAdderDemo()),
         new(BalancedTernaryAdder2File, "Balanced ternary 2-trit adder", "Two-stage trit addition with numeric lanes and a ninth-valued result.", CreateBalancedTernaryAdder2Demo()),
+        new(TernaryCounterFile, "Ternary counter", "A two-trit sequential machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane.", CreateTernaryCounterDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
@@ -830,5 +832,48 @@ public static class ExampleProjects
         root.AddNumericLane("sum", "A + B", NumericFormats.BalancedTernary.Id, "s0", "s1", "cout");
 
         return builder.Build("demo.bt-adder-2");
+    }
+
+    public static CircuitProject CreateTernaryCounterDemo()
+    {
+        var builder = new ProjectBuilder("Ternary counter");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.ternary-counter", "Two-trit ternary counter");
+        root.Definition.Description =
+            "Counts 0..8 and wraps. Each rising edge of CLK (0 -> 2) samples the next state, " +
+            "which trit increment/carry lookups compute from the two flip-flop outputs.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+        var q = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            q[i] = root.SetInitial(
+                root.AddPin($"t{i}", $"T{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        root.AddNumericLane("count", "Count", NumericFormats.UnsignedTernary.Id, "t0", "t1");
+
+        Net nextLow = root.Rename(root.AddNet("next_low", StandardDomains.TernaryId), "next T0");
+        Net carry = root.Rename(root.AddNet("carry", StandardDomains.TernaryId), "T0 carry");
+        Net nextHigh = root.Rename(root.AddNet("next_high", StandardDomains.TernaryId), "next T1");
+
+        root.AddInstance("inc", "std.t-inc", 220, 60);
+        root.AddInstance("carry_out", "std.t-carry", 220, 260);
+        root.AddInstance("add_high", "std.t-add", 460, 180);
+        root.AddInstance("ff0", StandardLibrary.TernaryDFlipFlopId, 760, 60);
+        root.AddInstance("ff1", StandardLibrary.TernaryDFlipFlopId, 760, 300);
+
+        root.Connect(q[0], root.Pin("inc", "a"), root.Pin("carry_out", "a"));
+        root.Connect(nextLow, root.Pin("inc", "y"), root.Pin("ff0", "d"));
+        root.Connect(carry, root.Pin("carry_out", "y"), root.Pin("add_high", "b"));
+        root.Connect(q[1], root.Pin("add_high", "a"));
+        root.Connect(nextHigh, root.Pin("add_high", "y"), root.Pin("ff1", "d"));
+
+        root.Connect(clk, root.Pin("ff0", "clk"), root.Pin("ff1", "clk"));
+        root.Connect(q[0], root.Pin("ff0", "q"));
+        root.Connect(q[1], root.Pin("ff1", "q"));
+
+        return builder.Build("demo.ternary-counter");
     }
 }

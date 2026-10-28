@@ -211,6 +211,8 @@ These steps use a terminal only; they never open a window. Run from the reposito
 8. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
 9. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
 10. Run `RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --filter FullyQualifiedName~LayoutBenchmarkTests --logger "console;verbosity=detailed"`. Expected: one passing test and one line per size (`200`, `500`, `1,000` gates) in the form `1000 gates: construct … ms, canonical frames … ms, reused frames … ms, final rebuild … ms`. Reused frames must be far below canonical frames; exact milliseconds depend on the machine. With the variable unset, the test passes without printing.
+11. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-counter.radix examples/tests/ternary-counter.radixtest`. Expected: `PASS: 28 step(s) through t=700`, exit code 0; the script walks all nine counts and checks the wrap to 0.
+12. Run `dotnet run --project src/Radix.Cli -- simulate examples/ternary-counter.radix --ticks 100 --schedule 0:clk=0 --schedule 20:clk=2 --schedule 60:clk=0 --bus t0,t1 --format unsigned-ternary`. Expected: the decoded bus prints `1`; the two flip-flops sample the increment only on the 0→2 clock edge.
 
 ## 14. Balanced-ternary multi-trit addition
 
@@ -223,7 +225,18 @@ This check uses the GUI and the examples from the previous section.
 5. Double-click the `adder` instance. Expected: two `std.bt-full-adder` instances and a constant zero are visible, with the low adder's carry wired into the high adder. Double-click one full adder. Expected: separate sum and carry lookup primitives with a shared `sum`/`carry` table layout.
 6. Return to the root and use **Locate** diagnostics if any appear. Expected: no errors or warnings for the shipped example.
 
-## 15. Tiny program-driven CPU
+## 15. Ternary counter (sequential ternary logic)
+
+This uses the GUI.
+
+1. Open `examples/ternary-counter.radix`. Expected: one `inc`, one `carry_out`, one `add_high`, and two `ff` instances; the inspector lists a single **Count** lane over T0/T1.
+2. Click **Begin**. With `CLK = 0`, settle, then set `CLK = 2` and settle. Expected: `T0 = 1`, `T1 = 0`, **Count** = `1`; setting `CLK` back to `0` does not change the count.
+3. Repeat the 0→2 edge. Expected: `T0 = 2`, count `2`; next edge: `T0 = 0`, `T1 = 1`, count `3` (the low trit wraps and carries).
+4. Continue to count `8` (`T0 = 2`, `T1 = 2`), then pulse once more. Expected: `T0 = 0`, `T1 = 0`, count `0`.
+5. Double-click `ff0`, then its `slave` latch. Expected: two `std.t-latch` instances, a Kleene NOT for the clock, and inside the latch two cross-coupled NOT/min pairs. The definitions use `std.t-lognot`, not the mod-3 `std.t-not`.
+6. Check **Trace**: the clock, `next T0`, `T0 carry`, `next T1`, and both stored trits should transition only around edges; no warnings or errors appear.
+
+## 16. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -250,7 +263,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 16. Known limitations to verify as *limitations*
+## 17. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
