@@ -296,6 +296,38 @@ public sealed class CustomNumericFormatListItem
     public ICommand RemoveCommand { get; }
 }
 
+/// <summary>One editable entry in a lookup table, labeled with its input values.</summary>
+public sealed class LookupTableCell : ObservableObject
+{
+    private string _address;
+    private string _value;
+
+    public LookupTableCell(string instanceId, int index, string address, string value)
+    {
+        InstanceId = instanceId;
+        Index = index;
+        _address = address;
+        _value = value;
+    }
+
+    public string InstanceId { get; }
+
+    public int Index { get; }
+
+    /// <summary>Entry index plus the mixed-radix input values, e.g. "3 · 0,1".</summary>
+    public string Address
+    {
+        get => _address;
+        set => SetField(ref _address, value);
+    }
+
+    public string Value
+    {
+        get => _value;
+        set => SetField(ref _value, value);
+    }
+}
+
 /// <summary>One failed assertion from an in-editor test-script run.</summary>
 public sealed class TestScriptFailureItem
 {

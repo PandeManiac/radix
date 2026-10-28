@@ -422,6 +422,53 @@ public sealed class RenderingTests
     }
 
     [AvaloniaFact]
+    public void LookupTableEditorRendersAddressesAndValues()
+    {
+        var builder = new ProjectBuilder("lookup render");
+        DefinitionBuilder root = builder.Define("root", "Root");
+        Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net b = root.AddPin("b", "B", PinDirection.Input, StandardDomains.BinaryId);
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("g", new LookupSpec(2, [0, 0, 0, 1], 1));
+        root.Connect(a, root.Pin("g", "in0"));
+        root.Connect(b, root.Pin("g", "in1"));
+        root.Connect(y, root.Pin("g", "out"));
+
+        var viewModel = new EditorViewModel(builder.Build("root"));
+        viewModel.SelectInstance("g");
+        Assert.True(viewModel.HasLookupTable);
+
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var tabs = window.FindControl<TabControl>("RightTabs");
+        Assert.NotNull(tabs);
+        tabs!.SelectedIndex = 0;
+        Dispatcher.UIThread.RunJobs();
+
+        TextBlock heading = Assert.Single(
+            window.GetVisualDescendants().OfType<TextBlock>(),
+            text => text.Text == "LOOKUP TABLE");
+        Assert.True(heading.IsEffectivelyVisible);
+
+        TextBox cell = Assert.Single(
+            window.GetVisualDescendants().OfType<TextBox>(),
+            box => box.DataContext is LookupTableCell item && item.Address.StartsWith("1 ·", StringComparison.Ordinal));
+        Assert.True(cell.IsEffectivelyVisible);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-lookup-table.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
     public void DiagnosticsTabRendersInEditorTestScriptResult()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());

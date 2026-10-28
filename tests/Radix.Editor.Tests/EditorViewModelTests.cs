@@ -1567,6 +1567,88 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void LookupTableEditorLabelsMixedRadixAddresses()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        viewModel.SelectInstance("g");
+
+        Assert.True(viewModel.HasLookupTable);
+        Assert.Equal(4, viewModel.LookupCells.Count);
+        Assert.Equal(["0 · 0,0", "1 · 0,1", "2 · 1,0", "3 · 1,1"],
+            viewModel.LookupCells.Select(cell => cell.Address).ToArray());
+        Assert.Equal([0, 1, 2, 3], viewModel.LookupCells.Select(cell => cell.Index).ToArray());
+        Assert.Contains("output binary", viewModel.LookupTableSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LookupTableCellCommitIsOneUndoStepAndRefreshesTheGrid()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        viewModel.SelectInstance("g");
+
+        LookupTableCell cell = viewModel.LookupCells[1];
+        cell.Value = "1";
+        Assert.True(viewModel.ApplyLookupCell(cell));
+
+        LookupSpec updated = Assert.IsType<LookupSpec>(viewModel.Definition.FindInstance("g")!.Primitive);
+        Assert.Equal([0, 1, 0, 1], updated.Table);
+        Assert.Equal("1", viewModel.LookupCells[1].Value);
+        Assert.True(viewModel.IsDirty);
+
+        viewModel.Undo();
+        LookupSpec restored = Assert.IsType<LookupSpec>(viewModel.Definition.FindInstance("g")!.Primitive);
+        Assert.Equal([0, 0, 0, 1], restored.Table);
+        Assert.Equal("0", viewModel.LookupCells[1].Value);
+    }
+
+    [Fact]
+    public void LookupTableRejectsOutOfRangeAndNegativeEntriesWithoutMutating()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        viewModel.SelectInstance("g");
+
+        LookupTableCell cell = viewModel.LookupCells[0];
+        cell.Value = "2";
+        Assert.False(viewModel.ApplyLookupCell(cell));
+        Assert.Contains("between 0 and 1", viewModel.StatusText, StringComparison.Ordinal);
+
+        cell.Value = "-1";
+        Assert.False(viewModel.ApplyLookupCell(cell));
+        Assert.Contains("non-negative integer", viewModel.StatusText, StringComparison.Ordinal);
+
+        LookupSpec unchanged = Assert.IsType<LookupSpec>(viewModel.Definition.FindInstance("g")!.Primitive);
+        Assert.Equal([0, 0, 0, 1], unchanged.Table);
+    }
+
+    [Fact]
+    public void RawTableFieldEditRefreshesTheLookupGridValues()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        viewModel.SelectInstance("g");
+
+        EditableField field = viewModel.Fields.Single(candidate => candidate.Label == "Table (raw)");
+        field.Value = "1 1 0 0";
+        viewModel.ApplyField(field);
+
+        Assert.Equal(["1", "1", "0", "0"], viewModel.LookupCells.Select(cell => cell.Value).ToArray());
+        LookupSpec updated = Assert.IsType<LookupSpec>(viewModel.Definition.FindInstance("g")!.Primitive);
+        Assert.Equal([1, 1, 0, 0], updated.Table);
+    }
+
+    [Fact]
+    public void SelectingANetHidesTheLookupTableEditor()
+    {
+        EditorViewModel viewModel = CreateLookupEditor();
+        viewModel.SelectInstance("g");
+        Assert.True(viewModel.HasLookupTable);
+
+        viewModel.SelectNet("a");
+
+        Assert.False(viewModel.HasLookupTable);
+        Assert.Empty(viewModel.LookupCells);
+    }
+
+    [Fact]
     public void TestScriptRunsAgainstTheEditorProjectAndReportsPass()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
@@ -1695,6 +1777,20 @@ public sealed class EditorViewModelTests
         {
             File.Delete(path);
         }
+    }
+
+    private static EditorViewModel CreateLookupEditor()
+    {
+        var builder = new ProjectBuilder("lookup editor");
+        DefinitionBuilder root = builder.Define("root", "Root");
+        Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net b = root.AddPin("b", "B", PinDirection.Input, StandardDomains.BinaryId);
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("g", new LookupSpec(2, [0, 0, 0, 1], 1));
+        root.Connect(a, root.Pin("g", "in0"));
+        root.Connect(b, root.Pin("g", "in1"));
+        root.Connect(y, root.Pin("g", "out"));
+        return new EditorViewModel(builder.Build("root"));
     }
 
     private static CircuitProject WideNetProject(int netCount)

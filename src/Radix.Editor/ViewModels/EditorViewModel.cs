@@ -99,6 +99,10 @@ public sealed class EditorViewModel : ObservableObject
     private bool _testScriptPassed;
     private string _testScriptSummary = string.Empty;
     private string _testScriptPath = string.Empty;
+    private bool _hasLookupTable;
+    private string _lookupTableSummary = string.Empty;
+    private string? _lookupTableInstanceId;
+    private readonly List<int> _lookupTableModel = [];
 
 
     public EditorViewModel(CircuitProject project)
@@ -265,6 +269,8 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<DiagnosticItem> Diagnostics { get; } = [];
 
     public ObservableCollection<TestScriptFailureItem> TestScriptFailures { get; } = [];
+
+    public ObservableCollection<LookupTableCell> LookupCells { get; } = [];
 
     public ObservableCollection<EditableField> Fields { get; } = [];
 
@@ -476,6 +482,11 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public bool HasTestScriptFailures => TestScriptFailures.Count > 0;
+
+    /// <summary>True while a single lookup primitive is selected.</summary>
+    public bool HasLookupTable => _hasLookupTable;
+
+    public string LookupTableSummary => _lookupTableSummary;
 
     public string TestScriptSummary
     {
@@ -3979,6 +3990,7 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshInspector()
     {
         Fields.Clear();
+        RefreshLookupTable(_selectedInstanceIds.Count == 1 ? _selectedInstance : null);
 
         if (_selectedInstanceIds.Count > 1)
         {
@@ -4149,6 +4161,168 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
+    private void RefreshLookupTable(ComponentInstance? instance)
+    {
+        if (instance?.Primitive is not LookupSpec lookup)
+        {
+            LookupCells.Clear();
+            _lookupTableInstanceId = null;
+            _lookupTableModel.Clear();
+            _hasLookupTable = false;
+            _lookupTableSummary = string.Empty;
+            RaisePropertyChanged(nameof(HasLookupTable));
+            RaisePropertyChanged(nameof(LookupTableSummary));
+            return;
+        }
+
+        IReadOnlyList<PinDescriptor> pins = _project.GetInstancePins(instance);
+        var radices = new int[lookup.InputCount];
+        bool addressable = lookup.InputCount > 0;
+        long expectedEntries = 1;
+        for (int i = 0; i < lookup.InputCount; i++)
+        {
+            radices[i] = 0;
+            if (i >= pins.Count)
+            {
+                addressable = false;
+                continue;
+            }
+
+            Net? net = FindConnectedNet(instance.Id, pins[i].Id);
+            SignalDomain? domain = net is null ? null : _project.FindDomain(net.DomainId);
+            if (domain is null)
+            {
+                addressable = false;
+                continue;
+            }
+
+            radices[i] = domain.ValueCount;
+            expectedEntries *= domain.ValueCount;
+        }
+
+        addressable &= expectedEntries == lookup.Table.Count && radices.All(radix => radix > 0);
+        bool reuse = _hasLookupTable &&
+                     string.Equals(_lookupTableInstanceId, instance.Id, StringComparison.Ordinal) &&
+                     LookupCells.Count == lookup.Table.Count &&
+                     _lookupTableModel.Count == lookup.Table.Count;
+        if (!reuse)
+        {
+            LookupCells.Clear();
+        }
+
+        for (int entry = 0; entry < lookup.Table.Count; entry++)
+        {
+            string address = addressable
+                ? string.Create(CultureInfo.InvariantCulture, $"{entry} · {DescribeLookupAddress(entry, radices)}")
+                : entry.ToString(CultureInfo.InvariantCulture);
+            string value = lookup.Table[entry].ToString(CultureInfo.InvariantCulture);
+            if (!reuse)
+            {
+                LookupCells.Add(new LookupTableCell(instance.Id, entry, address, value));
+                continue;
+            }
+
+            LookupTableCell cell = LookupCells[entry];
+            bool unedited = string.Equals(
+                cell.Value,
+                _lookupTableModel[entry].ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+            cell.Address = address;
+            if (unedited)
+            {
+                cell.Value = value;
+            }
+        }
+
+        string outputDomain = pins.Count > 0
+            ? FindConnectedNet(instance.Id, pins[^1].Id) is Net outputNet
+                ? outputNet.DomainId
+                : "unconnected"
+            : "unconnected";
+        _lookupTableInstanceId = instance.Id;
+        _lookupTableModel.Clear();
+        _lookupTableModel.AddRange(lookup.Table);
+        _lookupTableSummary = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{lookup.InputCount} input(s) · {lookup.Table.Count} entries · delay {lookup.DelayTicks} · output {outputDomain}");
+        _hasLookupTable = true;
+        RaisePropertyChanged(nameof(HasLookupTable));
+        RaisePropertyChanged(nameof(LookupTableSummary));
+    }
+
+    private Net? FindConnectedNet(string instanceId, string pinId)
+    {
+        var reference = new PinRef(instanceId, pinId);
+        return Definition.Nets.FirstOrDefault(net => net.Pins.Contains(reference));
+    }
+
+    private static string DescribeLookupAddress(int entry, IReadOnlyList<int> radices)
+    {
+        var digits = new int[radices.Count];
+        int remainder = entry;
+        for (int i = radices.Count - 1; i >= 0; i--)
+        {
+            digits[i] = remainder % radices[i];
+            remainder /= radices[i];
+        }
+
+        return string.Join(",", digits);
+    }
+
+    /// <summary>
+    /// Commits one edited table cell. The whole table is validated before mutation so
+    /// a temporarily invalid neighbouring cell cannot silently enter the project.
+    /// </summary>
+    public bool ApplyLookupCell(LookupTableCell cell)
+    {
+        ArgumentNullException.ThrowIfNull(cell);
+        ComponentInstance? instance = Definition.FindInstance(cell.InstanceId);
+        if (instance?.Primitive is not LookupSpec lookup || cell.Index < 0 || cell.Index >= lookup.Table.Count ||
+            _selectedInstance?.Id != cell.InstanceId)
+        {
+            return false;
+        }
+
+        var table = new int[lookup.Table.Count];
+        foreach (LookupTableCell candidate in LookupCells)
+        {
+            if (candidate.Index < 0 || candidate.Index >= table.Length)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(candidate.Value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) || parsed < 0)
+            {
+                StatusText = $"Lookup entry {candidate.Index} must be a non-negative integer.";
+                return false;
+            }
+
+            table[candidate.Index] = parsed;
+        }
+
+        IReadOnlyList<PinDescriptor> pins = _project.GetInstancePins(instance);
+        if (pins.Count > 0 && FindConnectedNet(instance.Id, pins[^1].Id) is Net outputNet &&
+            _project.FindDomain(outputNet.DomainId) is SignalDomain outputDomain)
+        {
+            int invalid = Array.FindIndex(table, value => !outputDomain.IsValidValue(value));
+            if (invalid >= 0)
+            {
+                StatusText = $"Lookup entry {invalid} must be between 0 and {outputDomain.ValueCount - 1} for domain '{outputDomain.Id}'.";
+                return false;
+            }
+        }
+
+        if (table.SequenceEqual(lookup.Table))
+        {
+            return true;
+        }
+
+        return MutatePrimitive(
+            instance.Id,
+            spec => new LookupSpec(((LookupSpec)spec).InputCount, table, ((LookupSpec)spec).DelayTicks),
+            "lookup table");
+    }
+
     private void AddPrimitiveFields(ComponentInstance instance, string instanceId)
     {
         switch (instance.Primitive)
@@ -4163,9 +4337,9 @@ public sealed class EditorViewModel : ObservableObject
 
             case LookupSpec lookup:
                 Fields.Add(new EditableField(
-                    "Table",
+                    "Table (raw)",
                     string.Join(' ', lookup.Table),
-                    hint: "Mixed-radix truth table, first input most significant",
+                    hint: "Bulk edit: mixed-radix truth table, first input most significant",
                     apply: value => ParseInts(value) is int[] table &&
                                      MutatePrimitive(instanceId, spec => new LookupSpec(((LookupSpec)spec).InputCount, table, ((LookupSpec)spec).DelayTicks), "lookup table")));
                 Fields.Add(new EditableField(

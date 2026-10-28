@@ -331,6 +331,8 @@ The same tab can run a `.radixtest` file through `SimulationScriptRunner` agains
 
 The Inspect tab's **NETS** navigator is a filtered projection of `Definition.Nets`. Choosing a row calls the same selection path as clicking a wire; the list reads net identity, domain, pin count, and live engine values, but never writes connectivity. Its row cap keeps very large definitions from building an unbounded visual tree while the filter still searches the full net set.
 
+Selecting a lookup primitive also shows a **LOOKUP TABLE** grid. It derives each row's address by decomposing the flat table index in the mixed radix of the connected input nets' domains, with the first input outermost. Editing a cell parses and range-checks the entire grid against the output domain before constructing a new immutable `LookupSpec`, so a partially invalid grid never mutates the project; a commit is one undo step and refreshes the grid from the model. The raw `Table` field remains available for bulk edits, and both paths converge on the same primitive mutation.
+
 ### 10.4 Visual model
 
 Automatic layout derives:

@@ -143,6 +143,25 @@ public partial class MainWindow : Window
 
     private void FieldBox_LostFocus(object? sender, RoutedEventArgs e) => CommitField(sender);
 
+    private void LookupCell_LostFocus(object? sender, RoutedEventArgs e) => CommitLookupCell(sender);
+
+    private void LookupCell_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            CommitLookupCell(sender);
+            e.Handled = true;
+        }
+    }
+
+    private void CommitLookupCell(object? sender)
+    {
+        if (sender is TextBox { DataContext: LookupTableCell cell } && ViewModel is EditorViewModel viewModel)
+        {
+            viewModel.ApplyLookupCell(cell);
+        }
+    }
+
     private void FieldBox_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
