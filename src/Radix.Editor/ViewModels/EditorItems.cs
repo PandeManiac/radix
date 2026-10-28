@@ -331,12 +331,22 @@ public sealed class LookupTableCell : ObservableObject
 /// <summary>One failed assertion from an in-editor test-script run.</summary>
 public sealed class TestScriptFailureItem
 {
-    public TestScriptFailureItem(ScriptFailure failure)
+    public TestScriptFailureItem(ScriptFailure failure, string? source = null)
     {
         Step = failure.Step;
         At = failure.At;
         Message = failure.Message;
-        Display = $"step {failure.Step} (t={failure.At}): {failure.Message}";
+        string prefix = string.IsNullOrEmpty(source) ? string.Empty : $"[{source}] ";
+        Display = $"{prefix}step {failure.Step} (t={failure.At}): {failure.Message}";
+    }
+
+    /// <summary>A suite entry that could not be loaded or compiled.</summary>
+    public TestScriptFailureItem(string source, string error)
+    {
+        Step = 0;
+        At = 0;
+        Message = error;
+        Display = $"[{System.IO.Path.GetFileName(source)}] error: {error}";
     }
 
     public int Step { get; }

@@ -1404,6 +1404,77 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Discovers and runs every <c>.radixtest</c> below a directory against the
+    /// current in-memory project. The suite uses the same runner as the CLI and
+    /// leaves the project, undo history, and live simulation untouched.
+    /// </summary>
+    public bool RunTestScriptSuite(string directory)
+    {
+        ClearTestScriptResult();
+        TestScriptPath = directory;
+        try
+        {
+            IReadOnlyList<string> paths = SimulationScriptSuiteRunner.Discover(directory);
+            if (paths.Count == 0)
+            {
+                TestScriptPassed = false;
+                TestScriptSummary = "SUITE ERROR · no .radixtest scripts found";
+                HasTestScriptResult = true;
+                StatusText = "No .radixtest scripts found in " + directory;
+                return false;
+            }
+
+            SimulationScriptSuiteResult suite = SimulationScriptSuiteRunner.RunFiles(_project, paths);
+            TestScriptPassed = suite.Passed;
+            TestScriptSummary = suite.HasErrors
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"SUITE ERROR · {suite.Entries.Count} script(s) · {suite.PassedCount} passed · " +
+                    $"{suite.FailedCount} failed · {suite.ErrorCount} error(s) · {suite.StepsExecuted} step(s)")
+                : suite.Passed
+                    ? string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"PASS · {suite.Entries.Count} script(s) · {suite.StepsExecuted} step(s) · " +
+                        $"{suite.EventsProcessed} events")
+                    : string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"FAIL · {suite.Entries.Count} script(s) · {suite.FailedCount} failed · " +
+                        $"{suite.PassedCount} passed · {suite.StepsExecuted} step(s)");
+
+            foreach (SimulationScriptSuiteEntry entry in suite.Entries)
+            {
+                if (entry.Error is not null)
+                {
+                    TestScriptFailures.Add(new TestScriptFailureItem(entry.Path, entry.Error));
+                    continue;
+                }
+
+                string source = Path.GetFileName(entry.Path);
+                foreach (ScriptFailure failure in entry.Result!.Failures)
+                {
+                    TestScriptFailures.Add(new TestScriptFailureItem(failure, source));
+                }
+            }
+
+            HasTestScriptResult = true;
+            RaisePropertyChanged(nameof(HasTestScriptFailures));
+            StatusText = suite.Passed
+                ? $"Test script suite passed: {suite.Entries.Count} script(s)"
+                : $"Test script suite failed: {suite.FailedCount} failed, {suite.ErrorCount} error(s)";
+            return suite.Passed;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            TestScriptPassed = false;
+            TestScriptSummary = "Test script suite error: " + exception.Message;
+            HasTestScriptResult = true;
+            StatusText = "Test script suite error: " + exception.Message;
+            return false;
+        }
+    }
+
     public void ClearTestScriptResult()
     {
         TestScriptFailures.Clear();

@@ -504,6 +504,10 @@ public sealed class RenderingTests
                 window.GetVisualDescendants().OfType<Button>(),
                 button => button.Content is "Run script…");
             Assert.True(run.IsEffectivelyVisible);
+            Button runFolder = Assert.Single(
+                window.GetVisualDescendants().OfType<Button>(),
+                button => button.Content is "Run folder…");
+            Assert.True(runFolder.IsEffectivelyVisible);
 
             TextBlock summary = Assert.Single(
                 window.GetVisualDescendants().OfType<TextBlock>(),

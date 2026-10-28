@@ -314,6 +314,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void RunTestScriptSuite_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not EditorViewModel viewModel)
+        {
+            return;
+        }
+
+        IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Run RADIX test scripts in folder",
+            AllowMultiple = false,
+        });
+
+        if (folders.Count > 0)
+        {
+            viewModel.RunTestScriptSuite(folders[0].Path.LocalPath);
+        }
+    }
+
     private async void ImportLibrary_Click(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is not EditorViewModel viewModel)

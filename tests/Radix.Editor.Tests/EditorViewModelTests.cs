@@ -1776,6 +1776,148 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void TestScriptSuiteRunsAFolderAndListsFailuresWithTheirScript()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string directory = Path.Combine(Path.GetTempPath(), "radix-editor-suite-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(directory, "a-pass.radixtest"),
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "name": "suite pass",
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 1 }, "expect": { "q": 0 } } ]
+                }
+                """);
+            File.WriteAllText(
+                Path.Combine(directory, "b-fail.radixtest"),
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "name": "suite fail",
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 1 }, "expect": { "q": 1 } } ]
+                }
+                """);
+
+            Assert.False(viewModel.RunTestScriptSuite(directory));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            Assert.True(viewModel.HasTestScriptFailures);
+            TestScriptFailureItem failure = Assert.Single(viewModel.TestScriptFailures);
+            Assert.Contains("b-fail.radixtest", failure.Display, StringComparison.Ordinal);
+            Assert.Contains("pin 'q'", failure.Display, StringComparison.Ordinal);
+            Assert.StartsWith("FAIL", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("2 script(s)", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("1 failed", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Equal(directory, viewModel.TestScriptPath);
+            Assert.False(viewModel.IsDirty);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TestScriptSuitePassesForAFolderOfPassingScripts()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string directory = Path.Combine(Path.GetTempPath(), "radix-editor-suite-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            const string passing =
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 1 }, "expect": { "q": 0 } } ]
+                }
+                """;
+            File.WriteAllText(Path.Combine(directory, "one.radixtest"), passing);
+            File.WriteAllText(Path.Combine(directory, "two.radixtest"), passing);
+
+            Assert.True(viewModel.RunTestScriptSuite(directory));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.True(viewModel.TestScriptPassed);
+            Assert.False(viewModel.HasTestScriptFailures);
+            Assert.Empty(viewModel.TestScriptFailures);
+            Assert.StartsWith("PASS", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("2 script(s)", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("2 step(s)", viewModel.TestScriptSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TestScriptSuiteReportsAMalformedScriptAndRunsTheRest()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string directory = Path.Combine(Path.GetTempPath(), "radix-editor-suite-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(directory, "good.radixtest"),
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "steps": [ { "at": 0, "set": { "clk": 0, "d": 1 }, "expect": { "q": 0 } } ]
+                }
+                """);
+            File.WriteAllText(Path.Combine(directory, "bad.radixtest"), "{ not json");
+
+            Assert.False(viewModel.RunTestScriptSuite(directory));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            TestScriptFailureItem failure = Assert.Single(viewModel.TestScriptFailures);
+            Assert.Contains("bad.radixtest", failure.Display, StringComparison.Ordinal);
+            Assert.Contains("error:", failure.Display, StringComparison.Ordinal);
+            Assert.StartsWith("SUITE ERROR", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("1 error(s)", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("1 passed", viewModel.TestScriptSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TestScriptSuiteWithNoScriptsIsReported()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string directory = Path.Combine(Path.GetTempPath(), "radix-editor-suite-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            Assert.False(viewModel.RunTestScriptSuite(directory));
+
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            Assert.Empty(viewModel.TestScriptFailures);
+            Assert.Contains("no .radixtest scripts found", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Equal(directory, viewModel.TestScriptPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void NewProjectClearsTheLastTestScriptResult()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());

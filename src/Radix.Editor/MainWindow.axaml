@@ -585,7 +585,7 @@
 
           <TabItem Header="Diagnostics">
             <Grid RowDefinitions="Auto,Auto,*" Margin="10,8,12,10">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                 <StackPanel>
                   <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
                   <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition and selects the reported instance or net." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
@@ -597,6 +597,13 @@
                   Click="RunTestScript_Click"
                   VerticalAlignment="Top"
                   ToolTip.Tip="Run a .radixtest script against the current in-memory project; the live simulation is not changed" />
+                <Button
+                  Grid.Column="2"
+                  Classes="tool"
+                  Content="Run folder…"
+                  Click="RunTestScriptSuite_Click"
+                  VerticalAlignment="Top"
+                  ToolTip.Tip="Run every .radixtest script below a folder against the current in-memory project" />
               </Grid>
 
               <Border

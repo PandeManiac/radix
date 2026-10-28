@@ -250,7 +250,7 @@ Exit codes are `0` when every script passes, `1` for one or more failed assertio
 
 ### From the editor
 
-The Diagnostics tab's **Run script…** button runs the same files against the current in-memory project, including unsaved edits. A result panel lists the PASS/FAIL summary, final tick, event count, and every failed step with its tick; **Clear** removes it, and loading or creating another project clears it automatically. The run compiles and simulates on a separate engine, so it does not reset or advance the live workbench simulation. Each run reads the script from disk, so rerun after editing one. The workbench runs one script at a time; use the CLI for a recursive folder suite.
+The Diagnostics tab's **Run script…** button runs one file against the current in-memory project, including unsaved edits. **Run folder…** recursively discovers every `.radixtest` below a folder and runs them through the same suite runner. A result panel lists the PASS/FAIL summary, final tick, event count, and every failed step with its tick; suite failures are prefixed with their script file name, and a malformed script is listed as that script's error while the rest still run. **Clear** removes the panel, and loading or creating another project clears it automatically. Both runs compile and simulate on a separate engine, so they do not reset or advance the live workbench simulation. Each run reads scripts from disk, so rerun after editing one.
 
 ## Shipped scripts
 
@@ -264,6 +264,7 @@ The Diagnostics tab's **Run script…** button runs the same files against the c
 - Assertions sample values at integer ticks. `within`, `stable`, `setup`, `transitions`, `edges`, and `sequence` express convergence, held values, pre-drive setup, total change counts, filtered edge counts, and relative edge order, not continuous time; hold time is expressed as a `stable` window after the edge. Use exact expectations, filtered edge counts, sequences, and engine traces for those properties.
 - A `setup` window cannot observe time that has already been simulated; script steps must leave enough room before the edge for the requested interval.
 - A suite runs its scripts sequentially and starts each from time zero. It has no parallelism, ordering dependencies, or shared state between scripts.
+- The workbench's folder suite runs synchronously on the UI thread and lists only failing or errored scripts individually; the summary carries the pass count. Use the CLI for a long suite or when per-script PASS output is useful.
 - A script does not save simulation state. Every run starts from time zero.
 
 These limits keep the format inspectable and deterministic. Extending it should add explicit, typed actions rather than an embedded expression language.
