@@ -1,0 +1,217 @@
+using System.Text.Json.Nodes;
+using Radix.Core.Model;
+using Radix.Core.Serialization;
+using Radix.Core.Signals;
+using Radix.StdLib;
+using Xunit;
+
+namespace Radix.Core.Tests;
+
+public sealed class SerializationTests
+{
+    private static JsonObject Json(CircuitProject project) =>
+        JsonNode.Parse(ProjectSerializer.SaveToString(project))!.AsObject();
+
+    [Fact]
+    public void SaveLoadSaveIsStable()
+    {
+        CircuitProject project = ExampleProjects.CreateCounterDemo();
+        string first = ProjectSerializer.SaveToString(project);
+        CircuitProject loaded = ProjectSerializer.LoadFromString(first);
+        string second = ProjectSerializer.SaveToString(loaded);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void RoundTripPreservesModelData()
+    {
+        CircuitProject project = ExampleProjects.CreateFullAdderDemo();
+        project.Description = "round trip";
+        project.Settings.DefaultAdvanceTicks = 42;
+        project.Settings.TraceAllNets = false;
+        project.Definitions[0].Instances[0].X = 123.5;
+        project.Definitions[0].Instances[0].Y = -4.25;
+        project.Definitions[0].Nets[0].InitialValue = 1;
+        project.Domains.Add(new SignalDomain(
+            "quaternary",
+            "Quaternary",
+            ["L", "M", "H", "Z"],
+            new PriorityDriverResolution([1, 2, 3, 0], 1)));
+
+        string json = ProjectSerializer.SaveToString(project);
+        CircuitProject loaded = ProjectSerializer.LoadFromString(json);
+
+        Assert.Equal(project.Name, loaded.Name);
+        Assert.Equal("round trip", loaded.Description);
+        Assert.Equal(42, loaded.Settings.DefaultAdvanceTicks);
+        Assert.False(loaded.Settings.TraceAllNets);
+        Assert.Equal(123.5, loaded.Definitions[0].Instances[0].X);
+        Assert.Equal(-4.25, loaded.Definitions[0].Instances[0].Y);
+        Assert.Equal(1, loaded.Definitions[0].Nets[0].InitialValue);
+        Assert.Equal(5, loaded.RequireDefinition("demo.full-adder").InterfacePins.Count);
+
+        SignalDomain quaternary = Assert.Single(loaded.Domains, d => d.Id == "quaternary");
+        var priority = Assert.IsType<PriorityDriverResolution>(quaternary.Drivers);
+        Assert.Equal(new[] { 1, 2, 3, 0 }, priority.Priorities.ToArray());
+        Assert.Equal(1, priority.ConflictValue);
+    }
+
+    [Fact]
+    public void AllPrimitiveKindsRoundTrip()
+    {
+        var builder = new ProjectBuilder("primitives");
+        var root = builder.Define("root", "Root");
+        Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net y0 = root.AddPin("y0", "Y0", PinDirection.Output, StandardDomains.BinaryId);
+        Net y1 = root.AddPin("y1", "Y1", PinDirection.Output, StandardDomains.BinaryId);
+        Net y2 = root.AddPin("y2", "Y2", PinDirection.Output, StandardDomains.BinaryId);
+        Net y3 = root.AddPin("y3", "Y3", PinDirection.Output, StandardDomains.BinaryId);
+
+        root.AddPrimitive("lookup", new LookupSpec(1, [1, 0], delayTicks: 2), 10, 20);
+        root.AddPrimitive("delay", new DelaySpec(3, initialValue: 1), 30, 40);
+        root.AddPrimitive("waveform", new WaveformSpec([2, 3], [0, 1]), 50, 60);
+        root.AddPrimitive("constant", new ConstantSpec(1), 70, 80);
+        root.AddPrimitive("probe", new ProbeSpec("watch"), 90, 100);
+
+        root.Connect(a, root.Pin("lookup", "in0"), root.Pin("delay", "in0"));
+        root.Connect(y0, root.Pin("lookup", "out"), root.Pin("probe", "in0"));
+        root.Connect(y1, root.Pin("waveform", "out"));
+        root.Connect(y2, root.Pin("delay", "out"));
+        root.Connect(y3, root.Pin("constant", "out"));
+
+        string json = ProjectSerializer.SaveToString(builder.Build("root"));
+        CircuitProject loaded = ProjectSerializer.LoadFromString(json);
+        CircuitDefinition definition = loaded.RequireDefinition("root");
+
+        var lookup = Assert.IsType<LookupSpec>(definition.FindInstance("lookup")!.Primitive);
+        Assert.Equal(1, lookup.InputCount);
+        Assert.Equal(new[] { 1, 0 }, lookup.Table.ToArray());
+        Assert.Equal(2, lookup.DelayTicks);
+
+        var delay = Assert.IsType<DelaySpec>(definition.FindInstance("delay")!.Primitive);
+        Assert.Equal(3, delay.DelayTicks);
+        Assert.Equal(1, delay.InitialValue);
+
+        var waveform = Assert.IsType<WaveformSpec>(definition.FindInstance("waveform")!.Primitive);
+        Assert.Equal(new[] { 2L, 3L }, waveform.Durations.ToArray());
+        Assert.Equal(new[] { 0, 1 }, waveform.Values.ToArray());
+
+        Assert.Equal(1, Assert.IsType<ConstantSpec>(definition.FindInstance("constant")!.Primitive).Value);
+        Assert.Equal("watch", Assert.IsType<ProbeSpec>(definition.FindInstance("probe")!.Primitive).Label);
+    }
+
+    [Fact]
+    public void UnsupportedVersionIsRejected()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        json["version"] = 99;
+        ProjectFormatException error = Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString(json.ToJsonString()));
+        Assert.Contains("newer", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MissingVersionIsRejected()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        json.Remove("version");
+        Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString(json.ToJsonString()));
+    }
+
+    [Fact]
+    public void WrongFormatIsRejected()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        json["format"] = "something-else";
+        Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString(json.ToJsonString()));
+    }
+
+    [Fact]
+    public void MalformedJsonIsRejected()
+    {
+        Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString("{ this is not json"));
+    }
+
+    [Fact]
+    public void UnknownPropertiesAreRejected()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        json["unexpected"] = true;
+        Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString(json.ToJsonString()));
+    }
+
+    [Fact]
+    public void UnknownPrimitiveKindIsRejectedWithoutExecutingCode()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        JsonObject definition = json["definitions"]!.AsArray()[0]!.AsObject();
+        JsonObject instance = definition["instances"]!.AsArray()[0]!.AsObject();
+        JsonObject primitive = instance["primitive"]!.AsObject();
+        primitive["kind"] = "arbitrary-code";
+        ProjectFormatException error = Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString(json.ToJsonString()));
+        Assert.Contains("arbitrary-code", error.Message);
+    }
+
+    [Fact]
+    public void MissingRootIsRejected()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        json.Remove("root");
+        Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString(json.ToJsonString()));
+    }
+
+    [Fact]
+    public void InstanceWithDefinitionAndPrimitiveIsRejected()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        JsonObject definition = json["definitions"]!.AsArray()[0]!.AsObject();
+        JsonObject instance = definition["instances"]!.AsArray()[0]!.AsObject();
+        instance["definition"] = "main";
+        Assert.Throws<ProjectFormatException>(() => ProjectSerializer.LoadFromString(json.ToJsonString()));
+    }
+
+    [Fact]
+    public void SemanticErrorsFailStrictLoadButCanBeInspectedLeniently()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        JsonObject definition = json["definitions"]!.AsArray()[0]!.AsObject();
+        JsonObject net = definition["nets"]!.AsArray()[0]!.AsObject();
+        JsonObject pinRef = net["pins"]!.AsArray()[0]!.AsObject();
+        pinRef["pin"] = "does-not-exist";
+        string text = json.ToJsonString();
+
+        Assert.Throws<CircuitValidationException>(() => ProjectSerializer.LoadFromString(text));
+        CircuitProject lenient = ProjectSerializer.LoadFromString(text, validate: false);
+        Assert.Single(lenient.Definitions);
+    }
+
+    [Fact]
+    public void SaveIsAtomicAndLeavesNoTemporaryFiles()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "radix-serialization-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string path = Path.Combine(directory, "project.radix");
+            ProjectSerializer.Save(path, TestCircuits.ValidProject());
+            Assert.True(File.Exists(path));
+            Assert.Single(Directory.GetFiles(directory));
+            CircuitProject loaded = ProjectSerializer.Load(path);
+            Assert.Equal("valid", loaded.Name);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void JsonUsesDocumentedFormatName()
+    {
+        JsonObject json = Json(TestCircuits.ValidProject());
+        Assert.Equal("radix-project", (string?)json["format"]);
+        Assert.Equal(1, (int?)json["version"]);
+        Assert.Equal("main", (string?)json["root"]);
+    }
+}

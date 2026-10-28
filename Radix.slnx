@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Radix.Cli/Radix.Cli.csproj" />
+    <Project Path="src/Radix.Core/Radix.Core.csproj" />
+    <Project Path="src/Radix.Editor/Radix.Editor.csproj" />
+    <Project Path="src/Radix.StdLib/Radix.StdLib.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Radix.Core.Tests/Radix.Core.Tests.csproj" />
+    <Project Path="tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj" />
+  </Folder>
+</Solution>

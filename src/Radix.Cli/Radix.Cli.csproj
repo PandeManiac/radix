@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Radix.Cli</RootNamespace>
+    <AssemblyName>radix</AssemblyName>
+    <Description>Headless command-line tools for RADIX projects.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Radix.Core\Radix.Core.csproj" />
+    <ProjectReference Include="..\Radix.StdLib\Radix.StdLib.csproj" />
+  </ItemGroup>
+</Project>

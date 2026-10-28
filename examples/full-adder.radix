@@ -1,0 +1,2569 @@
+{
+  "format": "radix-project",
+  "version": 1,
+  "name": "Full adder demo",
+  "root": "demo.full-adder",
+  "settings": {
+    "maxEvaluationsPerComponentPerTimestamp": 64,
+    "maxRecordedNetChanges": 500000,
+    "defaultAdvanceTicks": 10,
+    "traceAllNets": true
+  },
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": [
+        "0",
+        "1"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Two-state domain. Values are indices; two\u0027s-complement and other interpretations live outside the kernel."
+    },
+    {
+      "id": "ternary",
+      "name": "Ternary",
+      "values": [
+        "0",
+        "1",
+        "2"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Three-state domain. No balanced or positional interpretation is implied."
+    },
+    {
+      "id": "balanced-ternary",
+      "name": "Balanced ternary",
+      "values": [
+        "-",
+        "0",
+        "\u002B"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Three-state domain whose labels suggest balanced ternary. The kernel still treats them as ordinals."
+    },
+    {
+      "id": "four-state",
+      "name": "Four-state logic",
+      "values": [
+        "0",
+        "1",
+        "X",
+        "Z"
+      ],
+      "drivers": {
+        "kind": "priority",
+        "priorities": [
+          1,
+          1,
+          3,
+          0
+        ],
+        "conflictValue": 2
+      },
+      "description": "Four-state domain with high impedance (Z) and unknown/conflict (X)."
+    }
+  ],
+  "definitions": [
+    {
+      "id": "std.not",
+      "name": "NOT",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.buf",
+      "name": "BUF",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.and",
+      "name": "AND",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.or",
+      "name": "OR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              1,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.nand",
+      "name": "NAND",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              1,
+              1,
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.nor",
+      "name": "NOR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.xor",
+      "name": "XOR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.xnor",
+      "name": "XNOR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              1,
+              0,
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.d-latch",
+      "name": "D latch",
+      "description": "Level-sensitive D latch built from four NAND gates. Q/QN are seeded to 0/1 at power-on.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "e",
+          "name": "E",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g1",
+          "definition": "std.nand",
+          "x": 140,
+          "y": 60
+        },
+        {
+          "id": "g2",
+          "definition": "std.nand",
+          "x": 140,
+          "y": 200
+        },
+        {
+          "id": "g3",
+          "definition": "std.nand",
+          "x": 320,
+          "y": 60
+        },
+        {
+          "id": "g4",
+          "definition": "std.nand",
+          "x": 320,
+          "y": 200
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "e_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g1",
+              "pin": "b"
+            },
+            {
+              "instance": "g2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "g4",
+              "pin": "b"
+            },
+            {
+              "instance": "g3",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "binary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "g3",
+              "pin": "b"
+            },
+            {
+              "instance": "g4",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "s",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g1",
+              "pin": "y"
+            },
+            {
+              "instance": "g2",
+              "pin": "a"
+            },
+            {
+              "instance": "g3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "r",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g2",
+              "pin": "y"
+            },
+            {
+              "instance": "g4",
+              "pin": "a"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "e",
+          "net": "e_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
+        }
+      ]
+    },
+    {
+      "id": "std.dff",
+      "name": "D flip-flop",
+      "description": "Positive-edge-triggered D flip-flop built from two gated D latches (master/slave) and an inverter. Requires a driven clock; Q/QN power up at 0/1.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "inv",
+          "definition": "std.not",
+          "x": 120,
+          "y": 40
+        },
+        {
+          "id": "master",
+          "definition": "std.d-latch",
+          "x": 260,
+          "y": 40
+        },
+        {
+          "id": "slave",
+          "definition": "std.d-latch",
+          "x": 440,
+          "y": 160
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "a"
+            },
+            {
+              "instance": "slave",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "binary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "qn"
+            }
+          ]
+        },
+        {
+          "id": "clk_n",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "y"
+            },
+            {
+              "instance": "master",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "master_q",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "q"
+            },
+            {
+              "instance": "slave",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "master_qn",
+          "domain": "binary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "qn"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
+        }
+      ]
+    },
+    {
+      "id": "std.half-adder",
+      "name": "Half adder",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "c",
+          "name": "C",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "xor",
+          "definition": "std.xor",
+          "x": 180,
+          "y": 60
+        },
+        {
+          "id": "and",
+          "definition": "std.and",
+          "x": 180,
+          "y": 180
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "xor",
+              "pin": "a"
+            },
+            {
+              "instance": "and",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "xor",
+              "pin": "b"
+            },
+            {
+              "instance": "and",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "xor",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "c_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and",
+              "pin": "y"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "c",
+          "net": "c_net"
+        }
+      ]
+    },
+    {
+      "id": "std.full-adder",
+      "name": "Full adder",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "cin",
+          "name": "CIN",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "h1",
+          "definition": "std.half-adder",
+          "x": 120,
+          "y": 60
+        },
+        {
+          "id": "h2",
+          "definition": "std.half-adder",
+          "x": 320,
+          "y": 60
+        },
+        {
+          "id": "or",
+          "definition": "std.or",
+          "x": 520,
+          "y": 200
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "cin_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h2",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "sum1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "s"
+            },
+            {
+              "instance": "h2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "carry1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "c"
+            },
+            {
+              "instance": "or",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "carry2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h2",
+              "pin": "c"
+            },
+            {
+              "instance": "or",
+              "pin": "b"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "cin",
+          "net": "cin_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ]
+    },
+    {
+      "id": "std.ripple-adder-4",
+      "name": "4-bit ripple-carry adder",
+      "pins": [
+        {
+          "id": "a0",
+          "name": "A0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b0",
+          "name": "B0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s0",
+          "name": "S0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "a1",
+          "name": "A1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b1",
+          "name": "B1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s1",
+          "name": "S1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "a2",
+          "name": "A2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b2",
+          "name": "B2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "a3",
+          "name": "A3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b3",
+          "name": "B3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "fa0",
+          "definition": "std.full-adder",
+          "x": 150,
+          "y": 100
+        },
+        {
+          "id": "fa1",
+          "definition": "std.full-adder",
+          "x": 360,
+          "y": 100
+        },
+        {
+          "id": "fa2",
+          "definition": "std.full-adder",
+          "x": 570,
+          "y": 100
+        },
+        {
+          "id": "fa3",
+          "definition": "std.full-adder",
+          "x": 780,
+          "y": 100
+        }
+      ],
+      "nets": [
+        {
+          "id": "a0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "cout"
+            }
+          ]
+        },
+        {
+          "id": "c0",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "c1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "cout"
+            },
+            {
+              "instance": "fa1",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "c2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "cout"
+            },
+            {
+              "instance": "fa2",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "c3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "cout"
+            },
+            {
+              "instance": "fa3",
+              "pin": "cin"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a0",
+          "net": "a0_net"
+        },
+        {
+          "pin": "b0",
+          "net": "b0_net"
+        },
+        {
+          "pin": "s0",
+          "net": "s0_net"
+        },
+        {
+          "pin": "a1",
+          "net": "a1_net"
+        },
+        {
+          "pin": "b1",
+          "net": "b1_net"
+        },
+        {
+          "pin": "s1",
+          "net": "s1_net"
+        },
+        {
+          "pin": "a2",
+          "net": "a2_net"
+        },
+        {
+          "pin": "b2",
+          "net": "b2_net"
+        },
+        {
+          "pin": "s2",
+          "net": "s2_net"
+        },
+        {
+          "pin": "a3",
+          "net": "a3_net"
+        },
+        {
+          "pin": "b3",
+          "net": "b3_net"
+        },
+        {
+          "pin": "s3",
+          "net": "s3_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ]
+    },
+    {
+      "id": "std.mux2",
+      "name": "2:1 multiplexer",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s",
+          "name": "Select",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-not",
+      "name": "Ternary NOT (mod 3)",
+      "description": "Digit-wise negation on the unsaturated 0/1/2 ternary domain.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              0,
+              2,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-min",
+      "name": "Ternary minimum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-max",
+      "name": "Ternary maximum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              2,
+              1,
+              1,
+              2,
+              2,
+              2,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-not",
+      "name": "Balanced ternary negation",
+      "description": "Maps -,0,\u002B to \u002B,0,-. Three-valued; not representable by a binary signal.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              2,
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-min",
+      "name": "Balanced ternary minimum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-max",
+      "name": "Balanced ternary maximum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              2,
+              1,
+              1,
+              2,
+              2,
+              2,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-half-adder",
+      "name": "Balanced ternary half adder",
+      "description": "Adds two balanced-ternary digits, producing a sum trit and carry trit: A\u002BB = 3*C \u002B S.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "c",
+          "name": "C",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "sum",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              2,
+              0,
+              1,
+              0,
+              1,
+              2,
+              1,
+              2,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 60
+        },
+        {
+          "id": "carry",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 200
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in0"
+            },
+            {
+              "instance": "carry",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in1"
+            },
+            {
+              "instance": "carry",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "out"
+            }
+          ]
+        },
+        {
+          "id": "c_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "carry",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "c",
+          "net": "c_net"
+        }
+      ]
+    },
+    {
+      "id": "demo.full-adder",
+      "name": "Full adder demo",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "cin",
+          "name": "CIN",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "adder",
+          "definition": "std.full-adder",
+          "x": 220,
+          "y": 100
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "adder",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "adder",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "cin_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "adder",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "adder",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "adder",
+              "pin": "cout"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "cin",
+          "net": "cin_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ]
+    }
+  ]
+}

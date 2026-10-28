@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Radix.StdLib</RootNamespace>
+    <AssemblyName>Radix.StdLib</AssemblyName>
+    <Description>Inspectable standard components for RADIX, built from kernel primitives.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Radix.Core\Radix.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Radix.Core</RootNamespace>
+    <AssemblyName>Radix.Core</AssemblyName>
+    <Description>Simulation kernel, circuit model, compiler, and persistence for RADIX.</Description>
+  </PropertyGroup>
+</Project>

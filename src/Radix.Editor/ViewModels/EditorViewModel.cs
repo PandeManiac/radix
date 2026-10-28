@@ -1,0 +1,1792 @@
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Windows.Input;
+using Avalonia;
+using Radix.Core;
+using Radix.Core.Compilation;
+using Radix.Core.Model;
+using Radix.Core.Serialization;
+using Radix.Core.Signals;
+using Radix.Core.Simulation;
+using Radix.Editor.Rendering;
+using Radix.Editor.Services;
+using Radix.StdLib;
+
+namespace Radix.Editor.ViewModels;
+
+/// <summary>
+/// Application-level editor state. Owns the project, current definition, selection,
+/// undo history, and the headless simulation host. Rendering lives in the canvas.
+/// </summary>
+public sealed class EditorViewModel : ObservableObject
+{
+    private readonly Stack<EditorSnapshot> _undo = new();
+    private readonly Stack<EditorSnapshot> _redo = new();
+    private readonly RelayCommand _undoCommand;
+    private readonly RelayCommand _redoCommand;
+    private readonly ObservableCollection<string> _domains = [];
+
+    private CircuitProject _project;
+    private string _definitionId = string.Empty;
+    private ComponentInstance? _selectedInstance;
+    private Net? _selectedNet;
+    private string? _projectPath;
+    private bool _dirty;
+    private bool _pendingDragUndo;
+    private bool _refreshingDomainSelection;
+    private Point _placementPoint = new(260, 160);
+    private double _placementCascade;
+    private CircuitLayout? _layout;
+    private WaveformSnapshot _waveform = WaveformSnapshot.Empty;
+    private DomainChoice? _selectedNetDomain;
+    private DomainChoice? _newPinDomain;
+    private string _statusText = "Ready";
+    private string _newPinName = string.Empty;
+    private bool _newPinIsInput = true;
+    private string _advanceTicksText = "10";
+
+    public EditorViewModel(CircuitProject project)
+    {
+        _project = project ?? throw new ArgumentNullException(nameof(project));
+        EnsureProjectShape();
+        _definitionId = _project.RootDefinitionId;
+        Simulator = new SimulatorHost(_project, Definition);
+
+        _undoCommand = new RelayCommand(Undo, () => _undo.Count > 0);
+        _redoCommand = new RelayCommand(Redo, () => _redo.Count > 0);
+
+        UndoCommand = _undoCommand;
+        RedoCommand = _redoCommand;
+        NewProjectCommand = new RelayCommand(NewProject);
+        AddDefinitionCommand = new RelayCommand(AddDefinition);
+        RemoveDefinitionCommand = new RelayCommand(RemoveDefinition);
+        AddPinCommand = new RelayCommand(AddPin);
+        DeleteSelectionCommand = new RelayCommand(DeleteSelection, () => _selectedInstance is not null || _selectedNet is not null);
+        BeginCommand = new RelayCommand(BeginSimulation);
+        AdvanceCommand = new RelayCommand(AdvanceSimulation);
+        StepEventCommand = new RelayCommand(StepEvent);
+        StepClockCommand = new RelayCommand(StepClock);
+        SettleCommand = new RelayCommand(Settle);
+        ClearDrivesCommand = new RelayCommand(ClearDrives);
+        FitCommand = new RelayCommand(() => FitRequested?.Invoke());
+        CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
+
+        RefreshAll(fit: false);
+    }
+
+    public event Action? VisualInvalidated;
+
+    public event Action? FitRequested;
+
+    public CircuitProject Project => _project;
+
+    public CircuitDefinition Definition =>
+        _project.FindDefinition(_definitionId) ?? _project.Definitions[0];
+
+    public SimulatorHost Simulator { get; private set; }
+
+    public CircuitLayout? Layout
+    {
+        get => _layout;
+        private set
+        {
+            _layout = value;
+            RaisePropertyChanged();
+        }
+    }
+
+    public ObservableCollection<DefinitionListItem> Definitions { get; } = [];
+
+    public ObservableCollection<PaletteItem> Palette { get; } = [];
+
+    public ObservableCollection<PinListItem> Pins { get; } = [];
+
+    public ObservableCollection<IoPinViewModel> IoPins { get; } = [];
+
+    public ObservableCollection<DiagnosticItem> Diagnostics { get; } = [];
+
+    public ObservableCollection<EditableField> Fields { get; } = [];
+
+    public ObservableCollection<string> RecentTransitions { get; } = [];
+
+    public ObservableCollection<DomainChoice> Domains { get; } = [];
+
+    public ObservableCollection<string> Events { get; } = [];
+
+    public ICommand UndoCommand { get; }
+
+    public ICommand RedoCommand { get; }
+
+    public ICommand NewProjectCommand { get; }
+
+    public ICommand AddDefinitionCommand { get; }
+
+    public ICommand RemoveDefinitionCommand { get; }
+
+    public ICommand AddPinCommand { get; }
+
+    public ICommand DeleteSelectionCommand { get; }
+
+    public ICommand BeginCommand { get; }
+
+    public ICommand AdvanceCommand { get; }
+
+    public ICommand StepEventCommand { get; }
+
+    public ICommand StepClockCommand { get; }
+
+    public ICommand SettleCommand { get; }
+
+    public ICommand ClearDrivesCommand { get; }
+
+    public ICommand FitCommand { get; }
+
+    public ICommand CloseDefinitionCommand { get; }
+
+    public string ProjectTitle =>
+        $"{_project.Name}{(_dirty ? " *" : string.Empty)}";
+
+    public string DefinitionTitle => $"{(Definition.Id == _project.RootDefinitionId ? "root" : "part")} · {Definition.Name}";
+
+    public string ProjectSubtitle =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{_project.Definitions.Count} definitions · {Definition.Instances.Count} instances · {Definition.Nets.Count} nets");
+
+    public string StatusText
+    {
+        get => _statusText;
+        set => SetField(ref _statusText, value);
+    }
+
+    public string? ProjectPath
+    {
+        get => _projectPath;
+        private set => SetField(ref _projectPath, value);
+    }
+
+    public bool IsDirty
+    {
+        get => _dirty;
+        private set
+        {
+            if (SetField(ref _dirty, value))
+            {
+                RaisePropertyChanged(nameof(ProjectTitle));
+            }
+        }
+    }
+
+    public WaveformSnapshot Waveform
+    {
+        get => _waveform;
+        private set => SetField(ref _waveform, value);
+    }
+
+    public string SimTimeText => string.Create(CultureInfo.InvariantCulture, $"t = {Simulator.Now}");
+
+    public string SimStatusText
+    {
+        get
+        {
+            if (!Simulator.IsCompiled)
+            {
+                return "not compiled";
+            }
+
+            if (Simulator.IsHalted)
+            {
+                return "halted";
+            }
+
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{Simulator.EventsProcessed} events · {Simulator.ComponentEvaluations} evaluations");
+        }
+    }
+
+    public string DiagnosticSummary
+    {
+        get
+        {
+            int errors = Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Error);
+            int warnings = Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Warning);
+            return string.Create(CultureInfo.InvariantCulture, $"{errors} errors · {warnings} warnings");
+        }
+    }
+
+    public string ZoomText => "100%";
+
+    public bool HasSelection => _selectedInstance is not null || _selectedNet is not null;
+
+    public bool HasSelectedInstance => _selectedInstance is not null;
+
+    public bool HasSelectedNet => _selectedNet is not null;
+
+    public string SelectedInstanceId => _selectedInstance?.Id ?? string.Empty;
+
+    public string SelectedNetId => _selectedNet?.Id ?? string.Empty;
+
+    public string SelectionTitle
+    {
+        get
+        {
+            if (_selectedInstance is not null)
+            {
+                return _selectedInstance.Label ?? TypeName(_selectedInstance);
+            }
+
+            if (_selectedNet is not null)
+            {
+                return _selectedNet.Label ?? _selectedNet.Id;
+            }
+
+            return Definition.Name;
+        }
+    }
+
+    public string SelectionSubtitle
+    {
+        get
+        {
+            if (_selectedInstance is not null)
+            {
+                return $"instance · {_selectedInstance.Id}";
+            }
+
+            if (_selectedNet is not null)
+            {
+                return $"net · {_selectedNet.Id} · {_selectedNet.DomainId}";
+            }
+
+            return "definition · " + Definition.Id;
+        }
+    }
+
+    public string NewPinName
+    {
+        get => _newPinName;
+        set => SetField(ref _newPinName, value);
+    }
+
+    public bool NewPinIsInput
+    {
+        get => _newPinIsInput;
+        set => SetField(ref _newPinIsInput, value);
+    }
+
+    public DomainChoice? NewPinDomain
+    {
+        get => _newPinDomain;
+        set => SetField(ref _newPinDomain, value);
+    }
+
+    public DomainChoice? SelectedNetDomain
+    {
+        get => _selectedNetDomain;
+        set
+        {
+            if (SetField(ref _selectedNetDomain, value) && !_refreshingDomainSelection && value is not null)
+            {
+                ChangeNetDomain(value.Id);
+            }
+        }
+    }
+
+    public string AdvanceTicksText
+    {
+        get => _advanceTicksText;
+        set => SetField(ref _advanceTicksText, value);
+    }
+
+    public void SetPlacementPoint(Point world)
+    {
+        _placementPoint = world;
+    }
+
+    public void SelectInstance(string? instanceId)
+    {
+        _selectedInstance = instanceId is null ? null : Definition.FindInstance(instanceId);
+        _selectedNet = null;
+        RaiseSelectionChanged();
+        RefreshInspector();
+        VisualInvalidated?.Invoke();
+    }
+
+    public void SelectNet(string? netId)
+    {
+        _selectedNet = netId is null ? null : Definition.FindNet(netId);
+        _selectedInstance = null;
+        RaiseSelectionChanged();
+        RefreshInspector();
+        VisualInvalidated?.Invoke();
+    }
+
+    public void ClearSelection()
+    {
+        _selectedInstance = null;
+        _selectedNet = null;
+        RaiseSelectionChanged();
+        RefreshInspector();
+        VisualInvalidated?.Invoke();
+    }
+
+    public void OpenDefinition(string definitionId)
+    {
+        if (_project.FindDefinition(definitionId) is null || string.Equals(_definitionId, definitionId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _definitionId = definitionId;
+        _selectedInstance = null;
+        _selectedNet = null;
+        Simulator.Retarget(_project, Definition);
+        RefreshAll(fit: true);
+        StatusText = $"Editing {Definition.Name}";
+    }
+
+    public void RenameProject(string name)
+    {
+        string trimmed = name.Trim();
+        if (trimmed.Length == 0)
+        {
+            return;
+        }
+
+        PushUndo();
+        _project.Name = trimmed;
+        AfterMutation(structural: false);
+    }
+
+    public void NewProject()
+    {
+        var project = CircuitProject.CreateEmpty("Untitled");
+        var root = new CircuitDefinition { Id = "main", Name = "Main", Description = "Root circuit" };
+        project.Definitions.Add(root);
+        project.RootDefinitionId = root.Id;
+        StandardLibrary.Install(project);
+
+        _project = project;
+        _definitionId = root.Id;
+        _projectPath = null;
+        _selectedInstance = null;
+        _selectedNet = null;
+        _undo.Clear();
+        _redo.Clear();
+        Simulator = new SimulatorHost(_project, Definition);
+        RefreshAll(fit: true);
+        IsDirty = true;
+        StatusText = "New project";
+    }
+
+    public bool LoadProject(string path)
+    {
+        try
+        {
+            CircuitProject loaded = ProjectSerializer.Load(path);
+            _project = loaded;
+            EnsureProjectShape();
+            _definitionId = loaded.RootDefinitionId;
+            _projectPath = path;
+            _selectedInstance = null;
+            _selectedNet = null;
+            _undo.Clear();
+            _redo.Clear();
+            Simulator = new SimulatorHost(_project, Definition);
+            RefreshAll(fit: true);
+            IsDirty = false;
+            StatusText = $"Opened {Path.GetFileName(path)}";
+            return true;
+        }
+        catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException or IOException or UnauthorizedAccessException)
+        {
+            StatusText = "Open failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    public bool SaveProject(string path)
+    {
+        try
+        {
+            ProjectSerializer.Save(path, _project);
+            _projectPath = path;
+            IsDirty = false;
+            StatusText = $"Saved {Path.GetFileName(path)}";
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProjectFormatException)
+        {
+            StatusText = "Save failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    public void BeginDrag()
+    {
+        _pendingDragUndo = true;
+    }
+
+    public void EndDrag()
+    {
+        if (!_pendingDragUndo)
+        {
+            RefreshInspector();
+        }
+
+        _pendingDragUndo = false;
+    }
+
+    public void MoveInstance(string instanceId, double x, double y)
+    {
+        ComponentInstance? instance = Definition.FindInstance(instanceId);
+        if (instance is null)
+        {
+            return;
+        }
+
+        if (_pendingDragUndo)
+        {
+            PushUndo();
+            _pendingDragUndo = false;
+        }
+
+        instance.X = Math.Round(x, 1);
+        instance.Y = Math.Round(y, 1);
+        IsDirty = true;
+        Simulator.Invalidate();
+        RebuildLayout();
+        RefreshSimStatus();
+        RefreshInspectorPosition(instance);
+    }
+
+    public void NudgeInstance(string instanceId, double dx, double dy)
+    {
+        ComponentInstance? instance = Definition.FindInstance(instanceId);
+        if (instance is null)
+        {
+            return;
+        }
+
+        PushUndo();
+        instance.X += dx;
+        instance.Y += dy;
+        AfterMutation(structural: false);
+    }
+
+    public void DeleteSelection()
+    {
+        if (_selectedInstance is not null)
+        {
+            string id = _selectedInstance.Id;
+            PushUndo();
+            Definition.Instances.Remove(_selectedInstance);
+            foreach (Net net in Definition.Nets)
+            {
+                net.Pins.RemoveAll(p => string.Equals(p.InstanceId, id, StringComparison.Ordinal));
+            }
+
+            CleanEmptyNets();
+            _selectedInstance = null;
+            AfterMutation(structural: true);
+            StatusText = $"Deleted instance {id}";
+            return;
+        }
+
+        if (_selectedNet is not null)
+        {
+            if (Definition.Ports.Any(p => string.Equals(p.NetId, _selectedNet.Id, StringComparison.Ordinal)))
+            {
+                StatusText = "Remove the interface pin before deleting its net.";
+                return;
+            }
+
+            string id = _selectedNet.Id;
+            PushUndo();
+            DefinitionEditor.RemoveNet(Definition, id);
+            _selectedNet = null;
+            AfterMutation(structural: true);
+            StatusText = $"Deleted net {id}";
+        }
+    }
+
+    public void AddDefinition()
+    {
+        PushUndo();
+        string id = DefinitionEditor.UniqueId(
+            "part",
+            candidate => _project.FindDefinition(candidate) is not null);
+        var definition = new CircuitDefinition
+        {
+            Id = id,
+            Name = "New component",
+            Description = "Describe the interface and build it from parts.",
+        };
+        _project.Definitions.Add(definition);
+        _definitionId = id;
+        _selectedInstance = null;
+        _selectedNet = null;
+        Simulator.Retarget(_project, Definition);
+        RefreshAll(fit: true);
+        IsDirty = true;
+        StatusText = $"Created component {id}";
+    }
+
+    public void RemoveDefinition()
+    {
+        if (Definition.Id == _project.RootDefinitionId)
+        {
+            StatusText = "The root definition cannot be removed.";
+            return;
+        }
+
+        if (_project.Definitions.Count <= 1)
+        {
+            return;
+        }
+
+        bool used = _project.Definitions.Any(d => d.Instances.Any(i =>
+            string.Equals(i.DefinitionId, Definition.Id, StringComparison.Ordinal)));
+        if (used)
+        {
+            StatusText = "This component is instantiated elsewhere; remove those instances first.";
+            return;
+        }
+
+        PushUndo();
+        string removed = Definition.Id;
+        _project.Definitions.Remove(Definition);
+        _definitionId = _project.RootDefinitionId;
+        _selectedInstance = null;
+        _selectedNet = null;
+        Simulator.Retarget(_project, Definition);
+        RefreshAll(fit: true);
+        IsDirty = true;
+        StatusText = $"Removed {removed}";
+    }
+
+    public void AddPin()
+    {
+        DomainChoice? domain = NewPinDomain ?? Domains.FirstOrDefault();
+        if (domain is null)
+        {
+            StatusText = "Add a signal domain first.";
+            return;
+        }
+
+        PushUndo();
+        PinDeclaration? pin = DefinitionEditor.AddPin(
+            _project,
+            Definition,
+            NewPinName,
+            NewPinIsInput ? PinDirection.Input : PinDirection.Output,
+            domain.Id);
+        NewPinName = string.Empty;
+        AfterMutation(structural: true);
+        StatusText = pin is null ? "Could not add pin." : $"Added pin {pin.Name}";
+    }
+
+    public void RemovePin(string pinId)
+    {
+        PushUndo();
+        if (DefinitionEditor.RemovePin(Definition, pinId))
+        {
+            AfterMutation(structural: true);
+            StatusText = $"Removed pin {pinId}";
+        }
+    }
+
+    public void ChangeNetDomain(string domainId)
+    {
+        if (_selectedNet is null || _project.FindDomain(domainId) is null ||
+            string.Equals(_selectedNet.DomainId, domainId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        PushUndo();
+        _selectedNet.DomainId = domainId;
+        AfterMutation(structural: false);
+    }
+
+    public void PlaceLibraryComponent(LibraryComponent component)
+    {
+        PushUndo();
+        string id = UniquePlacementId(component.Name);
+        var instance = new ComponentInstance
+        {
+            Id = id,
+            Primitive = component.Spec,
+            Label = component.Name,
+            X = NextPlacementX(),
+            Y = NextPlacementY(),
+        };
+        Definition.Instances.Add(instance);
+        _selectedInstance = instance;
+        _selectedNet = null;
+        AfterMutation(structural: true);
+        FormatPlacement();
+        StatusText = $"Placed {component.Name}";
+    }
+
+    public void PlaceDefinition(string definitionId)
+    {
+        if (string.Equals(definitionId, Definition.Id, StringComparison.Ordinal))
+        {
+            StatusText = "A definition cannot contain itself directly.";
+            return;
+        }
+
+        CircuitDefinition? target = _project.FindDefinition(definitionId);
+        if (target is null)
+        {
+            return;
+        }
+
+        PushUndo();
+        string id = UniquePlacementId(target.Name);
+        var instance = new ComponentInstance
+        {
+            Id = id,
+            DefinitionId = target.Id,
+            Label = target.Name,
+            X = NextPlacementX(),
+            Y = NextPlacementY(),
+        };
+        Definition.Instances.Add(instance);
+        _selectedInstance = instance;
+        _selectedNet = null;
+        AfterMutation(structural: true);
+        FormatPlacement();
+        StatusText = $"Placed {target.Name}";
+    }
+
+    public void Connect(EditorPin start, EditorPin end)
+    {
+        if (start == end)
+        {
+            StatusText = "A pin cannot connect to itself.";
+            return;
+        }
+
+        Net? first = Simulator.NetFor(start);
+        Net? second = Simulator.NetFor(end);
+        string? firstDomain = DeclaredDomain(start);
+        string? secondDomain = DeclaredDomain(end);
+        if (firstDomain is not null && secondDomain is not null &&
+            !string.Equals(firstDomain, secondDomain, StringComparison.Ordinal))
+        {
+            StatusText = $"Domain mismatch: {firstDomain} and {secondDomain}.";
+            return;
+        }
+
+        string? domainId = firstDomain ?? secondDomain ?? first?.DomainId ?? second?.DomainId;
+        if (domainId is null)
+        {
+            domainId = DefaultDomainId();
+        }
+
+        if (domainId is null)
+        {
+            StatusText = "No signal domain is available.";
+            return;
+        }
+
+        if (first is not null && second is not null)
+        {
+            if (!string.Equals(first.DomainId, second.DomainId, StringComparison.Ordinal))
+            {
+                StatusText = $"Cannot merge nets on {first.DomainId} and {second.DomainId}.";
+                return;
+            }
+
+            PushUndo();
+            MergeNets(first, second);
+            AttachInstancesToNet(start, first);
+            AttachInstancesToNet(end, first);
+            AfterMutation(structural: true);
+            StatusText = $"Connected {Describe(start)} to {Describe(end)}";
+            return;
+        }
+
+        PushUndo();
+        Net target = first ?? second ?? new Net
+        {
+            Id = DefinitionEditor.UniqueNetId(Definition),
+            DomainId = domainId,
+        };
+
+        if (!Definition.Nets.Contains(target))
+        {
+            Definition.Nets.Add(target);
+        }
+
+        AttachToNet(start, target);
+        AttachToNet(end, target);
+        AfterMutation(structural: true);
+        StatusText = $"Wired {Describe(start)} to {Describe(end)}";
+    }
+
+    public void AttachPinToNet(EditorPin pin, string netId)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null)
+        {
+            return;
+        }
+
+        string? declared = DeclaredDomain(pin);
+        if (declared is not null && !string.Equals(declared, net.DomainId, StringComparison.Ordinal))
+        {
+            StatusText = $"Pin domain {declared} does not match net domain {net.DomainId}.";
+            return;
+        }
+
+        PushUndo();
+        AttachToNet(pin, net);
+        AfterMutation(structural: true);
+        StatusText = $"Attached {Describe(pin)} to {net.Id}";
+    }
+
+    public void Disconnect(EditorPin pin)
+    {
+        Net? net = Simulator.NetFor(pin);
+        if (net is null)
+        {
+            return;
+        }
+
+        PushUndo();
+        if (pin.Kind == EditorPinKind.Port)
+        {
+            Definition.Ports.RemoveAll(p => string.Equals(p.PinId, pin.PinId, StringComparison.Ordinal));
+        }
+        else
+        {
+            net.Pins.RemoveAll(p =>
+                string.Equals(p.InstanceId, pin.OwnerId, StringComparison.Ordinal) &&
+                string.Equals(p.PinId, pin.PinId, StringComparison.Ordinal));
+        }
+
+        CleanEmptyNets();
+        AfterMutation(structural: true);
+        StatusText = $"Disconnected {Describe(pin)}";
+    }
+
+    public bool ApplyField(EditableField field)
+    {
+        if (field.Apply is null || string.Equals(field.Value, field.LastCommitted, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        bool applied = field.Apply(field.Value);
+        if (applied)
+        {
+            field.LastCommitted = field.Value;
+        }
+
+        if (!applied)
+        {
+            StatusText = $"Could not apply '{field.Label}'.";
+        }
+
+        return applied;
+    }
+
+    public void BeginSimulation()
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        Simulator.Reset();
+        RefreshSimulationPresentation();
+        StatusText = $"Simulation reset to t=0 · {Simulator.EventsProcessed} events";
+    }
+
+    public void AdvanceSimulation()
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        if (!int.TryParse(AdvanceTicksText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ticks) || ticks < 0)
+        {
+            ticks = 10;
+            AdvanceTicksText = "10";
+        }
+
+        Simulator.Advance(ticks);
+        RefreshSimulationPresentation();
+        StatusText = $"Advanced {ticks} ticks";
+    }
+
+    public void StepEvent()
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        Simulator.StepEvent();
+        RefreshSimulationPresentation();
+        StatusText = "Stepped one event";
+    }
+
+    public void Settle()
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        Simulator.SettleCurrentTime();
+        RefreshSimulationPresentation();
+        StatusText = "Settled current timestamp";
+    }
+
+    public void StepClock()
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        string? clockNet = FindClockNet();
+        if (clockNet is null)
+        {
+            Simulator.StepEvent();
+            StatusText = "No clock net found; stepped one event";
+        }
+        else
+        {
+            Simulator.StepClock(clockNet);
+            StatusText = $"Stepped clock {clockNet}";
+        }
+
+        RefreshSimulationPresentation();
+    }
+
+    public void SetPortValue(string pinId, int value)
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        if (Simulator.DrivePort(pinId, value))
+        {
+            RefreshSimulationPresentation();
+            StatusText = $"Drove {pinId} = {SimulatorHost.Format(value, Simulator.DomainFor(EditorPin.ForPort(pinId)))}";
+        }
+    }
+
+    public void ClearDrives()
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        Simulator.ClearDrives();
+        RefreshSimulationPresentation();
+        StatusText = "Cleared external drives";
+    }
+
+    public void RunEvent(string description)
+    {
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        Simulator.RunEventDescription(description);
+        RefreshSimulationPresentation();
+        StatusText = description;
+    }
+
+    public void Undo()
+    {
+        if (_undo.Count == 0)
+        {
+            return;
+        }
+
+        _redo.Push(Capture());
+        EditorSnapshot snapshot = _undo.Pop();
+        Restore(snapshot);
+        UpdateCommandStates();
+        StatusText = "Undo";
+    }
+
+    public void Redo()
+    {
+        if (_redo.Count == 0)
+        {
+            return;
+        }
+
+        _undo.Push(Capture());
+        EditorSnapshot snapshot = _redo.Pop();
+        Restore(snapshot);
+        UpdateCommandStates();
+        StatusText = "Redo";
+    }
+
+    public void PushUndo()
+    {
+        _undo.Push(Capture());
+        while (_undo.Count > 80)
+        {
+            EditorSnapshot[] items = _undo.ToArray();
+            _undo.Clear();
+            foreach (EditorSnapshot item in items.Take(80).Reverse())
+            {
+                _undo.Push(item);
+            }
+        }
+
+        _redo.Clear();
+        UpdateCommandStates();
+    }
+
+    private void EnsureProjectShape()
+    {
+        if (_project.Definitions.Count == 0)
+        {
+            var root = new CircuitDefinition { Id = "main", Name = "Main" };
+            _project.Definitions.Add(root);
+            _project.RootDefinitionId = root.Id;
+        }
+
+        if (_project.FindDefinition(_project.RootDefinitionId) is null)
+        {
+            _project.RootDefinitionId = _project.Definitions[0].Id;
+        }
+
+        if (_project.Domains.Count == 0)
+        {
+            _project.Domains.Add(StandardDomains.Binary());
+        }
+    }
+
+    private void RefreshAll(bool fit)
+    {
+        EnsureProjectShape();
+        if (_project.FindDefinition(_definitionId) is null)
+        {
+            _definitionId = _project.RootDefinitionId;
+        }
+
+        Simulator.Retarget(_project, Definition);
+        RefreshDefinitions();
+        RefreshPalette();
+        RefreshDomains();
+        RefreshPins();
+        RefreshIoPins();
+        RebuildLayout();
+        RefreshInspector();
+        RefreshDiagnosticsFromValidator();
+        RefreshWaveform();
+        RefreshRecentTransitions();
+        RefreshSimStatus();
+        RefreshEvents();
+        UpdateCommandStates();
+        RaisePropertyChanged(nameof(DefinitionTitle));
+        RaisePropertyChanged(nameof(ProjectSubtitle));
+        RaisePropertyChanged(nameof(ProjectTitle));
+        VisualInvalidated?.Invoke();
+        if (fit)
+        {
+            FitRequested?.Invoke();
+        }
+    }
+
+    private void RefreshDefinitions()
+    {
+        Definitions.Clear();
+        foreach (CircuitDefinition definition in _project.Definitions)
+        {
+            string id = definition.Id;
+            Definitions.Add(new DefinitionListItem(
+                definition,
+                definition.Id == _project.RootDefinitionId,
+                definition.Id == Definition.Id,
+                new RelayCommand(() => OpenDefinition(id)),
+                new RelayCommand(() => PlaceDefinition(id))));
+        }
+    }
+
+    private void RefreshPalette()
+    {
+        Palette.Clear();
+        foreach (LibraryComponent component in ComponentCatalog.Components)
+        {
+            Palette.Add(new PaletteItem(
+                component.Name,
+                component.Category,
+                component.Description,
+                () => PlaceLibraryComponent(component)));
+        }
+
+    }
+
+    private void RefreshDomains()
+    {
+        _domains.Clear();
+        Domains.Clear();
+        foreach (SignalDomain domain in _project.Domains)
+        {
+            bool standard = StandardDomains.All().Any(d => string.Equals(d.Id, domain.Id, StringComparison.Ordinal));
+            var choice = new DomainChoice(domain.Id, domain.Name, standard);
+            _domains.Add(domain.Id);
+            Domains.Add(choice);
+        }
+
+        NewPinDomain = Domains.FirstOrDefault(d => d.Id == NewPinDomain?.Id) ?? Domains.FirstOrDefault();
+        if (_selectedNet is not null)
+        {
+            _refreshingDomainSelection = true;
+            SelectedNetDomain = Domains.FirstOrDefault(d => d.Id == _selectedNet.DomainId);
+            _refreshingDomainSelection = false;
+        }
+    }
+
+    private void RefreshPins()
+    {
+        Pins.Clear();
+        foreach (PinDeclaration pin in Definition.Pins)
+        {
+            string pinId = pin.Id;
+            Net? net = Definition.FindPortNet(pinId);
+            Pins.Add(new PinListItem(pin, net?.Label ?? net?.Id ?? "unbound", new RelayCommand(() => RemovePin(pinId))));
+        }
+    }
+
+    private void RefreshIoPins()
+    {
+        IoPins.Clear();
+        foreach (PinDeclaration pin in Definition.Pins)
+        {
+            SignalDomain? domain = _project.FindDomain(pin.DomainId);
+            if (domain is null)
+            {
+                continue;
+            }
+
+            var view = new IoPinViewModel(pin.Id, pin.Name, pin.Direction, domain, pin.Direction == PinDirection.Input);
+            if (pin.Direction == PinDirection.Input)
+            {
+                for (int i = 0; i < domain.ValueCount; i++)
+                {
+                    int value = i;
+                    view.Values.Add(new IoValueOption(domain.ValueName(i), i, chosen => SetPortValue(pin.Id, chosen)));
+                }
+            }
+
+            IoPins.Add(view);
+        }
+
+        RefreshIoValues();
+    }
+
+    private void RefreshIoValues()
+    {
+        foreach (IoPinViewModel view in IoPins)
+        {
+            view.ValueText = Simulator.Format(EditorPin.ForPort(view.PinId));
+        }
+    }
+
+    private void RefreshEvents()
+    {
+        Events.Clear();
+        Events.Add("begin simulation");
+        Events.Add("advance");
+        Events.Add("settle");
+        foreach (PinDeclaration pin in Definition.Pins.Where(p => p.Direction == PinDirection.Input))
+        {
+            SignalDomain? domain = _project.FindDomain(pin.DomainId);
+            if (domain is null)
+            {
+                continue;
+            }
+
+            for (int i = 0; i < domain.ValueCount; i++)
+            {
+                string text = $"append {pin.Name}={domain.ValueName(i)} @ t={Simulator.Now}";
+                Events.Add(text);
+            }
+        }
+    }
+
+    private void RefreshInspector()
+    {
+        Fields.Clear();
+
+        if (_selectedInstance is not null)
+        {
+            ComponentInstance instance = _selectedInstance;
+            string instanceId = instance.Id;
+            Fields.Add(new EditableField("Instance", instance.Id, isReadOnly: true));
+            Fields.Add(new EditableField("Type", TypeName(instance), isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Label",
+                instance.Label ?? string.Empty,
+                hint: "Display name shown on the canvas",
+                apply: value => MutateInstance(instanceId, i => DefinitionEditor.SetLabel(i, value), "label")));
+            Fields.Add(new EditableField(
+                "X",
+                instance.X.ToString("0.#", CultureInfo.InvariantCulture),
+                apply: value => ParseDoubleValue(value) is double x && MutateInstance(instanceId, i => i.X = x, "position")));
+            Fields.Add(new EditableField(
+                "Y",
+                instance.Y.ToString("0.#", CultureInfo.InvariantCulture),
+                apply: value => ParseDoubleValue(value) is double y && MutateInstance(instanceId, i => i.Y = y, "position")));
+            Fields.Add(new EditableField(
+                "Pins",
+                string.Join(", ", _project.GetInstancePins(instance).Select(p => p.Name)),
+                isReadOnly: true));
+
+            AddPrimitiveFields(instance, instanceId);
+        }
+        else if (_selectedNet is not null)
+        {
+            Net net = _selectedNet;
+            string netId = net.Id;
+            Fields.Add(new EditableField("Net", net.Id, isReadOnly: true));
+            Fields.Add(new EditableField("Domain", net.DomainId, isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Label",
+                net.Label ?? string.Empty,
+                apply: value => MutateNet(netId, n => n.Label = string.IsNullOrWhiteSpace(value) ? null : value, "label")));
+            Fields.Add(new EditableField(
+                "Initial",
+                net.InitialValue?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                hint: "Empty for undriven",
+                apply: value =>
+                {
+                    if (value.Trim().Length == 0)
+                    {
+                        return MutateNet(netId, n => n.InitialValue = null, "initial value");
+                    }
+
+                    return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+                           MutateNet(netId, n => n.InitialValue = parsed, "initial value");
+                }));
+            Fields.Add(new EditableField(
+                "Pins",
+                net.Pins.Count == 0 ? "none" : string.Join(", ", net.Pins.Select(p => p.ToString())),
+                isReadOnly: true));
+        }
+        else
+        {
+            string definitionId = Definition.Id;
+            Fields.Add(new EditableField("Id", Definition.Id, isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Name",
+                Definition.Name,
+                apply: value =>
+                {
+                    PushUndo();
+                    DefinitionEditor.RenameDefinition(Definition, value);
+                    AfterMutation(structural: true);
+                    return true;
+                }));
+            Fields.Add(new EditableField(
+                "Description",
+                Definition.Description ?? string.Empty,
+                apply: value =>
+                {
+                    PushUndo();
+                    Definition.Description = string.IsNullOrWhiteSpace(value) ? null : value;
+                    AfterMutation(structural: false);
+                    return true;
+                }));
+            Fields.Add(new EditableField("Instances", Definition.Instances.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
+            Fields.Add(new EditableField("Nets", Definition.Nets.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
+            Fields.Add(new EditableField("Pins", Definition.Pins.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Root",
+                _project.RootDefinitionId == definitionId ? "yes" : "no",
+                isReadOnly: true));
+        }
+
+        _refreshingDomainSelection = true;
+        SelectedNetDomain = _selectedNet is null
+            ? null
+            : Domains.FirstOrDefault(d => d.Id == _selectedNet.DomainId);
+        _refreshingDomainSelection = false;
+
+        RaisePropertyChanged(nameof(HasSelection));
+        RaisePropertyChanged(nameof(HasSelectedInstance));
+        RaisePropertyChanged(nameof(HasSelectedNet));
+        RaisePropertyChanged(nameof(SelectedInstanceId));
+        RaisePropertyChanged(nameof(SelectedNetId));
+        RaisePropertyChanged(nameof(SelectionTitle));
+        RaisePropertyChanged(nameof(SelectionSubtitle));
+    }
+
+    private void RefreshInspectorPosition(ComponentInstance instance)
+    {
+        if (_selectedInstance?.Id != instance.Id)
+        {
+            return;
+        }
+
+        foreach (EditableField field in Fields)
+        {
+            if (field.Label == "X")
+            {
+                field.Value = instance.X.ToString("0.#", CultureInfo.InvariantCulture);
+            }
+            else if (field.Label == "Y")
+            {
+                field.Value = instance.Y.ToString("0.#", CultureInfo.InvariantCulture);
+            }
+        }
+    }
+
+    private void AddPrimitiveFields(ComponentInstance instance, string instanceId)
+    {
+        switch (instance.Primitive)
+        {
+            case ConstantSpec constant:
+                Fields.Add(new EditableField(
+                    "Value",
+                    constant.Value.ToString(CultureInfo.InvariantCulture),
+                    apply: value => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+                                     MutatePrimitive(instanceId, _ => new ConstantSpec(parsed), "constant value")));
+                break;
+
+            case LookupSpec lookup:
+                Fields.Add(new EditableField(
+                    "Table",
+                    string.Join(' ', lookup.Table),
+                    hint: "Mixed-radix truth table, first input most significant",
+                    apply: value => ParseInts(value) is int[] table &&
+                                     MutatePrimitive(instanceId, spec => new LookupSpec(((LookupSpec)spec).InputCount, table, ((LookupSpec)spec).DelayTicks), "lookup table")));
+                Fields.Add(new EditableField(
+                    "Delay",
+                    lookup.DelayTicks.ToString(CultureInfo.InvariantCulture),
+                    hint: "Transport delay in ticks",
+                    apply: value => long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) &&
+                                     MutatePrimitive(instanceId, spec => new LookupSpec(((LookupSpec)spec).InputCount, ((LookupSpec)spec).Table, parsed), "lookup delay")));
+                break;
+
+            case DelaySpec delay:
+                Fields.Add(new EditableField(
+                    "Delay",
+                    delay.DelayTicks.ToString(CultureInfo.InvariantCulture),
+                    apply: value => long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) &&
+                                     MutatePrimitive(instanceId, spec => new DelaySpec(parsed, ((DelaySpec)spec).InitialValue), "delay")));
+                Fields.Add(new EditableField(
+                    "Initial",
+                    delay.InitialValue.ToString(CultureInfo.InvariantCulture),
+                    apply: value => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+                                     MutatePrimitive(instanceId, spec => new DelaySpec(((DelaySpec)spec).DelayTicks, parsed), "initial value")));
+                break;
+
+            case WaveformSpec waveform:
+                Fields.Add(new EditableField(
+                    "Values",
+                    string.Join(' ', waveform.Values),
+                    hint: "Value indices, one per phase",
+                    apply: value => ParseInts(value) is int[] values &&
+                                     MutatePrimitive(instanceId, spec => new WaveformSpec(((WaveformSpec)spec).Durations, values), "waveform values")));
+                Fields.Add(new EditableField(
+                    "Durations",
+                    string.Join(' ', waveform.Durations),
+                    hint: "Ticks per phase",
+                    apply: value => ParseLongs(value) is long[] durations &&
+                                     MutatePrimitive(instanceId, spec => new WaveformSpec(durations, ((WaveformSpec)spec).Values), "waveform durations")));
+                break;
+
+            case ProbeSpec probe:
+                Fields.Add(new EditableField(
+                    "Probe label",
+                    probe.Label,
+                    apply: value => MutatePrimitive(instanceId, _ => new ProbeSpec(value), "probe label")));
+                break;
+        }
+    }
+
+    private bool MutateInstance(string instanceId, Action<ComponentInstance> mutate, string what)
+    {
+        ComponentInstance? instance = Definition.FindInstance(instanceId);
+        if (instance is null)
+        {
+            return false;
+        }
+
+        PushUndo();
+        mutate(instance);
+        AfterMutation(structural: false);
+        StatusText = $"Updated {what} on {instanceId}";
+        return true;
+    }
+
+    private bool MutateNet(string netId, Action<Net> mutate, string what)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null)
+        {
+            return false;
+        }
+
+        PushUndo();
+        mutate(net);
+        AfterMutation(structural: false);
+        StatusText = $"Updated {what} on net {netId}";
+        return true;
+    }
+
+    private bool MutatePrimitive(string instanceId, Func<PrimitiveSpec, PrimitiveSpec> update, string what)
+    {
+        ComponentInstance? instance = Definition.FindInstance(instanceId);
+        if (instance?.Primitive is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            PrimitiveSpec updated = update(instance.Primitive);
+            PushUndo();
+            instance.Primitive = updated;
+            AfterMutation(structural: false);
+            StatusText = $"Updated {what}";
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            StatusText = "Invalid parameters: " + exception.Message;
+            return false;
+        }
+    }
+
+    private void AfterMutation(bool structural)
+    {
+        IsDirty = true;
+        Simulator.Retarget(_project, Definition);
+        RebuildLayout();
+        if (structural)
+        {
+            RefreshDefinitions();
+            RefreshPalette();
+            RefreshPins();
+            RefreshIoPins();
+            RefreshEvents();
+        }
+        else
+        {
+            RefreshIoValues();
+        }
+
+        RefreshInspector();
+        RefreshDiagnosticsFromValidator();
+        RefreshWaveform();
+        RefreshRecentTransitions();
+        RefreshSimStatus();
+        RaisePropertyChanged(nameof(DefinitionTitle));
+        RaisePropertyChanged(nameof(ProjectSubtitle));
+        UpdateCommandStates();
+        VisualInvalidated?.Invoke();
+    }
+
+    private void RebuildLayout()
+    {
+        Layout = CircuitLayout.Build(Definition, _project);
+        RaisePropertyChanged(nameof(ProjectSubtitle));
+        VisualInvalidated?.Invoke();
+    }
+
+    private void RefreshDiagnosticsFromValidator()
+    {
+        DiagnosticBag bag = CircuitValidator.Validate(_project);
+        Diagnostics.Clear();
+        foreach (Diagnostic diagnostic in bag.Take(250))
+        {
+            Diagnostics.Add(new DiagnosticItem(diagnostic));
+        }
+
+        RaisePropertyChanged(nameof(DiagnosticSummary));
+    }
+
+    private void RefreshDiagnosticsFromSimulator()
+    {
+        Diagnostics.Clear();
+        foreach (Diagnostic diagnostic in Simulator.AllDiagnostics().Take(250))
+        {
+            Diagnostics.Add(new DiagnosticItem(diagnostic));
+        }
+
+        RaisePropertyChanged(nameof(DiagnosticSummary));
+    }
+
+    private void RefreshWaveform()
+    {
+        SimulationEngineSnapshot snapshot = CaptureSimulationSnapshot();
+        Waveform = snapshot.Waveform;
+    }
+
+    private SimulationEngineSnapshot CaptureSimulationSnapshot()
+    {
+        if (Simulator.Circuit is null || Simulator.Engine is null || Definition.Nets.Count == 0)
+        {
+            return new SimulationEngineSnapshot(WaveformSnapshot.Empty);
+        }
+
+        var rows = new List<WaveformRow>();
+        var engine = Simulator.Engine;
+        var trace = engine.Trace;
+        foreach (Net net in Definition.Nets.Take(16))
+        {
+            if (!Simulator.TryNetIndex(net.Id, out int netIndex, out SignalDomain? domain) || domain is null)
+            {
+                continue;
+            }
+
+            var changes = new List<WaveValueChange>();
+            foreach (NetChange change in trace)
+            {
+                if (change.Net == netIndex)
+                {
+                    changes.Add(new WaveValueChange(change.Time, change.NewValue));
+                }
+            }
+
+            int start = Simulator.Circuit.Nets[netIndex].InitialValue;
+            rows.Add(new WaveformRow(Simulator.NetLabel(netIndex), domain, start, changes));
+        }
+
+        long end = Math.Max(1, engine.Now);
+        return new SimulationEngineSnapshot(new WaveformSnapshot(0, end, rows));
+    }
+
+    private void RefreshRecentTransitions()
+    {
+        RecentTransitions.Clear();
+        if (Simulator.Circuit is null || Simulator.Engine is null)
+        {
+            return;
+        }
+
+        SimulationTrace trace = Simulator.Engine.Trace;
+        int start = Math.Max(0, trace.Count - 60);
+        for (int i = trace.Count - 1; i >= start; i--)
+        {
+            NetChange change = trace[i];
+            string label = Simulator.NetLabel(change.Net);
+            SignalDomain domain = Simulator.Circuit.Nets[change.Net].Domain;
+            string value = SimulatorHost.Format(change.NewValue, domain);
+            RecentTransitions.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"t={change.Time}  {label} → {value}"));
+        }
+    }
+
+    private void RefreshSimStatus()
+    {
+        RaisePropertyChanged(nameof(SimTimeText));
+        RaisePropertyChanged(nameof(SimStatusText));
+        RefreshIoValues();
+    }
+
+    private void RefreshSimulationPresentation()
+    {
+        RefreshDiagnosticsFromSimulator();
+        RefreshIoValues();
+        RefreshWaveform();
+        RefreshRecentTransitions();
+        RaisePropertyChanged(nameof(SimTimeText));
+        RaisePropertyChanged(nameof(SimStatusText));
+        UpdateCommandStates();
+        VisualInvalidated?.Invoke();
+    }
+
+    private bool EnsureSimulation()
+    {
+        if (Simulator.IsCompiled)
+        {
+            return true;
+        }
+
+        StatusText = "Compiling…";
+        if (!Simulator.Compile())
+        {
+            RefreshDiagnosticsFromSimulator();
+            StatusText = "Simulation blocked by validation errors";
+            VisualInvalidated?.Invoke();
+            return false;
+        }
+
+        RefreshDiagnosticsFromSimulator();
+        RefreshSimulationPresentation();
+        return true;
+    }
+
+    private string? FindClockNet()
+    {
+        PinDeclaration? port = Definition.Pins.FirstOrDefault(p =>
+            p.Direction == PinDirection.Input &&
+            (p.Name.Contains("clk", StringComparison.OrdinalIgnoreCase) ||
+             p.Id.Contains("clk", StringComparison.OrdinalIgnoreCase) ||
+             p.Name.Contains("clock", StringComparison.OrdinalIgnoreCase)));
+        if (port is not null && Definition.FindPortNet(port.Id) is Net portNet)
+        {
+            return portNet.Id;
+        }
+
+        Net? labelled = Definition.Nets.FirstOrDefault(n =>
+            (n.Label ?? string.Empty).Contains("clk", StringComparison.OrdinalIgnoreCase) ||
+            n.Id.Contains("clk", StringComparison.OrdinalIgnoreCase));
+        if (labelled is not null)
+        {
+            return labelled.Id;
+        }
+
+        foreach (ComponentInstance instance in Definition.Instances)
+        {
+            foreach (PinDescriptor pin in _project.GetInstancePins(instance))
+            {
+                if (!pin.Name.Contains("clk", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Net? net = Simulator.NetFor(EditorPin.ForInstance(instance.Id, pin.Id));
+                if (net is not null)
+                {
+                    return net.Id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private string? DeclaredDomain(EditorPin pin)
+    {
+        if (pin.Kind == EditorPinKind.Port)
+        {
+            return Definition.FindPin(pin.PinId)?.DomainId;
+        }
+
+        ComponentInstance? instance = Definition.FindInstance(pin.OwnerId);
+        return instance is null ? null : _project.FindInstancePin(instance, pin.PinId)?.DomainId;
+    }
+
+    private string? DefaultDomainId()
+    {
+        if (_project.FindDomain(StandardDomains.BinaryId) is not null)
+        {
+            return StandardDomains.BinaryId;
+        }
+
+        return _project.Domains.FirstOrDefault()?.Id;
+    }
+
+    private void AttachInstancesToNet(EditorPin pin, Net net)
+    {
+        if (pin.Kind == EditorPinKind.Instance &&
+            Definition.FindInstance(pin.OwnerId) is not null &&
+            !net.Pins.Any(p => string.Equals(p.InstanceId, pin.OwnerId, StringComparison.Ordinal) &&
+                               string.Equals(p.PinId, pin.PinId, StringComparison.Ordinal)))
+        {
+            net.Pins.Add(new PinRef(pin.OwnerId, pin.PinId));
+        }
+    }
+
+    private void AttachToNet(EditorPin pin, Net target)
+    {
+        Net? current = Simulator.NetFor(pin);
+        if (current is not null && !ReferenceEquals(current, target))
+        {
+            if (pin.Kind == EditorPinKind.Port)
+            {
+                for (int i = 0; i < Definition.Ports.Count; i++)
+                {
+                    if (string.Equals(Definition.Ports[i].PinId, pin.PinId, StringComparison.Ordinal))
+                    {
+                        Definition.Ports[i] = new PortBinding(pin.PinId, target.Id);
+                    }
+                }
+            }
+            else
+            {
+                current.Pins.RemoveAll(p =>
+                    string.Equals(p.InstanceId, pin.OwnerId, StringComparison.Ordinal) &&
+                    string.Equals(p.PinId, pin.PinId, StringComparison.Ordinal));
+            }
+        }
+
+        AttachInstancesToNet(pin, target);
+    }
+
+    private void MergeNets(Net target, Net source)
+    {
+        if (ReferenceEquals(target, source))
+        {
+            return;
+        }
+
+        foreach (PinRef pin in source.Pins)
+        {
+            if (!target.Pins.Any(p => p.InstanceId == pin.InstanceId && p.PinId == pin.PinId))
+            {
+                target.Pins.Add(pin);
+            }
+        }
+
+        for (int i = 0; i < Definition.Ports.Count; i++)
+        {
+            if (string.Equals(Definition.Ports[i].NetId, source.Id, StringComparison.Ordinal))
+            {
+                Definition.Ports[i] = new PortBinding(Definition.Ports[i].PinId, target.Id);
+            }
+        }
+
+        target.Label ??= source.Label;
+        target.InitialValue ??= source.InitialValue;
+        Definition.Nets.Remove(source);
+    }
+
+    private void CleanEmptyNets()
+    {
+        var bound = Definition.Ports.Select(p => p.NetId).ToHashSet(StringComparer.Ordinal);
+        Definition.Nets.RemoveAll(n => n.Pins.Count == 0 && !bound.Contains(n.Id));
+    }
+
+    private string Describe(EditorPin pin) =>
+        pin.Kind == EditorPinKind.Port ? $"port {pin.PinId}" : $"{pin.OwnerId}.{pin.PinId}";
+
+    private string TypeName(ComponentInstance instance)
+    {
+        if (instance.Primitive is PrimitiveSpec spec)
+        {
+            return PrimitiveDisplay.Name(spec);
+        }
+
+        return _project.FindDefinition(instance.DefinitionId)?.Name ?? "missing definition";
+    }
+
+    private string UniquePlacementId(string label)
+    {
+        string stem = new string(label
+            .ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray()).Trim('-');
+        if (stem.Length == 0)
+        {
+            stem = "part";
+        }
+
+        return DefinitionEditor.UniqueInstanceId(Definition, stem);
+    }
+
+    private double NextPlacementX()
+    {
+        _placementCascade = (_placementCascade + 1) % 8;
+        return _placementPoint.X + (_placementCascade * 22);
+    }
+
+    private double NextPlacementY() => _placementPoint.Y + (_placementCascade * 16);
+
+    private void FormatPlacement() => _placementCascade = 0;
+
+    private static double? ParseDoubleValue(string text)
+    {
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ? parsed : null;
+    }
+
+    private static int[]? ParseInts(string text)
+    {
+        string[] parts = text.Split([' ', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        var values = new int[parts.Length];
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (!int.TryParse(parts[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out values[i]))
+            {
+                return null;
+            }
+        }
+
+        return values;
+    }
+
+    private static long[]? ParseLongs(string text)
+    {
+        string[] parts = text.Split([' ', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        var values = new long[parts.Length];
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (!long.TryParse(parts[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out values[i]))
+            {
+                return null;
+            }
+        }
+
+        return values;
+    }
+
+    private void RaiseSelectionChanged()
+    {
+        RaisePropertyChanged(nameof(HasSelection));
+        RaisePropertyChanged(nameof(HasSelectedInstance));
+        RaisePropertyChanged(nameof(HasSelectedNet));
+        RaisePropertyChanged(nameof(SelectedInstanceId));
+        RaisePropertyChanged(nameof(SelectedNetId));
+        RaisePropertyChanged(nameof(SelectionTitle));
+        RaisePropertyChanged(nameof(SelectionSubtitle));
+    }
+
+    private EditorSnapshot Capture()
+    {
+        return new EditorSnapshot(
+            ProjectSerializer.SaveToString(_project),
+            Definition.Id,
+            _selectedInstance?.Id,
+            _selectedNet?.Id,
+            IsDirty);
+    }
+
+    private void Restore(EditorSnapshot snapshot)
+    {
+        try
+        {
+            _project = ProjectSerializer.LoadFromString(snapshot.Json, validate: false);
+            EnsureProjectShape();
+            _definitionId = _project.FindDefinition(snapshot.DefinitionId)?.Id ?? _project.RootDefinitionId;
+            _selectedInstance = _project.FindDefinition(_definitionId)?.FindInstance(snapshot.SelectedInstanceId ?? string.Empty);
+            _selectedNet = _project.FindDefinition(_definitionId)?.FindNet(snapshot.SelectedNetId ?? string.Empty);
+            Simulator = new SimulatorHost(_project, Definition);
+            IsDirty = snapshot.Dirty;
+            RefreshAll(fit: false);
+        }
+        catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException)
+        {
+            StatusText = "Undo failed: " + exception.Message;
+        }
+    }
+
+    private void UpdateCommandStates()
+    {
+        _undoCommand.RaiseCanExecuteChanged();
+        _redoCommand.RaiseCanExecuteChanged();
+        RaisePropertyChanged(nameof(ProjectTitle));
+    }
+
+    private sealed record EditorSnapshot(
+        string Json,
+        string DefinitionId,
+        string? SelectedInstanceId,
+        string? SelectedNetId,
+        bool Dirty);
+
+    private readonly record struct SimulationEngineSnapshot(WaveformSnapshot Waveform);
+}

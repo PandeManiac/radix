@@ -1,0 +1,79 @@
+<Application
+    x:Class="Radix.Editor.App"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedThemeVariant="Light">
+
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="Background" Value="#F4F6F8" />
+      <Setter Property="BorderBrush" Value="#D5DCE3" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#E7EDF3" />
+    </Style>
+    <Style Selector="Button.tool">
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.list">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Margin" Value="0,1" />
+    </Style>
+    <Style Selector="Button.palette">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Margin" Value="0,2" />
+      <Setter Property="Background" Value="#FBFCFD" />
+      <Setter Property="BorderBrush" Value="#E0E6EC" />
+    </Style>
+    <Style Selector="Button.value">
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="MinWidth" Value="30" />
+      <Setter Property="FontFamily" Value="monospace" />
+      <Setter Property="Margin" Value="0,0,4,0" />
+    </Style>
+    <Style Selector="Button.danger">
+      <Setter Property="Background" Value="#FBEDEC" />
+      <Setter Property="BorderBrush" Value="#E5B9B5" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#728396" />
+      <Setter Property="Margin" Value="4,12,4,4" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="#6F8092" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="TabControl">
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Padding" Value="10,6" />
+    </Style>
+  </Application.Styles>
+</Application>
