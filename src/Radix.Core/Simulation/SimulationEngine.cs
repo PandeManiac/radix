@@ -172,21 +172,47 @@ public sealed class SimulationEngine
 
     /// <summary>
     /// Processes all events with time less than or equal to <paramref name="targetTime"/>,
-    /// then moves the clock to the target if the engine did not halt.
+    /// then moves the clock to the target if the engine did not halt. A caller running
+    /// offline analysis can pass a token to stop a long advance without touching a
+    /// live editor simulation.
     /// </summary>
-    public void AdvanceTo(long targetTime)
+    public void AdvanceTo(long targetTime, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(targetTime, _now);
+        cancellationToken.ThrowIfCancellationRequested();
         if (_halted)
         {
             return;
         }
 
+        if (!cancellationToken.CanBeCanceled)
+        {
+            // The ordinary editor and CLI path keeps the original tight loop.
+            while (!_halted && _queue.TryPeek(out SimEvent next) && next.Time <= targetTime)
+            {
+                ProcessNextEvent();
+            }
+
+            if (!_halted)
+            {
+                _now = targetTime;
+            }
+
+            return;
+        }
+
+        int processed = 0;
         while (!_halted && _queue.TryPeek(out SimEvent next) && next.Time <= targetTime)
         {
+            if ((++processed & 0x3FF) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             ProcessNextEvent();
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_halted)
         {
             _now = targetTime;

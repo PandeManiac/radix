@@ -310,7 +310,7 @@ public partial class MainWindow : Window
 
         if (files.Count > 0)
         {
-            viewModel.RunTestScript(files[0].Path.LocalPath);
+            await viewModel.RunTestScriptAsync(files[0].Path.LocalPath);
         }
     }
 

@@ -95,7 +95,11 @@ public static class SimulationScriptSuiteRunner
             try
             {
                 SimulationScript script = SimulationScript.Load(path);
-                SimulationScriptResult result = SimulationScriptRunner.Run(project, script, definitionOverride);
+                SimulationScriptResult result = SimulationScriptRunner.Run(
+                    project,
+                    script,
+                    definitionOverride,
+                    cancellationToken);
                 entries.Add(new SimulationScriptSuiteEntry(path, script.Name, result, null));
             }
             catch (SimulationScriptException exception)

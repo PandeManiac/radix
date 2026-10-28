@@ -103,13 +103,15 @@ public sealed class EditorViewModel : ObservableObject
     private bool _testScriptPassed;
     private string _testScriptSummary = string.Empty;
     private string _testScriptPath = string.Empty;
-    private bool _isTestScriptSuiteRunning;
-    private string _testScriptSuiteProgressText = string.Empty;
-    private double _testScriptSuiteProgressValue;
-    private int _testScriptSuiteGeneration;
+    private bool _isTestScriptRunning;
+    private string _testScriptRunTitle = string.Empty;
+    private bool _testScriptProgressIndeterminate;
+    private string _testScriptProgressText = string.Empty;
+    private double _testScriptProgressValue;
+    private int _testScriptGeneration;
     private int _semanticRevision;
-    private CancellationTokenSource? _testScriptSuiteCancellation;
-    private readonly RelayCommand _cancelTestScriptSuiteCommand;
+    private CancellationTokenSource? _testScriptCancellation;
+    private readonly RelayCommand _cancelTestScriptCommand;
     private string _sweepSettleTicksText = "10";
     private string _sweepMaxRowsText = "4096";
     private string _sweepResultText = string.Empty;
@@ -200,8 +202,8 @@ public sealed class EditorViewModel : ObservableObject
         SettleCommand = new RelayCommand(Settle);
         ClearDrivesCommand = new RelayCommand(ClearDrives);
         ClearTestScriptResultCommand = new RelayCommand(ClearTestScriptResult);
-        _cancelTestScriptSuiteCommand = new RelayCommand(CancelTestScriptSuite, () => IsTestScriptSuiteRunning);
-        CancelTestScriptSuiteCommand = _cancelTestScriptSuiteCommand;
+        _cancelTestScriptCommand = new RelayCommand(CancelTestScript, () => IsTestScriptRunning);
+        CancelTestScriptCommand = _cancelTestScriptCommand;
         _runSweepCommand = new RelayCommand(
             () => _ = RunSweepAsync(),
             () => !IsSweepRunning);
@@ -425,10 +427,10 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ClearTestScriptResultCommand { get; }
 
-    public ICommand CancelTestScriptSuiteCommand { get; }
+    public ICommand CancelTestScriptCommand { get; }
 
-    /// <summary>False while a folder suite is running; script pickers are disabled.</summary>
-    public bool CanRunTestScripts => !IsTestScriptSuiteRunning;
+    /// <summary>False while a script or folder suite runs; script pickers are disabled.</summary>
+    public bool CanRunTestScripts => !IsTestScriptRunning;
 
     public ICommand RunSweepCommand { get; }
 
@@ -536,32 +538,45 @@ public sealed class EditorViewModel : ObservableObject
         private set => SetField(ref _isTestScriptResultStale, value);
     }
 
-    /// <summary>True while a folder suite runs against a project snapshot.</summary>
-    public bool IsTestScriptSuiteRunning
+    /// <summary>True while a single script or folder suite runs against a snapshot.</summary>
+    public bool IsTestScriptRunning
     {
-        get => _isTestScriptSuiteRunning;
+        get => _isTestScriptRunning;
         private set
         {
-            if (!SetField(ref _isTestScriptSuiteRunning, value))
+            if (!SetField(ref _isTestScriptRunning, value))
             {
                 return;
             }
 
             RaisePropertyChanged(nameof(CanRunTestScripts));
-            _cancelTestScriptSuiteCommand?.RaiseCanExecuteChanged();
+            _cancelTestScriptCommand?.RaiseCanExecuteChanged();
         }
     }
 
-    public string TestScriptSuiteProgressText
+    public string TestScriptRunTitle
     {
-        get => _testScriptSuiteProgressText;
-        private set => SetField(ref _testScriptSuiteProgressText, value);
+        get => _testScriptRunTitle;
+        private set => SetField(ref _testScriptRunTitle, value);
     }
 
-    public double TestScriptSuiteProgressValue
+    /// <summary>True for a single-script run, whose duration cannot be predicted.</summary>
+    public bool TestScriptProgressIndeterminate
     {
-        get => _testScriptSuiteProgressValue;
-        private set => SetField(ref _testScriptSuiteProgressValue, value);
+        get => _testScriptProgressIndeterminate;
+        private set => SetField(ref _testScriptProgressIndeterminate, value);
+    }
+
+    public string TestScriptProgressText
+    {
+        get => _testScriptProgressText;
+        private set => SetField(ref _testScriptProgressText, value);
+    }
+
+    public double TestScriptProgressValue
+    {
+        get => _testScriptProgressValue;
+        private set => SetField(ref _testScriptProgressValue, value);
     }
 
     public bool TestScriptPassed
@@ -1424,38 +1439,146 @@ public sealed class EditorViewModel : ObservableObject
         {
             SimulationScript script = SimulationScript.Load(path);
             SimulationScriptResult result = SimulationScriptRunner.Run(_project, script);
-            TestScriptPath = path;
-            TestScriptPassed = result.Passed;
-            TestScriptSummary = result.Passed
-                ? string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"PASS · {script.Name} · {result.StepsExecuted} step(s) · t={result.FinalTime} · {result.EventsProcessed} events")
-                : string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"FAIL · {script.Name} · {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)");
-            foreach (ScriptFailure failure in result.Failures)
-            {
-                TestScriptFailures.Add(new TestScriptFailureItem(failure));
-            }
-
-            HasTestScriptResult = true;
-            RaisePropertyChanged(nameof(HasTestScriptFailures));
-            StatusText = result.Passed
-                ? $"Test script passed: {script.Name}"
-                : $"Test script failed: {result.Failures.Count} failure(s)";
-            return result.Passed;
+            return ApplyTestScriptResult(path, script, result);
         }
         catch (Exception exception) when (
             exception is SimulationScriptException or IOException or UnauthorizedAccessException or
             CircuitValidationException or ArgumentException)
         {
-            TestScriptPath = path;
-            TestScriptPassed = false;
-            TestScriptSummary = "Test script error: " + exception.Message;
-            HasTestScriptResult = true;
-            StatusText = "Test script error: " + exception.Message;
+            return FailTestScript(path, exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs one <c>.radixtest</c> against a serialized snapshot on a background
+    /// thread. Cancellation reaches the script runner and the engine advance loop, so
+    /// a long stability or settle window stops promptly instead of freezing the UI.
+    /// </summary>
+    public async Task<bool> RunTestScriptAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsTestScriptRunning)
+        {
             return false;
         }
+
+        ClearTestScriptResult();
+        TestScriptPath = path;
+
+        SimulationScript script;
+        try
+        {
+            script = SimulationScript.Load(path);
+        }
+        catch (Exception exception) when (
+            exception is SimulationScriptException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return FailTestScript(path, exception.Message);
+        }
+
+        int generation = _testScriptGeneration;
+        int startRevision = _semanticRevision;
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _testScriptCancellation = linked;
+        IsTestScriptRunning = true;
+        TestScriptRunTitle = "Running script…";
+        TestScriptProgressIndeterminate = true;
+        TestScriptProgressText = Path.GetFileName(path);
+        TestScriptProgressValue = 0;
+        try
+        {
+            string snapshotJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            SimulationScriptResult result = await Task.Run(
+                () =>
+                {
+                    CircuitProject snapshot = ProjectSerializer.LoadFromString(snapshotJson, validate: false);
+                    return SimulationScriptRunner.Run(snapshot, script, cancellationToken: linked.Token);
+                },
+                linked.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            if (generation != _testScriptGeneration)
+            {
+                return false;
+            }
+
+            bool passed = ApplyTestScriptResult(path, script, result);
+            if (startRevision != _semanticRevision)
+            {
+                IsTestScriptResultStale = true;
+            }
+
+            return passed;
+        }
+        catch (OperationCanceledException)
+        {
+            if (generation == _testScriptGeneration && IsTestScriptRunning)
+            {
+                TestScriptPassed = false;
+                TestScriptSummary = "Test script cancelled.";
+                HasTestScriptResult = true;
+                StatusText = "Test script cancelled.";
+            }
+
+            return false;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException or
+            ProjectFormatException or CircuitValidationException or SimulationScriptException)
+        {
+            return generation == _testScriptGeneration && FailTestScript(path, exception.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_testScriptCancellation, linked))
+            {
+                _testScriptCancellation = null;
+            }
+
+            if (generation == _testScriptGeneration)
+            {
+                IsTestScriptRunning = false;
+                TestScriptRunTitle = string.Empty;
+                TestScriptProgressIndeterminate = false;
+                TestScriptProgressText = string.Empty;
+                TestScriptProgressValue = 0;
+            }
+        }
+    }
+
+    private bool ApplyTestScriptResult(string path, SimulationScript script, SimulationScriptResult result)
+    {
+        TestScriptPath = path;
+        TestScriptPassed = result.Passed;
+        TestScriptSummary = result.Passed
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"PASS · {script.Name} · {result.StepsExecuted} step(s) · t={result.FinalTime} · {result.EventsProcessed} events")
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"FAIL · {script.Name} · {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)");
+        foreach (ScriptFailure failure in result.Failures)
+        {
+            TestScriptFailures.Add(new TestScriptFailureItem(failure));
+        }
+
+        HasTestScriptResult = true;
+        RaisePropertyChanged(nameof(HasTestScriptFailures));
+        StatusText = result.Passed
+            ? $"Test script passed: {script.Name}"
+            : $"Test script failed: {result.Failures.Count} failure(s)";
+        return result.Passed;
+    }
+
+    private bool FailTestScript(string path, string message)
+    {
+        TestScriptPath = path;
+        TestScriptPassed = false;
+        TestScriptSummary = "Test script error: " + message;
+        HasTestScriptResult = true;
+        StatusText = "Test script error: " + message;
+        return false;
     }
 
     /// <summary>
@@ -1487,15 +1610,16 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>
     /// Runs a folder suite on a background thread against a serialized project
     /// snapshot, so the canvas stays responsive and edits cannot race the run.
-    /// Progress is reported once per completed script; cancellation is checked
-    /// between scripts. The live simulation is never touched.
+    /// Progress is reported once per completed script; cancellation reaches the
+    /// current script's runner and engine loop as well as the next script. The live
+    /// simulation is never touched.
     /// </summary>
     public async Task<bool> RunTestScriptSuiteAsync(
         string directory,
         IProgress<SimulationScriptSuiteProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        if (IsTestScriptSuiteRunning)
+        if (IsTestScriptRunning)
         {
             return false;
         }
@@ -1519,7 +1643,7 @@ public sealed class EditorViewModel : ObservableObject
             return FailTestScriptSuite("no .radixtest scripts found", suiteError: true);
         }
 
-        int generation = _testScriptSuiteGeneration;
+        int generation = _testScriptGeneration;
         int startRevision = _semanticRevision;
         SynchronizationContext? progressContext = SynchronizationContext.Current;
         var sink = new InlineProgress<SimulationScriptSuiteProgress>(report =>
@@ -1527,19 +1651,21 @@ public sealed class EditorViewModel : ObservableObject
             progress?.Report(report);
             if (progressContext is null)
             {
-                UpdateTestScriptSuiteProgress(generation, report);
+                UpdateTestScriptProgress(generation, report);
             }
             else
             {
-                progressContext.Post(_ => UpdateTestScriptSuiteProgress(generation, report), null);
+                progressContext.Post(_ => UpdateTestScriptProgress(generation, report), null);
             }
         });
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _testScriptSuiteCancellation = linked;
-        IsTestScriptSuiteRunning = true;
-        TestScriptSuiteProgressText = "Preparing suite…";
-        TestScriptSuiteProgressValue = 0;
+        _testScriptCancellation = linked;
+        IsTestScriptRunning = true;
+        TestScriptRunTitle = "Running script suite…";
+        TestScriptProgressIndeterminate = false;
+        TestScriptProgressText = "Preparing suite…";
+        TestScriptProgressValue = 0;
         try
         {
             // Snapshot on the UI thread before yielding, so every script in the suite
@@ -1557,7 +1683,7 @@ public sealed class EditorViewModel : ObservableObject
                 },
                 linked.Token);
             linked.Token.ThrowIfCancellationRequested();
-            if (generation != _testScriptSuiteGeneration)
+            if (generation != _testScriptGeneration)
             {
                 return false;
             }
@@ -1575,7 +1701,7 @@ public sealed class EditorViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            if (generation == _testScriptSuiteGeneration && IsTestScriptSuiteRunning)
+            if (generation == _testScriptGeneration && IsTestScriptRunning)
             {
                 TestScriptPassed = false;
                 TestScriptSummary = "Test script suite cancelled.";
@@ -1589,20 +1715,22 @@ public sealed class EditorViewModel : ObservableObject
             exception is IOException or UnauthorizedAccessException or ArgumentException or
             ProjectFormatException or CircuitValidationException or SimulationScriptException)
         {
-            return generation == _testScriptSuiteGeneration && FailTestScriptSuite(exception.Message);
+            return generation == _testScriptGeneration && FailTestScriptSuite(exception.Message);
         }
         finally
         {
-            if (ReferenceEquals(_testScriptSuiteCancellation, linked))
+            if (ReferenceEquals(_testScriptCancellation, linked))
             {
-                _testScriptSuiteCancellation = null;
+                _testScriptCancellation = null;
             }
 
-            if (generation == _testScriptSuiteGeneration)
+            if (generation == _testScriptGeneration)
             {
-                IsTestScriptSuiteRunning = false;
-                TestScriptSuiteProgressText = string.Empty;
-                TestScriptSuiteProgressValue = 0;
+                IsTestScriptRunning = false;
+                TestScriptRunTitle = string.Empty;
+                TestScriptProgressIndeterminate = false;
+                TestScriptProgressText = string.Empty;
+                TestScriptProgressValue = 0;
             }
         }
     }
@@ -1657,38 +1785,40 @@ public sealed class EditorViewModel : ObservableObject
         return false;
     }
 
-    private void UpdateTestScriptSuiteProgress(int generation, SimulationScriptSuiteProgress report)
+    private void UpdateTestScriptProgress(int generation, SimulationScriptSuiteProgress report)
     {
-        if (generation != _testScriptSuiteGeneration || !IsTestScriptSuiteRunning)
+        if (generation != _testScriptGeneration || !IsTestScriptRunning)
         {
             return;
         }
 
-        TestScriptSuiteProgressText = string.Create(
+        TestScriptProgressText = string.Create(
             CultureInfo.InvariantCulture,
             $"{report.Completed} / {report.Total} scripts · {Path.GetFileName(report.CurrentPath)}");
-        TestScriptSuiteProgressValue = report.Fraction * 100;
+        TestScriptProgressValue = report.Fraction * 100;
     }
 
-    public void CancelTestScriptSuite()
+    public void CancelTestScript()
     {
-        if (!IsTestScriptSuiteRunning)
+        if (!IsTestScriptRunning)
         {
             return;
         }
 
-        _testScriptSuiteCancellation?.Cancel();
-        StatusText = "Cancelling test script suite…";
+        _testScriptCancellation?.Cancel();
+        StatusText = "Cancelling test script run…";
     }
 
     public void ClearTestScriptResult()
     {
-        _testScriptSuiteGeneration++;
-        _testScriptSuiteCancellation?.Cancel();
-        _testScriptSuiteCancellation = null;
-        IsTestScriptSuiteRunning = false;
-        TestScriptSuiteProgressText = string.Empty;
-        TestScriptSuiteProgressValue = 0;
+        _testScriptGeneration++;
+        _testScriptCancellation?.Cancel();
+        _testScriptCancellation = null;
+        IsTestScriptRunning = false;
+        TestScriptRunTitle = string.Empty;
+        TestScriptProgressIndeterminate = false;
+        TestScriptProgressText = string.Empty;
+        TestScriptProgressValue = 0;
         IsTestScriptResultStale = false;
         TestScriptFailures.Clear();
         TestScriptPath = string.Empty;

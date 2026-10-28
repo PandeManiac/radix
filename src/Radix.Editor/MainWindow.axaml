@@ -610,7 +610,7 @@
 
               <Border
                 Grid.Row="1"
-                IsVisible="{Binding IsTestScriptSuiteRunning}"
+                IsVisible="{Binding IsTestScriptRunning}"
                 Background="{DynamicResource App.PanelAltBackground}"
                 BorderBrush="{DynamicResource App.Border}"
                 BorderThickness="1"
@@ -619,21 +619,22 @@
                 Margin="0,0,0,6">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                   <StackPanel Spacing="3">
-                    <TextBlock Text="Running script suite…" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
+                    <TextBlock Text="{Binding TestScriptRunTitle}" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
                     <ProgressBar
                       Minimum="0"
                       Maximum="100"
-                      Value="{Binding TestScriptSuiteProgressValue}"
+                      Value="{Binding TestScriptProgressValue}"
+                      IsIndeterminate="{Binding TestScriptProgressIndeterminate}"
                       Height="6"
                       Foreground="{DynamicResource App.Accent}"
                       Background="{DynamicResource App.SubtleBackground}" />
-                    <TextBlock Text="{Binding TestScriptSuiteProgressText}" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+                    <TextBlock Text="{Binding TestScriptProgressText}" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
                   </StackPanel>
                   <Button
                     Grid.Column="1"
                     Classes="tool"
                     Content="Cancel"
-                    Command="{Binding CancelTestScriptSuiteCommand}"
+                    Command="{Binding CancelTestScriptCommand}"
                     VerticalAlignment="Center"
                     Padding="6,1" />
                 </Grid>

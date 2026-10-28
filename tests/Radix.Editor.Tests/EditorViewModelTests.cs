@@ -1718,6 +1718,84 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public async Task TestScriptAsyncRunsOnASnapshotAndReportsTheSameResult()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "name": "async pass",
+                  "definition": "demo.dff",
+                  "steps": [
+                    { "at": 0, "set": { "clk": 0, "d": 1 } },
+                    { "at": 20, "set": { "clk": 1 }, "within": { "ticks": 10, "expect": { "q": 1, "qn": 0 } } }
+                  ]
+                }
+                """);
+
+            Assert.True(await viewModel.RunTestScriptAsync(path));
+
+            Assert.False(viewModel.IsTestScriptRunning);
+            Assert.Equal(string.Empty, viewModel.TestScriptRunTitle);
+            Assert.False(viewModel.TestScriptProgressIndeterminate);
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.True(viewModel.TestScriptPassed);
+            Assert.False(viewModel.HasTestScriptFailures);
+            Assert.StartsWith("PASS", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.Contains("async pass", viewModel.TestScriptSummary, StringComparison.Ordinal);
+            Assert.False(viewModel.IsDirty);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task TestScriptAsyncCancelsInsideALongWindow()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radixtest");
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "format": "radix-test",
+                  "version": 1,
+                  "definition": "demo.dff",
+                  "steps": [ { "at": 0, "stable": { "ticks": 20000000, "expect": { "q": 0 } } } ]
+                }
+                """);
+
+            Task<bool> run = viewModel.RunTestScriptAsync(path);
+            Assert.True(viewModel.IsTestScriptRunning);
+            Assert.Equal("Running script…", viewModel.TestScriptRunTitle);
+            Assert.True(viewModel.TestScriptProgressIndeterminate);
+
+            viewModel.CancelTestScript();
+            Assert.False(await run);
+
+            Assert.False(viewModel.IsTestScriptRunning);
+            Assert.True(viewModel.HasTestScriptResult);
+            Assert.False(viewModel.TestScriptPassed);
+            Assert.Contains("cancelled", viewModel.TestScriptSummary, StringComparison.OrdinalIgnoreCase);
+            Assert.False(viewModel.TestScriptProgressIndeterminate);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void TestScriptResultIsMarkedStaleByCircuitEditsButNotByMovingParts()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateDFlipFlopDemo());
@@ -1924,7 +2002,7 @@ public sealed class EditorViewModelTests
             Assert.True(viewModel.HasTestScriptResult);
             Assert.True(viewModel.TestScriptPassed);
             Assert.False(viewModel.HasTestScriptFailures);
-            Assert.False(viewModel.IsTestScriptSuiteRunning);
+            Assert.False(viewModel.IsTestScriptRunning);
             Assert.StartsWith("PASS", viewModel.TestScriptSummary, StringComparison.Ordinal);
             Assert.Contains("2 script(s)", viewModel.TestScriptSummary, StringComparison.Ordinal);
             Assert.Equal(2, progress.Reports.Count);
@@ -1999,7 +2077,7 @@ public sealed class EditorViewModelTests
             Assert.True(viewModel.HasTestScriptResult);
             Assert.False(viewModel.TestScriptPassed);
             Assert.Contains("cancelled", viewModel.TestScriptSummary, StringComparison.OrdinalIgnoreCase);
-            Assert.False(viewModel.IsTestScriptSuiteRunning);
+            Assert.False(viewModel.IsTestScriptRunning);
         }
         finally
         {

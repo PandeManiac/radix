@@ -1893,6 +1893,25 @@ public sealed class SimulationScriptTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RunCanBeCancelledInsideALongStabilityWindow()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [ { "at": 0, "stable": { "ticks": 20000000, "expect": { "q": 0 } } } ]
+            }
+            """);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        Assert.Throws<OperationCanceledException>(() => SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script,
+            cancellationToken: cancellation.Token));
+    }
+
     private static string RepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

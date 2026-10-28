@@ -68,10 +68,12 @@ public static class SimulationScriptRunner
     public static SimulationScriptResult Run(
         CircuitProject project,
         SimulationScript script,
-        string? definitionOverride = null)
+        string? definitionOverride = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(script);
+        cancellationToken.ThrowIfCancellationRequested();
 
         string definitionId = definitionOverride ?? script.DefinitionId ?? project.RootDefinitionId;
         if (project.FindDefinition(definitionId) is null)
@@ -129,6 +131,7 @@ public static class SimulationScriptRunner
         int stepsExecuted = 0;
         for (int i = 0; i < script.Steps.Count; i++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             SimulationScriptStep step = script.Steps[i];
             int stepNumber = i + 1;
             if (step.At < engine.Now)
@@ -142,10 +145,10 @@ public static class SimulationScriptRunner
 
             if (step.Setup is { } setup)
             {
-                CheckSetup(project, definition, engine, step, setup, stepNumber, failures);
+                CheckSetup(project, definition, engine, step, setup, stepNumber, failures, cancellationToken);
             }
 
-            engine.AdvanceTo(step.At);
+            engine.AdvanceTo(step.At, cancellationToken);
             if (observesChanges)
             {
                 // The interval starts at this step, including changes caused by its
@@ -166,7 +169,7 @@ public static class SimulationScriptRunner
                 // AdvanceTo is deliberate here: StepTimestamp would run the earliest
                 // pending event even when it belongs to a later tick, which would make
                 // the reported final time depend on the circuit's future schedule.
-                engine.AdvanceTo(step.At);
+                engine.AdvanceTo(step.At, cancellationToken);
             }
 
             if (engine.IsHalted && step.ExpectHalted != true)
@@ -240,7 +243,7 @@ public static class SimulationScriptRunner
                         break;
                     }
 
-                    engine.AdvanceTo(engine.Now + 1);
+                    engine.AdvanceTo(engine.Now + 1, cancellationToken);
                 }
 
                 if (!matched)
@@ -294,7 +297,7 @@ public static class SimulationScriptRunner
                         break;
                     }
 
-                    engine.AdvanceTo(engine.Now + 1);
+                    engine.AdvanceTo(engine.Now + 1, cancellationToken);
                 }
             }
 
@@ -324,7 +327,7 @@ public static class SimulationScriptRunner
                 {
                     if (engine.Now < deadline)
                     {
-                        engine.AdvanceTo(deadline);
+                        engine.AdvanceTo(deadline, cancellationToken);
                     }
 
                     if (engine.IsHalted)
@@ -405,7 +408,7 @@ public static class SimulationScriptRunner
                 {
                     if (engine.Now < deadline)
                     {
-                        engine.AdvanceTo(deadline);
+                        engine.AdvanceTo(deadline, cancellationToken);
                     }
 
                     if (engine.IsHalted)
@@ -498,7 +501,7 @@ public static class SimulationScriptRunner
                 {
                     if (engine.Now < deadline)
                     {
-                        engine.AdvanceTo(deadline);
+                        engine.AdvanceTo(deadline, cancellationToken);
                     }
 
                     if (engine.IsHalted)
@@ -587,7 +590,8 @@ public static class SimulationScriptRunner
         SimulationScriptStep step,
         ScriptSetup setup,
         int stepNumber,
-        List<ScriptFailure> failures)
+        List<ScriptFailure> failures,
+        CancellationToken cancellationToken)
     {
         long start = step.At - setup.Ticks;
         if (start < engine.Now)
@@ -600,10 +604,11 @@ public static class SimulationScriptRunner
             return;
         }
 
-        engine.AdvanceTo(start);
+        engine.AdvanceTo(start, cancellationToken);
         var mismatches = new List<string>();
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (engine.IsHalted)
             {
                 failures.Add(new ScriptFailure(
@@ -636,7 +641,7 @@ public static class SimulationScriptRunner
                 return;
             }
 
-            engine.AdvanceTo(engine.Now + 1);
+            engine.AdvanceTo(engine.Now + 1, cancellationToken);
         }
     }
 
