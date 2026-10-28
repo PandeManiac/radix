@@ -270,6 +270,64 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void BalancedTernaryFullAdderCoversAllTritTriples()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.BalancedTernaryFullAdderId);
+        for (int a = 0; a < 3; a++)
+        {
+            for (int b = 0; b < 3; b++)
+            {
+                for (int cin = 0; cin < 3; cin++)
+                {
+                    engine.Drive("a", a);
+                    engine.Drive("b", b);
+                    engine.Drive("cin", cin);
+                    Settle(engine, 20);
+
+                    int s = engine.Read("s");
+                    int cout = engine.Read("cout");
+                    Assert.InRange(s, 0, 2);
+                    Assert.InRange(cout, 0, 2);
+
+                    NumericDecodeResult decoded = NumericFormats.BalancedTernary.Decode([s, cout]);
+                    Assert.True(decoded.IsValid);
+                    Assert.Equal((a - 1) + (b - 1) + (cin - 1), (int)decoded.Value);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void BalancedTernaryAdder2AddsEveryTwoTritPair()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.BalancedTernaryAdder2Id);
+        for (int ai = 0; ai < 3; ai++)
+        {
+            for (int ah = 0; ah < 3; ah++)
+            {
+                for (int bi = 0; bi < 3; bi++)
+                {
+                    for (int bh = 0; bh < 3; bh++)
+                    {
+                        engine.Drive("a0", ai);
+                        engine.Drive("a1", ah);
+                        engine.Drive("b0", bi);
+                        engine.Drive("b1", bh);
+                        Settle(engine, 30);
+
+                        int expected = ((ai - 1) + (3 * (ah - 1))) + ((bi - 1) + (3 * (bh - 1)));
+                        NumericDecodeResult decoded = NumericFormats.BalancedTernary.Decode(
+                            [engine.Read("s0"), engine.Read("s1"), engine.Read("cout")]);
+
+                        Assert.True(decoded.IsValid);
+                        Assert.Equal(expected, (int)decoded.Value);
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void FourBitCounterCountsAndWraps()
     {
         CircuitProject project = ExampleProjects.CreateCounterDemo();

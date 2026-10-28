@@ -1,3 +1,4 @@
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 
@@ -17,6 +18,8 @@ public static class StandardLibrary
     public const string NotId = "std.not";
     public const string DFlipFlopId = "std.dff";
     public const string HalfAdderId = "std.half-adder";
+    public const string BalancedTernaryFullAdderId = "std.bt-full-adder";
+    public const string BalancedTernaryAdder2Id = "std.bt-adder-2";
     public const string Ram16x4Id = "std.ram-16x4";
 
     private static readonly (string Id, string Name, int Inputs, int[] Table)[] BinaryGates =
@@ -517,6 +520,18 @@ public static class StandardLibrary
             added.Add("std.bt-half-adder");
         }
 
+        if (project.FindDefinition(BalancedTernaryFullAdderId) is null)
+        {
+            AddBalancedTernaryFullAdder(project);
+            added.Add(BalancedTernaryFullAdderId);
+        }
+
+        if (project.FindDefinition(BalancedTernaryAdder2Id) is null)
+        {
+            AddBalancedTernaryAdder2(project);
+            added.Add(BalancedTernaryAdder2Id);
+        }
+
         return added;
     }
 
@@ -541,5 +556,86 @@ public static class StandardLibrary
         builder.Connect(b, builder.Pin("sum", "in1"), builder.Pin("carry", "in1"));
         builder.Connect(s, builder.Pin("sum", "out"));
         builder.Connect(c, builder.Pin("carry", "out"));
+    }
+
+    private static void AddBalancedTernaryFullAdder(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, BalancedTernaryFullAdderId, "Balanced ternary full adder");
+        builder.Definition.Description =
+            "Adds three balanced-ternary trits: A+B+CIN = 3*COUT + S. Both outputs are trits.";
+
+        Net a = builder.AddPin("a", "A", PinDirection.Input, StandardDomains.BalancedTernaryId);
+        Net b = builder.AddPin("b", "B", PinDirection.Input, StandardDomains.BalancedTernaryId);
+        Net cin = builder.AddPin("cin", "CIN", PinDirection.Input, StandardDomains.BalancedTernaryId);
+        Net s = builder.AddPin("s", "S", PinDirection.Output, StandardDomains.BalancedTernaryId);
+        Net cout = builder.AddPin("cout", "COUT", PinDirection.Output, StandardDomains.BalancedTernaryId);
+
+        int[] sumTable = new int[27];
+        int[] carryTable = new int[27];
+        for (int ai = 0; ai < 3; ai++)
+        {
+            for (int bi = 0; bi < 3; bi++)
+            {
+                for (int ci = 0; ci < 3; ci++)
+                {
+                    int sum = (ai - 1) + (bi - 1) + (ci - 1);
+                    int carry = sum >= 2 ? 1 : sum <= -2 ? -1 : 0;
+                    int result = sum - (3 * carry);
+                    int index = ((ai * 3) + bi) * 3 + ci;
+                    sumTable[index] = result + 1;
+                    carryTable[index] = carry + 1;
+                }
+            }
+        }
+
+        builder.AddPrimitive("sum", new LookupSpec(3, sumTable, GateDelay), 160, 60);
+        builder.AddPrimitive("carry", new LookupSpec(3, carryTable, GateDelay), 160, 240);
+        builder.Connect(a, builder.Pin("sum", "in0"), builder.Pin("carry", "in0"));
+        builder.Connect(b, builder.Pin("sum", "in1"), builder.Pin("carry", "in1"));
+        builder.Connect(cin, builder.Pin("sum", "in2"), builder.Pin("carry", "in2"));
+        builder.Connect(s, builder.Pin("sum", "out"));
+        builder.Connect(cout, builder.Pin("carry", "out"));
+    }
+
+    private static void AddBalancedTernaryAdder2(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, BalancedTernaryAdder2Id, "Balanced ternary 2-trit adder");
+        builder.Definition.Description =
+            "Adds two balanced-ternary 2-trit numbers: A+B = 9*COUT + S. " +
+            "The low full adder seeds a zero trit; its carry feeds the high trit.";
+
+        var aNets = new Net[2];
+        var bNets = new Net[2];
+        var sNets = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            aNets[i] = builder.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.BalancedTernaryId);
+            bNets[i] = builder.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.BalancedTernaryId);
+            sNets[i] = builder.AddPin($"s{i}", $"S{i}", PinDirection.Output, StandardDomains.BalancedTernaryId);
+        }
+
+        Net cout = builder.AddPin("cout", "COUT", PinDirection.Output, StandardDomains.BalancedTernaryId);
+        Net zero = builder.AddNet("zero", StandardDomains.BalancedTernaryId);
+        builder.AddPrimitive("const0", new ConstantSpec(1), 60, 340);
+        builder.Connect(zero, builder.Pin("const0", PrimitiveShapes.OutputPinId));
+        Net carry = builder.AddNet("carry", StandardDomains.BalancedTernaryId);
+
+        builder.AddInstance("low", BalancedTernaryFullAdderId, 260, 100);
+        builder.Connect(aNets[0], builder.Pin("low", "a"));
+        builder.Connect(bNets[0], builder.Pin("low", "b"));
+        builder.Connect(zero, builder.Pin("low", "cin"));
+        builder.Connect(sNets[0], builder.Pin("low", "s"));
+        builder.Connect(carry, builder.Pin("low", "cout"));
+
+        builder.AddInstance("high", BalancedTernaryFullAdderId, 620, 100);
+        builder.Connect(aNets[1], builder.Pin("high", "a"));
+        builder.Connect(bNets[1], builder.Pin("high", "b"));
+        builder.Connect(carry, builder.Pin("high", "cin"));
+        builder.Connect(sNets[1], builder.Pin("high", "s"));
+        builder.Connect(cout, builder.Pin("high", "cout"));
+
+        builder.AddNumericLane("a", "A", NumericFormats.BalancedTernary.Id, "a0", "a1");
+        builder.AddNumericLane("b", "B", NumericFormats.BalancedTernary.Id, "b0", "b1");
+        builder.AddNumericLane("s", "S", NumericFormats.BalancedTernary.Id, "s0", "s1");
     }
 }

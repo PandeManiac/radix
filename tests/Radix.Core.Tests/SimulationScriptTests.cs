@@ -13,6 +13,7 @@ public sealed class SimulationScriptTests
     public static TheoryData<string, string> ShippedScripts => new()
     {
         { "dff-demo.radix", "dff-captures.radixtest" },
+        { "balanced-ternary-adder-2.radix", "balanced-ternary-adder-2.radixtest" },
         { "binary-counter.radix", "counter-counts.radixtest" },
         { "accumulator-cpu.radix", "accumulator.radixtest" },
         { "tiny-cpu.radix", "tiny-cpu.radixtest" },

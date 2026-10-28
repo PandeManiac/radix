@@ -14,6 +14,7 @@ public static class ExampleProjects
     public const string FullAdderFile = "full-adder.radix";
     public const string CounterFile = "binary-counter.radix";
     public const string BalancedTernaryFile = "balanced-ternary-half-adder.radix";
+    public const string BalancedTernaryAdder2File = "balanced-ternary-adder-2.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
 
@@ -23,6 +24,7 @@ public static class ExampleProjects
         new(FullAdderFile, "Full adder", "A full adder built from two half adders and an OR gate.", CreateFullAdderDemo()),
         new(CounterFile, "4-bit counter", "A free-running 4-bit binary counter: DFFs, a ripple-carry adder, and a waveform clock.", CreateCounterDemo()),
         new(BalancedTernaryFile, "Balanced ternary half adder", "Two-trit addition with sum and carry on a three-valued domain.", CreateBalancedTernaryHalfAdderDemo()),
+        new(BalancedTernaryAdder2File, "Balanced ternary 2-trit adder", "Two-stage trit addition with numeric lanes and a ninth-valued result.", CreateBalancedTernaryAdder2Demo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
@@ -785,6 +787,48 @@ public static class ExampleProjects
         root.Connect(s, root.Pin("adder", "s"));
         root.Connect(c, root.Pin("adder", "c"));
 
+        root.AddNumericLane("a", "A", NumericFormats.BalancedTernary.Id, "a");
+        root.AddNumericLane("b", "B", NumericFormats.BalancedTernary.Id, "b");
+        root.AddNumericLane("sum", "A + B", NumericFormats.BalancedTernary.Id, "s", "c");
+
         return builder.Build("demo.bt-half-adder");
+    }
+
+    public static CircuitProject CreateBalancedTernaryAdder2Demo()
+    {
+        var builder = new ProjectBuilder("Balanced ternary 2-trit adder");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.bt-adder-2", "Balanced ternary 2-trit adder");
+        root.Definition.Description =
+            "Adds two 2-trit balanced-ternary numbers. The result lane spans three trits, " +
+            "so every sum from -8 to 8 decodes without wrapping.";
+
+        var aNets = new Net[2];
+        var bNets = new Net[2];
+        var sNets = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            aNets[i] = root.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.BalancedTernaryId);
+            bNets[i] = root.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.BalancedTernaryId);
+            sNets[i] = root.AddPin($"s{i}", $"S{i}", PinDirection.Output, StandardDomains.BalancedTernaryId);
+        }
+
+        Net cout = root.AddPin("cout", "COUT", PinDirection.Output, StandardDomains.BalancedTernaryId);
+
+        root.AddInstance("adder", StandardLibrary.BalancedTernaryAdder2Id, 320, 100);
+        for (int i = 0; i < 2; i++)
+        {
+            root.Connect(aNets[i], root.Pin("adder", $"a{i}"));
+            root.Connect(bNets[i], root.Pin("adder", $"b{i}"));
+            root.Connect(sNets[i], root.Pin("adder", $"s{i}"));
+        }
+
+        root.Connect(cout, root.Pin("adder", "cout"));
+
+        root.AddNumericLane("a", "A", NumericFormats.BalancedTernary.Id, "a0", "a1");
+        root.AddNumericLane("b", "B", NumericFormats.BalancedTernary.Id, "b0", "b1");
+        root.AddNumericLane("sum", "A + B", NumericFormats.BalancedTernary.Id, "s0", "s1", "cout");
+
+        return builder.Build("demo.bt-adder-2");
     }
 }

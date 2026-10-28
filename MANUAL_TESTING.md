@@ -203,13 +203,27 @@ These steps use a terminal only; they never open a window. Run from the reposito
 
 1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 6 step(s) through t=50`, exit code 0.
 2. Run `dotnet run --project src/Radix.Cli -- test examples/accumulator-cpu.radix examples/tests/accumulator.radixtest`. Expected: PASS; the signed `Result` lane is `-1` after LOAD 15 and `0` after adding 1, with `CARRY=1`.
-3. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 37 step(s) through t=1180`, exit code 0.
-4. Copy the DFF script to a scratch file and change the `t=30` expectation for `q` from `1` to `0`. Expected: `FAIL`, one line naming `step 4 (t=30)`, expected and actual values; exit code 1.
-5. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
-6. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
-7. Run `RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --filter FullyQualifiedName~LayoutBenchmarkTests --logger "console;verbosity=detailed"`. Expected: one passing test and one line per size (`200`, `500`, `1,000` gates) in the form `1000 gates: construct … ms, canonical frames … ms, reused frames … ms, final rebuild … ms`. Reused frames must be far below canonical frames; exact milliseconds depend on the machine. With the variable unset, the test passes without printing.
+3. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-adder-2.radix examples/tests/balanced-ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0. The step expectations cover sums 8, −8, 0, 2, and 1 through the three-trit `A + B` lane.
+4. Run `dotnet run --project src/Radix.Cli -- simulate examples/balanced-ternary-adder-2.radix --set a0=2 --set a1=2 --set b0=2 --set b1=2 --ticks 30 --bus s0,s1,cout --format balanced-ternary`. Expected: the decoded bus prints `8`.
+5. Run `dotnet run --project src/Radix.Cli -- inspect examples/balanced-ternary-adder-2.radix`. Expected: `std.bt-full-adder` and `std.bt-adder-2` appear as definitions, and the project root is `demo.bt-adder-2`.
+6. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 37 step(s) through t=1180`, exit code 0.
+7. Copy the DFF script to a scratch file and change the `t=30` expectation for `q` from `1` to `0`. Expected: `FAIL`, one line naming `step 4 (t=30)`, expected and actual values; exit code 1.
+8. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
+9. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
+10. Run `RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --filter FullyQualifiedName~LayoutBenchmarkTests --logger "console;verbosity=detailed"`. Expected: one passing test and one line per size (`200`, `500`, `1,000` gates) in the form `1000 gates: construct … ms, canonical frames … ms, reused frames … ms, final rebuild … ms`. Reused frames must be far below canonical frames; exact milliseconds depend on the machine. With the variable unset, the test passes without printing.
 
-## 14. Tiny program-driven CPU
+## 14. Balanced-ternary multi-trit addition
+
+This check uses the GUI and the examples from the previous section.
+
+1. Open `examples/balanced-ternary-adder-2.radix`. Expected: the canvas shows one `adder` instance wired to A0/A1, B0/B1, S0/S1, and COUT; the inspector lists lanes **A**, **B**, and **A + B**.
+2. Click **Begin**. Set `A0 = +`, `A1 = +` (`A = 4`), `B0 = +`, `B1 = +` (`B = 4`), then **Settle**. Expected: `S0 = −`, `S1 = 0`, `COUT = +`, and the `A + B` lane reads `8`.
+3. Set `A0 = −`, `A1 = −`, `B0 = −`, `B1 = −` (`A = B = −4`) and settle. Expected: `S0 = +`, `S1 = 0`, `COUT = −`, lane `−8`.
+4. Set `A0 = −`, `A1 = +` (`A = 2`) and `B0 = +`, `B1 = −` (`B = −2`) and settle. Expected: every sum trit is `0` and the lane reads `0`.
+5. Double-click the `adder` instance. Expected: two `std.bt-full-adder` instances and a constant zero are visible, with the low adder's carry wired into the high adder. Double-click one full adder. Expected: separate sum and carry lookup primitives with a shared `sum`/`carry` table layout.
+6. Return to the root and use **Locate** diagnostics if any appear. Expected: no errors or warnings for the shipped example.
+
+## 15. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -236,7 +250,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 15. Known limitations to verify as *limitations*
+## 16. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 

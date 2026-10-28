@@ -455,7 +455,7 @@ The engine is single-threaded by design so event order remains obvious and repro
 
 - **Unit tests** for domains, resolution, model validation, engine semantics, serialization, numeric formats, and script parsing.
 - **Structural tests** for compiler flattening, port mapping, hierarchy, and diagnostics.
-- **Behavioral circuits**: NAND truth table, delay timing, DFF edge capture/hold, ternary half adder, full adder, four-bit counter.
+- **Behavioral circuits**: NAND truth table, delay timing, DFF edge capture/hold, ternary half/full adders and the hierarchical 2-trit adder over every trit pair, full adder, four-bit counter.
 - **Scripted experiments**: `.radixtest` files drive inputs and assert interface pins or numeric lanes at absolute ticks. The runner uses the public compiler/engine API, disables trace storage, and treats an unexpected halt as a failure. Shipped scripts under `examples/tests/` are part of the core suite, so a timing change to an example cannot silently invalidate its demonstration.
 - **Determinism tests**: repeated runs produce identical values and traces.
 - **Differential tests**: randomized combinational designs compare the event engine against a reference evaluator.

@@ -9794,6 +9794,440 @@
       ]
     },
     {
+      "id": "std.bt-full-adder",
+      "name": "Balanced ternary full adder",
+      "description": "Adds three balanced-ternary trits: A\u002BB\u002BCIN = 3*COUT \u002B S. Both outputs are trits.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "cin",
+          "name": "CIN",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "sum",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              1,
+              2,
+              0,
+              2,
+              0,
+              1,
+              0,
+              1,
+              2,
+              2,
+              0,
+              1,
+              0,
+              1,
+              2,
+              1,
+              2,
+              0,
+              0,
+              1,
+              2,
+              1,
+              2,
+              0,
+              2,
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 60
+        },
+        {
+          "id": "carry",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              1,
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2,
+              1,
+              2,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 240
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in0"
+            },
+            {
+              "instance": "carry",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in1"
+            },
+            {
+              "instance": "carry",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "cin_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in2"
+            },
+            {
+              "instance": "carry",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "out"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "carry",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "cin",
+          "net": "cin_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-adder-2",
+      "name": "Balanced ternary 2-trit adder",
+      "description": "Adds two balanced-ternary 2-trit numbers: A\u002BB = 9*COUT \u002B S. The low full adder seeds a zero trit; its carry feeds the high trit.",
+      "pins": [
+        {
+          "id": "a0",
+          "name": "A0",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b0",
+          "name": "B0",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "s0",
+          "name": "S0",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "a1",
+          "name": "A1",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b1",
+          "name": "B1",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "s1",
+          "name": "S1",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "const0",
+          "primitive": {
+            "kind": "constant",
+            "value": 1
+          },
+          "x": 60,
+          "y": 340
+        },
+        {
+          "id": "low",
+          "definition": "std.bt-full-adder",
+          "x": 260,
+          "y": 100
+        },
+        {
+          "id": "high",
+          "definition": "std.bt-full-adder",
+          "x": 620,
+          "y": 100
+        }
+      ],
+      "nets": [
+        {
+          "id": "a0_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b0_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s0_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a1_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b1_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s1_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "high",
+              "pin": "cout"
+            }
+          ]
+        },
+        {
+          "id": "zero",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "const0",
+              "pin": "out"
+            },
+            {
+              "instance": "low",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "carry",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "low",
+              "pin": "cout"
+            },
+            {
+              "instance": "high",
+              "pin": "cin"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a0",
+          "net": "a0_net"
+        },
+        {
+          "pin": "b0",
+          "net": "b0_net"
+        },
+        {
+          "pin": "s0",
+          "net": "s0_net"
+        },
+        {
+          "pin": "a1",
+          "net": "a1_net"
+        },
+        {
+          "pin": "b1",
+          "net": "b1_net"
+        },
+        {
+          "pin": "s1",
+          "net": "s1_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "a",
+          "name": "A",
+          "format": "balanced-ternary",
+          "pins": [
+            "a0",
+            "a1"
+          ]
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "format": "balanced-ternary",
+          "pins": [
+            "b0",
+            "b1"
+          ]
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "format": "balanced-ternary",
+          "pins": [
+            "s0",
+            "s1"
+          ]
+        }
+      ]
+    },
+    {
       "id": "demo.dff",
       "name": "D flip-flop demo",
       "description": "Top-level wrapper around std.dff with interactive D and CLK inputs.",
