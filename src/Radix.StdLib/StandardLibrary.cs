@@ -28,7 +28,9 @@ public static class StandardLibrary
     public const string TernaryFullAdderId = "std.t-full-adder";
     public const string TernaryAdder2Id = "std.t-adder-2";
     public const string TernaryRegister2Id = "std.t-reg-2";
+    public const string TernaryMux3Id = "std.t-mux3";
     public const string TernaryRam3x2Id = "std.t-ram-3x2";
+    public const string TernaryRam9x2Id = "std.t-ram-9x2";
     public const string Ram16x4Id = "std.ram-16x4";
 
     private static readonly (string Id, string Name, int Inputs, int[] Table)[] BinaryGates =
@@ -669,10 +671,22 @@ public static class StandardLibrary
             added.Add(TernaryRegister2Id);
         }
 
+        if (project.FindDefinition(TernaryMux3Id) is null)
+        {
+            AddTernaryMux3(project);
+            added.Add(TernaryMux3Id);
+        }
+
         if (project.FindDefinition(TernaryRam3x2Id) is null)
         {
             AddTernaryRam3x2(project);
             added.Add(TernaryRam3x2Id);
+        }
+
+        if (project.FindDefinition(TernaryRam9x2Id) is null)
+        {
+            AddTernaryRam9x2(project);
+            added.Add(TernaryRam9x2Id);
         }
 
         if (project.FindDefinition(BalancedTernaryLatchId) is null)
@@ -814,6 +828,147 @@ public static class StandardLibrary
             builder.Connect(words[1][lane], builder.Pin($"read{lane}", "in2"));
             builder.Connect(words[2][lane], builder.Pin($"read{lane}", "in3"));
             builder.Connect(output[lane], builder.Pin($"read{lane}", PrimitiveShapes.OutputPinId));
+        }
+    }
+
+    private static void AddTernaryMux3(CircuitProject project)
+    {
+        int[] table = new int[81];
+        for (int a = 0; a < 3; a++)
+        {
+            for (int b = 0; b < 3; b++)
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    for (int s = 0; s < 3; s++)
+                    {
+                        table[((((a * 3) + b) * 3) + c) * 3 + s] = s == 0 ? a : s == 1 ? b : c;
+                    }
+                }
+            }
+        }
+
+        AddLookupDefinition(
+            project,
+            TernaryMux3Id,
+            "Ternary 3:1 multiplexer",
+            StandardDomains.TernaryId,
+            ["a", "b", "c", "s"],
+            ["A", "B", "C", "Select"],
+            table,
+            description: "Select 0 returns A, 1 returns B, and 2 returns C. This is the 3-way selector " +
+                         "used by memory read ports; std.t-mux is the 2:1 gate with an unknown middle select.");
+    }
+
+    /// <summary>
+    /// Nine words of two trits with a two-trit address. Write enables are decoded
+    /// per word, and the read port is a two-level tree of 3:1 selectors, so the read
+    /// path scales by adding levels rather than growing one enormous lookup.
+    /// </summary>
+    private static void AddTernaryRam9x2(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, TernaryRam9x2Id, "Ternary 9 × 2 RAM");
+        builder.Definition.Description =
+            "Nine 2-trit words with asynchronous read and synchronous write. The two-trit ADDR selects " +
+            "0..8; WE=2 writes D on the rising CLK edge (0 -> 2) while WE=0 and WE=1 hold every word. " +
+            "The read port is two levels of ternary 3:1 selectors, so any addressed word appears after " +
+            "two gate delays.";
+
+        var address = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            address[lane] = builder.AddPin($"addr{lane}", $"ADDR{lane}", PinDirection.Input, StandardDomains.TernaryId);
+        }
+
+        var data = new Net[2];
+        var output = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            data[lane] = builder.AddPin($"d{lane}", $"D{lane}", PinDirection.Input, StandardDomains.TernaryId);
+            output[lane] = builder.SetInitial(
+                builder.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        Net writeEnable = builder.AddPin("we", "WE", PinDirection.Input, StandardDomains.TernaryId);
+        Net clock = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+
+        builder.AddNumericLane("address", "Address", NumericFormats.UnsignedTernary.Id, "addr0", "addr1");
+        builder.AddNumericLane("data", "Data", NumericFormats.UnsignedTernary.Id, "d0", "d1");
+        builder.AddNumericLane("result", "Read", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+
+        var words = new Net[9][];
+        for (int word = 0; word < 9; word++)
+        {
+            int[] writeTable = new int[27];
+            for (int enable = 0; enable < 3; enable++)
+            {
+                for (int high = 0; high < 3; high++)
+                {
+                    for (int low = 0; low < 3; low++)
+                    {
+                        int index = (enable * 9) + (high * 3) + low;
+                        writeTable[index] = enable == 2 && (high * 3) + low == word ? 2 : 0;
+                    }
+                }
+            }
+
+            Net write = builder.Rename(
+                builder.AddNet($"write{word}", StandardDomains.TernaryId),
+                $"write word {word}");
+            builder.AddPrimitive(
+                $"decode_write{word}",
+                new LookupSpec(3, writeTable, GateDelay),
+                240,
+                60 + (word * 150));
+            builder.Connect(writeEnable, builder.Pin($"decode_write{word}", "in0"));
+            builder.Connect(address[1], builder.Pin($"decode_write{word}", "in1"));
+            builder.Connect(address[0], builder.Pin($"decode_write{word}", "in2"));
+            builder.Connect(write, builder.Pin($"decode_write{word}", PrimitiveShapes.OutputPinId));
+
+            words[word] = new Net[2];
+            builder.AddInstance($"word{word}", TernaryRegister2Id, 580, 60 + (word * 150));
+            for (int lane = 0; lane < 2; lane++)
+            {
+                words[word][lane] = builder.Rename(
+                    builder.AddNet($"word{word}_{lane}", StandardDomains.TernaryId),
+                    $"word {word} trit {lane}");
+                builder.Connect(data[lane], builder.Pin($"word{word}", $"d{lane}"));
+                builder.Connect(words[word][lane], builder.Pin($"word{word}", $"q{lane}"));
+            }
+
+            builder.Connect(write, builder.Pin($"word{word}", "load"));
+            builder.Connect(clock, builder.Pin($"word{word}", "clk"));
+        }
+
+        // ADDR0 is the low digit: it selects inside each group of three words, and
+        // ADDR1 selects one of the three resulting group values.
+        for (int lane = 0; lane < 2; lane++)
+        {
+            var groups = new Net[3];
+            for (int group = 0; group < 3; group++)
+            {
+                groups[group] = builder.Rename(
+                    builder.AddNet($"read{lane}_group{group}", StandardDomains.TernaryId),
+                    $"read lane {lane} group {group}");
+                builder.AddInstance(
+                    $"read{lane}_low{group}",
+                    TernaryMux3Id,
+                    940,
+                    60 + (group * 170) + (lane * 560));
+                builder.Connect(words[(group * 3) + 0][lane], builder.Pin($"read{lane}_low{group}", "a"));
+                builder.Connect(words[(group * 3) + 1][lane], builder.Pin($"read{lane}_low{group}", "b"));
+                builder.Connect(words[(group * 3) + 2][lane], builder.Pin($"read{lane}_low{group}", "c"));
+                builder.Connect(address[0], builder.Pin($"read{lane}_low{group}", "s"));
+                builder.Connect(groups[group], builder.Pin($"read{lane}_low{group}", "y"));
+            }
+
+            builder.AddInstance($"read{lane}_high", TernaryMux3Id, 1200, 180 + (lane * 560));
+            builder.Connect(groups[0], builder.Pin($"read{lane}_high", "a"));
+            builder.Connect(groups[1], builder.Pin($"read{lane}_high", "b"));
+            builder.Connect(groups[2], builder.Pin($"read{lane}_high", "c"));
+            builder.Connect(address[1], builder.Pin($"read{lane}_high", "s"));
+            builder.Connect(output[lane], builder.Pin($"read{lane}_high", "y"));
         }
     }
 

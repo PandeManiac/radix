@@ -21,6 +21,7 @@ public static class ExampleProjects
     public const string TernaryMachineFile = "ternary-machine.radix";
     public const string TernaryBranchMachineFile = "ternary-branch-machine.radix";
     public const string TernaryCallMachineFile = "ternary-call-machine.radix";
+    public const string TernaryMemoryFile = "ternary-memory.radix";
     public const string BalancedTernaryAccumulatorFile = "balanced-ternary-accumulator.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
@@ -38,6 +39,7 @@ public static class ExampleProjects
         new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
         new(TernaryBranchMachineFile, "Ternary branch machine", "A ternary machine with LOAD/STORE/ADD, three words of trit memory, and conditional JMP/BZ control.", CreateTernaryBranchMachineDemo()),
         new(TernaryCallMachineFile, "Ternary call machine", "A ternary machine with CALL/RET, using the 3×2 trit RAM part as a three-deep return stack.", CreateTernaryCallMachineDemo()),
+        new(TernaryMemoryFile, "Ternary 9 × 2 RAM", "A standalone 9-word, 2-trit memory. Drive ADDR, D, WE, and CLK, then read any word from the asynchronous port.", CreateTernaryMemoryDemo()),
         new(BalancedTernaryAccumulatorFile, "Balanced ternary accumulator", "A signed trit register with LOAD/ADD/HOLD control, built from balanced min/max/mux gates and a balanced register.", CreateBalancedTernaryAccumulatorDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
@@ -1450,6 +1452,47 @@ public static class ExampleProjects
     /// Subroutine control flow in ternary. CALL pushes the return PC onto a stack built
     /// from the reusable RAM part, RET pops it, and a one-trit SP tracks the depth.
     /// </summary>
+    public static CircuitProject CreateTernaryMemoryDemo()
+    {
+        var builder = new ProjectBuilder("Ternary 9 × 2 RAM demo");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.t-memory", "Ternary 9 × 2 RAM demo");
+        root.Definition.Description =
+            "Top-level wrapper around std.t-ram-9x2. ADDR is an unsigned ternary lane 0..8; WE=2 writes " +
+            "D on the rising CLK edge, and the Read lane always shows the addressed word.";
+
+        var address = new Net[2];
+        var data = new Net[2];
+        var output = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            address[lane] = root.AddPin($"addr{lane}", $"ADDR{lane}", PinDirection.Input, StandardDomains.TernaryId);
+            data[lane] = root.AddPin($"d{lane}", $"D{lane}", PinDirection.Input, StandardDomains.TernaryId);
+            output[lane] = root.SetInitial(
+                root.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        Net writeEnable = root.AddPin("we", "WE", PinDirection.Input, StandardDomains.TernaryId);
+        Net clock = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+
+        root.AddNumericLane("address", "Address", NumericFormats.UnsignedTernary.Id, "addr0", "addr1");
+        root.AddNumericLane("data", "Data", NumericFormats.UnsignedTernary.Id, "d0", "d1");
+        root.AddNumericLane("result", "Read", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+
+        root.AddInstance("memory", StandardLibrary.TernaryRam9x2Id, 300, 140);
+        root.Connect(address[0], root.Pin("memory", "addr0"));
+        root.Connect(address[1], root.Pin("memory", "addr1"));
+        root.Connect(data[0], root.Pin("memory", "d0"));
+        root.Connect(data[1], root.Pin("memory", "d1"));
+        root.Connect(writeEnable, root.Pin("memory", "we"));
+        root.Connect(clock, root.Pin("memory", "clk"));
+        root.Connect(output[0], root.Pin("memory", "q0"));
+        root.Connect(output[1], root.Pin("memory", "q1"));
+
+        return builder.Build("demo.t-memory");
+    }
+
     public static CircuitProject CreateTernaryCallMachineDemo()
     {
         var builder = new ProjectBuilder("Ternary call machine");

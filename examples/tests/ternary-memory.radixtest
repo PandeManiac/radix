@@ -1,0 +1,33 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Ternary 9 x 2 RAM writes, reads, and holds nine words",
+  "description": "Writes 8 to word 5 and 3 to word 0, reads both back through the asynchronous port, then checks that WE=1 holds word 5 while D changes.",
+  "definition": "demo.t-memory",
+  "steps": [
+    {
+      "at": 0,
+      "set": { "clk": 0, "we": 0, "addr0": 0, "addr1": 0, "d0": 0, "d1": 0 },
+      "expectLane": { "address": 0, "data": 0, "result": 0 }
+    },
+    {
+      "at": 100,
+      "set": { "addr0": 2, "addr1": 1, "d0": 2, "d1": 2, "we": 2 },
+      "expectLane": { "address": 5, "data": 8 }
+    },
+    { "at": 140, "set": { "clk": 2 } },
+    { "at": 240, "expectLane": { "address": 5, "result": 8 } },
+    {
+      "at": 260,
+      "set": { "clk": 0, "we": 2, "addr0": 0, "addr1": 0, "d0": 0, "d1": 1 }
+    },
+    { "at": 360, "set": { "clk": 2 } },
+    { "at": 460, "expectLane": { "address": 0, "result": 3 } },
+    {
+      "at": 480,
+      "set": { "clk": 0, "addr0": 2, "addr1": 1, "we": 1, "d0": 0, "d1": 0 }
+    },
+    { "at": 580, "set": { "clk": 2 } },
+    { "at": 680, "expectLane": { "address": 5, "result": 8 }, "description": "WE=1 holds word 5 while D changes" }
+  ]
+}

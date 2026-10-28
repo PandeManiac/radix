@@ -406,6 +406,77 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryMux3SelectsEveryInput()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryMux3Id);
+        for (int a = 0; a < 3; a++)
+        {
+            for (int b = 0; b < 3; b++)
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    for (int s = 0; s < 3; s++)
+                    {
+                        engine.Drive("a", a);
+                        engine.Drive("b", b);
+                        engine.Drive("c", c);
+                        engine.Drive("s", s);
+                        Settle(engine, 20);
+
+                        int expected = s == 0 ? a : s == 1 ? b : c;
+                        Assert.Equal(expected, engine.Read("y"));
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void TernaryRam9x2WritesEveryWordAndHoldsTheOthers()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.TernaryRam9x2Id);
+        engine.Drive("clk", 0);
+        engine.Drive("we", 0);
+        engine.Drive("addr0", 0);
+        engine.Drive("addr1", 0);
+        Settle(engine, 80);
+        Assert.Equal(0, ReadTernaryPair(engine, "q"));
+
+        int[] values = [1, 5, 0, 4, 8, 3, 7, 2, 6];
+        for (int word = 0; word < 9; word++)
+        {
+            engine.Drive("addr0", word % 3);
+            engine.Drive("addr1", word / 3);
+            LoadTernaryPair(engine, "d", values[word]);
+            engine.Drive("we", 2);
+            PulseTernaryClock(engine, settle: 100);
+            Assert.Equal(values[word], ReadTernaryPair(engine, "q"));
+        }
+
+        engine.Drive("we", 0);
+        for (int word = 0; word < 9; word++)
+        {
+            engine.Drive("addr0", word % 3);
+            engine.Drive("addr1", word / 3);
+            Settle(engine, 60);
+            Assert.Equal(values[word], ReadTernaryPair(engine, "q"));
+        }
+
+        // WE=0 and the unknown trit both hold every word while D changes.
+        LoadTernaryPair(engine, "d", 4);
+        PulseTernaryClock(engine, settle: 100);
+        Assert.Equal(values[8], ReadTernaryPair(engine, "q"));
+
+        engine.Drive("we", 1);
+        LoadTernaryPair(engine, "d", 7);
+        PulseTernaryClock(engine, settle: 100);
+        Assert.Equal(values[8], ReadTernaryPair(engine, "q"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryMachineExecutesItsLookupProgram()
     {
         CircuitProject project = ExampleProjects.CreateTernaryMachineDemo();

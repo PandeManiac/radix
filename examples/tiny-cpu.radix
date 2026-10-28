@@ -11880,6 +11880,212 @@
       ]
     },
     {
+      "id": "std.t-mux3",
+      "name": "Ternary 3:1 multiplexer",
+      "description": "Select 0 returns A, 1 returns B, and 2 returns C. This is the 3-way selector used by memory read ports; std.t-mux is the 2:1 gate with an unknown middle select.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "c",
+          "name": "C",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "s",
+          "name": "Select",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              2,
+              0,
+              1,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              2,
+              0,
+              2,
+              0,
+              0,
+              2,
+              1,
+              0,
+              2,
+              2,
+              1,
+              0,
+              0,
+              1,
+              0,
+              1,
+              1,
+              0,
+              2,
+              1,
+              1,
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2,
+              1,
+              2,
+              0,
+              1,
+              2,
+              1,
+              1,
+              2,
+              2,
+              2,
+              0,
+              0,
+              2,
+              0,
+              1,
+              2,
+              0,
+              2,
+              2,
+              1,
+              0,
+              2,
+              1,
+              1,
+              2,
+              1,
+              2,
+              2,
+              2,
+              0,
+              2,
+              2,
+              1,
+              2,
+              2,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "c_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in3"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "c",
+          "net": "c_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
       "id": "std.t-ram-3x2",
       "name": "Ternary 3 \u00D7 2 RAM",
       "description": "Three 2-trit words with asynchronous read and synchronous write. WE=2 writes D into the addressed word on the rising CLK edge (0 -\u003E 2); WE=0 holds every word and WE=1, the unknown trit, also holds rather than writing an unknown. The address is one trit, so ADDR 0..2 selects exactly one of the three words.",
@@ -12490,6 +12696,1382 @@
           "format": "unsigned-ternary",
           "pins": [
             "addr"
+          ]
+        },
+        {
+          "id": "data",
+          "name": "Data",
+          "format": "unsigned-ternary",
+          "pins": [
+            "d0",
+            "d1"
+          ]
+        },
+        {
+          "id": "result",
+          "name": "Read",
+          "format": "unsigned-ternary",
+          "pins": [
+            "q0",
+            "q1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "std.t-ram-9x2",
+      "name": "Ternary 9 \u00D7 2 RAM",
+      "description": "Nine 2-trit words with asynchronous read and synchronous write. The two-trit ADDR selects 0..8; WE=2 writes D on the rising CLK edge (0 -\u003E 2) while WE=0 and WE=1 hold every word. The read port is two levels of ternary 3:1 selectors, so any addressed word appears after two gate delays.",
+      "pins": [
+        {
+          "id": "addr0",
+          "name": "ADDR0",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "addr1",
+          "name": "ADDR1",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "d0",
+          "name": "D0",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "q0",
+          "name": "Q0",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "d1",
+          "name": "D1",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "q1",
+          "name": "Q1",
+          "direction": "output",
+          "domain": "ternary"
+        },
+        {
+          "id": "we",
+          "name": "WE",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "decode_write0",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 60
+        },
+        {
+          "id": "word0",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 60
+        },
+        {
+          "id": "decode_write1",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 210
+        },
+        {
+          "id": "word1",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 210
+        },
+        {
+          "id": "decode_write2",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 360
+        },
+        {
+          "id": "word2",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 360
+        },
+        {
+          "id": "decode_write3",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 510
+        },
+        {
+          "id": "word3",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 510
+        },
+        {
+          "id": "decode_write4",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 660
+        },
+        {
+          "id": "word4",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 660
+        },
+        {
+          "id": "decode_write5",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 810
+        },
+        {
+          "id": "word5",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 810
+        },
+        {
+          "id": "decode_write6",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 960
+        },
+        {
+          "id": "word6",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 960
+        },
+        {
+          "id": "decode_write7",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 1110
+        },
+        {
+          "id": "word7",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 1110
+        },
+        {
+          "id": "decode_write8",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 240,
+          "y": 1260
+        },
+        {
+          "id": "word8",
+          "definition": "std.t-reg-2",
+          "x": 580,
+          "y": 1260
+        },
+        {
+          "id": "read0_low0",
+          "definition": "std.t-mux3",
+          "x": 940,
+          "y": 60
+        },
+        {
+          "id": "read0_low1",
+          "definition": "std.t-mux3",
+          "x": 940,
+          "y": 230
+        },
+        {
+          "id": "read0_low2",
+          "definition": "std.t-mux3",
+          "x": 940,
+          "y": 400
+        },
+        {
+          "id": "read0_high",
+          "definition": "std.t-mux3",
+          "x": 1200,
+          "y": 180
+        },
+        {
+          "id": "read1_low0",
+          "definition": "std.t-mux3",
+          "x": 940,
+          "y": 620
+        },
+        {
+          "id": "read1_low1",
+          "definition": "std.t-mux3",
+          "x": 940,
+          "y": 790
+        },
+        {
+          "id": "read1_low2",
+          "definition": "std.t-mux3",
+          "x": 940,
+          "y": 960
+        },
+        {
+          "id": "read1_high",
+          "definition": "std.t-mux3",
+          "x": 1200,
+          "y": 740
+        }
+      ],
+      "nets": [
+        {
+          "id": "addr0_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "decode_write0",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write1",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write2",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write3",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write4",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write5",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write6",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write7",
+              "pin": "in2"
+            },
+            {
+              "instance": "decode_write8",
+              "pin": "in2"
+            },
+            {
+              "instance": "read0_low0",
+              "pin": "s"
+            },
+            {
+              "instance": "read0_low1",
+              "pin": "s"
+            },
+            {
+              "instance": "read0_low2",
+              "pin": "s"
+            },
+            {
+              "instance": "read1_low0",
+              "pin": "s"
+            },
+            {
+              "instance": "read1_low1",
+              "pin": "s"
+            },
+            {
+              "instance": "read1_low2",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "addr1_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "decode_write0",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write1",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write2",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write3",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write4",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write5",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write6",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write7",
+              "pin": "in1"
+            },
+            {
+              "instance": "decode_write8",
+              "pin": "in1"
+            },
+            {
+              "instance": "read0_high",
+              "pin": "s"
+            },
+            {
+              "instance": "read1_high",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "d0_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "word0",
+              "pin": "d0"
+            },
+            {
+              "instance": "word1",
+              "pin": "d0"
+            },
+            {
+              "instance": "word2",
+              "pin": "d0"
+            },
+            {
+              "instance": "word3",
+              "pin": "d0"
+            },
+            {
+              "instance": "word4",
+              "pin": "d0"
+            },
+            {
+              "instance": "word5",
+              "pin": "d0"
+            },
+            {
+              "instance": "word6",
+              "pin": "d0"
+            },
+            {
+              "instance": "word7",
+              "pin": "d0"
+            },
+            {
+              "instance": "word8",
+              "pin": "d0"
+            }
+          ]
+        },
+        {
+          "id": "q0_net",
+          "domain": "ternary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "read0_high",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "d1_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "word0",
+              "pin": "d1"
+            },
+            {
+              "instance": "word1",
+              "pin": "d1"
+            },
+            {
+              "instance": "word2",
+              "pin": "d1"
+            },
+            {
+              "instance": "word3",
+              "pin": "d1"
+            },
+            {
+              "instance": "word4",
+              "pin": "d1"
+            },
+            {
+              "instance": "word5",
+              "pin": "d1"
+            },
+            {
+              "instance": "word6",
+              "pin": "d1"
+            },
+            {
+              "instance": "word7",
+              "pin": "d1"
+            },
+            {
+              "instance": "word8",
+              "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "q1_net",
+          "domain": "ternary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "read1_high",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "we_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "decode_write0",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write1",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write2",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write3",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write4",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write5",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write6",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write7",
+              "pin": "in0"
+            },
+            {
+              "instance": "decode_write8",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "word0",
+              "pin": "clk"
+            },
+            {
+              "instance": "word1",
+              "pin": "clk"
+            },
+            {
+              "instance": "word2",
+              "pin": "clk"
+            },
+            {
+              "instance": "word3",
+              "pin": "clk"
+            },
+            {
+              "instance": "word4",
+              "pin": "clk"
+            },
+            {
+              "instance": "word5",
+              "pin": "clk"
+            },
+            {
+              "instance": "word6",
+              "pin": "clk"
+            },
+            {
+              "instance": "word7",
+              "pin": "clk"
+            },
+            {
+              "instance": "word8",
+              "pin": "clk"
+            }
+          ]
+        },
+        {
+          "id": "write0",
+          "domain": "ternary",
+          "label": "write word 0",
+          "pins": [
+            {
+              "instance": "decode_write0",
+              "pin": "out"
+            },
+            {
+              "instance": "word0",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word0_0",
+          "domain": "ternary",
+          "label": "word 0 trit 0",
+          "pins": [
+            {
+              "instance": "word0",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "word0_1",
+          "domain": "ternary",
+          "label": "word 0 trit 1",
+          "pins": [
+            {
+              "instance": "word0",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "write1",
+          "domain": "ternary",
+          "label": "write word 1",
+          "pins": [
+            {
+              "instance": "decode_write1",
+              "pin": "out"
+            },
+            {
+              "instance": "word1",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word1_0",
+          "domain": "ternary",
+          "label": "word 1 trit 0",
+          "pins": [
+            {
+              "instance": "word1",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "word1_1",
+          "domain": "ternary",
+          "label": "word 1 trit 1",
+          "pins": [
+            {
+              "instance": "word1",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write2",
+          "domain": "ternary",
+          "label": "write word 2",
+          "pins": [
+            {
+              "instance": "decode_write2",
+              "pin": "out"
+            },
+            {
+              "instance": "word2",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word2_0",
+          "domain": "ternary",
+          "label": "word 2 trit 0",
+          "pins": [
+            {
+              "instance": "word2",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low0",
+              "pin": "c"
+            }
+          ]
+        },
+        {
+          "id": "word2_1",
+          "domain": "ternary",
+          "label": "word 2 trit 1",
+          "pins": [
+            {
+              "instance": "word2",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low0",
+              "pin": "c"
+            }
+          ]
+        },
+        {
+          "id": "write3",
+          "domain": "ternary",
+          "label": "write word 3",
+          "pins": [
+            {
+              "instance": "decode_write3",
+              "pin": "out"
+            },
+            {
+              "instance": "word3",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word3_0",
+          "domain": "ternary",
+          "label": "word 3 trit 0",
+          "pins": [
+            {
+              "instance": "word3",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "word3_1",
+          "domain": "ternary",
+          "label": "word 3 trit 1",
+          "pins": [
+            {
+              "instance": "word3",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "write4",
+          "domain": "ternary",
+          "label": "write word 4",
+          "pins": [
+            {
+              "instance": "decode_write4",
+              "pin": "out"
+            },
+            {
+              "instance": "word4",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word4_0",
+          "domain": "ternary",
+          "label": "word 4 trit 0",
+          "pins": [
+            {
+              "instance": "word4",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "word4_1",
+          "domain": "ternary",
+          "label": "word 4 trit 1",
+          "pins": [
+            {
+              "instance": "word4",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write5",
+          "domain": "ternary",
+          "label": "write word 5",
+          "pins": [
+            {
+              "instance": "decode_write5",
+              "pin": "out"
+            },
+            {
+              "instance": "word5",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word5_0",
+          "domain": "ternary",
+          "label": "word 5 trit 0",
+          "pins": [
+            {
+              "instance": "word5",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low1",
+              "pin": "c"
+            }
+          ]
+        },
+        {
+          "id": "word5_1",
+          "domain": "ternary",
+          "label": "word 5 trit 1",
+          "pins": [
+            {
+              "instance": "word5",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low1",
+              "pin": "c"
+            }
+          ]
+        },
+        {
+          "id": "write6",
+          "domain": "ternary",
+          "label": "write word 6",
+          "pins": [
+            {
+              "instance": "decode_write6",
+              "pin": "out"
+            },
+            {
+              "instance": "word6",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word6_0",
+          "domain": "ternary",
+          "label": "word 6 trit 0",
+          "pins": [
+            {
+              "instance": "word6",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "word6_1",
+          "domain": "ternary",
+          "label": "word 6 trit 1",
+          "pins": [
+            {
+              "instance": "word6",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "write7",
+          "domain": "ternary",
+          "label": "write word 7",
+          "pins": [
+            {
+              "instance": "decode_write7",
+              "pin": "out"
+            },
+            {
+              "instance": "word7",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word7_0",
+          "domain": "ternary",
+          "label": "word 7 trit 0",
+          "pins": [
+            {
+              "instance": "word7",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "word7_1",
+          "domain": "ternary",
+          "label": "word 7 trit 1",
+          "pins": [
+            {
+              "instance": "word7",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "write8",
+          "domain": "ternary",
+          "label": "write word 8",
+          "pins": [
+            {
+              "instance": "decode_write8",
+              "pin": "out"
+            },
+            {
+              "instance": "word8",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "word8_0",
+          "domain": "ternary",
+          "label": "word 8 trit 0",
+          "pins": [
+            {
+              "instance": "word8",
+              "pin": "q0"
+            },
+            {
+              "instance": "read0_low2",
+              "pin": "c"
+            }
+          ]
+        },
+        {
+          "id": "word8_1",
+          "domain": "ternary",
+          "label": "word 8 trit 1",
+          "pins": [
+            {
+              "instance": "word8",
+              "pin": "q1"
+            },
+            {
+              "instance": "read1_low2",
+              "pin": "c"
+            }
+          ]
+        },
+        {
+          "id": "read0_group0",
+          "domain": "ternary",
+          "label": "read lane 0 group 0",
+          "pins": [
+            {
+              "instance": "read0_low0",
+              "pin": "y"
+            },
+            {
+              "instance": "read0_high",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read0_group1",
+          "domain": "ternary",
+          "label": "read lane 0 group 1",
+          "pins": [
+            {
+              "instance": "read0_low1",
+              "pin": "y"
+            },
+            {
+              "instance": "read0_high",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read0_group2",
+          "domain": "ternary",
+          "label": "read lane 0 group 2",
+          "pins": [
+            {
+              "instance": "read0_low2",
+              "pin": "y"
+            },
+            {
+              "instance": "read0_high",
+              "pin": "c"
+            }
+          ]
+        },
+        {
+          "id": "read1_group0",
+          "domain": "ternary",
+          "label": "read lane 1 group 0",
+          "pins": [
+            {
+              "instance": "read1_low0",
+              "pin": "y"
+            },
+            {
+              "instance": "read1_high",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "read1_group1",
+          "domain": "ternary",
+          "label": "read lane 1 group 1",
+          "pins": [
+            {
+              "instance": "read1_low1",
+              "pin": "y"
+            },
+            {
+              "instance": "read1_high",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "read1_group2",
+          "domain": "ternary",
+          "label": "read lane 1 group 2",
+          "pins": [
+            {
+              "instance": "read1_low2",
+              "pin": "y"
+            },
+            {
+              "instance": "read1_high",
+              "pin": "c"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "addr0",
+          "net": "addr0_net"
+        },
+        {
+          "pin": "addr1",
+          "net": "addr1_net"
+        },
+        {
+          "pin": "d0",
+          "net": "d0_net"
+        },
+        {
+          "pin": "q0",
+          "net": "q0_net"
+        },
+        {
+          "pin": "d1",
+          "net": "d1_net"
+        },
+        {
+          "pin": "q1",
+          "net": "q1_net"
+        },
+        {
+          "pin": "we",
+          "net": "we_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "address",
+          "name": "Address",
+          "format": "unsigned-ternary",
+          "pins": [
+            "addr0",
+            "addr1"
           ]
         },
         {

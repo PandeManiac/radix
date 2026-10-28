@@ -95,6 +95,44 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void TernaryMemoryExampleWritesAndReadsAllNineWords()
+    {
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateTernaryMemoryDemo(), "demo.t-memory");
+        engine.Drive("clk", 0);
+        engine.Drive("we", 0);
+        engine.AdvanceTo(40);
+        Assert.Equal(0, engine.Read("q0") + engine.Read("q1"));
+
+        int[] values = [1, 5, 0, 4, 8, 3, 7, 2, 6];
+        for (int word = 0; word < 9; word++)
+        {
+            engine.Drive("addr0", word % 3);
+            engine.Drive("addr1", word / 3);
+            engine.Drive("d0", values[word] % 3);
+            engine.Drive("d1", values[word] / 3);
+            engine.Drive("we", 2);
+            engine.AdvanceTo(engine.Now + 40);
+            engine.Drive("clk", 2);
+            engine.AdvanceTo(engine.Now + 40);
+            engine.Drive("clk", 0);
+            engine.AdvanceTo(engine.Now + 40);
+        }
+
+        engine.Drive("we", 0);
+        for (int word = 0; word < 9; word++)
+        {
+            engine.Drive("addr0", word % 3);
+            engine.Drive("addr1", word / 3);
+            engine.AdvanceTo(engine.Now + 40);
+            int actual = engine.Read("q0") + (engine.Read("q1") * 3);
+            Assert.Equal(values[word], actual);
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void AccumulatorExecutesLoadAddClearAndHold()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateAccumulatorCpuDemo(), "demo.accumulator");
