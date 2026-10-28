@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 3,
+  "version": 4,
   "name": "4-bit accumulator CPU",
   "root": "demo.accumulator",
   "settings": {
@@ -68,6 +68,21 @@
         "conflictValue": 2
       },
       "description": "Four-state domain with high impedance (Z) and unknown/conflict (X)."
+    }
+  ],
+  "customNumericFormats": [
+    {
+      "id": "signed-4bit",
+      "name": "Signed 4-bit",
+      "domain": "binary",
+      "digits": [
+        0,
+        1
+      ],
+      "radix": 2,
+      "weighting": "radix-complement",
+      "leastSignificantFirst": true,
+      "description": "Four-bit two\u0027s-complement view of the accumulator result; display only."
     }
   ],
   "definitions": [
@@ -3323,7 +3338,7 @@
         {
           "id": "result",
           "name": "Result",
-          "format": "unsigned-binary",
+          "format": "signed-4bit",
           "pins": [
             "q0",
             "q1",

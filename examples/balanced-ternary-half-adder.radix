@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 3,
+  "version": 4,
   "name": "Balanced ternary half adder",
   "root": "demo.bt-half-adder",
   "settings": {

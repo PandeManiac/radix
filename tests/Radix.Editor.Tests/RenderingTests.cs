@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -87,7 +88,11 @@ public sealed class RenderingTests
         Dispatcher.UIThread.RunJobs();
         var inspector = window.FindControl<ScrollViewer>("InspectorScroll");
         Assert.NotNull(inspector);
-        inspector!.Offset = new Vector(0, inspector.Extent.Height);
+        var dataLane = window.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .FirstOrDefault(text => text.Text == "Data");
+        Assert.NotNull(dataLane);
+        dataLane!.BringIntoView();
         Dispatcher.UIThread.RunJobs();
 
         using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 
 namespace Radix.Editor.ViewModels;
@@ -178,6 +179,43 @@ public sealed class NumericLaneListItem : ObservableObject
         get => _valueHint;
         set => SetField(ref _valueHint, value);
     }
+}
+
+public sealed class NumericFormatModeChoice
+{
+    public NumericFormatModeChoice(string id, string label)
+    {
+        Id = id;
+        Label = label;
+    }
+
+    public string Id { get; }
+
+    public string Label { get; }
+
+    public override string ToString() => Label;
+}
+
+public sealed class CustomNumericFormatListItem
+{
+    public CustomNumericFormatListItem(
+        NumericFormatDefinition definition,
+        string summary,
+        ICommand removeCommand)
+    {
+        Id = definition.Id;
+        Name = definition.Name;
+        Summary = summary;
+        RemoveCommand = removeCommand;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public string Summary { get; }
+
+    public ICommand RemoveCommand { get; }
 }
 
 public sealed class IoState

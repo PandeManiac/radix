@@ -136,6 +136,14 @@ public static class ExampleProjects
     {
         var builder = new ProjectBuilder("4-bit accumulator CPU");
         StandardLibrary.Install(builder.Project);
+        builder.Project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "signed-4bit",
+            "Signed 4-bit",
+            StandardDomains.BinaryId,
+            [0, 1],
+            2,
+            WeightingMode.RadixComplement,
+            description: "Four-bit two's-complement view of the accumulator result; display only."));
         var root = builder.Define("demo.accumulator", "4-bit accumulator");
         root.Definition.Description =
             "Instruction-controlled accumulator. OP=00 holds, 01 loads D, 10 adds D, 11 clears. " +
@@ -155,7 +163,7 @@ public static class ExampleProjects
 
         root.AddNumericLane("opcode", "Opcode", NumericFormats.UnsignedBinary.Id, "op0", "op1");
         root.AddNumericLane("data", "Data", NumericFormats.UnsignedBinary.Id, "d0", "d1", "d2", "d3");
-        root.AddNumericLane("result", "Result", NumericFormats.UnsignedBinary.Id, "q0", "q1", "q2", "q3");
+        root.AddNumericLane("result", "Result", "signed-4bit", "q0", "q1", "q2", "q3");
 
         Net carry = root.SetInitial(
             root.AddPin("carry", "CARRY", PinDirection.Output, StandardDomains.BinaryId),

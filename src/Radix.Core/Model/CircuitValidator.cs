@@ -26,6 +26,7 @@ public static class CircuitValidator
 
         ValidateFormat(project, diagnostics);
         ValidateDomains(project, diagnostics);
+        ValidateCustomNumericFormats(project, diagnostics);
         ValidateDefinitionIdentities(project, diagnostics);
         ValidateRoot(project, rootId, diagnostics);
         ValidateHierarchy(project, diagnostics);
@@ -93,6 +94,48 @@ public static class CircuitValidator
             if (names.Distinct(StringComparer.Ordinal).Count() != names.Count)
             {
                 diagnostics.Warning("RAD014", $"Domain '{domain.Id}' has duplicate value labels.");
+            }
+        }
+    }
+
+    private static void ValidateCustomNumericFormats(CircuitProject project, DiagnosticBag diagnostics)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (NumericFormatDefinition format in project.CustomNumericFormats)
+        {
+            if (!Identifiers.IsValid(format.Id))
+            {
+                diagnostics.Error(
+                    "RAD102",
+                    $"Custom numeric format has an invalid ID. {Identifiers.Rule}");
+            }
+            else if (NumericFormatCatalog.IsBuiltInId(format.Id))
+            {
+                diagnostics.Error(
+                    "RAD103",
+                    $"Custom numeric format ID '{format.Id}' is reserved by the built-in catalog.");
+            }
+            else if (!seen.Add(format.Id))
+            {
+                diagnostics.Error("RAD104", $"Duplicate custom numeric format ID '{format.Id}'.");
+            }
+
+            if (project.FindDomain(format.DomainId) is null)
+            {
+                diagnostics.Error(
+                    "RAD105",
+                    $"Custom numeric format '{format.Id}' refers to unknown domain '{format.DomainId}'.");
+            }
+
+            try
+            {
+                _ = format.ToFormat();
+            }
+            catch (ArgumentException exception)
+            {
+                diagnostics.Error(
+                    "RAD106",
+                    $"Custom numeric format '{format.Id}' is invalid: {exception.Message}");
             }
         }
     }
@@ -199,10 +242,11 @@ public static class CircuitValidator
         ValidateInstances(project, definition, diagnostics);
         ValidateNets(project, definition, diagnostics);
         ValidatePorts(project, definition, diagnostics);
-        ValidateNumericLanes(definition, diagnostics);
+        ValidateNumericLanes(project, definition, diagnostics);
     }
 
     private static void ValidateNumericLanes(
+        CircuitProject project,
         CircuitDefinition definition,
         DiagnosticBag diagnostics)
     {
@@ -219,8 +263,7 @@ public static class CircuitValidator
                 diagnostics.Error("RAD096", $"Duplicate numeric lane ID '{lane.Id}'.", definition.Id);
             }
 
-            INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
-                string.Equals(candidate.Id, lane.FormatId, StringComparison.Ordinal));
+            INumericFormat? format = NumericFormatCatalog.Find(project, lane.FormatId);
             if (format is null)
             {
                 diagnostics.Error(

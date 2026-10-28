@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 3,
+  "version": 4,
   "name": "4-bit binary counter",
   "root": "demo.counter",
   "settings": {

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 
@@ -18,11 +19,12 @@ public static class ProjectSerializer
 
     /// <summary>
     /// Version 2 adds optional per-net wire colors and author bendpoints. Version 3
-    /// adds optional definition-scoped numeric lanes. Older files load unchanged;
-    /// every version up to <see cref="CurrentVersion"/> is accepted, and saving always
-    /// writes the current version.
+    /// adds optional definition-scoped numeric lanes. Version 4 adds optional custom
+    /// numeric-format descriptors. Older files load unchanged; every version up to
+    /// <see cref="CurrentVersion"/> is accepted, and saving always writes the current
+    /// version.
     /// </summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private const string Extension = ".radix";
 
@@ -158,6 +160,11 @@ public static class ProjectSerializer
             project.Domains.Add(MapDomain(domainDto));
         }
 
+        foreach (NumericFormatDto formatDto in dto.CustomNumericFormats ?? [])
+        {
+            project.CustomNumericFormats.Add(MapNumericFormat(formatDto));
+        }
+
         foreach (DefinitionDto definitionDto in dto.Definitions ?? [])
         {
             project.Definitions.Add(MapDefinition(definitionDto));
@@ -220,6 +227,46 @@ public static class ProjectSerializer
                 throw new ProjectFormatException($"Domain '{domainId}' uses unknown driver kind '{kind}'.");
         }
     }
+
+    private static NumericFormatDefinition MapNumericFormat(NumericFormatDto dto)
+    {
+        string id = dto.Id ?? "<missing>";
+        if (dto.NegativeSignValue is not null &&
+            !string.IsNullOrWhiteSpace(dto.Weighting) &&
+            !string.Equals(dto.Weighting, "standard", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ProjectFormatException(
+                $"Custom numeric format '{id}' is sign-magnitude but declares weighting '{dto.Weighting}'.");
+        }
+
+        try
+        {
+            return new NumericFormatDefinition(
+                dto.Id ?? throw new ProjectFormatException("Custom numeric format is missing 'id'."),
+                dto.Name ?? dto.Id ?? string.Empty,
+                dto.Domain ?? throw new ProjectFormatException($"Custom numeric format '{id}' is missing 'domain'."),
+                dto.Digits ?? throw new ProjectFormatException($"Custom numeric format '{id}' is missing 'digits'."),
+                dto.Radix ?? throw new ProjectFormatException($"Custom numeric format '{id}' is missing 'radix'."),
+                ParseWeighting(dto.Weighting, id),
+                dto.LeastSignificantFirst,
+                dto.NegativeSignValue,
+                dto.Description);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ProjectFormatException($"Custom numeric format '{id}' is invalid: {exception.Message}", exception);
+        }
+    }
+
+    private static WeightingMode ParseWeighting(string? value, string formatId) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "standard" => WeightingMode.Standard,
+            "radix-complement" => WeightingMode.RadixComplement,
+            "diminished-radix-complement" => WeightingMode.DiminishedRadixComplement,
+            _ => throw new ProjectFormatException(
+                $"Custom numeric format '{formatId}' has unknown weighting '{value}'."),
+        };
 
     private static CircuitDefinition MapDefinition(DefinitionDto dto)
     {
@@ -410,6 +457,9 @@ public static class ProjectSerializer
                 TraceAllNets = project.Settings.TraceAllNets,
             },
             Domains = project.Domains.Select(MapDomainDto).ToList(),
+            CustomNumericFormats = project.CustomNumericFormats.Count == 0
+                ? null
+                : project.CustomNumericFormats.Select(MapNumericFormatDto).ToList(),
             Definitions = project.Definitions.Select(MapDefinitionDto).ToList(),
         };
 
@@ -438,6 +488,24 @@ public static class ProjectSerializer
             Drivers = drivers,
         };
     }
+
+    private static NumericFormatDto MapNumericFormatDto(NumericFormatDefinition format) => new()
+    {
+        Id = format.Id,
+        Name = format.Name,
+        Domain = format.DomainId,
+        Digits = format.DigitValues.ToList(),
+        Radix = format.Radix,
+        Weighting = format.Weighting switch
+        {
+            WeightingMode.RadixComplement => "radix-complement",
+            WeightingMode.DiminishedRadixComplement => "diminished-radix-complement",
+            _ => "standard",
+        },
+        LeastSignificantFirst = format.LeastSignificantFirst,
+        NegativeSignValue = format.NegativeSignValue,
+        Description = format.Description,
+    };
 
     private static DefinitionDto MapDefinitionDto(CircuitDefinition definition) => new()
     {

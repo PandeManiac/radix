@@ -1,4 +1,4 @@
-# RADIX project format, version 3
+# RADIX project format, version 4
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,12 +9,13 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 3,
+  "version": 4,
   "name": "Example",
   "description": "optional",
   "root": "main",
   "settings": { "...": "..." },
   "domains": [ "...": "..." ],
+  "customNumericFormats": [ "...": "..." ],
   "definitions": [ "...": "..." ]
 }
 ```
@@ -22,12 +23,13 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `3`. Versions 1–3 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `4`. Versions 1–4 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Definition opened by default and simulated by the CLI unless overridden |
 | `settings` | no | Simulation defaults; omitted fields use defaults |
 | `domains` | yes | At least one domain required for a valid project |
+| `customNumericFormats` | no | Project-owned display formats; omitted when none exist |
 | `definitions` | yes | One or more definitions; root must be present |
 
 Property names are camelCase. JSON comments and trailing commas are accepted when loading.
@@ -85,6 +87,32 @@ Multiple active drivers resolve deterministically to the first active driver in 
 ```
 
 `priorities` must have exactly one entry per domain value. Higher priority wins. Disagreeing drivers at equal priority resolve to `conflictValue`, which must be a valid domain index.
+
+## Custom numeric formats
+
+```json
+"customNumericFormats": [
+  {
+    "id": "signed-4bit",
+    "name": "Signed 4-bit",
+    "domain": "binary",
+    "digits": [0, 1],
+    "radix": 2,
+    "weighting": "radix-complement",
+    "leastSignificantFirst": true,
+    "description": "optional"
+  }
+]
+```
+
+- A format is **display metadata** used by numeric lanes. It is not a signal domain and never changes simulation values.
+- `digits` maps signal indices to digit values by position. `radix` must be at least 2.
+- `weighting` is `standard`, `radix-complement` (top position contributes `−(radix^(width−1))`), or `diminished-radix-complement` (top position contributes `−(radix^(width−1)−1)`).
+- `negativeSignValue` selects sign-magnitude instead: the top position is a sign indicator with that digit index. `weighting` is then omitted or `standard`.
+- `leastSignificantFirst` follows the same convention as the built-in formats and should usually be `true` for editor lanes.
+- `id` must be a valid identifier, unique in the project, and must not collide with a built-in format ID (`unsigned-binary`, `twos-complement`, `ones-complement`, `sign-magnitude`, `unsigned-ternary`, `ternary-top-negative`, `balanced-ternary`).
+- `domain` must name a project domain. It is nominal: lanes warn when their pins use a different domain, but still decode signal indices.
+- Non-contiguous digit values are accepted for decoding; encoding (driving a lane) refuses them because the mapping is not invertible by position.
 
 ## Definitions
 
@@ -210,7 +238,7 @@ Every interface pin needs exactly one binding. The pin's declared domain must ma
 ```
 
 - A lane is an ordered group of interface pins shown as one number. The first pin is least significant.
-- `format` is one of the built-in format IDs: `unsigned-binary`, `twos-complement`, `ones-complement`, `sign-magnitude`, `unsigned-ternary`, `ternary-top-negative`, or `balanced-ternary`.
+- `format` is a built-in format ID or the ID of an entry in `customNumericFormats`.
 - Lanes are **presentation only**. They do not merge nets, add drivers, change values, or enter compilation. Unknown formats, unknown pins, duplicate pins, and duplicate lane IDs are validation errors; mismatched pin domains are warnings.
 - Removing an interface pin also removes it from any lane; a lane left with no pins is removed. The editor saves lanes with the definition and library export/import preserves them.
 
@@ -221,7 +249,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 ```json
 {
   "format": "radix-project",
-  "version": 3,
+  "version": 4,
   "name": "Inverter",
   "root": "main",
   "domains": [
@@ -281,7 +309,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 
 ## Versioning and migration
 
-Versions 1, 2, and 3 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 4 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.
@@ -297,6 +325,7 @@ A `.radixlib` file uses **exactly this project format**. It is a project contain
 - Exporting a definition writes the closure so the library is self-contained.
 - Importing validates the library first, merges compatible domains by ID, and reuses definitions that are electrically equivalent (ignoring labels, positions, wire colors, routes, and numeric-lane presentation).
 - A library definition whose ID collides with a structurally different local definition is imported under a fresh unique ID; existing definitions are never overwritten.
+- Custom numeric formats used by imported lanes travel with the library. Equivalent local formats are reused; a conflicting format ID is renamed and the imported lanes are rewritten to the new ID.
 - Import aborts without partial changes if a domain conflicts or if the merge would introduce new validation errors.
 
 Because libraries are ordinary projects, they can also be opened directly as projects, inspected with the CLI, and validated with the same rules. There is no executable code in a library.
@@ -313,7 +342,7 @@ Because libraries are ordinary projects, they can also be opened directly as pro
 ## What is not persisted yet
 
 - viewport pan/zoom, active tab, and selection;
-- custom numeric-format definitions (lanes reference the built-in format IDs);
+- in-place edits to a saved numeric format (remove and re-add today);
 - external input event history;
 - simulation runtime state (projects save topology and initial configuration only).
 

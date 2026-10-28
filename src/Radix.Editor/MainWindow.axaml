@@ -344,6 +344,53 @@
                   </StackPanel>
                 </Border>
 
+                <TextBlock Text="CUSTOM NUMERIC FORMATS" Classes="section" />
+                <TextBlock Text="Project-owned display formats. They never affect signals; lanes choose one by ID." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,0,0,4" />
+                <ItemsControl ItemsSource="{Binding CustomNumericFormats}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CustomNumericFormatListItem">
+                      <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="7,5" Margin="0,2">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel Spacing="1">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" />
+                            <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                          </StackPanel>
+                          <Button Grid.Column="1" Classes="tool" Content="×" Command="{Binding RemoveCommand}" Padding="5,1" ToolTip.Tip="Remove this format (refused while a lane uses it)" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
+                  <StackPanel Spacing="4">
+                    <TextBox Watermark="format name" Text="{Binding NewFormatName, Mode=TwoWay}" />
+                    <ComboBox ItemsSource="{Binding Domains}" SelectedItem="{Binding NewFormatDomain, Mode=TwoWay}" ToolTip.Tip="Signal domain this format is intended for">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DomainChoice">
+                          <TextBlock Text="{Binding Label}" FontSize="11" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid ColumnDefinitions="*,100" ColumnSpacing="4">
+                      <TextBox Watermark="digits, e.g. -1 0 1" Text="{Binding NewFormatDigits, Mode=TwoWay}" ToolTip.Tip="Digit values in signal-index order, separated by spaces" />
+                      <TextBox Grid.Column="1" Watermark="radix" Text="{Binding NewFormatRadix, Mode=TwoWay}" ToolTip.Tip="Positional radix, at least 2" />
+                    </Grid>
+                    <ComboBox ItemsSource="{Binding FormatModes}" SelectedItem="{Binding SelectedFormatMode, Mode=TwoWay}" ToolTip.Tip="Weighting of the most significant position">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:NumericFormatModeChoice">
+                          <TextBlock Text="{Binding Label}" FontSize="11" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                      <CheckBox Content="LSB first" IsChecked="{Binding NewFormatLeastSignificantFirst, Mode=TwoWay}" FontSize="10.5" ToolTip.Tip="Place the least significant digit at the first pin" />
+                      <TextBox Grid.Column="1" Watermark="negative sign index" Text="{Binding NewFormatNegativeSign, Mode=TwoWay}" ToolTip.Tip="Sign-magnitude only: digit index that means negative" />
+                    </Grid>
+                    <Button Content="Add numeric format" Command="{Binding AddNumericFormatCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Text="Digits are mapped by list position, not by value. A format's nominal domain is informational and is checked by lane warnings." Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
                 <TextBlock Text="PROJECT" Classes="section" />
                 <Grid ColumnDefinitions="92,*" Margin="0,2">
                   <TextBlock Text="Name" Classes="muted" FontSize="10.5" />

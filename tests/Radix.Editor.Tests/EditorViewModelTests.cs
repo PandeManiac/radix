@@ -478,6 +478,55 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void CustomNumericFormatsFeedLaneChoicesAndRemainInUseUntilLanesAreGone()
+    {
+        var viewModel = CreateEmptyEditor();
+        string t0 = AddInputPin(viewModel, "T0", StandardDomains.TernaryId);
+        string t1 = AddInputPin(viewModel, "T1", StandardDomains.TernaryId);
+        string t2 = AddInputPin(viewModel, "T2", StandardDomains.TernaryId);
+
+        viewModel.NewFormatName = "Custom balanced";
+        viewModel.NewFormatDomain = viewModel.Domains.Single(domain => domain.Id == StandardDomains.TernaryId);
+        viewModel.NewFormatDigits = "-1 0 1";
+        viewModel.NewFormatRadix = "3";
+        viewModel.SelectedFormatMode = viewModel.FormatModes.Single(mode => mode.Id == "standard");
+        viewModel.NewFormatLeastSignificantFirst = true;
+        viewModel.AddCustomNumericFormat();
+
+        NumericFormatDefinition format = Assert.Single(viewModel.Project.CustomNumericFormats);
+        Assert.Contains(viewModel.FormatChoices, option => option.Format.Id == format.Id);
+
+        foreach (LanePinChoice choice in viewModel.LanePinChoices)
+        {
+            choice.IsSelected = choice.PinId is var id && (id == t0 || id == t1 || id == t2);
+        }
+
+        viewModel.SelectedLaneFormat = viewModel.FormatChoices.Single(option => option.Format.Id == format.Id);
+        viewModel.NewLaneName = "Balanced";
+        viewModel.AddNumericLane();
+        NumericLane lane = Assert.Single(viewModel.Definition.NumericLanes);
+        Assert.Equal(format.Id, lane.FormatId);
+
+        viewModel.RemoveCustomNumericFormat(format.Id);
+        Assert.Contains("used by", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(viewModel.Project.CustomNumericFormats, candidate => candidate.Id == format.Id);
+
+        viewModel.BeginSimulation();
+        NumericLaneListItem card = Assert.Single(viewModel.NumericLanes);
+        card.DriveText = "-4";
+        viewModel.DriveNumericLane(lane.Id);
+        Assert.Equal("-4", card.ValueText);
+
+        viewModel.RemoveNumericLane(lane.Id);
+        viewModel.RemoveCustomNumericFormat(format.Id);
+        Assert.Empty(viewModel.Project.CustomNumericFormats);
+        Assert.DoesNotContain(viewModel.FormatChoices, option => option.Format.Id == format.Id);
+
+        viewModel.Undo();
+        Assert.Single(viewModel.Project.CustomNumericFormats);
+    }
+
+    [Fact]
     public void NumericLaneRejectsMixedDomainsAndPrunesRemovedPins()
     {
         var viewModel = CreateEmptyEditor();
@@ -573,11 +622,14 @@ public sealed class EditorViewModelTests
     private static string PinValue(EditorViewModel viewModel, string pinId) =>
         viewModel.IoPins.Single(p => p.PinId == pinId).ValueText;
 
-    private static string AddInputPin(EditorViewModel viewModel, string name)
+    private static string AddInputPin(
+        EditorViewModel viewModel,
+        string name,
+        string domainId = StandardDomains.BinaryId)
     {
         viewModel.NewPinName = name;
         viewModel.NewPinIsInput = true;
-        viewModel.NewPinDomain = viewModel.Domains.First(domain => domain.Id == StandardDomains.BinaryId);
+        viewModel.NewPinDomain = viewModel.Domains.First(domain => domain.Id == domainId);
         viewModel.AddPin();
         return viewModel.Definition.Pins.Single(pin => pin.Name == name).Id;
     }

@@ -142,6 +142,65 @@ public sealed class ComponentLibraryTests
     }
 
     [Fact]
+    public void ExportOmitsCustomFormatsThatNoLaneUses()
+    {
+        var source = CreateEmptyEditor();
+        source.Project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "unused-format",
+            "Unused",
+            StandardDomains.BinaryId,
+            [0, 1],
+            2));
+
+        string json = ComponentLibraryService.Export(source.Project, source.Definition.Id);
+        CircuitProject library = Radix.Core.Serialization.ProjectSerializer.LoadFromString(json);
+
+        Assert.Empty(library.CustomNumericFormats);
+    }
+
+    [Fact]
+    public void CustomFormatConflictRenamesFormatAndRewritesLaneReferences()
+    {
+        var source = CreateEmptyEditor();
+        source.NewPinName = "A";
+        source.NewPinIsInput = true;
+        source.NewPinDomain = source.Domains.Single(domain => domain.Id == StandardDomains.BinaryId);
+        source.AddPin();
+        PinDeclaration pin = Assert.Single(source.Definition.Pins);
+        source.Project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "custom-twos",
+            "Source complement",
+            StandardDomains.BinaryId,
+            [0, 1],
+            2,
+            WeightingMode.RadixComplement));
+        var lane = new NumericLane { Id = "value", Name = "Value", FormatId = "custom-twos" };
+        lane.PinIds.Add(pin.Id);
+        source.Definition.NumericLanes.Add(lane);
+        string json = ComponentLibraryService.Export(source.Project, source.Definition.Id);
+
+        var target = CreateEmptyEditor();
+        target.Project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "custom-twos",
+            "Local unsigned",
+            StandardDomains.BinaryId,
+            [0, 1],
+            2));
+        LibraryImportResult result = ComponentLibraryService.Import(target.Project, json);
+
+        Assert.True(result.Success, result.Message);
+        HashSet<string> formatIds = target.Project.CustomNumericFormats
+            .Select(format => format.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        NumericLane importedLane = target.Project.RequireDefinition(result.RootDefinitionId!).NumericLanes.Single();
+        Assert.Contains(importedLane.FormatId, formatIds);
+        Assert.NotEqual("custom-twos", importedLane.FormatId);
+        NumericFormatDefinition importedFormat = target.Project.FindCustomNumericFormat(importedLane.FormatId)!;
+        Assert.Equal("Source complement", importedFormat.Name);
+        Assert.Equal(WeightingMode.RadixComplement, importedFormat.Weighting);
+    }
+
+    [Fact]
     public void DomainConflictAbortsWithoutPartialMerge()
     {
         var builder = new ProjectBuilder("Conflict library");

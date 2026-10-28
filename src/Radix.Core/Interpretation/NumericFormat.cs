@@ -544,6 +544,88 @@ public sealed class SignMagnitudeFormat : INumericFormat
     }
 }
 
+/// <summary>
+/// A project-owned numeric format descriptor. It is display metadata, not a signal
+/// domain or simulation component: removing every format would leave simulation
+/// behavior unchanged. Custom formats let a project use digit mappings and radices
+/// that are not in the built-in catalog.
+/// </summary>
+public sealed class NumericFormatDefinition
+{
+    public NumericFormatDefinition(
+        string id,
+        string name,
+        string domainId,
+        IEnumerable<long> digitValues,
+        long radix,
+        WeightingMode weighting = WeightingMode.Standard,
+        bool leastSignificantFirst = true,
+        int? negativeSignValue = null,
+        string? description = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(domainId);
+        ArgumentNullException.ThrowIfNull(digitValues);
+
+        Id = id;
+        Name = name;
+        DomainId = domainId;
+        DigitValues = digitValues.ToArray();
+        Radix = radix;
+        Weighting = weighting;
+        LeastSignificantFirst = leastSignificantFirst;
+        NegativeSignValue = negativeSignValue;
+        Description = description;
+
+        // Reuse the interpretation constructors so project formats cannot smuggle in
+        // digit, radix, or sign-index combinations that the decoder would reject.
+        _ = ToFormat();
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public string DomainId { get; }
+
+    public IReadOnlyList<long> DigitValues { get; }
+
+    public long Radix { get; }
+
+    public WeightingMode Weighting { get; }
+
+    public bool LeastSignificantFirst { get; }
+
+    public int? NegativeSignValue { get; }
+
+    public string? Description { get; }
+
+    public bool IsSignMagnitude => NegativeSignValue is not null;
+
+    public INumericFormat ToFormat() => NegativeSignValue is int sign
+        ? new SignMagnitudeFormat(
+            Id,
+            Name,
+            DomainId,
+            DigitValues,
+            Radix,
+            sign,
+            LeastSignificantFirst,
+            Description)
+        : new PositionalFormat(
+            Id,
+            Name,
+            DomainId,
+            DigitValues,
+            Radix,
+            Weighting,
+            LeastSignificantFirst,
+            Description);
+
+    public override string ToString() => Id;
+}
+
 /// <summary>Ready-made formats. Users can construct additional formats freely.</summary>
 public static class NumericFormats
 {
@@ -617,4 +699,7 @@ public static class NumericFormats
         TernaryTopNegative,
         BalancedTernary,
     ];
+
+    public static INumericFormat? Find(string formatId) =>
+        All.FirstOrDefault(format => string.Equals(format.Id, formatId, StringComparison.Ordinal));
 }

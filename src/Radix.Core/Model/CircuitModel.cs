@@ -1,4 +1,5 @@
 using System.Globalization;
+using Radix.Core.Interpretation;
 using Radix.Core.Signals;
 
 namespace Radix.Core.Model;
@@ -191,7 +192,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 3;
+    public const int CurrentFormatVersion = 4;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 
@@ -204,12 +205,21 @@ public sealed class CircuitProject
 
     public List<SignalDomain> Domains { get; } = [];
 
+    /// <summary>Project-owned numeric formats used by numeric lanes.</summary>
+    public List<NumericFormatDefinition> CustomNumericFormats { get; } = [];
+
     public List<CircuitDefinition> Definitions { get; } = [];
 
     public ProjectSettings Settings { get; } = new();
 
     public SignalDomain? FindDomain(string? domainId) =>
         domainId is null ? null : Domains.FirstOrDefault(d => string.Equals(d.Id, domainId, StringComparison.Ordinal));
+
+    public NumericFormatDefinition? FindCustomNumericFormat(string? formatId) =>
+        formatId is null
+            ? null
+            : CustomNumericFormats.FirstOrDefault(format =>
+                string.Equals(format.Id, formatId, StringComparison.Ordinal));
 
     public CircuitDefinition? FindDefinition(string? definitionId) =>
         definitionId is null ? null : Definitions.FirstOrDefault(d => string.Equals(d.Id, definitionId, StringComparison.Ordinal));

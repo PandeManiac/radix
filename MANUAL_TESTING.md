@@ -58,7 +58,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 3. Drag the handle. Expected: the wire follows orthogonally; the rest of the net stays connected. Undo restores the previous route.
 4. Alt+click a handle. Expected: that bendpoint is removed.
 5. Select a routed net and click **Reset wire route** in the net inspector. Expected: automatic routing resumes.
-6. Save, close, reopen. Expected: bendpoints, custom wire colors, and numeric lanes survive (project format v3).
+6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, and custom numeric formats survive (project format v4).
 7. In the net inspector, set **Wire color** to `#38bdf8`, then `auto`. Expected: valid hex applies; invalid text is rejected with a status message; `auto` returns to domain/signal coloring.
 8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
 
@@ -117,7 +117,18 @@ If counter values differ, record the values and diagnostics; this is a correctne
 12. Save, reopen, and export/import the definition as a `.radixlib`. Expected: lane name, format, pin order, and decoded behavior survive.
 13. Expected non-behavior: lanes never merge nets, add wires, affect drivers, or prevent simulation. A lane referencing a missing or unknown format shows `invalid` with a tooltip and a Diagnostics error instead of throwing. Typing a lane value is not undoable; like other external drives, it belongs to the simulation session, and **Clear inputs** resets it.
 
-## 8. Library export and import
+## 8. Custom numeric formats
+
+1. Open `examples/accumulator-cpu.radix`. Expected: the **CUSTOM NUMERIC FORMATS** list contains `Signed 4-bit` (binary, radix 2, digits 0/1, radix complement), and the **Result** lane uses it instead of an unsigned format.
+2. Begin, drive **Data** with `15` and **Opcode** with `1` (load), then advance the clock. Expected: Result reads `-1` (two's-complement interpretation of `1111`), while Q0..Q3 are all 1. Then drive **Data** with `1`, **Opcode** with `2` (add), and advance. Expected: Result reads `0` and CARRY is 1 (4-bit wrap), with Q0..Q3 all 0.
+3. In a new project, create four binary input pins and a `Custom unsigned` format: domain `Binary`, digits `0 1`, radix `2`, mode **Standard positional**, LSB first. Expected: it appears in the custom-format list and in the lane format picker.
+4. Add a lane over the four input pins using `Custom unsigned`, begin, and drive `9`. Expected: pins encode 1001 and the lane reads `9`.
+5. Attempt to remove `Custom unsigned` while the lane uses it. Expected: refused with the number of dependent lanes; the format remains. Remove the lane, remove the format, then undo. Expected: the format returns in one step; undo again restores the lane.
+6. Enter invalid format data: duplicate digits (`0 0 1`), radix `1`, or a sign index outside the digit list. Expected: a clear status message, no format added, project unchanged.
+7. Save, reopen, and export/import the part as a `.radixlib`. Expected: used custom formats travel with the library. If the target has a different custom format with the same ID, the imported format is renamed and the lane still resolves; the local format is not overwritten.
+8. Expected non-behavior: custom formats are not signal domains. Removing an unused format never changes net values, compilation, or simulation results.
+
+## 9. Library export and import
 
 1. Create the `Double inverter` part from section 5. Click **Export part…**.
 2. Save `double-inverter.radixlib` in a scratch directory.
@@ -131,7 +142,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 7. Attempt to import a library whose domain ID exists locally with different values or driver policy. Expected: import is refused with a domain message and the project is completely unchanged.
 8. Export a definition that instantiates other definitions. Expected: the `.radixlib` contains the dependency closure and imports successfully into a project that does not have those dependencies.
 
-## 9. Domains and project round trip
+## 10. Domains and project round trip
 
 1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, click **Add domain**.
 2. Expected: the domain appears in the list, pin domain picker, and net domain selector.
@@ -139,16 +150,16 @@ If counter values differ, record the values and diagnostics; this is a correctne
 4. Save As in a scratch path. Close and relaunch, then Open. Expected: domain, pin, current root, instance positions, wire colors, numeric lanes, and bendpoints survive.
 5. Expected non-persistence: viewport pan/zoom, selection, active tab, external drive history, waveform history.
 
-## 10. Hierarchy and malformed projects
+## 11. Hierarchy and malformed projects
 
 1. Open `examples/binary-counter.radix`. Expected: root counter loads without a modal error.
 2. Double-click the ripple-carry adder, then a full adder, then a half adder. Expected: nested internals render and the definition header identifies the current simulation root.
 3. Return to the root and verify simulation resets for the new root.
-4. Open a deliberately malformed file (change `"version": 3` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
-5. Save a project and inspect the JSON. Expected: `"version": 3`, with optional net `color`/`route` and definition `numericLanes` fields, and no executable content.
-6. Load a version 1 or version 2 project. Expected: it opens normally, lanes are absent or empty, and the next save writes version 3.
+4. Open a deliberately malformed file (change `"version": 4` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
+5. Save a project and inspect the JSON. Expected: `"version": 4`, with optional net `color`/`route`, definition `numericLanes`, and project `customNumericFormats` fields, and no executable content.
+6. Load a version 1, 2, or 3 project. Expected: it opens normally, missing metadata is empty, and the next save writes version 4.
 
-## 11. Unsaved changes and window behavior
+## 12. Unsaved changes and window behavior
 
 1. Modify a project (move a part). Click **New**, **Open…**, and close the window.
 2. Expected each time: a themed Save/Discard/Cancel dialog.
@@ -160,7 +171,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 5. Zoom/pan, clear selection on empty click, press Escape during a pending wire, and hover pins for tooltips.
 6. `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Ctrl+C/V/D/A`, `Delete`, arrow nudging, and `Ctrl+S/Shift+S` should work without moving the mouse. Shortcuts must not hijack typing in a TextBox.
 
-## 12. Known limitations to verify as *limitations*
+## 13. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -171,7 +182,7 @@ Do not file these as new failures until they change in the README:
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;
-- numeric lanes use built-in formats only and appear only in the inspector; custom digit mappings and canvas annotations are not implemented;
+- numeric lanes and custom formats appear only in the inspector; canvas numeric annotations and in-place format editing are not implemented;
 - undo snapshots whole projects and is capped at 80 entries;
 - the editor does not auto-save or recover crash state.
 

@@ -16,7 +16,30 @@ internal sealed class ProjectDto
 
     public List<DomainDto>? Domains { get; set; }
 
+    public List<NumericFormatDto>? CustomNumericFormats { get; set; }
+
     public List<DefinitionDto>? Definitions { get; set; }
+}
+
+internal sealed class NumericFormatDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Domain { get; set; }
+
+    public List<long>? Digits { get; set; }
+
+    public long? Radix { get; set; }
+
+    public string? Weighting { get; set; }
+
+    public bool LeastSignificantFirst { get; set; } = true;
+
+    public int? NegativeSignValue { get; set; }
+
+    public string? Description { get; set; }
 }
 
 internal sealed class SettingsDto

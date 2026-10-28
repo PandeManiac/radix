@@ -1,5 +1,6 @@
 using Radix.Core.Compilation;
 using Radix.Core.Interpretation;
+using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Simulation;
 using Radix.StdLib;
@@ -125,6 +126,21 @@ public sealed class ExampleTests
         PulseClock(engine);
         Assert.Equal(0, ReadAccumulator(engine));
         Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    [Fact]
+    public void AccumulatorExampleShipsSignedResultLane()
+    {
+        var project = ExampleProjects.CreateAccumulatorCpuDemo();
+        NumericFormatDefinition format = Assert.Single(project.CustomNumericFormats);
+        Assert.Equal("signed-4bit", format.Id);
+
+        NumericLane lane = project.RequireDefinition("demo.accumulator").NumericLanes
+            .Single(candidate => candidate.Id == "result");
+        Assert.Equal(format.Id, lane.FormatId);
+        INumericFormat resolved = NumericFormatCatalog.Find(project, lane.FormatId)!;
+        Assert.Equal(-8, (int)resolved.MinimumValue(4));
+        Assert.Equal(-2, (int)resolved.Decode([0, 1, 1, 1]).Value);
     }
 
     [Fact]

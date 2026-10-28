@@ -98,8 +98,9 @@ internal static class Program
                                              Measure event throughput on a synthetic chain
 
             Numeric formats:
-              unsigned-binary, twos-complement, ones-complement, sign-magnitude,
-              unsigned-ternary, ternary-top-negative, balanced-ternary
+              Built-ins: unsigned-binary, twos-complement, ones-complement,
+              sign-magnitude, unsigned-ternary, ternary-top-negative, balanced-ternary.
+              Projects may also define custom formats, listed by `radix inspect`.
 
             Exit codes: 0 success, 1 validation/simulation failure, 2 usage or I/O error.
 
@@ -224,10 +225,12 @@ internal static class Program
         if (options.ContainsKey("format"))
         {
             string formatId = GetOption(options, "format")!;
-            INumericFormat? format = NumericFormats.All.FirstOrDefault(f => string.Equals(f.Id, formatId, StringComparison.OrdinalIgnoreCase));
+            INumericFormat? format = NumericFormatCatalog.All(project).FirstOrDefault(f =>
+                string.Equals(f.Id, formatId, StringComparison.OrdinalIgnoreCase));
             if (format is null)
             {
-                Console.Error.WriteLine($"unknown numeric format '{formatId}'. Known: {string.Join(", ", NumericFormats.All.Select(f => f.Id))}");
+                Console.Error.WriteLine(
+                    $"unknown numeric format '{formatId}'. Known: {string.Join(", ", NumericFormatCatalog.All(project).Select(f => f.Id))}");
                 return 2;
             }
 
@@ -433,6 +436,18 @@ internal static class Program
         foreach (SignalDomain domain in project.Domains)
         {
             Console.WriteLine($"  {domain.Id} — {domain.Name}: [{string.Join(", ", domain.ValueNames)}], drivers={domain.Drivers.Kind}");
+        }
+
+        if (project.CustomNumericFormats.Count > 0)
+        {
+            Console.WriteLine("Custom numeric formats:");
+            foreach (NumericFormatDefinition format in project.CustomNumericFormats)
+            {
+                Console.WriteLine(
+                    $"  {format.Id} — {format.Name}: domain={format.DomainId}, radix={format.Radix}, " +
+                    $"digits=[{string.Join(", ", format.DigitValues)}], weighting={format.Weighting}, " +
+                    $"sign={(format.NegativeSignValue is int sign ? sign.ToString(CultureInfo.InvariantCulture) : "none")}");
+            }
         }
 
         Console.WriteLine("Definitions:");

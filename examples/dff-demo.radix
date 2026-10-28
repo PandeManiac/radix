@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 3,
+  "version": 4,
   "name": "D flip-flop demo",
   "root": "demo.dff",
   "settings": {

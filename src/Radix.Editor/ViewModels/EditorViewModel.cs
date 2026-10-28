@@ -63,6 +63,13 @@ public sealed class EditorViewModel : ObservableObject
     private string _promoteNetName = string.Empty;
     private string _newLaneName = string.Empty;
     private NumericDisplayOption? _selectedLaneFormat;
+    private string _newFormatName = string.Empty;
+    private string _newFormatDigits = "0 1 2";
+    private string _newFormatRadix = "3";
+    private DomainChoice? _newFormatDomain;
+    private NumericFormatModeChoice? _selectedFormatMode;
+    private bool _newFormatLeastSignificantFirst = true;
+    private string _newFormatNegativeSign = "1";
 
 
     public EditorViewModel(CircuitProject project)
@@ -73,6 +80,8 @@ public sealed class EditorViewModel : ObservableObject
         _definitionId = _project.RootDefinitionId;
         Simulator = new SimulatorHost(_project, Definition);
         _advanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
+        RefreshFormatChoices();
+        _selectedFormatMode = FormatModes[0];
         _selectedLaneFormat = FormatChoices.FirstOrDefault(option => option.Format.Id == NumericFormats.UnsignedBinary.Id) ??
             FormatChoices.FirstOrDefault();
 
@@ -116,6 +125,7 @@ public sealed class EditorViewModel : ObservableObject
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
         CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
         AddNumericLaneCommand = new RelayCommand(AddNumericLane);
+        AddNumericFormatCommand = new RelayCommand(AddCustomNumericFormat);
 
         RefreshAll(fit: false);
     }
@@ -153,8 +163,17 @@ public sealed class EditorViewModel : ObservableObject
 
     public ObservableCollection<LanePinChoice> LanePinChoices { get; } = [];
 
-    public ObservableCollection<NumericDisplayOption> FormatChoices { get; } =
-        [.. NumericFormats.All.Select(format => new NumericDisplayOption(format))];
+    public ObservableCollection<NumericDisplayOption> FormatChoices { get; } = [];
+
+    public ObservableCollection<CustomNumericFormatListItem> CustomNumericFormats { get; } = [];
+
+    public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
+    [
+        new("standard", "Standard positional"),
+        new("radix-complement", "Radix complement (top digit negative)"),
+        new("diminished-radix-complement", "Diminished complement"),
+        new("sign-magnitude", "Sign-magnitude"),
+    ];
 
     public ObservableCollection<DiagnosticItem> Diagnostics { get; } = [];
 
@@ -384,6 +403,52 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public ICommand AddNumericLaneCommand { get; }
+
+    public ICommand AddNumericFormatCommand { get; }
+
+    public bool HasCustomNumericFormats => CustomNumericFormats.Count > 0;
+
+    public string NewFormatName
+    {
+        get => _newFormatName;
+        set => SetField(ref _newFormatName, value);
+    }
+
+    public string NewFormatDigits
+    {
+        get => _newFormatDigits;
+        set => SetField(ref _newFormatDigits, value);
+    }
+
+    public string NewFormatRadix
+    {
+        get => _newFormatRadix;
+        set => SetField(ref _newFormatRadix, value);
+    }
+
+    public DomainChoice? NewFormatDomain
+    {
+        get => _newFormatDomain;
+        set => SetField(ref _newFormatDomain, value);
+    }
+
+    public NumericFormatModeChoice? SelectedFormatMode
+    {
+        get => _selectedFormatMode;
+        set => SetField(ref _selectedFormatMode, value);
+    }
+
+    public bool NewFormatLeastSignificantFirst
+    {
+        get => _newFormatLeastSignificantFirst;
+        set => SetField(ref _newFormatLeastSignificantFirst, value);
+    }
+
+    public string NewFormatNegativeSign
+    {
+        get => _newFormatNegativeSign;
+        set => SetField(ref _newFormatNegativeSign, value);
+    }
 
     public string NewComponentName
     {
@@ -1031,6 +1096,127 @@ public sealed class EditorViewModel : ObservableObject
         DefinitionEditor.SetPinDirection(Definition, pinId, direction);
         AfterMutation(structural: true);
         StatusText = $"Pin '{pin.Name}' is now {(direction == PinDirection.Input ? "an input" : "an output")}";
+    }
+
+    public void AddCustomNumericFormat()
+    {
+        if (NewFormatDomain is null)
+        {
+            StatusText = "Choose a signal domain for the numeric format.";
+            return;
+        }
+
+        string name = NewFormatName.Trim();
+        if (name.Length == 0)
+        {
+            StatusText = "Give the numeric format a name.";
+            return;
+        }
+
+        string[] digitTexts = NewFormatDigits.Split(
+            [' ', ',', ';', '\t'],
+            StringSplitOptions.RemoveEmptyEntries);
+        var digits = new List<long>();
+        foreach (string digitText in digitTexts)
+        {
+            if (!long.TryParse(digitText, NumberStyles.Integer, CultureInfo.InvariantCulture, out long digit))
+            {
+                StatusText = $"Digit value '{digitText}' is not a whole number.";
+                return;
+            }
+
+            digits.Add(digit);
+        }
+
+        if (digits.Count == 0)
+        {
+            StatusText = "A numeric format needs at least one digit value.";
+            return;
+        }
+
+        if (digits.Distinct().Count() != digits.Count)
+        {
+            StatusText = "Numeric format digit values must be distinct.";
+            return;
+        }
+
+        if (!long.TryParse(NewFormatRadix.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long radix) ||
+            radix < 2)
+        {
+            StatusText = "Radix must be a whole number of at least 2.";
+            return;
+        }
+
+        string mode = SelectedFormatMode?.Id ?? "standard";
+        WeightingMode weighting = mode switch
+        {
+            "radix-complement" => WeightingMode.RadixComplement,
+            "diminished-radix-complement" => WeightingMode.DiminishedRadixComplement,
+            _ => WeightingMode.Standard,
+        };
+        int? negativeSign = null;
+        if (mode == "sign-magnitude")
+        {
+            if (!int.TryParse(NewFormatNegativeSign.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int sign) ||
+                sign < 0 ||
+                sign >= digits.Count)
+            {
+                StatusText = "Sign-magnitude needs a negative sign index inside the digit list.";
+                return;
+            }
+
+            negativeSign = sign;
+        }
+
+        string stem = Slug(name);
+        string id = DefinitionEditor.UniqueId(stem, candidate =>
+            NumericFormatCatalog.IsBuiltInId(candidate) || _project.FindCustomNumericFormat(candidate) is not null);
+
+        NumericFormatDefinition format;
+        try
+        {
+            format = new NumericFormatDefinition(
+                id,
+                name,
+                NewFormatDomain.Id,
+                digits,
+                radix,
+                weighting,
+                NewFormatLeastSignificantFirst,
+                negativeSign);
+        }
+        catch (ArgumentException exception)
+        {
+            StatusText = "Invalid numeric format: " + exception.Message;
+            return;
+        }
+
+        PushUndo();
+        _project.CustomNumericFormats.Add(format);
+        NewFormatName = string.Empty;
+        AfterMutation(structural: true);
+        StatusText = $"Added numeric format '{format.Name}' ({format.Id})";
+    }
+
+    public void RemoveCustomNumericFormat(string formatId)
+    {
+        if (_project.FindCustomNumericFormat(formatId) is not NumericFormatDefinition format)
+        {
+            return;
+        }
+
+        int uses = _project.Definitions.Sum(definition =>
+            definition.NumericLanes.Count(lane => string.Equals(lane.FormatId, formatId, StringComparison.Ordinal)));
+        if (uses > 0)
+        {
+            StatusText = $"Format '{format.Name}' is used by {uses} numeric lane(s); remove those lanes first.";
+            return;
+        }
+
+        PushUndo();
+        _project.CustomNumericFormats.Remove(format);
+        AfterMutation(structural: true);
+        StatusText = $"Removed numeric format '{format.Name}'";
     }
 
     public void AddNumericLane()
@@ -1848,6 +2034,8 @@ public sealed class EditorViewModel : ObservableObject
         RefreshDefinitions();
         RefreshPalette();
         RefreshDomains();
+        RefreshCustomNumericFormats();
+        RefreshFormatChoices();
         RefreshPins();
         RefreshIoPins();
         RefreshNumericLanes();
@@ -1928,6 +2116,7 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         NewPinDomain = Domains.FirstOrDefault(d => d.Id == NewPinDomain?.Id) ?? Domains.FirstOrDefault();
+        NewFormatDomain = Domains.FirstOrDefault(d => d.Id == NewFormatDomain?.Id) ?? Domains.FirstOrDefault();
         if (_selectedNet is not null)
         {
             _refreshingDomainSelection = true;
@@ -1988,14 +2177,54 @@ public sealed class EditorViewModel : ObservableObject
         RefreshNumericLaneValues();
     }
 
+    private void RefreshFormatChoices()
+    {
+        string? selectedId = _selectedLaneFormat?.Format.Id;
+        FormatChoices.Clear();
+        foreach (INumericFormat format in NumericFormatCatalog.All(_project))
+        {
+            FormatChoices.Add(new NumericDisplayOption(format));
+        }
+
+        SelectedLaneFormat = FormatChoices.FirstOrDefault(option =>
+            string.Equals(option.Format.Id, selectedId, StringComparison.Ordinal)) ??
+            FormatChoices.FirstOrDefault(option => option.Format.Id == NumericFormats.UnsignedBinary.Id) ??
+            FormatChoices.FirstOrDefault();
+    }
+
+    private void RefreshCustomNumericFormats()
+    {
+        CustomNumericFormats.Clear();
+        foreach (NumericFormatDefinition format in _project.CustomNumericFormats)
+        {
+            string formatId = format.Id;
+            string weighting = format.IsSignMagnitude
+                ? $"sign-magnitude, negative={format.NegativeSignValue}"
+                : format.Weighting switch
+                {
+                    WeightingMode.RadixComplement => "radix complement",
+                    WeightingMode.DiminishedRadixComplement => "diminished complement",
+                    _ => "standard",
+                };
+            string summary = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{format.DomainId} · radix {format.Radix} · digits [{string.Join(",", format.DigitValues)}] · {weighting}");
+            CustomNumericFormats.Add(new CustomNumericFormatListItem(
+                format,
+                summary,
+                new RelayCommand(() => RemoveCustomNumericFormat(formatId))));
+        }
+
+        RaisePropertyChanged(nameof(HasCustomNumericFormats));
+    }
+
     private void RefreshNumericLanes()
     {
         NumericLanes.Clear();
         foreach (NumericLane lane in Definition.NumericLanes)
         {
             string laneId = lane.Id;
-            INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
-                string.Equals(candidate.Id, lane.FormatId, StringComparison.Ordinal));
+            INumericFormat? format = NumericFormatCatalog.Find(_project, lane.FormatId);
             string pins = string.Join(
                 " · ",
                 lane.PinIds.Select(pinId => Definition.FindPin(pinId)?.Name ?? $"{pinId} (missing)"));
@@ -2041,8 +2270,7 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
-        INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
-            string.Equals(candidate.Id, lane.FormatId, StringComparison.Ordinal));
+        INumericFormat? format = NumericFormatCatalog.Find(_project, lane.FormatId);
         if (format is null)
         {
             StatusText = $"Lane '{lane.Name}' uses unknown format '{lane.FormatId}'.";
@@ -2131,8 +2359,7 @@ public sealed class EditorViewModel : ObservableObject
             return ("—", "Start or advance the simulation to decode this lane.");
         }
 
-        INumericFormat? format = NumericFormats.All.FirstOrDefault(candidate =>
-            string.Equals(candidate.Id, formatId, StringComparison.Ordinal));
+        INumericFormat? format = NumericFormatCatalog.Find(_project, formatId);
         if (format is null)
         {
             return ("invalid", $"Unknown numeric format '{formatId}'.");
@@ -2489,6 +2716,8 @@ public sealed class EditorViewModel : ObservableObject
             RefreshDefinitions();
             RefreshPalette();
             RefreshDomains();
+            RefreshCustomNumericFormats();
+            RefreshFormatChoices();
             RefreshPins();
             RefreshIoPins();
             RefreshNumericLanes();

@@ -259,10 +259,82 @@ public sealed class SerializationTests
         Assert.Equal(["q0", "q1", "q2", "q3"], reloaded.PinIds);
 
         JsonObject old = Json(TestCircuits.ValidProject());
-        old["version"] = 2;
+        old["version"] = 3;
         CircuitProject oldLoaded = ProjectSerializer.LoadFromString(old.ToJsonString());
         Assert.Empty(oldLoaded.Definitions[0].NumericLanes);
+        Assert.Empty(oldLoaded.CustomNumericFormats);
         Assert.Equal(ProjectSerializer.CurrentVersion, (int?)Json(oldLoaded)["version"]);
+    }
+
+    [Fact]
+    public void CustomNumericFormatsRoundTripAndResolveForLanes()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        project.Domains.Add(new SignalDomain(
+            "quinary",
+            "Quinary",
+            ["0", "1", "2", "3", "4"],
+            new SingleDriverResolution()));
+        project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "quinary-weighted",
+            "Quinary weighted",
+            "quinary",
+            [0, 1, 2, 3, 4],
+            5,
+            description: "Custom test format."));
+        project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "custom-twos",
+            "Custom two's complement",
+            StandardDomains.BinaryId,
+            [0, 1],
+            2,
+            WeightingMode.RadixComplement));
+        project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "custom-sign",
+            "Custom sign-magnitude",
+            StandardDomains.BinaryId,
+            [0, 1],
+            2,
+            negativeSignValue: 1));
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project));
+
+        Assert.Equal(3, loaded.CustomNumericFormats.Count);
+        NumericFormatDefinition quinary = loaded.CustomNumericFormats.Single(format => format.Id == "quinary-weighted");
+        Assert.Equal([0L, 1L, 2L, 3L, 4L], quinary.DigitValues);
+        Assert.Equal(5, quinary.Radix);
+        Assert.Equal("Custom test format.", quinary.Description);
+        INumericFormat resolved = Assert.IsType<PositionalFormat>(NumericFormatCatalog.Find(loaded, "custom-twos"));
+        Assert.Equal(WeightingMode.RadixComplement, ((PositionalFormat)resolved).Weighting);
+        Assert.Equal(-8, (int)resolved.MinimumValue(4));
+
+        NumericFormatDefinition sign = loaded.CustomNumericFormats.Single(format => format.Id == "custom-sign");
+        Assert.Equal(1, sign.NegativeSignValue);
+        Assert.IsType<SignMagnitudeFormat>(sign.ToFormat());
+        Assert.Equal(-7, (int)sign.ToFormat().MinimumValue(4));
+    }
+
+    [Fact]
+    public void CustomNumericFormatValidationRejectsReservedAndMissingDomainIds()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "unsigned-binary",
+            "Shadow",
+            StandardDomains.BinaryId,
+            [0, 1],
+            2));
+        project.CustomNumericFormats.Add(new NumericFormatDefinition(
+            "missing-domain",
+            "Missing domain",
+            "not-a-domain",
+            [0, 1],
+            2));
+
+        DiagnosticBag report = CircuitValidator.Validate(project);
+
+        Assert.Contains(report, diagnostic => diagnostic.Code == "RAD103");
+        Assert.Contains(report, diagnostic => diagnostic.Code == "RAD105");
     }
 
     [Fact]

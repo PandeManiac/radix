@@ -1,5 +1,6 @@
 using System.Globalization;
 using Radix.Core;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
@@ -55,8 +56,19 @@ public static class ComponentLibraryService
 
         clone.Definitions.RemoveAll(candidate => !closure.Contains(candidate.Id));
 
-        // Only ship domains the exported closure actually references. An unrelated
-        // custom domain in the source project must not block an otherwise valid import.
+        // Only ship formats and domains the exported closure actually references. An
+        // unrelated custom format in the source project must not block import.
+        var usedFormats = new HashSet<string>(StringComparer.Ordinal);
+        foreach (CircuitDefinition part in clone.Definitions)
+        {
+            foreach (NumericLane lane in part.NumericLanes)
+            {
+                usedFormats.Add(lane.FormatId);
+            }
+        }
+
+        clone.CustomNumericFormats.RemoveAll(format => !usedFormats.Contains(format.Id));
+
         var usedDomains = new HashSet<string>(StringComparer.Ordinal);
         foreach (CircuitDefinition part in clone.Definitions)
         {
@@ -69,6 +81,11 @@ public static class ComponentLibraryService
             {
                 usedDomains.Add(net.DomainId);
             }
+        }
+
+        foreach (NumericFormatDefinition format in clone.CustomNumericFormats)
+        {
+            usedDomains.Add(format.DomainId);
         }
 
         if (usedDomains.Count > 0)
@@ -159,8 +176,51 @@ public static class ComponentLibraryService
             return LibraryImportResult.Fail("Library root could not be mapped into this project.");
         }
 
+        // Custom formats are project assets referenced by lane IDs. Reuse equivalent
+        // formats, rename conflicting ones, and rewrite lane references in the clones.
+        var usedFormatIds = pending
+            .SelectMany(definition => definition.NumericLanes)
+            .Select(lane => lane.FormatId)
+            .ToHashSet(StringComparer.Ordinal);
+        var formatMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pendingFormats = new List<(NumericFormatDefinition Source, string Id)>();
+        foreach (string formatId in usedFormatIds)
+        {
+            NumericFormatDefinition? sourceFormat = library.FindCustomNumericFormat(formatId);
+            if (sourceFormat is null)
+            {
+                if (!NumericFormatCatalog.IsBuiltInId(formatId))
+                {
+                    return LibraryImportResult.Fail($"Library refers to missing numeric format '{formatId}'.");
+                }
+
+                continue;
+            }
+
+            NumericFormatDefinition? existing = target.FindCustomNumericFormat(formatId);
+            if (existing is not null && NumericFormatCatalog.IsEquivalent(existing, sourceFormat))
+            {
+                formatMap[formatId] = existing.Id;
+                continue;
+            }
+
+            string mappedId = formatId;
+            if (existing is not null || NumericFormatCatalog.IsBuiltInId(formatId))
+            {
+                mappedId = DefinitionEditor.UniqueId(formatId, candidate =>
+                    target.FindCustomNumericFormat(candidate) is not null ||
+                    NumericFormatCatalog.IsBuiltInId(candidate) ||
+                    usedFormatIds.Contains(candidate) ||
+                    formatMap.ContainsValue(candidate));
+            }
+
+            formatMap[formatId] = mappedId;
+            pendingFormats.Add((sourceFormat, mappedId));
+        }
+
         var beforeErrors = ErrorSignatures(target);
         var addedDomains = new List<SignalDomain>();
+        var addedFormats = new List<NumericFormatDefinition>();
         var addedDefinitions = new List<CircuitDefinition>();
         try
         {
@@ -173,6 +233,22 @@ public static class ComponentLibraryService
                 }
             }
 
+            foreach ((NumericFormatDefinition source, string mappedId) in pendingFormats)
+            {
+                var clone = new NumericFormatDefinition(
+                    mappedId,
+                    source.Name,
+                    source.DomainId,
+                    source.DigitValues,
+                    source.Radix,
+                    source.Weighting,
+                    source.LeastSignificantFirst,
+                    source.NegativeSignValue,
+                    source.Description);
+                target.CustomNumericFormats.Add(clone);
+                addedFormats.Add(clone);
+            }
+
             foreach (CircuitDefinition definition in pending)
             {
                 CircuitDefinition clone = CloneDefinition(definition);
@@ -182,6 +258,14 @@ public static class ComponentLibraryService
                     if (instance.DefinitionId is string reference && idMap.TryGetValue(reference, out string? mapped))
                     {
                         instance.DefinitionId = mapped;
+                    }
+                }
+
+                foreach (NumericLane lane in clone.NumericLanes)
+                {
+                    if (formatMap.TryGetValue(lane.FormatId, out string? mappedFormat))
+                    {
+                        lane.FormatId = mappedFormat;
                     }
                 }
 
@@ -197,31 +281,38 @@ public static class ComponentLibraryService
                 .ToArray();
             if (newErrors.Length > 0)
             {
-                Rollback(target, addedDomains, addedDefinitions);
+                Rollback(target, addedDomains, addedFormats, addedDefinitions);
                 return LibraryImportResult.Fail(
                     "Import would introduce validation errors: " + string.Join("; ", newErrors.Take(4)));
             }
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
-            Rollback(target, addedDomains, addedDefinitions);
+            Rollback(target, addedDomains, addedFormats, addedDefinitions);
             return LibraryImportResult.Fail("Import failed: " + exception.Message);
         }
 
         string message = string.Create(
             CultureInfo.InvariantCulture,
-            $"Imported {addedDefinitions.Count} definitions and {addedDomains.Count} domains from '{library.Name}'");
+            $"Imported {addedDefinitions.Count} definitions, {addedFormats.Count} formats, and " +
+            $"{addedDomains.Count} domains from '{library.Name}'");
         return new LibraryImportResult(true, message, rootId);
     }
 
     private static void Rollback(
         CircuitProject target,
         IReadOnlyList<SignalDomain> domains,
+        IReadOnlyList<NumericFormatDefinition> formats,
         IReadOnlyList<CircuitDefinition> definitions)
     {
         foreach (CircuitDefinition definition in definitions)
         {
             target.Definitions.Remove(definition);
+        }
+
+        foreach (NumericFormatDefinition format in formats)
+        {
+            target.CustomNumericFormats.Remove(format);
         }
 
         foreach (SignalDomain domain in domains)

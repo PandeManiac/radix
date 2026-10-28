@@ -32,7 +32,7 @@ Consequences:
 | Compiler | `src/Radix.Core/Compilation` | Hierarchy expansion, net merging, flat immutable arrays |
 | Engine | `src/Radix.Core/Simulation` | Deterministic event queue, primitive runtimes, traces, diagnostics |
 | Project format | `src/Radix.Core/Serialization` | Versioned JSON, strict mapping, secure loading |
-| Interpretation | `src/Radix.Core/Interpretation` | Display-only positional and sign-magnitude decoding; numeric lane formats |
+| Interpretation | `src/Radix.Core/Interpretation` | Display-only positional and sign-magnitude formats; project format catalog |
 | Standard library | `src/Radix.StdLib` | Reusable project definitions and examples |
 | CLI | `src/Radix.Cli` | Headless validation, simulation, reports, benchmarks |
 | Editor | `src/Radix.Editor` | Mutable project state, layout, rendering, gesture handling |
@@ -318,7 +318,7 @@ XAML uses `DynamicResource` for those keys. Custom-drawn `CircuitCanvas` and `Wa
 - promotion binds an existing unbound net to a new pin and leaves the net's identity and internal connectivity untouched;
 - removing a pin prunes every parent net reference that addressed that pin through an instance of the edited definition. Empty unbound nets are removed, bound nets stay so a broken parent interface remains visible, and the whole edit is one undo snapshot.
 
-Numeric lanes are definition presentation, not hierarchy structure. They are cloned by library export, validated on load, and ignored when two definitions are compared for reuse.
+Numeric lanes are definition presentation, not hierarchy structure. They are cloned by library export, validated on load, and ignored when two definitions are compared for reuse. Custom numeric formats are project assets; export keeps only those referenced by the exported closure, and import renames collisions while remapping lanes.
 
 `ComponentLibraryService` exports a definition's transitive dependency closure using the ordinary project serializer, so exported libraries are validated by the same strict loader. Import merges domains only when their values and driver policy match. Definitions are compared structurally (pins, ports, instance primitives, net membership/initial values) while ignoring labels, coordinates, colors, and routes; equivalent definitions are reused, conflicting IDs are renamed, and newly introduced validation errors roll the whole merge back.
 
@@ -391,6 +391,8 @@ This is an architectural boundary in the project format and UI, not a promise th
 There is no first-class bus. Users can create a definition with N pins and use lookup tables; the compiler intentionally does not impose width or encoding. Numeric interpretation (`PositionalFormat`, `SignMagnitudeFormat`) operates on an ordered span of value indices for display/reporting only. Complement conventions are documented on the format classes and in tests; they never affect net values.
 
 A `NumericLane` persists a named, ordered list of **interface pin IDs** plus a format ID. The first pin is least significant by contract. Lanes exist to make an interface readable and to let a reusable part carry its numeric presentation; they are deliberately not compiler input. The compiler flattens circuits exactly as if every lane were absent, and deleting a lane cannot change simulation. Lanes are validated (known format, known/unique pins) and pruned when a pin is removed. This avoids two common design errors: turning a group of pins into a hidden vector whose width and encoding the kernel must understand, and storing numeric state separately from the nets it describes.
+
+`NumericFormatDefinition` makes the format set project-owned. A format is a descriptor for digit values, radix, weighting, orientation, and optional sign index; `NumericFormatCatalog` resolves built-in IDs first and project custom IDs second. Validation rejects reserved or duplicate IDs, unknown nominal domains, and invalid digit/sign combinations. Library export includes formats used by exported lanes, and import renames conflicting format IDs while rewriting the affected lanes. None of this is visible to the compiler: a project with no lanes or formats compiles to exactly the same circuit as one with many.
 
 Encoding follows the same boundary. An `INumericFormat` can encode a value into signal indices; for a lane whose pins are all inputs, the editor encodes, checks every pin's domain, and then applies one batch of ordinary external drives. The batch is validated before mutation so a failed lane drive cannot leave a partially applied value. No vector signal, bus driver, or numeric net state reaches the compiler or engine.
 
