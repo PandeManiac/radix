@@ -1273,6 +1273,46 @@ public sealed class EditorViewModel : ObservableObject
             return true;
         }
 
+        if (result.PinId is string pinId)
+        {
+            PinDeclaration? pin = Definition.FindPin(pinId);
+            if (pin is null)
+            {
+                StatusText = $"Search target pin '{pinId}' no longer exists.";
+                return false;
+            }
+
+            StatusText = pin.Direction == PinDirection.Input
+                ? $"Found interface pin '{pin.Name}' (input)"
+                : $"Found interface pin '{pin.Name}' (output)";
+            if (Definition.FindPortNet(pinId) is Net portNet)
+            {
+                SelectNet(portNet.Id);
+                FocusBounds(BoundsOfNet(portNet.Id));
+            }
+
+            return true;
+        }
+
+        if (result.LaneId is string laneId)
+        {
+            NumericLane? lane = Definition.FindNumericLane(laneId);
+            if (lane is null)
+            {
+                StatusText = $"Search target numeric lane '{laneId}' no longer exists.";
+                return false;
+            }
+
+            IEnumerable<string> boundNets = lane.PinIds
+                .Select(id => Definition.FindPortNet(id)?.Id)
+                .OfType<string>();
+            FocusBounds(BoundsOfNets(boundNets));
+            StatusText = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Found numeric lane '{lane.Name}' ({lane.PinIds.Count} pins) in {Definition.Name}");
+            return true;
+        }
+
         StatusText = "Search target has no circuit location.";
         return false;
     }
@@ -1394,6 +1434,22 @@ public sealed class EditorViewModel : ObservableObject
         double maxX = wire.Points.Max(point => point.X);
         double maxY = wire.Points.Max(point => point.Y);
         return new Rect(minX, minY, maxX - minX, maxY - minY);
+    }
+
+    private Rect? BoundsOfNets(IEnumerable<string> netIds)
+    {
+        Rect? bounds = null;
+        foreach (string netId in netIds)
+        {
+            if (BoundsOfNet(netId) is not Rect rect)
+            {
+                continue;
+            }
+
+            bounds = bounds is Rect current ? current.Union(rect) : rect;
+        }
+
+        return bounds;
     }
 
     private ComponentInstance? FindSelectedInstance()

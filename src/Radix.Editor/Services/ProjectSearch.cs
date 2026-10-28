@@ -1,4 +1,6 @@
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
+using Radix.Core.Signals;
 
 namespace Radix.Editor.Services;
 
@@ -8,12 +10,14 @@ public enum ProjectSearchKind
     Definition,
     Instance,
     Net,
+    InterfacePin,
+    NumericLane,
 }
 
 /// <summary>
 /// One navigation target found by <see cref="ProjectSearch"/>. Definition IDs and,
-/// when present, instance and net IDs are stable authored identities, so a row can
-/// be activated later without guessing from its display text.
+/// when present, instance, net, pin, and lane IDs are stable authored identities, so
+/// a row can be activated later without guessing from its display text.
 /// </summary>
 public sealed record ProjectSearchResult(
     ProjectSearchKind Kind,
@@ -22,13 +26,17 @@ public sealed record ProjectSearchResult(
     string? NetId,
     string Title,
     string Detail,
-    string Context)
+    string Context,
+    string? PinId = null,
+    string? LaneId = null)
 {
     public string KindLabel => Kind switch
     {
         ProjectSearchKind.Definition => "DEF",
         ProjectSearchKind.Instance => "PART",
-        _ => "NET",
+        ProjectSearchKind.Net => "NET",
+        ProjectSearchKind.InterfacePin => "PIN",
+        _ => "LANE",
     };
 }
 
@@ -52,11 +60,12 @@ public sealed class ProjectSearchResults
 }
 
 /// <summary>
-/// Read-only, deterministic search across every definition in a project. The active
-/// definition is used only to rank its own instances and nets ahead of equally good
-/// matches elsewhere; it never narrows the search. No project or simulation state is
-/// mutated, and results are ordered by match quality, target kind, context, and then
-/// authored order so repeated searches and tests see the same rows.
+/// Read-only, deterministic search across every definition, instance, net, interface
+/// pin, and numeric lane in a project. The active definition is used only to rank its
+/// own targets ahead of equally good matches elsewhere; it never narrows the search.
+/// An empty query lists definitions only. No project or simulation state is mutated,
+/// and results are ordered by match quality, target kind, context, and then authored
+/// order so repeated searches and tests see the same rows.
 /// </summary>
 public static class ProjectSearch
 {
@@ -78,11 +87,16 @@ public static class ProjectSearch
         string[] terms = text
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+        bool definitionsOnly = text.Length == 0;
         var candidates = new List<Candidate>();
         int order = 0;
         foreach (CircuitDefinition definition in project.Definitions)
         {
             AddDefinition(project, definition, activeDefinitionId, text, terms, order++, candidates);
+            if (definitionsOnly)
+            {
+                continue;
+            }
 
             foreach (ComponentInstance instance in definition.Instances)
             {
@@ -93,6 +107,16 @@ public static class ProjectSearch
             {
                 AddNet(project, definition, net, activeDefinitionId, text, terms, order++, candidates);
             }
+
+            foreach (PinDeclaration pin in definition.Pins)
+            {
+                AddPin(project, definition, pin, activeDefinitionId, text, terms, order++, candidates);
+            }
+
+            foreach (NumericLane lane in definition.NumericLanes)
+            {
+                AddLane(project, definition, lane, activeDefinitionId, text, terms, order++, candidates);
+            }
         }
 
         IReadOnlyList<ProjectSearchResult> items = candidates
@@ -101,7 +125,9 @@ public static class ProjectSearch
             {
                 ProjectSearchKind.Definition => 0,
                 ProjectSearchKind.Instance => 1,
-                _ => 2,
+                ProjectSearchKind.Net => 2,
+                ProjectSearchKind.InterfacePin => 3,
+                _ => 4,
             })
             .ThenBy(candidate => candidate.ContextOrder)
             .ThenBy(candidate => candidate.Order)
@@ -240,6 +266,109 @@ public static class ProjectSearch
         candidates.Add(new Candidate(
             result,
             Score(title, net.Id, query, terms),
+            string.Equals(parent.Id, activeDefinitionId, StringComparison.Ordinal) ? 0 : 1,
+            order));
+    }
+
+    private static void AddPin(
+        CircuitProject project,
+        CircuitDefinition parent,
+        PinDeclaration pin,
+        string? activeDefinitionId,
+        string query,
+        string[] terms,
+        int order,
+        List<Candidate> candidates)
+    {
+        SignalDomainInfo domain = DomainInfo(project, pin.DomainId);
+        Net? boundNet = parent.FindPortNet(pin.Id);
+        string direction = pin.Direction == PinDirection.Input ? "input" : "output";
+        string haystack = Join(
+            pin.Id,
+            pin.Name,
+            "interface pin",
+            "port",
+            direction,
+            domain.Id,
+            domain.Name,
+            boundNet?.Id,
+            boundNet?.Label,
+            parent.Name,
+            parent.Id);
+        if (!Matches(haystack, terms))
+        {
+            return;
+        }
+
+        string title = string.IsNullOrWhiteSpace(pin.Name) ? pin.Id : pin.Name;
+        string binding = boundNet is null ? "unbound" : $"net {boundNet.Id}";
+        string detail = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"interface pin · {direction} · {domain.Name} · {binding}");
+        var result = new ProjectSearchResult(
+            ProjectSearchKind.InterfacePin,
+            parent.Id,
+            null,
+            null,
+            title,
+            detail,
+            $"in {parent.Name}",
+            PinId: pin.Id);
+        candidates.Add(new Candidate(
+            result,
+            Score(title, pin.Id, query, terms),
+            string.Equals(parent.Id, activeDefinitionId, StringComparison.Ordinal) ? 0 : 1,
+            order));
+    }
+
+    private static void AddLane(
+        CircuitProject project,
+        CircuitDefinition parent,
+        NumericLane lane,
+        string? activeDefinitionId,
+        string query,
+        string[] terms,
+        int order,
+        List<Candidate> candidates)
+    {
+        INumericFormat? format = NumericFormatCatalog.Find(project, lane.FormatId);
+        string formatName = format?.Name ?? lane.FormatId;
+        string pinText = string.Join(' ', lane.PinIds.SelectMany(pinId =>
+        {
+            PinDeclaration? pin = parent.FindPin(pinId);
+            return pin is null ? new[] { pinId } : new[] { pinId, pin.Name };
+        }));
+        string haystack = Join(
+            lane.Id,
+            lane.Name,
+            "numeric lane",
+            lane.FormatId,
+            formatName,
+            format?.Description,
+            pinText,
+            parent.Name,
+            parent.Id);
+        if (!Matches(haystack, terms))
+        {
+            return;
+        }
+
+        string title = string.IsNullOrWhiteSpace(lane.Name) ? lane.Id : lane.Name;
+        string detail = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"numeric lane · {formatName} · {lane.PinIds.Count} pins{(string.IsNullOrWhiteSpace(lane.Name) ? string.Empty : $" · {lane.Id}")}");
+        var result = new ProjectSearchResult(
+            ProjectSearchKind.NumericLane,
+            parent.Id,
+            null,
+            null,
+            title,
+            detail,
+            $"in {parent.Name}",
+            LaneId: lane.Id);
+        candidates.Add(new Candidate(
+            result,
+            Score(title, lane.Id, query, terms),
             string.Equals(parent.Id, activeDefinitionId, StringComparison.Ordinal) ? 0 : 1,
             order));
     }

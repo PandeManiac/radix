@@ -14,7 +14,10 @@ public sealed class ProjectSearchTests
     public void EmptyQueryListsEveryDefinitionWithoutInstancesOrNets()
     {
         var builder = new ProjectBuilder("search");
-        builder.Define("alpha", "Alpha");
+        DefinitionBuilder alpha = builder.Define("alpha", "Alpha");
+        alpha.AddPin("clk", "Clock", PinDirection.Input, StandardDomains.BinaryId);
+        alpha.Rename(alpha.AddNet("scratch", StandardDomains.BinaryId), "Scratch");
+        alpha.AddNumericLane("clock-lane", "Clock lane", "unsigned-binary", "clk");
         builder.Define("beta", "Beta");
         CircuitProject project = builder.Build("alpha");
 
@@ -111,19 +114,64 @@ public sealed class ProjectSearchTests
     }
 
     [Fact]
-    public void EqualScoresPreferDefinitionsThenInstancesThenNets()
+    public void EqualScoresPreferDefinitionsInstancesNetsPinsThenLanes()
     {
         var builder = new ProjectBuilder("kinds");
         DefinitionBuilder definition = builder.Define("carry", "Carry");
         definition.AddPrimitive("part", new ConstantSpec(0), label: "Carry");
         definition.Rename(definition.AddNet("net", StandardDomains.BinaryId), "Carry");
+        definition.Definition.Pins.Add(new PinDeclaration
+        {
+            Id = "carry_pin",
+            Name = "Carry",
+            Direction = PinDirection.Input,
+            DomainId = StandardDomains.BinaryId,
+        });
+        definition.AddNumericLane("carry_lane", "Carry", "unsigned-binary", "carry_pin");
         CircuitProject project = builder.Build("carry");
 
         ProjectSearchResults results = ProjectSearch.Search(project, "carry", "carry");
 
         Assert.Equal(
-            [ProjectSearchKind.Definition, ProjectSearchKind.Instance, ProjectSearchKind.Net],
+            [
+                ProjectSearchKind.Definition,
+                ProjectSearchKind.Instance,
+                ProjectSearchKind.Net,
+                ProjectSearchKind.InterfacePin,
+                ProjectSearchKind.NumericLane,
+            ],
             results.Items.Select(item => item.Kind));
+    }
+
+    [Fact]
+    public void SearchFindsInterfacePinsAndNumericLanes()
+    {
+        var builder = new ProjectBuilder("pins-and-lanes");
+        DefinitionBuilder machine = builder.Define("machine", "Machine");
+        machine.AddPin("clk", "Clock", PinDirection.Input, StandardDomains.BinaryId, netId: "clock_net");
+        machine.AddPin("q0", "Q0", PinDirection.Output, StandardDomains.BinaryId);
+        machine.AddPin("q1", "Q1", PinDirection.Output, StandardDomains.BinaryId);
+        machine.AddNumericLane("count", "Count", "unsigned-binary", "q0", "q1");
+        CircuitProject project = builder.Build("machine");
+
+        ProjectSearchResult pin = Assert.Single(ProjectSearch.Search(project, "machine", "clock input").Items);
+        Assert.Equal(ProjectSearchKind.InterfacePin, pin.Kind);
+        Assert.Equal("machine", pin.DefinitionId);
+        Assert.Equal("clk", pin.PinId);
+        Assert.Equal("Clock", pin.Title);
+        Assert.Contains("input", pin.Detail);
+        Assert.Contains("clock_net", pin.Detail);
+
+        ProjectSearchResult lane = Assert.Single(ProjectSearch.Search(project, "machine", "count lane").Items);
+        Assert.Equal(ProjectSearchKind.NumericLane, lane.Kind);
+        Assert.Equal("machine", lane.DefinitionId);
+        Assert.Equal("count", lane.LaneId);
+        Assert.Contains("Unsigned binary", lane.Detail);
+        Assert.Contains("2 pins", lane.Detail);
+
+        ProjectSearchResult byFormat = Assert.Single(ProjectSearch.Search(project, "machine", "unsigned binary").Items);
+        Assert.Equal(ProjectSearchKind.NumericLane, byFormat.Kind);
+        Assert.Equal("count", byFormat.LaneId);
     }
 
     [Fact]
@@ -196,6 +244,33 @@ public sealed class ProjectSearchTests
         Assert.Equal("other", viewModel.Definition.Id);
         Assert.False(viewModel.IsSearchOpen);
         Assert.Contains("Found definition 'Other'", viewModel.StatusText);
+    }
+
+    [Fact]
+    public void PaletteNavigatesToInterfacePinsAndNumericLanes()
+    {
+        var builder = new ProjectBuilder("palette-pins");
+        DefinitionBuilder main = builder.Define("main", "Main");
+        main.AddPin("clk", "Clock", PinDirection.Input, StandardDomains.BinaryId);
+        main.AddPin("q0", "Q0", PinDirection.Output, StandardDomains.BinaryId);
+        main.AddPin("q1", "Q1", PinDirection.Output, StandardDomains.BinaryId);
+        main.AddNumericLane("count", "Count", "unsigned-binary", "q0", "q1");
+        var viewModel = new EditorViewModel(builder.Build("main"));
+
+        viewModel.OpenSearch();
+        viewModel.SearchQuery = "clock input";
+        viewModel.ActivateSelectedSearch();
+
+        Assert.True(viewModel.HasSelectedNet);
+        Assert.Equal("clk_net", viewModel.SelectedNetId);
+        Assert.Contains("Found interface pin 'Clock'", viewModel.StatusText);
+
+        viewModel.OpenSearch();
+        viewModel.SearchQuery = "count lane";
+        viewModel.ActivateSelectedSearch();
+
+        Assert.Equal("main", viewModel.Definition.Id);
+        Assert.Contains("Found numeric lane 'Count' (2 pins)", viewModel.StatusText);
     }
 
     [Fact]

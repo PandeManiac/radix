@@ -932,7 +932,7 @@
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="12,10,12,4">
             <TextBox
                 x:Name="SearchBox"
-                Watermark="Search definitions, instances, and nets…"
+                Watermark="Search definitions, parts, nets, pins, and lanes…"
                 Text="{Binding SearchQuery, Mode=TwoWay}"
                 FontSize="14"
                 Padding="8,6"
@@ -991,7 +991,7 @@
               </ListBox.ItemTemplate>
             </ListBox>
             <TextBlock
-                Text="No definition, instance, or net matches these terms."
+                Text="No definition, part, net, pin, or lane matches these terms."
                 Classes="muted"
                 FontSize="10.5"
                 HorizontalAlignment="Center"
