@@ -209,10 +209,7 @@ public sealed class CircuitLayout
         {
             IReadOnlyList<PinDescriptor> descriptors = project.GetInstancePins(instance);
             string title = instance.Label ?? TitleFor(instance, project);
-            int rows = Math.Max(1, Math.Max(
-                descriptors.Count(p => p.Direction == PinDirection.Input),
-                descriptors.Count(p => p.Direction == PinDirection.Output)));
-            double height = HeaderHeight + (rows * PinSpacing) + BoxBottomPadding;
+            double height = MeasureHeight(descriptors);
             var bounds = new Rect(instance.X, instance.Y, BoxWidth, height);
 
             var pins = new List<PinVisual>(descriptors.Count);
@@ -272,6 +269,19 @@ public sealed class CircuitLayout
         }
 
         return new CircuitLayout(definition, components, ports, wires, content.Inflate(20));
+    }
+
+    /// <summary>
+    /// Body height for an instance with these interface pins. Shared with auto layout
+    /// so arrangement reserves exactly the space the router and hit testing see.
+    /// </summary>
+    public static double MeasureHeight(IReadOnlyList<PinDescriptor> pins)
+    {
+        ArgumentNullException.ThrowIfNull(pins);
+        int rows = Math.Max(1, Math.Max(
+            pins.Count(p => p.Direction == PinDirection.Input),
+            pins.Count(p => p.Direction == PinDirection.Output)));
+        return HeaderHeight + (rows * PinSpacing) + BoxBottomPadding;
     }
 
     private static string DisplayPinName(ComponentInstance instance, PinDescriptor descriptor)

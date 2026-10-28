@@ -657,6 +657,33 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void AutoArrangeIsAnUndoablePresentationEditThatKeepsTheSimulation()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        viewModel.BeginSimulation();
+        viewModel.AdvanceTicksText = "100";
+        viewModel.AdvanceSimulation();
+        long time = viewModel.Simulator.Now;
+        Dictionary<string, (double X, double Y)> before = viewModel.Definition.Instances
+            .ToDictionary(instance => instance.Id, instance => (instance.X, instance.Y));
+
+        viewModel.AutoArrange();
+
+        Assert.True(viewModel.IsDirty);
+        Assert.Equal(time, viewModel.Simulator.Now);
+        Assert.Contains(viewModel.Definition.Instances, instance =>
+            Math.Abs(instance.X - before[instance.Id].X) > 0.01 ||
+            Math.Abs(instance.Y - before[instance.Id].Y) > 0.01);
+
+        viewModel.Undo();
+        Assert.All(viewModel.Definition.Instances, instance =>
+        {
+            Assert.Equal(before[instance.Id].X, instance.X);
+            Assert.Equal(before[instance.Id].Y, instance.Y);
+        });
+    }
+
+    [Fact]
     public void ArrangeSelectionAlignsAndSpreadsPartsAsAPresentationEdit()
     {
         var viewModel = CreateEmptyEditor();

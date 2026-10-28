@@ -186,6 +186,7 @@ public sealed class EditorViewModel : ObservableObject
             DistributeSelectionVertically,
             () => _selectedInstanceIds.Count > 2);
         DistributeVerticallyCommand = _distributeVerticallyCommand;
+        AutoArrangeCommand = new RelayCommand(AutoArrange);
         _promoteInputCommand = new RelayCommand(
             () => PromoteSelectedNet(PinDirection.Input),
             () => CanPromoteSelectedNet);
@@ -406,6 +407,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand DistributeHorizontallyCommand { get; }
 
     public ICommand DistributeVerticallyCommand { get; }
+
+    public ICommand AutoArrangeCommand { get; }
 
     public ICommand PromoteInputCommand { get; }
 
@@ -2274,6 +2277,45 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+    }
+
+    /// <summary>
+    /// Re-lays the whole current definition from its wiring graph. Strongly
+    /// connected components keep sequential feedback together; the condensation is
+    /// placed in left-to-right layers and each layer is stacked in authored order.
+    /// This is presentation only, so a running simulation keeps its time and values.
+    /// </summary>
+    public void AutoArrange()
+    {
+        if (Definition.Instances.Count == 0)
+        {
+            StatusText = "Auto arrange: this definition has no parts.";
+            return;
+        }
+
+        AutoLayoutResult result = CircuitAutoLayout.Arrange(_project, Definition);
+        bool changed = result.Positions.Any(pair =>
+            Definition.FindInstance(pair.Key) is ComponentInstance instance &&
+            (Math.Abs(instance.X - pair.Value.X) > 0.01 || Math.Abs(instance.Y - pair.Value.Y) > 0.01));
+        if (!changed)
+        {
+            StatusText = "Auto arrange: the definition is already arranged.";
+            return;
+        }
+
+        PushUndo();
+        foreach ((string id, Point point) in result.Positions)
+        {
+            if (Definition.FindInstance(id) is ComponentInstance instance)
+            {
+                instance.X = Math.Round(point.X, 1);
+                instance.Y = Math.Round(point.Y, 1);
+            }
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = $"Auto arranged {Definition.Instances.Count} parts in {result.Layers} column(s)";
+        FitRequested?.Invoke();
     }
 
     /// <summary>

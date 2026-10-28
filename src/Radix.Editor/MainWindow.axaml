@@ -117,6 +117,7 @@
             <StackPanel Orientation="Horizontal" Spacing="4" Margin="2,5,0,0">
               <Button Content="New component" Command="{Binding AddDefinitionCommand}" />
               <Button Content="Remove" Command="{Binding RemoveDefinitionCommand}" />
+              <Button Content="Auto arrange" Command="{Binding AutoArrangeCommand}" ToolTip.Tip="Layer the current definition by its wiring graph; sequential feedback stays grouped" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="4" Margin="2,4,0,0">
               <Button Content="Import library…" Click="ImportLibrary_Click" ToolTip.Tip="Merge a .radixlib component library into this project" />
