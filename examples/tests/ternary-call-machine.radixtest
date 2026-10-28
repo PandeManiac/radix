@@ -1,0 +1,69 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Ternary call machine nests calls and returns in order",
+  "description": "CALL 4 pushes 1; CALL 7 pushes 5; the two RETs pop 5 then 1 and execution resumes at the caller.",
+  "definition": "demo.t-machine-3",
+  "steps": [
+    { "at": 0, "set": { "clk": 0 } },
+    {
+      "at": 60,
+      "expectLane": { "pc": 0, "acc": 0, "sp": 0, "read": 0, "opcode": 5, "argument": 4 },
+      "description": "reset state fetches CALL 4"
+    },
+    { "at": 160, "set": { "clk": 2 } },
+    {
+      "at": 280,
+      "expectLane": { "pc": 4, "acc": 0, "sp": 1, "read": 0, "opcode": 5, "argument": 7 },
+      "description": "return address 1 pushed; CALL 7 fetched"
+    },
+    { "at": 300, "set": { "clk": 0 } },
+    { "at": 380, "set": { "clk": 2 } },
+    {
+      "at": 500,
+      "expectLane": { "pc": 7, "acc": 0, "sp": 2, "read": 0, "opcode": 1, "argument": 0 },
+      "description": "return address 5 pushed; the inner LOAD 0 is next"
+    },
+    { "at": 520, "set": { "clk": 0 } },
+    { "at": 600, "set": { "clk": 2 } },
+    {
+      "at": 720,
+      "expectLane": { "pc": 8, "acc": 0, "sp": 2, "read": 5, "opcode": 6, "argument": 0 },
+      "description": "inner LOAD 0 ran; RET is fetched and the read port shows 5"
+    },
+    { "at": 740, "set": { "clk": 0 } },
+    { "at": 820, "set": { "clk": 2 } },
+    {
+      "at": 940,
+      "expectLane": { "pc": 5, "acc": 0, "sp": 1, "read": 5, "opcode": 1, "argument": 2 },
+      "description": "inner RET popped 5; the outer routine continues at LOAD 2"
+    },
+    { "at": 960, "set": { "clk": 0 } },
+    { "at": 1040, "set": { "clk": 2 } },
+    {
+      "at": 1160,
+      "expectLane": { "pc": 6, "acc": 2, "sp": 1, "read": 1, "opcode": 6, "argument": 0 },
+      "description": "LOAD 2 finished; outer RET is fetched and the stack below shows 1"
+    },
+    { "at": 1180, "set": { "clk": 0 } },
+    { "at": 1260, "set": { "clk": 2 } },
+    {
+      "at": 1380,
+      "expectLane": { "pc": 1, "acc": 2, "sp": 0, "read": 1, "opcode": 1, "argument": 1 },
+      "description": "outer RET popped 1; the caller continues at LOAD 1"
+    },
+    { "at": 1400, "set": { "clk": 0 } },
+    { "at": 1480, "set": { "clk": 2 } },
+    { "at": 1600, "expectLane": { "pc": 2, "acc": 1, "sp": 0, "opcode": 2, "argument": 2 } },
+    { "at": 1620, "set": { "clk": 0 } },
+    { "at": 1700, "set": { "clk": 2 } },
+    { "at": 1820, "expectLane": { "pc": 3, "acc": 3, "sp": 0, "opcode": 3, "argument": 3 } },
+    { "at": 1840, "set": { "clk": 0 } },
+    { "at": 1920, "set": { "clk": 2 } },
+    {
+      "at": 2040,
+      "expectLane": { "pc": 3, "acc": 3, "sp": 0, "read": 1 },
+      "description": "JMP 3 holds the machine in a loop with the stack empty"
+    }
+  ]
+}

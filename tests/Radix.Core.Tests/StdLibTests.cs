@@ -593,6 +593,45 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryCallMachinePushesAndPopsNestedReturns()
+    {
+        CircuitProject project = ExampleProjects.CreateTernaryCallMachineDemo();
+        Assert.Contains(
+            project.RequireDefinition("demo.t-machine-3").Instances,
+            instance => instance.DefinitionId == StandardLibrary.TernaryRam3x2Id);
+        SimulationEngine engine = Engine("demo.t-machine-3", project);
+        engine.Drive("clk", 0);
+        Settle(engine, 120);
+
+        Assert.Equal(0, ReadTernaryPair(engine, "pc"));
+        Assert.Equal(0, ReadTernaryPair(engine, "q"));
+        Assert.Equal(0, engine.Read("sp"));
+        Assert.Equal(5, ReadTernaryPair(engine, "op"));
+        Assert.Equal(4, ReadTernaryPair(engine, "arg"));
+        Assert.Equal(0, ReadTernaryPair(engine, "read"));
+
+        // CALL 4 pushes 1; CALL 7 pushes 5; RET returns to 5, LOAD 2, RET returns
+        // to 1, then LOAD 1, ADD 2, and the JMP 3 loop. SP goes 0,1,2,1,0 and holds.
+        (int Pc, int Accumulator, int StackPointer, int Read)[] expected =
+        [
+            (4, 0, 1, 0), (7, 0, 2, 0), (8, 0, 2, 5), (5, 0, 1, 5), (6, 2, 1, 1),
+            (1, 2, 0, 1), (2, 1, 0, 1), (3, 3, 0, 1), (3, 3, 0, 1),
+        ];
+
+        foreach ((int pc, int accumulator, int stackPointer, int read) in expected)
+        {
+            PulseTernaryClock(engine, settle: 120);
+            Assert.Equal(pc, ReadTernaryPair(engine, "pc"));
+            Assert.Equal(accumulator, ReadTernaryPair(engine, "q"));
+            Assert.Equal(stackPointer, engine.Read("sp"));
+            Assert.Equal(read, ReadTernaryPair(engine, "read"));
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryRegisterLoadsOnTheEdgeAndHoldsWhenDisabled()
     {
         SimulationEngine engine = Engine(StandardLibrary.TernaryRegister2Id);

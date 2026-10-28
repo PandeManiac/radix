@@ -224,6 +224,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 15. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-machine.radix examples/tests/ternary-machine.radixtest`. Expected: `PASS: 32 step(s) through t=2260`, exit code 0; PC walks 0..8, ACC follows 1, 3, 5, 5, 2, 4, 5, 5, 5, then restarts with 1.
 16. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-branch-machine.radix examples/tests/ternary-branch-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; MEM1 becomes 4, a BZ falls through, a later BZ jumps to PC 8, LOADM reads 4 back into ACC, and PC wraps to 0.
 17. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-accumulator.radix examples/tests/balanced-ternary-accumulator.radixtest`. Expected: `PASS: 21 step(s) through t=1220`, exit code 0; the `Result` lane goes 0 → 4 → 4 (hold) → −1 (wrap) → 1 → 1.
+18. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-call-machine.radix examples/tests/ternary-call-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; SP walks 0 → 1 → 2 → 1 → 0 and both RETs return to the instruction after their CALL.
 
 ## 14. Ternary multi-trit addition
 
@@ -295,7 +296,22 @@ This uses the GUI. The machine has a 2-trit opcode, a 2-trit argument, three wor
 6. Double-click `memory`. Expected: the `std.t-ram-3x2` body with three `word` registers, three write-decode lookups, and two 4-input read lookups. Double-click `word1` and then `mux0`. Expected: a `std.t-reg-2` body with two mux/flip-flop slices; `word1` holds 4 after the STORE. Select `decode_write1` and change its table entry for `(WE = 2, ADDR = 1)` from 2 to 0, then commit: one undo step and no diagnostics; the next `STORE 1` leaves word 1 unchanged. Undo restores the write.
 7. With `memory` open as the current definition, click **Begin** to run the part standalone (this starts a fresh simulation, so it does not inherit the machine's word 1). Expected: lanes **Address** over `ADDR`, **Data** over `D0/D1`, and **Read** over `Q0/Q1`; **Read** = 0. Drive `WE = 0`, `ADDR = 1`; set `D0 = 1`, `D1 = 1` (Data = 4) and `WE = 2`; pulse `CLK` 0 → 2 → 0. Expected: **Read** = 4. Set `WE = 0` and step `ADDR` through 0, 1, and 2: expected **Read** = 0, 4, 0. No errors or warnings appear.
 
-## 20. Balanced ternary accumulator
+## 20. Ternary call machine
+
+This uses the GUI. CALL/RET use the `std.t-ram-3x2` part as a three-word return stack, and SP is a single trit.
+
+1. Open `examples/ternary-call-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: **PC** = 0, **ACC** = 0, **SP** = 0, **Stack read** = 0, **Opcode** = 5, **Argument** = 4 (CALL 4).
+2. Pulse `CLK` 0 → 2 → 0. Expected: **PC** = 4, **SP** = 1, ACC stays 0; opcode 5, argument 7 (the routine's own CALL).
+3. Pulse again. Expected: **PC** = 7, **SP** = 2; opcode 1, argument 0 (LOAD 0). **Stack read** is 0 because ADDR now points past the saved words.
+4. Pulse again. Expected: **PC** = 8, ACC = 0, SP = 2; **Stack read** = 5 and opcode 6 (RET). The inner return address is already visible below SP.
+5. Pulse again. Expected: **PC** = 5, **SP** = 1; opcode 1, argument 2. The inner RET popped 5, so execution resumed after the inner CALL.
+6. Pulse again. Expected: **PC** = 6, ACC = 2, SP = 1; **Stack read** = 1 and opcode 6 (RET).
+7. Pulse again. Expected: **PC** = 1, ACC = 2, **SP** = 0; opcode 1, argument 1. The outer RET popped 1, returning to the instruction after CALL 4.
+8. Pulse twice. Expected: (PC 2, ACC 1), then (PC 3, ACC 3, opcode 3, argument 3). Pulse again: PC stays 3 because `JMP 3` loops with the stack empty.
+9. Double-click `stack`. Expected: the `std.t-ram-3x2` body with three word registers, three write-decode lookups, and two read lookups. Double-click `sp_ff` and `sp_mux_hold`: the one-trit SP is a trit flip-flop fed by a hold mux, so it changes only on CALL and RET. No errors or warnings appear.
+10. Expected limitation: the stack holds three entries. A program with four nested CALLs wraps SP to 0 and overwrites the oldest return address without a flag; there is no stack-error output like the binary tiny CPU's.
+
+## 21. Balanced ternary accumulator
 
 This uses the GUI. Control, data, and clock are all balanced trits, so a pin value of `0` means `−`, `1` means `0`, and `2` means `+`.
 
@@ -307,7 +323,7 @@ This uses the GUI. Control, data, and clock are all balanced trits, so a pin val
 6. Set `ADD = 0`, `D0 = 1`, `D1 = 1`, and pulse `CLK`. Expected: **Result** stays `1`; ADD took precedence while it was active, and now both controls hold.
 7. Double-click `register`. Expected: a `std.bt-reg-2` body with two `mux` slices and two `ff` slices, and **Data**/**Result** lanes that decode as balanced ternary. Double-click `ff0`, then `slave`: the balanced latch is the same Kleene cross-coupled structure as the 0/1/2 latch, wired from `std.bt-not` and `std.bt-min` rather than `std.t-lognot`/`std.t-min`. No errors or warnings appear.
 
-## 21. Tiny program-driven CPU
+## 22. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -334,7 +350,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 22. Known limitations to verify as *limitations*
+## 23. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -344,7 +360,7 @@ Do not file these as new failures until they change in the README:
 - selection, external drive history, and waveform history are not saved; viewport and active definition are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
-- the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no subroutine call stack, no halt instruction, and drops the adder carry on ADD, so its 0..8 accumulator wraps rather than overflowing;
+- the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack is three deep, wraps silently, and has no underflow or overflow flag;
 - the balanced accumulator is also 2 trits wide and drops the adder carry, so it wraps in −4..4 instead of overflowing; its third trit is not stored;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
