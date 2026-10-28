@@ -71,6 +71,12 @@ public partial class MainWindow : Window
         MimeTypes = ["application/json"],
     };
 
+    private static readonly FilePickerFileType LibraryFileType = new("RADIX component library")
+    {
+        Patterns = ["*.radixlib"],
+        MimeTypes = ["application/json"],
+    };
+
     private void FieldBox_LostFocus(object? sender, RoutedEventArgs e) => CommitField(sender);
 
     private void FieldBox_KeyDown(object? sender, KeyEventArgs e)
@@ -152,6 +158,48 @@ public partial class MainWindow : Window
         if (ViewModel is EditorViewModel viewModel)
         {
             await SaveAsAsync(viewModel);
+        }
+    }
+
+    private async void ImportLibrary_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not EditorViewModel viewModel)
+        {
+            return;
+        }
+
+        IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import RADIX component library",
+            AllowMultiple = false,
+            FileTypeFilter = [LibraryFileType],
+        });
+
+        if (files.Count > 0)
+        {
+            viewModel.ImportLibrary(files[0].Path.LocalPath);
+        }
+    }
+
+    private async void ExportLibrary_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not EditorViewModel viewModel)
+        {
+            return;
+        }
+
+        IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export RADIX component library",
+            SuggestedFileName = SanitizeFileName(viewModel.Definition.Name),
+            DefaultExtension = "radixlib",
+            FileTypeChoices = [LibraryFileType],
+            ShowOverwritePrompt = true,
+        });
+
+        if (file is not null)
+        {
+            viewModel.ExportDefinition(file.Path.LocalPath, viewModel.Definition.Id);
         }
     }
 

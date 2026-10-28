@@ -29,6 +29,9 @@ public sealed class EditorViewModel : ObservableObject
     private readonly RelayCommand _pasteCommand;
     private readonly RelayCommand _duplicateCommand;
     private readonly RelayCommand _selectAllCommand;
+    private readonly RelayCommand _extractCommand;
+    private readonly RelayCommand _promoteInputCommand;
+    private readonly RelayCommand _promoteOutputCommand;
     private readonly HashSet<string> _selectedInstanceIds = new(StringComparer.Ordinal);
     private CircuitProject _project;
     private string _definitionId = string.Empty;
@@ -53,6 +56,8 @@ public sealed class EditorViewModel : ObservableObject
     private string _librarySearch = string.Empty;
     private ClipboardPayload? _clipboard;
     private int _pasteOffset;
+    private string _newComponentName = "Component";
+    private string _promoteNetName = string.Empty;
 
 
     public EditorViewModel(CircuitProject project)
@@ -83,6 +88,16 @@ public sealed class EditorViewModel : ObservableObject
         DuplicateCommand = _duplicateCommand;
         _selectAllCommand = new RelayCommand(SelectAllInstances, () => Definition.Instances.Count > 0);
         SelectAllCommand = _selectAllCommand;
+        _extractCommand = new RelayCommand(ExtractSelectionToComponent, () => _selectedInstanceIds.Count > 0);
+        ExtractSelectionCommand = _extractCommand;
+        _promoteInputCommand = new RelayCommand(
+            () => PromoteSelectedNet(PinDirection.Input),
+            () => CanPromoteSelectedNet);
+        PromoteInputCommand = _promoteInputCommand;
+        _promoteOutputCommand = new RelayCommand(
+            () => PromoteSelectedNet(PinDirection.Output),
+            () => CanPromoteSelectedNet);
+        PromoteOutputCommand = _promoteOutputCommand;
         ClearNetRouteCommand = new RelayCommand(ClearSelectedNetRoute, () => _selectedNet is not null);
         BeginCommand = new RelayCommand(BeginSimulation);
         AdvanceCommand = new RelayCommand(AdvanceSimulation);
@@ -158,6 +173,12 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand DuplicateCommand { get; }
 
     public ICommand SelectAllCommand { get; }
+
+    public ICommand ExtractSelectionCommand { get; }
+
+    public ICommand PromoteInputCommand { get; }
+
+    public ICommand PromoteOutputCommand { get; }
 
     public ICommand ClearNetRouteCommand { get; }
 
@@ -331,6 +352,23 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public bool HasPaletteResults => Palette.Count > 0;
+
+    public string NewComponentName
+    {
+        get => _newComponentName;
+        set => SetField(ref _newComponentName, value);
+    }
+
+    public string PromoteNetName
+    {
+        get => _promoteNetName;
+        set => SetField(ref _promoteNetName, value);
+    }
+
+    public bool CanPromoteSelectedNet =>
+        _selectedNet is not null &&
+        _selectedNet.Pins.Count > 0 &&
+        !Definition.Ports.Any(port => string.Equals(port.NetId, _selectedNet.Id, StringComparison.Ordinal));
 
     public string NewPinName
     {
@@ -561,6 +599,59 @@ public sealed class EditorViewModel : ObservableObject
         catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException or IOException or UnauthorizedAccessException)
         {
             StatusText = "Open failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    /// <summary>Exports one definition and its dependency closure as a portable library.</summary>
+    public bool ExportDefinition(string path, string definitionId)
+    {
+        try
+        {
+            string json = ComponentLibraryService.Export(_project, definitionId);
+            File.WriteAllText(path, json);
+            string exportedName = _project.FindDefinition(definitionId)?.Name ?? definitionId;
+            StatusText = $"Exported '{exportedName}' to {Path.GetFileName(path)}";
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProjectFormatException or InvalidOperationException)
+        {
+            StatusText = "Export failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Merges a library into the current project. Domain conflicts, dependency gaps,
+    /// and new validation errors abort without leaving partial definitions behind.
+    /// </summary>
+    public bool ImportLibrary(string path)
+    {
+        try
+        {
+            string json = File.ReadAllText(path);
+            EditorSnapshot before = Capture();
+            LibraryImportResult result = ComponentLibraryService.Import(_project, json);
+            if (!result.Success || result.RootDefinitionId is not string rootId)
+            {
+                StatusText = result.Message;
+                return false;
+            }
+
+            PushUndo(before);
+            _definitionId = rootId;
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+            _selectedNet = null;
+            Simulator.Retarget(_project, Definition);
+            RefreshAll(fit: true);
+            IsDirty = true;
+            StatusText = result.Message;
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProjectFormatException or CircuitValidationException)
+        {
+            StatusText = "Import failed: " + exception.Message;
             return false;
         }
     }
@@ -1067,6 +1158,68 @@ public sealed class EditorViewModel : ObservableObject
         PastePayload(_clipboard, "Pasted");
     }
 
+    /// <summary>
+    /// Replaces the selected parts with one instance of a newly created definition.
+    /// The undo snapshot is captured before the structural service runs, but only
+    /// pushed after it succeeds, so a refused extraction does not disturb redo.
+    /// </summary>
+    public void ExtractSelectionToComponent()
+    {
+        if (_selectedInstanceIds.Count == 0)
+        {
+            StatusText = "Select one or more parts to extract.";
+            return;
+        }
+
+        string[] ids = _selectedInstanceIds.ToArray();
+        EditorSnapshot before = Capture();
+        HierarchyExtractResult result = HierarchyEditor.ExtractSelection(
+            _project,
+            Definition,
+            ids,
+            NewComponentName);
+        if (!result.Success || result.Instance is null)
+        {
+            StatusText = result.Message;
+            return;
+        }
+
+        PushUndo(before);
+        AfterMutation(structural: true);
+        SelectInstance(result.Instance.Id);
+        NewComponentName = "Component";
+        StatusText = result.Message;
+    }
+
+    public void PromoteSelectedNet(PinDirection direction)
+    {
+        Net? net = _selectedNet;
+        if (net is null || !CanPromoteSelectedNet)
+        {
+            StatusText = "Select an unbound net with at least one pin to expose it.";
+            return;
+        }
+
+        PushUndo();
+        PinDeclaration? pin = HierarchyEditor.PromoteNet(
+            _project,
+            Definition,
+            net,
+            direction,
+            PromoteNetName);
+        if (pin is null)
+        {
+            Undo();
+            StatusText = "That net is already bound to an interface pin.";
+            return;
+        }
+
+        AfterMutation(structural: true);
+        SelectNet(net.Id);
+        PromoteNetName = string.Empty;
+        StatusText = $"Exposed '{net.Label ?? net.Id}' as {(pin.Direction == PinDirection.Input ? "input" : "output")} pin '{pin.Name}'";
+    }
+
     public void DuplicateSelection()
     {
         ClipboardPayload? payload = CaptureSelection();
@@ -1493,9 +1646,11 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = "Redo";
     }
 
-    public void PushUndo()
+    public void PushUndo() => PushUndo(Capture());
+
+    private void PushUndo(EditorSnapshot snapshot)
     {
-        _undo.Push(Capture());
+        _undo.Push(snapshot);
         while (_undo.Count > 80)
         {
             EditorSnapshot[] items = _undo.ToArray();
@@ -1841,6 +1996,7 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(SelectedInstanceIds));
         RaisePropertyChanged(nameof(IsRootDefinition));
         RaisePropertyChanged(nameof(SelectedNetHasRoute));
+        RaisePropertyChanged(nameof(CanPromoteSelectedNet));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));
         RaisePropertyChanged(nameof(SelectionTitle));
@@ -2368,6 +2524,7 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(SelectedInstanceIds));
         RaisePropertyChanged(nameof(IsRootDefinition));
         RaisePropertyChanged(nameof(SelectedNetHasRoute));
+        RaisePropertyChanged(nameof(CanPromoteSelectedNet));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));
         RaisePropertyChanged(nameof(SelectionTitle));
@@ -2427,6 +2584,9 @@ public sealed class EditorViewModel : ObservableObject
         _pasteCommand.RaiseCanExecuteChanged();
         _duplicateCommand.RaiseCanExecuteChanged();
         _selectAllCommand.RaiseCanExecuteChanged();
+        _extractCommand.RaiseCanExecuteChanged();
+        _promoteInputCommand.RaiseCanExecuteChanged();
+        _promoteOutputCommand.RaiseCanExecuteChanged();
         (ClearNetRouteCommand as RelayCommand)?.RaiseCanExecuteChanged();
         RaisePropertyChanged(nameof(ProjectTitle));
     }

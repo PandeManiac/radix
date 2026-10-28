@@ -106,6 +106,10 @@
               <Button Content="New component" Command="{Binding AddDefinitionCommand}" />
               <Button Content="Remove" Command="{Binding RemoveDefinitionCommand}" />
             </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="4" Margin="2,4,0,0">
+              <Button Content="Import library…" Click="ImportLibrary_Click" ToolTip.Tip="Merge a .radixlib component library into this project" />
+              <Button Content="Export part…" Click="ExportLibrary_Click" ToolTip.Tip="Export the current definition and its dependencies as a reusable library" />
+            </StackPanel>
 
             <TextBlock Text="INTERFACE" Classes="section" />
             <ItemsControl ItemsSource="{Binding Pins}">
@@ -213,10 +217,23 @@
                       </DataTemplate>
                     </ComboBox.ItemTemplate>
                   </ComboBox>
+                  <TextBlock Text="Expose as interface pin" Classes="muted" FontSize="10.5" Margin="0,8,0,3" />
+                  <TextBox Watermark="pin name (optional)" Text="{Binding PromoteNetName, Mode=TwoWay}" />
+                  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
+                    <Button Content="Input" Command="{Binding PromoteInputCommand}" ToolTip.Tip="Expose this net as an input pin on the current definition" />
+                    <Button Content="Output" Command="{Binding PromoteOutputCommand}" ToolTip.Tip="Expose this net as an output pin on the current definition" />
+                  </StackPanel>
                 </StackPanel>
 
                 <Button Content="Reset wire route" Command="{Binding ClearNetRouteCommand}" IsVisible="{Binding SelectedNetHasRoute}" Margin="0,10,0,0" HorizontalAlignment="Left" ToolTip.Tip="Return the selected wire to automatic orthogonal routing" />
                 <Button Content="Delete selection" Command="{Binding DeleteSelectionCommand}" Classes="danger" Margin="0,6,0,0" HorizontalAlignment="Left" />
+
+                <StackPanel IsVisible="{Binding HasSelectedInstance}" Margin="0,4,0,0">
+                  <TextBlock Text="REUSABLE PART" Classes="section" Margin="4,8,4,4" />
+                  <TextBox Watermark="component name" Text="{Binding NewComponentName, Mode=TwoWay}" />
+                  <Button Content="Extract selection" Command="{Binding ExtractSelectionCommand}" Margin="0,4,0,0" HorizontalAlignment="Left" ToolTip.Tip="Move the selected parts into a reusable definition and leave one instance in their place" />
+                  <TextBlock Text="Boundary nets become pins; internal wiring moves with the selection." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,3,0,0" />
+                </StackPanel>
 
                 <TextBlock Text="I/O PINS" Classes="section" />
                 <ItemsControl ItemsSource="{Binding IoPins}">

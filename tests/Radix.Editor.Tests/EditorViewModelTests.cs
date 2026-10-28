@@ -199,6 +199,116 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void ExtractSelectionCreatesPinnedReusablePartAndPreservesSimulation()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.NewPinName = "A";
+        viewModel.NewPinIsInput = true;
+        viewModel.NewPinDomain = viewModel.Domains.First(d => d.Id == StandardDomains.BinaryId);
+        viewModel.AddPin();
+        PinDeclaration input = viewModel.Definition.Pins.Single();
+        viewModel.NewPinName = "Y";
+        viewModel.NewPinIsInput = false;
+        viewModel.AddPin();
+        PinDeclaration output = viewModel.Definition.Pins.Single(p => p.Name == "Y");
+
+        LibraryComponent not = ComponentCatalog.Components.First(c => c.Name == "NOT gate");
+        viewModel.PlaceLibraryComponent(not);
+        ComponentInstance first = viewModel.Definition.Instances.Single();
+        viewModel.PlaceLibraryComponent(not);
+        ComponentInstance second = viewModel.Definition.Instances.Single(i => i.Id != first.Id);
+        viewModel.Connect(EditorPin.ForPort(input.Id), EditorPin.ForInstance(first.Id, "in0"));
+        viewModel.Connect(
+            EditorPin.ForInstance(first.Id, PrimitiveShapes.OutputPinId),
+            EditorPin.ForInstance(second.Id, "in0"));
+        viewModel.Connect(
+            EditorPin.ForInstance(second.Id, PrimitiveShapes.OutputPinId),
+            EditorPin.ForPort(output.Id));
+
+        int definitionsBefore = viewModel.Project.Definitions.Count;
+        viewModel.SelectInstances([first.Id, second.Id]);
+        viewModel.NewComponentName = "Double inverter";
+        viewModel.ExtractSelectionToComponent();
+
+        Assert.Equal(definitionsBefore + 1, viewModel.Project.Definitions.Count);
+        ComponentInstance replacement = Assert.Single(viewModel.Definition.Instances);
+        Assert.Equal("Double inverter", replacement.Label);
+        CircuitDefinition part = viewModel.Project.FindDefinition(replacement.DefinitionId!)!;
+        Assert.Equal(2, part.Instances.Count);
+        Assert.Equal(2, part.Pins.Count);
+        Assert.Equal(PinDirection.Input, part.Pins.Single(p => p.Name == "A").Direction);
+        Assert.Equal(PinDirection.Output, part.Pins.Single(p => p.Name == "Y").Direction);
+        Assert.Single(part.Nets, n => !part.Ports.Any(p => p.NetId == n.Id));
+
+        // Parent connectivity survived: the port nets now terminate on the new part.
+        Net parentInput = viewModel.Definition.FindPortNet(input.Id)!;
+        Assert.Contains(parentInput.Pins, p => p.InstanceId == replacement.Id);
+        Net parentOutput = viewModel.Definition.FindPortNet(output.Id)!;
+        Assert.Contains(parentOutput.Pins, p => p.InstanceId == replacement.Id);
+
+        viewModel.BeginSimulation();
+        viewModel.SetPortValue(input.Id, 1);
+        viewModel.AdvanceTicksText = "20";
+        viewModel.AdvanceSimulation();
+        Assert.Equal("1", PinValue(viewModel, output.Id));
+
+        viewModel.Undo();
+        Assert.Equal(2, viewModel.Definition.Instances.Count);
+        Assert.Equal(definitionsBefore, viewModel.Project.Definitions.Count);
+    }
+
+    [Fact]
+    public void ExtractSelectionRejectsNetsDrivenFromBothSides()
+    {
+        var viewModel = CreateEmptyEditor();
+        LibraryComponent not = ComponentCatalog.Components.First(c => c.Name == "NOT gate");
+        viewModel.PlaceLibraryComponent(not);
+        ComponentInstance first = viewModel.Definition.Instances.Single();
+        viewModel.PlaceLibraryComponent(not);
+        ComponentInstance second = viewModel.Definition.Instances.Single(i => i.Id != first.Id);
+        viewModel.Connect(
+            EditorPin.ForInstance(first.Id, PrimitiveShapes.OutputPinId),
+            EditorPin.ForInstance(second.Id, PrimitiveShapes.OutputPinId));
+
+        int definitionsBefore = viewModel.Project.Definitions.Count;
+        viewModel.SelectInstances([first.Id]);
+        viewModel.ExtractSelectionToComponent();
+
+        Assert.Equal(definitionsBefore, viewModel.Project.Definitions.Count);
+        Assert.Equal(2, viewModel.Definition.Instances.Count);
+        Assert.Contains("drivers on both sides", viewModel.StatusText);
+    }
+
+    [Fact]
+    public void PromoteNetAddsInterfacePinAndBinding()
+    {
+        var viewModel = CreateEmptyEditor();
+        LibraryComponent not = ComponentCatalog.Components.First(c => c.Name == "NOT gate");
+        viewModel.PlaceLibraryComponent(not);
+        ComponentInstance first = viewModel.Definition.Instances.Single();
+        viewModel.PlaceLibraryComponent(not);
+        ComponentInstance second = viewModel.Definition.Instances.Single(i => i.Id != first.Id);
+        viewModel.Connect(
+            EditorPin.ForInstance(first.Id, PrimitiveShapes.OutputPinId),
+            EditorPin.ForInstance(second.Id, "in0"));
+
+        Net net = viewModel.Definition.Nets.Single(n => n.Pins.Any(p => p.InstanceId == first.Id));
+        viewModel.SelectNet(net.Id);
+        viewModel.PromoteNetName = "MID";
+        viewModel.PromoteSelectedNet(PinDirection.Output);
+
+        PinDeclaration pin = viewModel.Definition.Pins.Single(p => p.Name == "MID");
+        Assert.Equal(PinDirection.Output, pin.Direction);
+        Assert.Same(net, viewModel.Definition.FindPortNet(pin.Id));
+        Assert.Equal("MID", net.Label);
+        Assert.False(viewModel.CanPromoteSelectedNet);
+
+        viewModel.Undo();
+        Assert.Empty(viewModel.Definition.Pins);
+        Assert.Null(viewModel.Definition.FindNet(net.Id)!.Label);
+    }
+
+    [Fact]
     public void LibrarySearchFiltersByNameCategoryAndDescription()
     {
         var viewModel = CreateEmptyEditor();
