@@ -171,7 +171,17 @@ If counter values differ, record the values and diagnostics; this is a correctne
 5. Zoom/pan, clear selection on empty click, press Escape during a pending wire, and hover pins for tooltips.
 6. `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Ctrl+C/V/D/A`, `Delete`, arrow nudging, and `Ctrl+S/Shift+S` should work without moving the mouse. Shortcuts must not hijack typing in a TextBox.
 
-## 13. Known limitations to verify as *limitations*
+## 13. Scripted CLI tests
+
+These steps use a terminal only; they never open a window. Run from the repository root.
+
+1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 6 step(s) through t=50`, exit code 0.
+2. Run `dotnet run --project src/Radix.Cli -- test examples/accumulator-cpu.radix examples/tests/accumulator.radixtest`. Expected: PASS; the signed `Result` lane is `-1` after LOAD 15 and `0` after adding 1, with `CARRY=1`.
+3. Copy the DFF script to a scratch file and change the `t=30` expectation for `q` from `1` to `0`. Expected: `FAIL`, one line naming `step 4 (t=30)`, expected and actual values; exit code 1.
+4. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
+5. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
+
+## 14. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -183,6 +193,7 @@ Do not file these as new failures until they change in the README:
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;
 - numeric lanes and custom formats appear only in the inspector; canvas numeric annotations and in-place format editing are not implemented;
+- `.radixtest` scripts are linear; there are no loops, variables, expressions, random drives, or waveform-window assertions;
 - undo snapshots whole projects and is capped at 80 entries;
 - the editor does not auto-save or recover crash state.
 

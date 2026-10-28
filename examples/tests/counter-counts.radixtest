@@ -1,0 +1,11 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Binary counter advances through its sequence",
+  "description": "The counter is free-running; verify the unsigned lane and individual bits at two points in its cycle.",
+  "steps": [
+    { "at": 0, "expectLane": { "count": 0 } },
+    { "at": 100, "expect": { "q0": 1, "q1": 0, "q2": 1, "q3": 0 }, "expectLane": { "count": 5 } },
+    { "at": 320, "expect": { "q0": 0, "q1": 0, "q2": 0, "q3": 0 }, "expectLane": { "count": 0 } }
+  ]
+}

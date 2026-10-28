@@ -7,6 +7,7 @@ using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
 using Radix.Core.Simulation;
+using Radix.Core.Testing;
 using Radix.StdLib;
 
 namespace Radix.Cli;
@@ -29,6 +30,7 @@ internal static class Program
             {
                 "validate" => ValidateCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
+                "test" => TestCommand(args[1..]),
                 "inspect" => InspectCommand(args[1..]),
                 "examples" => ExamplesCommand(args[1..]),
                 "bench" or "benchmark" => BenchCommand(args[1..]),
@@ -39,6 +41,11 @@ internal static class Program
         catch (ProjectFormatException exception)
         {
             Console.Error.WriteLine($"project format error: {exception.Message}");
+            return 2;
+        }
+        catch (SimulationScriptException exception)
+        {
+            Console.Error.WriteLine($"test script error: {exception.Message}");
             return 2;
         }
         catch (CircuitValidationException exception)
@@ -92,6 +99,9 @@ internal static class Program
                   [--format <id>]            Decode the bus using a numeric format
                   [--trace]                  Print net transitions (bounded)
                   [--max-changes <n>]        Trace print limit (default 200)
+              test <project.radix> <script.radixtest>
+                                             Run scripted drives and assertions
+                  [--definition <id>]        Definition to simulate (default: script or root)
               inspect <project.radix>        Print the project structure
               examples [directory]           Write the bundled example projects
               bench [--gates <n>] [--ticks <n>]
@@ -101,6 +111,9 @@ internal static class Program
               Built-ins: unsigned-binary, twos-complement, ones-complement,
               sign-magnitude, unsigned-ternary, ternary-top-negative, balanced-ternary.
               Projects may also define custom formats, listed by `radix inspect`.
+
+            Test scripts are JSON files (.radixtest) with timed drives and assertions;
+            see docs/test-scripts.md for the format and semantics.
 
             Exit codes: 0 success, 1 validation/simulation failure, 2 usage or I/O error.
 
@@ -265,6 +278,52 @@ internal static class Program
         }
 
         return engine.IsHalted ? 1 : 0;
+    }
+
+    private static int TestCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["definition"]);
+        if (positional.Count != 2)
+        {
+            Console.Error.WriteLine("usage: radix test <project.radix> <script.radixtest> [--definition <id>]");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0]);
+        SimulationScript script = SimulationScript.Load(positional[1]);
+        string? definitionOverride = GetOption(options, "definition");
+        if (definitionOverride is not null && project.FindDefinition(definitionOverride) is null)
+        {
+            Console.Error.WriteLine($"unknown definition '{definitionOverride}'.");
+            return 2;
+        }
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(project, script, definitionOverride);
+        Console.WriteLine($"test:       {result.ScriptName}");
+        Console.WriteLine($"project:    {project.Name}");
+        Console.WriteLine($"definition: {result.DefinitionId}");
+        PrintDiagnostics(result.Diagnostics, Console.Out);
+
+        if (result.Passed)
+        {
+            Console.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"PASS: {result.StepsExecuted} step(s) through t={result.FinalTime}; " +
+                $"{result.EventsProcessed} events."));
+            return 0;
+        }
+
+        Console.Error.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"FAIL: {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)."));
+        foreach (ScriptFailure failure in result.Failures)
+        {
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"  step {failure.Step} (t={failure.At}): {failure.Message}"));
+        }
+
+        return 1;
     }
 
     private static void PrintPorts(SimulationEngine engine)

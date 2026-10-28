@@ -35,6 +35,7 @@ Consequences:
 | Interpretation | `src/Radix.Core/Interpretation` | Display-only positional and sign-magnitude formats; project format catalog |
 | Standard library | `src/Radix.StdLib` | Reusable project definitions and examples |
 | CLI | `src/Radix.Cli` | Headless validation, simulation, reports, benchmarks |
+| Test scripts | `src/Radix.Core/Testing` | Deterministic drive/assert experiments over the public engine |
 | Editor | `src/Radix.Editor` | Mutable project state, layout, rendering, gesture handling |
 
 Dependencies point inward: the editor and CLI depend on Core; Core does not depend on Avalonia or the standard library.
@@ -402,9 +403,10 @@ The engine is single-threaded by design so event order remains obvious and repro
 
 ## 13. Testing strategy
 
-- **Unit tests** for domains, resolution, model validation, engine semantics, serialization, and numeric formats.
+- **Unit tests** for domains, resolution, model validation, engine semantics, serialization, numeric formats, and script parsing.
 - **Structural tests** for compiler flattening, port mapping, hierarchy, and diagnostics.
 - **Behavioral circuits**: NAND truth table, delay timing, DFF edge capture/hold, ternary half adder, full adder, four-bit counter.
+- **Scripted experiments**: `.radixtest` files drive inputs and assert interface pins or numeric lanes at absolute ticks. The runner uses the public compiler/engine API, disables trace storage, and treats an unexpected halt as a failure. Shipped scripts under `examples/tests/` are part of the core suite, so a timing change to an example cannot silently invalidate its demonstration.
 - **Determinism tests**: repeated runs produce identical values and traces.
 - **Differential tests**: randomized combinational designs compare the event engine against a reference evaluator.
 - **Round-trip tests**: projects serialize, reload, validate, and simulate identically; malformed/unknown data is rejected.
