@@ -1797,6 +1797,514 @@
       ]
     },
     {
+      "id": "std.reg-4",
+      "name": "4-bit register",
+      "description": "Four D flip-flops with synchronous load and clear. CLR has priority over LOAD; all bits update on the rising edge of CLK and power up at 0.",
+      "pins": [
+        {
+          "id": "load",
+          "name": "LOAD",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "clr",
+          "name": "CLR",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "d0",
+          "name": "D0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q0",
+          "name": "Q0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "d1",
+          "name": "D1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q1",
+          "name": "Q1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "d2",
+          "name": "D2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q2",
+          "name": "Q2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "d3",
+          "name": "D3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q3",
+          "name": "Q3",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "const0",
+          "primitive": {
+            "kind": "constant",
+            "value": 0
+          },
+          "x": 60,
+          "y": 360
+        },
+        {
+          "id": "mux_hold0",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 60
+        },
+        {
+          "id": "mux_clear0",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 60
+        },
+        {
+          "id": "ff0",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 60
+        },
+        {
+          "id": "mux_hold1",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 180
+        },
+        {
+          "id": "mux_clear1",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 180
+        },
+        {
+          "id": "ff1",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 180
+        },
+        {
+          "id": "mux_hold2",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 300
+        },
+        {
+          "id": "mux_clear2",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 300
+        },
+        {
+          "id": "ff2",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 300
+        },
+        {
+          "id": "mux_hold3",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 420
+        },
+        {
+          "id": "mux_clear3",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 420
+        },
+        {
+          "id": "ff3",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 420
+        }
+      ],
+      "nets": [
+        {
+          "id": "load_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_hold1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_hold2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_hold3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "clr_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_clear1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_clear2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_clear3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ff0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3",
+              "pin": "clk"
+            }
+          ]
+        },
+        {
+          "id": "d0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q0_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q1_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q2_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold2",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q3_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold3",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "zero",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "const0",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_clear0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_clear1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_clear2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_clear3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "held0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "held1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "held2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear2",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "held3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear3",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3",
+              "pin": "d"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "load",
+          "net": "load_net"
+        },
+        {
+          "pin": "clr",
+          "net": "clr_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        },
+        {
+          "pin": "d0",
+          "net": "d0_net"
+        },
+        {
+          "pin": "q0",
+          "net": "q0_net"
+        },
+        {
+          "pin": "d1",
+          "net": "d1_net"
+        },
+        {
+          "pin": "q1",
+          "net": "q1_net"
+        },
+        {
+          "pin": "d2",
+          "net": "d2_net"
+        },
+        {
+          "pin": "q2",
+          "net": "q2_net"
+        },
+        {
+          "pin": "d3",
+          "net": "d3_net"
+        },
+        {
+          "pin": "q3",
+          "net": "q3_net"
+        }
+      ]
+    },
+    {
       "id": "std.t-not",
       "name": "Ternary NOT (mod 3)",
       "description": "Digit-wise negation on the unsaturated 0/1/2 ternary domain.",

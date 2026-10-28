@@ -82,7 +82,7 @@ Exit codes are `0` for a passing script, `1` for a failed assertion or unexpecte
 
 ## Shipped scripts
 
-`examples/tests/` contains regression scripts for the D flip-flop, binary counter, and accumulator examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations.
+`examples/tests/` contains regression scripts for the D flip-flop, binary counter, accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations.
 
 ## Intentional limits
 

@@ -134,6 +134,21 @@ The cost is that a lookup evaluation computes a table index rather than executin
 
 This is a **transport-delay, event-driven** model with zero-delay logical evaluation. It is not an inertial-delay or analog RC model. Users who want sequential feedback construct it with latches/flip-flops and deliberate delays.
 
+### 5.3 Worked example: the tiny program-driven CPU
+
+`examples/tiny-cpu.radix` demonstrates that a processor is ordinary project structure. It contains no new primitive kinds and required no kernel change:
+
+- a 4-bit program counter made from `std.reg-4`, a ripple adder, muxes, and an OR gate;
+- eight four-input lookup tables forming a 16-word × 8-bit instruction ROM;
+- one four-input lookup per opcode, decoding instruction bits 7–4 into control lines;
+- a zero flag decoded from the accumulator and combined with `JZ` to select a branch;
+- a 4-bit accumulator with an adder, bitwise AND/OR paths, a four-stage mux network, and `std.reg-4`;
+- a registered carry flag updated by `ADD` and held by other instructions.
+
+Instructions are `opcode(4) | operand(4)`: `0` NOP, `1` LDA, `2` ADD, `4` AND, `5` OR, `6` JMP, `7` JZ. The program is the initializer of the ROM lookups, so a different program produces a different circuit without changing definitions or code. Numeric lanes expose the program counter, accumulator, opcode, operand, and full instruction word for inspection.
+
+This is deliberately a *demonstration*, not an architectural commitment: the definition format, library, and simulator do not privilege x86, binary, fixed-width words, or any particular ISA. A ternary processor or a different instruction encoding is the same kind of project.
+
 ## 6. Simulation semantics
 
 ### 6.1 Reset

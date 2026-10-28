@@ -144,6 +144,96 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void TinyCpuFetchesAndExecutesItsShippedProgram()
+    {
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(), "demo.tiny-cpu");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(80);
+
+        Assert.Equal(0, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x17, ReadLane(engine, "ir", 8));
+        Assert.Equal(1, engine.Read("zero"));
+
+        PulseClock(engine);                    // LDA 7
+        Assert.Equal(1, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x28, ReadLane(engine, "ir", 8));
+        Assert.Equal(7, ReadLane(engine, "acc", 4));
+        Assert.Equal(0, engine.Read("zero"));
+
+        PulseClock(engine);                    // ADD 8 -> 15
+        Assert.Equal(2, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x75, ReadLane(engine, "ir", 8));
+        Assert.Equal(15, ReadLane(engine, "acc", 4));
+        Assert.Equal(0, engine.Read("carry"));
+
+        PulseClock(engine);                    // JZ 5, not taken
+        Assert.Equal(3, ReadLane(engine, "pc", 4));
+        Assert.Equal(15, ReadLane(engine, "acc", 4));
+
+        PulseClock(engine);                    // ADD 1 -> 0 with carry
+        Assert.Equal(4, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 4));
+        Assert.Equal(1, engine.Read("carry"));
+        Assert.Equal(1, engine.Read("zero"));
+
+        PulseClock(engine);                    // JMP 6
+        Assert.Equal(6, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x66, ReadLane(engine, "ir", 8));
+        Assert.Equal(1, engine.Read("carry"));
+
+        PulseClock(engine);                    // JMP 6 loops on itself
+        Assert.Equal(6, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 4));
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void TinyCpuJumpsWhenZeroFlagIsSetAndResets()
+    {
+        int[] program =
+        [
+            0x10, // LDA 0
+            0x74, // JZ 4
+            0x11, // skipped
+            0x11, // skipped
+            0x22, // ADD 2 -> 2
+            0x66, // JMP 6
+            0x66, // halt loop
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(program), "demo.tiny-cpu");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(80);
+
+        PulseClock(engine);                    // LDA 0, ZERO asserted
+        Assert.Equal(1, engine.Read("zero"));
+        PulseClock(engine);                    // JZ 4
+        Assert.Equal(4, ReadLane(engine, "pc", 4));
+
+        PulseClock(engine);                    // ADD 2
+        Assert.Equal(5, ReadLane(engine, "pc", 4));
+        Assert.Equal(2, ReadLane(engine, "acc", 4));
+
+        engine.Drive("reset", 1);
+        engine.Settle(40);
+        engine.Drive("clk", 1);
+        engine.Settle(80);
+        Assert.Equal(0, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 4));
+        Assert.Equal(0, engine.Read("carry"));
+
+        engine.Drive("reset", 0);
+        engine.Drive("clk", 0);
+        engine.Settle(80);
+        Assert.Equal(0, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x10, ReadLane(engine, "ir", 8));
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void CounterExampleIsFreeRunning()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateCounterDemo(), "demo.counter");
@@ -184,6 +274,17 @@ public sealed class ExampleTests
         for (int bit = 0; bit < 4; bit++)
         {
             value |= engine.Read($"q{bit}") << bit;
+        }
+
+        return value;
+    }
+
+    private static int ReadLane(SimulationEngine engine, string prefix, int bits)
+    {
+        int value = 0;
+        for (int bit = 0; bit < bits; bit++)
+        {
+            value |= engine.Read($"{prefix}{bit}") << bit;
         }
 
         return value;

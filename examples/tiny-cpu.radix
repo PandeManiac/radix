@@ -1,0 +1,5315 @@
+{
+  "format": "radix-project",
+  "version": 4,
+  "name": "Tiny program-driven CPU",
+  "root": "demo.tiny-cpu",
+  "settings": {
+    "maxEvaluationsPerComponentPerTimestamp": 64,
+    "maxRecordedNetChanges": 500000,
+    "defaultAdvanceTicks": 10,
+    "traceAllNets": true
+  },
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": [
+        "0",
+        "1"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Two-state domain. Values are indices; two\u0027s-complement and other interpretations live outside the kernel."
+    },
+    {
+      "id": "ternary",
+      "name": "Ternary",
+      "values": [
+        "0",
+        "1",
+        "2"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Three-state domain. No balanced or positional interpretation is implied."
+    },
+    {
+      "id": "balanced-ternary",
+      "name": "Balanced ternary",
+      "values": [
+        "-",
+        "0",
+        "\u002B"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Three-state domain whose labels suggest balanced ternary. The kernel still treats them as ordinals."
+    },
+    {
+      "id": "four-state",
+      "name": "Four-state logic",
+      "values": [
+        "0",
+        "1",
+        "X",
+        "Z"
+      ],
+      "drivers": {
+        "kind": "priority",
+        "priorities": [
+          1,
+          1,
+          3,
+          0
+        ],
+        "conflictValue": 2
+      },
+      "description": "Four-state domain with high impedance (Z) and unknown/conflict (X)."
+    }
+  ],
+  "definitions": [
+    {
+      "id": "std.not",
+      "name": "NOT",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.buf",
+      "name": "BUF",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.and",
+      "name": "AND",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.or",
+      "name": "OR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              1,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.nand",
+      "name": "NAND",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              1,
+              1,
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.nor",
+      "name": "NOR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.xor",
+      "name": "XOR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.xnor",
+      "name": "XNOR",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              1,
+              0,
+              0,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.d-latch",
+      "name": "D latch",
+      "description": "Level-sensitive D latch built from four NAND gates. Q/QN are seeded to 0/1 at power-on.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "e",
+          "name": "E",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g1",
+          "definition": "std.nand",
+          "x": 140,
+          "y": 60
+        },
+        {
+          "id": "g2",
+          "definition": "std.nand",
+          "x": 140,
+          "y": 200
+        },
+        {
+          "id": "g3",
+          "definition": "std.nand",
+          "x": 400,
+          "y": 60
+        },
+        {
+          "id": "g4",
+          "definition": "std.nand",
+          "x": 400,
+          "y": 200
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "e_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g1",
+              "pin": "b"
+            },
+            {
+              "instance": "g2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "g4",
+              "pin": "b"
+            },
+            {
+              "instance": "g3",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "binary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "g3",
+              "pin": "b"
+            },
+            {
+              "instance": "g4",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "s",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g1",
+              "pin": "y"
+            },
+            {
+              "instance": "g2",
+              "pin": "a"
+            },
+            {
+              "instance": "g3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "r",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g2",
+              "pin": "y"
+            },
+            {
+              "instance": "g4",
+              "pin": "a"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "e",
+          "net": "e_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
+        }
+      ]
+    },
+    {
+      "id": "std.dff",
+      "name": "D flip-flop",
+      "description": "Positive-edge-triggered D flip-flop built from two gated D latches (master/slave) and an inverter. Requires a driven clock; Q/QN power up at 0/1.",
+      "pins": [
+        {
+          "id": "d",
+          "name": "D",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q",
+          "name": "Q",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "qn",
+          "name": "QN",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "inv",
+          "definition": "std.not",
+          "x": 80,
+          "y": 40
+        },
+        {
+          "id": "master",
+          "definition": "std.d-latch",
+          "x": 340,
+          "y": 40
+        },
+        {
+          "id": "slave",
+          "definition": "std.d-latch",
+          "x": 600,
+          "y": 160
+        }
+      ],
+      "nets": [
+        {
+          "id": "d_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "a"
+            },
+            {
+              "instance": "slave",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "q_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "qn_net",
+          "domain": "binary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "slave",
+              "pin": "qn"
+            }
+          ]
+        },
+        {
+          "id": "clk_n",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "inv",
+              "pin": "y"
+            },
+            {
+              "instance": "master",
+              "pin": "e"
+            }
+          ]
+        },
+        {
+          "id": "master_q",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "q"
+            },
+            {
+              "instance": "slave",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "master_qn",
+          "domain": "binary",
+          "initial": 1,
+          "pins": [
+            {
+              "instance": "master",
+              "pin": "qn"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "d",
+          "net": "d_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        },
+        {
+          "pin": "q",
+          "net": "q_net"
+        },
+        {
+          "pin": "qn",
+          "net": "qn_net"
+        }
+      ]
+    },
+    {
+      "id": "std.half-adder",
+      "name": "Half adder",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "c",
+          "name": "C",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "xor",
+          "definition": "std.xor",
+          "x": 180,
+          "y": 60
+        },
+        {
+          "id": "and",
+          "definition": "std.and",
+          "x": 180,
+          "y": 180
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "xor",
+              "pin": "a"
+            },
+            {
+              "instance": "and",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "xor",
+              "pin": "b"
+            },
+            {
+              "instance": "and",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "xor",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "c_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and",
+              "pin": "y"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "c",
+          "net": "c_net"
+        }
+      ]
+    },
+    {
+      "id": "std.full-adder",
+      "name": "Full adder",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "cin",
+          "name": "CIN",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "h1",
+          "definition": "std.half-adder",
+          "x": 80,
+          "y": 60
+        },
+        {
+          "id": "h2",
+          "definition": "std.half-adder",
+          "x": 340,
+          "y": 60
+        },
+        {
+          "id": "or",
+          "definition": "std.or",
+          "x": 600,
+          "y": 200
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "cin_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h2",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or",
+              "pin": "y"
+            }
+          ]
+        },
+        {
+          "id": "sum1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "s"
+            },
+            {
+              "instance": "h2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "carry1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h1",
+              "pin": "c"
+            },
+            {
+              "instance": "or",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "carry2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "h2",
+              "pin": "c"
+            },
+            {
+              "instance": "or",
+              "pin": "b"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "cin",
+          "net": "cin_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ]
+    },
+    {
+      "id": "std.ripple-adder-4",
+      "name": "4-bit ripple-carry adder",
+      "pins": [
+        {
+          "id": "a0",
+          "name": "A0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b0",
+          "name": "B0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s0",
+          "name": "S0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "a1",
+          "name": "A1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b1",
+          "name": "B1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s1",
+          "name": "S1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "a2",
+          "name": "A2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b2",
+          "name": "B2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "a3",
+          "name": "A3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b3",
+          "name": "B3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "cout",
+          "name": "COUT",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "fa0",
+          "definition": "std.full-adder",
+          "x": 80,
+          "y": 100
+        },
+        {
+          "id": "fa1",
+          "definition": "std.full-adder",
+          "x": 340,
+          "y": 100
+        },
+        {
+          "id": "fa2",
+          "definition": "std.full-adder",
+          "x": 600,
+          "y": 100
+        },
+        {
+          "id": "fa3",
+          "definition": "std.full-adder",
+          "x": 860,
+          "y": 100
+        }
+      ],
+      "nets": [
+        {
+          "id": "a0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "a3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "b3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "s3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "cout_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa3",
+              "pin": "cout"
+            }
+          ]
+        },
+        {
+          "id": "c0",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "c1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa0",
+              "pin": "cout"
+            },
+            {
+              "instance": "fa1",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "c2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa1",
+              "pin": "cout"
+            },
+            {
+              "instance": "fa2",
+              "pin": "cin"
+            }
+          ]
+        },
+        {
+          "id": "c3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "fa2",
+              "pin": "cout"
+            },
+            {
+              "instance": "fa3",
+              "pin": "cin"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a0",
+          "net": "a0_net"
+        },
+        {
+          "pin": "b0",
+          "net": "b0_net"
+        },
+        {
+          "pin": "s0",
+          "net": "s0_net"
+        },
+        {
+          "pin": "a1",
+          "net": "a1_net"
+        },
+        {
+          "pin": "b1",
+          "net": "b1_net"
+        },
+        {
+          "pin": "s1",
+          "net": "s1_net"
+        },
+        {
+          "pin": "a2",
+          "net": "a2_net"
+        },
+        {
+          "pin": "b2",
+          "net": "b2_net"
+        },
+        {
+          "pin": "s2",
+          "net": "s2_net"
+        },
+        {
+          "pin": "a3",
+          "net": "a3_net"
+        },
+        {
+          "pin": "b3",
+          "net": "b3_net"
+        },
+        {
+          "pin": "s3",
+          "net": "s3_net"
+        },
+        {
+          "pin": "cout",
+          "net": "cout_net"
+        }
+      ]
+    },
+    {
+      "id": "std.mux2",
+      "name": "2:1 multiplexer",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "s",
+          "name": "Select",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 3,
+            "table": [
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.reg-4",
+      "name": "4-bit register",
+      "description": "Four D flip-flops with synchronous load and clear. CLR has priority over LOAD; all bits update on the rising edge of CLK and power up at 0.",
+      "pins": [
+        {
+          "id": "load",
+          "name": "LOAD",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "clr",
+          "name": "CLR",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "d0",
+          "name": "D0",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q0",
+          "name": "Q0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "d1",
+          "name": "D1",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q1",
+          "name": "Q1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "d2",
+          "name": "D2",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q2",
+          "name": "Q2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "d3",
+          "name": "D3",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "q3",
+          "name": "Q3",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "const0",
+          "primitive": {
+            "kind": "constant",
+            "value": 0
+          },
+          "x": 60,
+          "y": 360
+        },
+        {
+          "id": "mux_hold0",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 60
+        },
+        {
+          "id": "mux_clear0",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 60
+        },
+        {
+          "id": "ff0",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 60
+        },
+        {
+          "id": "mux_hold1",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 180
+        },
+        {
+          "id": "mux_clear1",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 180
+        },
+        {
+          "id": "ff1",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 180
+        },
+        {
+          "id": "mux_hold2",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 300
+        },
+        {
+          "id": "mux_clear2",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 300
+        },
+        {
+          "id": "ff2",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 300
+        },
+        {
+          "id": "mux_hold3",
+          "definition": "std.mux2",
+          "x": 300,
+          "y": 420
+        },
+        {
+          "id": "mux_clear3",
+          "definition": "std.mux2",
+          "x": 560,
+          "y": 420
+        },
+        {
+          "id": "ff3",
+          "definition": "std.dff",
+          "x": 820,
+          "y": 420
+        }
+      ],
+      "nets": [
+        {
+          "id": "load_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_hold1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_hold2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_hold3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "clr_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_clear1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_clear2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_clear3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "clk_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ff0",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff1",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff2",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff3",
+              "pin": "clk"
+            }
+          ]
+        },
+        {
+          "id": "d0_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q0_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "a"
+            },
+            {
+              "instance": "ff0",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d1_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q1_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold1",
+              "pin": "a"
+            },
+            {
+              "instance": "ff1",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d2_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q2_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold2",
+              "pin": "a"
+            },
+            {
+              "instance": "ff2",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "d3_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "q3_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_hold3",
+              "pin": "a"
+            },
+            {
+              "instance": "ff3",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "zero",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "const0",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_clear0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_clear1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_clear2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_clear3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "held0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear0",
+              "pin": "y"
+            },
+            {
+              "instance": "ff0",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "held1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear1",
+              "pin": "y"
+            },
+            {
+              "instance": "ff1",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "held2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear2",
+              "pin": "y"
+            },
+            {
+              "instance": "ff2",
+              "pin": "d"
+            }
+          ]
+        },
+        {
+          "id": "held3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_hold3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_clear3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "next3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_clear3",
+              "pin": "y"
+            },
+            {
+              "instance": "ff3",
+              "pin": "d"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "load",
+          "net": "load_net"
+        },
+        {
+          "pin": "clr",
+          "net": "clr_net"
+        },
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        },
+        {
+          "pin": "d0",
+          "net": "d0_net"
+        },
+        {
+          "pin": "q0",
+          "net": "q0_net"
+        },
+        {
+          "pin": "d1",
+          "net": "d1_net"
+        },
+        {
+          "pin": "q1",
+          "net": "q1_net"
+        },
+        {
+          "pin": "d2",
+          "net": "d2_net"
+        },
+        {
+          "pin": "q2",
+          "net": "q2_net"
+        },
+        {
+          "pin": "d3",
+          "net": "d3_net"
+        },
+        {
+          "pin": "q3",
+          "net": "q3_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-not",
+      "name": "Ternary NOT (mod 3)",
+      "description": "Digit-wise negation on the unsaturated 0/1/2 ternary domain.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              0,
+              2,
+              1
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-min",
+      "name": "Ternary minimum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.t-max",
+      "name": "Ternary maximum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              2,
+              1,
+              1,
+              2,
+              2,
+              2,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-not",
+      "name": "Balanced ternary negation",
+      "description": "Maps -,0,\u002B to \u002B,0,-. Three-valued; not representable by a binary signal.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              2,
+              1,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-min",
+      "name": "Balanced ternary minimum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-max",
+      "name": "Balanced ternary maximum",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "g",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              2,
+              1,
+              1,
+              2,
+              2,
+              2,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 180,
+          "y": 80
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "g",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    },
+    {
+      "id": "std.bt-half-adder",
+      "name": "Balanced ternary half adder",
+      "description": "Adds two balanced-ternary digits, producing a sum trit and carry trit: A\u002BB = 3*C \u002B S.",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "direction": "input",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "s",
+          "name": "S",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        },
+        {
+          "id": "c",
+          "name": "C",
+          "direction": "output",
+          "domain": "balanced-ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "sum",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              2,
+              0,
+              1,
+              0,
+              1,
+              2,
+              1,
+              2,
+              0
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 60
+        },
+        {
+          "id": "carry",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 2,
+            "table": [
+              0,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              2
+            ],
+            "delay": 1
+          },
+          "x": 160,
+          "y": 200
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in0"
+            },
+            {
+              "instance": "carry",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "b_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "in1"
+            },
+            {
+              "instance": "carry",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "s_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "sum",
+              "pin": "out"
+            }
+          ]
+        },
+        {
+          "id": "c_net",
+          "domain": "balanced-ternary",
+          "pins": [
+            {
+              "instance": "carry",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "b",
+          "net": "b_net"
+        },
+        {
+          "pin": "s",
+          "net": "s_net"
+        },
+        {
+          "pin": "c",
+          "net": "c_net"
+        }
+      ]
+    },
+    {
+      "id": "demo.tiny-cpu",
+      "name": "Tiny CPU",
+      "description": "A 4-bit accumulator CPU with a 16-word instruction ROM. Opcodes: 0 NOP, 1 LDA, 2 ADD, 4 AND, 5 OR, 6 JMP, 7 JZ. CLR is synchronous with the next rising CLK edge. Instructions are opcode(4) | operand(4); see the shipped program for a loop.",
+      "pins": [
+        {
+          "id": "clk",
+          "name": "CLK",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "reset",
+          "name": "RESET",
+          "direction": "input",
+          "domain": "binary"
+        },
+        {
+          "id": "pc0",
+          "name": "PC0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "acc0",
+          "name": "ACC0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "pc1",
+          "name": "PC1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "acc1",
+          "name": "ACC1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "pc2",
+          "name": "PC2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "acc2",
+          "name": "ACC2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "pc3",
+          "name": "PC3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "acc3",
+          "name": "ACC3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir0",
+          "name": "IR0",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir1",
+          "name": "IR1",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir2",
+          "name": "IR2",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir3",
+          "name": "IR3",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir4",
+          "name": "IR4",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir5",
+          "name": "IR5",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir6",
+          "name": "IR6",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "ir7",
+          "name": "IR7",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "carry",
+          "name": "CARRY",
+          "direction": "output",
+          "domain": "binary"
+        },
+        {
+          "id": "zero",
+          "name": "ZERO",
+          "direction": "output",
+          "domain": "binary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "const0",
+          "primitive": {
+            "kind": "constant",
+            "value": 0
+          },
+          "x": 40,
+          "y": 980
+        },
+        {
+          "id": "const1",
+          "primitive": {
+            "kind": "constant",
+            "value": 1
+          },
+          "x": 40,
+          "y": 1060
+        },
+        {
+          "id": "rom0",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              1,
+              0,
+              1,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 60
+        },
+        {
+          "id": "rom1",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              1,
+              0,
+              0,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 170
+        },
+        {
+          "id": "rom2",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              1,
+              0,
+              1,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 280
+        },
+        {
+          "id": "rom3",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 390
+        },
+        {
+          "id": "rom4",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              1,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 500
+        },
+        {
+          "id": "rom5",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              1,
+              1,
+              1,
+              1,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 610
+        },
+        {
+          "id": "rom6",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              1,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 720
+        },
+        {
+          "id": "rom7",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 120,
+          "y": 830
+        },
+        {
+          "id": "ctl_lda",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 80
+        },
+        {
+          "id": "ctl_add",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 160
+        },
+        {
+          "id": "ctl_and",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 240
+        },
+        {
+          "id": "ctl_or",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 320
+        },
+        {
+          "id": "ctl_jmp",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 400
+        },
+        {
+          "id": "ctl_jz",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 480
+        },
+        {
+          "id": "zero_flag",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 4,
+            "table": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "delay": 0
+          },
+          "x": 560,
+          "y": 580
+        },
+        {
+          "id": "pc_inc",
+          "definition": "std.ripple-adder-4",
+          "x": 900,
+          "y": 60
+        },
+        {
+          "id": "and_jz",
+          "definition": "std.and",
+          "x": 900,
+          "y": 360
+        },
+        {
+          "id": "or_jump",
+          "definition": "std.or",
+          "x": 1120,
+          "y": 360
+        },
+        {
+          "id": "pc_reg",
+          "definition": "std.reg-4",
+          "x": 1640,
+          "y": 60
+        },
+        {
+          "id": "mux_pc0",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 60
+        },
+        {
+          "id": "mux_pc1",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 160
+        },
+        {
+          "id": "mux_pc2",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 260
+        },
+        {
+          "id": "mux_pc3",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 360
+        },
+        {
+          "id": "acc_add",
+          "definition": "std.ripple-adder-4",
+          "x": 900,
+          "y": 620
+        },
+        {
+          "id": "acc_reg",
+          "definition": "std.reg-4",
+          "x": 2260,
+          "y": 60
+        },
+        {
+          "id": "and_acc0",
+          "definition": "std.and",
+          "x": 900,
+          "y": 860
+        },
+        {
+          "id": "or_acc0",
+          "definition": "std.or",
+          "x": 1120,
+          "y": 860
+        },
+        {
+          "id": "mux_acc_lda0",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 60
+        },
+        {
+          "id": "mux_acc_add0",
+          "definition": "std.mux2",
+          "x": 1560,
+          "y": 60
+        },
+        {
+          "id": "mux_acc_and0",
+          "definition": "std.mux2",
+          "x": 1780,
+          "y": 60
+        },
+        {
+          "id": "mux_acc_or0",
+          "definition": "std.mux2",
+          "x": 2000,
+          "y": 60
+        },
+        {
+          "id": "and_acc1",
+          "definition": "std.and",
+          "x": 900,
+          "y": 960
+        },
+        {
+          "id": "or_acc1",
+          "definition": "std.or",
+          "x": 1120,
+          "y": 960
+        },
+        {
+          "id": "mux_acc_lda1",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 180
+        },
+        {
+          "id": "mux_acc_add1",
+          "definition": "std.mux2",
+          "x": 1560,
+          "y": 180
+        },
+        {
+          "id": "mux_acc_and1",
+          "definition": "std.mux2",
+          "x": 1780,
+          "y": 180
+        },
+        {
+          "id": "mux_acc_or1",
+          "definition": "std.mux2",
+          "x": 2000,
+          "y": 180
+        },
+        {
+          "id": "and_acc2",
+          "definition": "std.and",
+          "x": 900,
+          "y": 1060
+        },
+        {
+          "id": "or_acc2",
+          "definition": "std.or",
+          "x": 1120,
+          "y": 1060
+        },
+        {
+          "id": "mux_acc_lda2",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 300
+        },
+        {
+          "id": "mux_acc_add2",
+          "definition": "std.mux2",
+          "x": 1560,
+          "y": 300
+        },
+        {
+          "id": "mux_acc_and2",
+          "definition": "std.mux2",
+          "x": 1780,
+          "y": 300
+        },
+        {
+          "id": "mux_acc_or2",
+          "definition": "std.mux2",
+          "x": 2000,
+          "y": 300
+        },
+        {
+          "id": "and_acc3",
+          "definition": "std.and",
+          "x": 900,
+          "y": 1160
+        },
+        {
+          "id": "or_acc3",
+          "definition": "std.or",
+          "x": 1120,
+          "y": 1160
+        },
+        {
+          "id": "mux_acc_lda3",
+          "definition": "std.mux2",
+          "x": 1340,
+          "y": 420
+        },
+        {
+          "id": "mux_acc_add3",
+          "definition": "std.mux2",
+          "x": 1560,
+          "y": 420
+        },
+        {
+          "id": "mux_acc_and3",
+          "definition": "std.mux2",
+          "x": 1780,
+          "y": 420
+        },
+        {
+          "id": "mux_acc_or3",
+          "definition": "std.mux2",
+          "x": 2000,
+          "y": 420
+        },
+        {
+          "id": "mux_carry",
+          "definition": "std.mux2",
+          "x": 2000,
+          "y": 620
+        },
+        {
+          "id": "mux_carry_reset",
+          "definition": "std.mux2",
+          "x": 2200,
+          "y": 620
+        },
+        {
+          "id": "ff_carry",
+          "definition": "std.dff",
+          "x": 2420,
+          "y": 620
+        }
+      ],
+      "nets": [
+        {
+          "id": "clk_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "pc_reg",
+              "pin": "clk"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "clk"
+            },
+            {
+              "instance": "ff_carry",
+              "pin": "clk"
+            }
+          ]
+        },
+        {
+          "id": "reset_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "pc_reg",
+              "pin": "clr"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "clr"
+            },
+            {
+              "instance": "mux_carry_reset",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "pc0_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom0",
+              "pin": "in3"
+            },
+            {
+              "instance": "rom1",
+              "pin": "in3"
+            },
+            {
+              "instance": "rom2",
+              "pin": "in3"
+            },
+            {
+              "instance": "rom3",
+              "pin": "in3"
+            },
+            {
+              "instance": "rom4",
+              "pin": "in3"
+            },
+            {
+              "instance": "rom5",
+              "pin": "in3"
+            },
+            {
+              "instance": "rom6",
+              "pin": "in3"
+            },
+            {
+              "instance": "rom7",
+              "pin": "in3"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "a0"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "q0"
+            }
+          ]
+        },
+        {
+          "id": "acc0_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "zero_flag",
+              "pin": "in3"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "a0"
+            },
+            {
+              "instance": "and_acc0",
+              "pin": "a"
+            },
+            {
+              "instance": "or_acc0",
+              "pin": "a"
+            },
+            {
+              "instance": "mux_acc_lda0",
+              "pin": "a"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "q0"
+            }
+          ]
+        },
+        {
+          "id": "pc1_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom0",
+              "pin": "in2"
+            },
+            {
+              "instance": "rom1",
+              "pin": "in2"
+            },
+            {
+              "instance": "rom2",
+              "pin": "in2"
+            },
+            {
+              "instance": "rom3",
+              "pin": "in2"
+            },
+            {
+              "instance": "rom4",
+              "pin": "in2"
+            },
+            {
+              "instance": "rom5",
+              "pin": "in2"
+            },
+            {
+              "instance": "rom6",
+              "pin": "in2"
+            },
+            {
+              "instance": "rom7",
+              "pin": "in2"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "a1"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "q1"
+            }
+          ]
+        },
+        {
+          "id": "acc1_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "zero_flag",
+              "pin": "in2"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "a1"
+            },
+            {
+              "instance": "and_acc1",
+              "pin": "a"
+            },
+            {
+              "instance": "or_acc1",
+              "pin": "a"
+            },
+            {
+              "instance": "mux_acc_lda1",
+              "pin": "a"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "q1"
+            }
+          ]
+        },
+        {
+          "id": "pc2_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom0",
+              "pin": "in1"
+            },
+            {
+              "instance": "rom1",
+              "pin": "in1"
+            },
+            {
+              "instance": "rom2",
+              "pin": "in1"
+            },
+            {
+              "instance": "rom3",
+              "pin": "in1"
+            },
+            {
+              "instance": "rom4",
+              "pin": "in1"
+            },
+            {
+              "instance": "rom5",
+              "pin": "in1"
+            },
+            {
+              "instance": "rom6",
+              "pin": "in1"
+            },
+            {
+              "instance": "rom7",
+              "pin": "in1"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "a2"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "q2"
+            }
+          ]
+        },
+        {
+          "id": "acc2_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "zero_flag",
+              "pin": "in1"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "a2"
+            },
+            {
+              "instance": "and_acc2",
+              "pin": "a"
+            },
+            {
+              "instance": "or_acc2",
+              "pin": "a"
+            },
+            {
+              "instance": "mux_acc_lda2",
+              "pin": "a"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "q2"
+            }
+          ]
+        },
+        {
+          "id": "pc3_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom0",
+              "pin": "in0"
+            },
+            {
+              "instance": "rom1",
+              "pin": "in0"
+            },
+            {
+              "instance": "rom2",
+              "pin": "in0"
+            },
+            {
+              "instance": "rom3",
+              "pin": "in0"
+            },
+            {
+              "instance": "rom4",
+              "pin": "in0"
+            },
+            {
+              "instance": "rom5",
+              "pin": "in0"
+            },
+            {
+              "instance": "rom6",
+              "pin": "in0"
+            },
+            {
+              "instance": "rom7",
+              "pin": "in0"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "a3"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "q3"
+            }
+          ]
+        },
+        {
+          "id": "acc3_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "zero_flag",
+              "pin": "in0"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "a3"
+            },
+            {
+              "instance": "and_acc3",
+              "pin": "a"
+            },
+            {
+              "instance": "or_acc3",
+              "pin": "a"
+            },
+            {
+              "instance": "mux_acc_lda3",
+              "pin": "a"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "q3"
+            }
+          ]
+        },
+        {
+          "id": "ir0_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom0",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_pc0",
+              "pin": "b"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b0"
+            },
+            {
+              "instance": "and_acc0",
+              "pin": "b"
+            },
+            {
+              "instance": "or_acc0",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_lda0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ir1_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom1",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_pc1",
+              "pin": "b"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b1"
+            },
+            {
+              "instance": "and_acc1",
+              "pin": "b"
+            },
+            {
+              "instance": "or_acc1",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_lda1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ir2_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom2",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_pc2",
+              "pin": "b"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b2"
+            },
+            {
+              "instance": "and_acc2",
+              "pin": "b"
+            },
+            {
+              "instance": "or_acc2",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_lda2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ir3_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom3",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_pc3",
+              "pin": "b"
+            },
+            {
+              "instance": "acc_add",
+              "pin": "b3"
+            },
+            {
+              "instance": "and_acc3",
+              "pin": "b"
+            },
+            {
+              "instance": "or_acc3",
+              "pin": "b"
+            },
+            {
+              "instance": "mux_acc_lda3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "ir4_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom4",
+              "pin": "out"
+            },
+            {
+              "instance": "ctl_lda",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_add",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_and",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_or",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_jmp",
+              "pin": "in3"
+            },
+            {
+              "instance": "ctl_jz",
+              "pin": "in3"
+            }
+          ]
+        },
+        {
+          "id": "ir5_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom5",
+              "pin": "out"
+            },
+            {
+              "instance": "ctl_lda",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_add",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_and",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_or",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_jmp",
+              "pin": "in2"
+            },
+            {
+              "instance": "ctl_jz",
+              "pin": "in2"
+            }
+          ]
+        },
+        {
+          "id": "ir6_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom6",
+              "pin": "out"
+            },
+            {
+              "instance": "ctl_lda",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_add",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_and",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_or",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_jmp",
+              "pin": "in1"
+            },
+            {
+              "instance": "ctl_jz",
+              "pin": "in1"
+            }
+          ]
+        },
+        {
+          "id": "ir7_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "rom7",
+              "pin": "out"
+            },
+            {
+              "instance": "ctl_lda",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_add",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_and",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_or",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_jmp",
+              "pin": "in0"
+            },
+            {
+              "instance": "ctl_jz",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "carry_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "mux_carry",
+              "pin": "a"
+            },
+            {
+              "instance": "ff_carry",
+              "pin": "q"
+            }
+          ]
+        },
+        {
+          "id": "zero_net",
+          "domain": "binary",
+          "initial": 0,
+          "pins": [
+            {
+              "instance": "zero_flag",
+              "pin": "out"
+            },
+            {
+              "instance": "and_jz",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "const_zero",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "const0",
+              "pin": "out"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "b1"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "b2"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "b3"
+            },
+            {
+              "instance": "mux_carry_reset",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "const_one",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "const1",
+              "pin": "out"
+            },
+            {
+              "instance": "pc_inc",
+              "pin": "b0"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "load"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "load"
+            }
+          ]
+        },
+        {
+          "id": "ctl_lda_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_lda",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_acc_lda0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_lda1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_lda2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_lda3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "ctl_add_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_add",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_acc_add0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_add1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_add2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_add3",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_carry",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "ctl_and_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_and",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_acc_and0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_and1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_and2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_and3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "ctl_or_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_or",
+              "pin": "out"
+            },
+            {
+              "instance": "mux_acc_or0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_or1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_or2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_acc_or3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "ctl_jmp_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_jmp",
+              "pin": "out"
+            },
+            {
+              "instance": "or_jump",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "ctl_jz_net",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "ctl_jz",
+              "pin": "out"
+            },
+            {
+              "instance": "and_jz",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_inc_carry",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "pc_inc",
+              "pin": "cout"
+            }
+          ]
+        },
+        {
+          "id": "jz_taken",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_jz",
+              "pin": "y"
+            },
+            {
+              "instance": "or_jump",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "jump",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_jump",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_pc0",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc1",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc2",
+              "pin": "s"
+            },
+            {
+              "instance": "mux_pc3",
+              "pin": "s"
+            }
+          ]
+        },
+        {
+          "id": "pc_inc0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "pc_inc",
+              "pin": "s0"
+            },
+            {
+              "instance": "mux_pc0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_jump0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc0",
+              "pin": "y"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "d0"
+            }
+          ]
+        },
+        {
+          "id": "pc_inc1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "pc_inc",
+              "pin": "s1"
+            },
+            {
+              "instance": "mux_pc1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_jump1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc1",
+              "pin": "y"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "pc_inc2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "pc_inc",
+              "pin": "s2"
+            },
+            {
+              "instance": "mux_pc2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_jump2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc2",
+              "pin": "y"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "d2"
+            }
+          ]
+        },
+        {
+          "id": "pc_inc3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "pc_inc",
+              "pin": "s3"
+            },
+            {
+              "instance": "mux_pc3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "pc_jump3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_pc3",
+              "pin": "y"
+            },
+            {
+              "instance": "pc_reg",
+              "pin": "d3"
+            }
+          ]
+        },
+        {
+          "id": "acc_carry",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "acc_add",
+              "pin": "cout"
+            },
+            {
+              "instance": "mux_carry",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_sum0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "acc_add",
+              "pin": "s0"
+            },
+            {
+              "instance": "mux_acc_add0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_and0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_acc0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_or0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_acc0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or0",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_loaded0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_lda0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_add0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_added0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_add0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_anded0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_and0",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or0",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_next0",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_or0",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "d0"
+            }
+          ]
+        },
+        {
+          "id": "acc_sum1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "acc_add",
+              "pin": "s1"
+            },
+            {
+              "instance": "mux_acc_add1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_and1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_acc1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_or1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_acc1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or1",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_loaded1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_lda1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_add1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_added1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_add1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_anded1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_and1",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or1",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_next1",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_or1",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "d1"
+            }
+          ]
+        },
+        {
+          "id": "acc_sum2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "acc_add",
+              "pin": "s2"
+            },
+            {
+              "instance": "mux_acc_add2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_and2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_acc2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_or2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_acc2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or2",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_loaded2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_lda2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_add2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_added2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_add2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_anded2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_and2",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or2",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_next2",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_or2",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "d2"
+            }
+          ]
+        },
+        {
+          "id": "acc_sum3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "acc_add",
+              "pin": "s3"
+            },
+            {
+              "instance": "mux_acc_add3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_and3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "and_acc3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_or3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "or_acc3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or3",
+              "pin": "b"
+            }
+          ]
+        },
+        {
+          "id": "acc_loaded3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_lda3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_add3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_added3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_add3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_and3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_anded3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_and3",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_acc_or3",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "acc_next3",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_acc_or3",
+              "pin": "y"
+            },
+            {
+              "instance": "acc_reg",
+              "pin": "d3"
+            }
+          ]
+        },
+        {
+          "id": "carry_held",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_carry",
+              "pin": "y"
+            },
+            {
+              "instance": "mux_carry_reset",
+              "pin": "a"
+            }
+          ]
+        },
+        {
+          "id": "carry_next",
+          "domain": "binary",
+          "pins": [
+            {
+              "instance": "mux_carry_reset",
+              "pin": "y"
+            },
+            {
+              "instance": "ff_carry",
+              "pin": "d"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "clk",
+          "net": "clk_net"
+        },
+        {
+          "pin": "reset",
+          "net": "reset_net"
+        },
+        {
+          "pin": "pc0",
+          "net": "pc0_net"
+        },
+        {
+          "pin": "acc0",
+          "net": "acc0_net"
+        },
+        {
+          "pin": "pc1",
+          "net": "pc1_net"
+        },
+        {
+          "pin": "acc1",
+          "net": "acc1_net"
+        },
+        {
+          "pin": "pc2",
+          "net": "pc2_net"
+        },
+        {
+          "pin": "acc2",
+          "net": "acc2_net"
+        },
+        {
+          "pin": "pc3",
+          "net": "pc3_net"
+        },
+        {
+          "pin": "acc3",
+          "net": "acc3_net"
+        },
+        {
+          "pin": "ir0",
+          "net": "ir0_net"
+        },
+        {
+          "pin": "ir1",
+          "net": "ir1_net"
+        },
+        {
+          "pin": "ir2",
+          "net": "ir2_net"
+        },
+        {
+          "pin": "ir3",
+          "net": "ir3_net"
+        },
+        {
+          "pin": "ir4",
+          "net": "ir4_net"
+        },
+        {
+          "pin": "ir5",
+          "net": "ir5_net"
+        },
+        {
+          "pin": "ir6",
+          "net": "ir6_net"
+        },
+        {
+          "pin": "ir7",
+          "net": "ir7_net"
+        },
+        {
+          "pin": "carry",
+          "net": "carry_net"
+        },
+        {
+          "pin": "zero",
+          "net": "zero_net"
+        }
+      ],
+      "numericLanes": [
+        {
+          "id": "acc",
+          "name": "Accumulator",
+          "format": "unsigned-binary",
+          "pins": [
+            "acc0",
+            "acc1",
+            "acc2",
+            "acc3"
+          ]
+        },
+        {
+          "id": "pc",
+          "name": "Program counter",
+          "format": "unsigned-binary",
+          "pins": [
+            "pc0",
+            "pc1",
+            "pc2",
+            "pc3"
+          ]
+        },
+        {
+          "id": "opcode",
+          "name": "Opcode",
+          "format": "unsigned-binary",
+          "pins": [
+            "ir4",
+            "ir5",
+            "ir6",
+            "ir7"
+          ]
+        },
+        {
+          "id": "operand",
+          "name": "Operand",
+          "format": "unsigned-binary",
+          "pins": [
+            "ir0",
+            "ir1",
+            "ir2",
+            "ir3"
+          ]
+        },
+        {
+          "id": "instruction",
+          "name": "Instruction",
+          "format": "unsigned-binary",
+          "pins": [
+            "ir0",
+            "ir1",
+            "ir2",
+            "ir3",
+            "ir4",
+            "ir5",
+            "ir6",
+            "ir7"
+          ]
+        }
+      ]
+    }
+  ]
+}

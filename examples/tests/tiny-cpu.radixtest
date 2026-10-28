@@ -1,0 +1,56 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Tiny CPU fetches, adds, wraps, branches, and loops",
+  "description": "Runs the shipped program through LDA 7, ADD 8, a not-taken JZ, ADD 1 wrapping to 0 with carry, and the halt JMP loop.",
+  "definition": "demo.tiny-cpu",
+  "steps": [
+    { "at": 0, "set": { "clk": 0, "reset": 0 } },
+    {
+      "at": 20,
+      "expect": { "pc0": 0, "pc1": 0, "pc2": 0, "pc3": 0, "zero": 1 },
+      "expectLane": { "pc": 0, "acc": 0, "instruction": 23, "opcode": 1, "operand": 7 }
+    },
+    { "at": 30, "set": { "clk": 1 } },
+    {
+      "at": 80,
+      "expect": { "carry": 0, "zero": 0 },
+      "expectLane": { "pc": 1, "acc": 7, "instruction": 40, "opcode": 2, "operand": 8 }
+    },
+    { "at": 90, "set": { "clk": 0 } },
+    { "at": 130, "set": { "clk": 1 } },
+    {
+      "at": 180,
+      "expect": { "carry": 0 },
+      "expectLane": { "pc": 2, "acc": 15, "instruction": 117, "opcode": 7, "operand": 5 }
+    },
+    { "at": 190, "set": { "clk": 0 } },
+    { "at": 230, "set": { "clk": 1 } },
+    {
+      "at": 280,
+      "expect": { "carry": 0 },
+      "expectLane": { "pc": 3, "acc": 15, "instruction": 33, "opcode": 2, "operand": 1 }
+    },
+    { "at": 290, "set": { "clk": 0 } },
+    { "at": 330, "set": { "clk": 1 } },
+    {
+      "at": 380,
+      "expect": { "carry": 1, "zero": 1 },
+      "expectLane": { "pc": 4, "acc": 0, "instruction": 102, "opcode": 6, "operand": 6 }
+    },
+    { "at": 390, "set": { "clk": 0 } },
+    { "at": 430, "set": { "clk": 1 } },
+    {
+      "at": 480,
+      "expect": { "carry": 1, "zero": 1 },
+      "expectLane": { "pc": 6, "acc": 0, "instruction": 102, "opcode": 6, "operand": 6 }
+    },
+    { "at": 490, "set": { "clk": 0 } },
+    { "at": 530, "set": { "clk": 1 } },
+    {
+      "at": 580,
+      "expect": { "carry": 1, "zero": 1 },
+      "expectLane": { "pc": 6, "acc": 0, "instruction": 102 }
+    }
+  ]
+}

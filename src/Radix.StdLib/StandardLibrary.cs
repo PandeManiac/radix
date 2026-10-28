@@ -107,6 +107,12 @@ public static class StandardLibrary
             added.Add("std.mux2");
         }
 
+        if (project.FindDefinition("std.reg-4") is null)
+        {
+            AddRegister4(project);
+            added.Add("std.reg-4");
+        }
+
         added.AddRange(AddTernaryDefinitions(project));
         return added;
     }
@@ -289,6 +295,55 @@ public static class StandardLibrary
             builder.Connect(carries[i], builder.Pin($"fa{i}", "cin"));
             builder.Connect(sNets[i], builder.Pin($"fa{i}", "s"));
             builder.Connect(carries[i + 1], builder.Pin($"fa{i}", "cout"));
+        }
+    }
+
+    private static void AddRegister4(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, "std.reg-4", "4-bit register");
+        builder.Definition.Description =
+            "Four D flip-flops with synchronous load and clear. CLR has priority over LOAD; " +
+            "all bits update on the rising edge of CLK and power up at 0.";
+
+        Net load = builder.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.BinaryId);
+        Net clr = builder.AddPin("clr", "CLR", PinDirection.Input, StandardDomains.BinaryId);
+        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BinaryId);
+        var data = new Net[4];
+        var output = new Net[4];
+        for (int i = 0; i < 4; i++)
+        {
+            data[i] = builder.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.BinaryId);
+            output[i] = builder.SetInitial(
+                builder.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.BinaryId),
+                0);
+        }
+
+        Net zero = builder.AddNet("zero", StandardDomains.BinaryId);
+        builder.AddPrimitive("const0", new ConstantSpec(0), 60, 360);
+        builder.Connect(zero, builder.Pin("const0", PrimitiveShapes.OutputPinId));
+
+        for (int i = 0; i < 4; i++)
+        {
+            Net held = builder.AddNet($"held{i}", StandardDomains.BinaryId);
+            Net next = builder.AddNet($"next{i}", StandardDomains.BinaryId);
+            double y = 60 + (i * 120);
+
+            builder.AddInstance($"mux_hold{i}", "std.mux2", 300, y);
+            builder.Connect(output[i], builder.Pin($"mux_hold{i}", "a"));
+            builder.Connect(data[i], builder.Pin($"mux_hold{i}", "b"));
+            builder.Connect(load, builder.Pin($"mux_hold{i}", "s"));
+            builder.Connect(held, builder.Pin($"mux_hold{i}", "y"));
+
+            builder.AddInstance($"mux_clear{i}", "std.mux2", 560, y);
+            builder.Connect(held, builder.Pin($"mux_clear{i}", "a"));
+            builder.Connect(zero, builder.Pin($"mux_clear{i}", "b"));
+            builder.Connect(clr, builder.Pin($"mux_clear{i}", "s"));
+            builder.Connect(next, builder.Pin($"mux_clear{i}", "y"));
+
+            builder.AddInstance($"ff{i}", DFlipFlopId, 820, y);
+            builder.Connect(next, builder.Pin($"ff{i}", "d"));
+            builder.Connect(clk, builder.Pin($"ff{i}", "clk"));
+            builder.Connect(output[i], builder.Pin($"ff{i}", "q"));
         }
     }
 
