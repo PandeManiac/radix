@@ -1,0 +1,378 @@
+# RADIX architecture
+
+This document records the design constraints, the implemented simulation model, and the tradeoffs that future work must respect.
+
+## 1. Design constraints
+
+RADIX is a workbench for constructing computational machinery, not a binary computer simulator. The kernel must not assume:
+
+- two-valued signals,
+- Boolean interpretation of values,
+- two's-complement or any numeric encoding,
+- fixed word widths,
+- synchronous clocks,
+- a particular processor or instruction set,
+- a particular memory organization.
+
+The enforceable rule is: **if a concept can be built from lower-level components, the engine should not implement it directly.** The built-in primitive set is intentionally small. Gates, latches, flip-flops, adders, and the example counter all live in project definitions.
+
+Consequences:
+
+- A signal value is an integer index into a domain. It is not a bit.
+- A net can hold any finite-state value defined by its domain.
+- Clocking is an emergent property of feedback and delays. A `WaveformSpec` is just a source primitive, not a global clock.
+- Numeric interpretation is a pure display-side operation.
+
+## 2. Layers
+
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| Signal domains | `src/Radix.Core/Signals` | Value sets, driver resolution, undriven marker |
+| Circuit model | `src/Radix.Core/Model` | Definitions, pins, nets, port bindings, primitives, validation |
+| Compiler | `src/Radix.Core/Compilation` | Hierarchy expansion, net merging, flat immutable arrays |
+| Engine | `src/Radix.Core/Simulation` | Deterministic event queue, primitive runtimes, traces, diagnostics |
+| Project format | `src/Radix.Core/Serialization` | Versioned JSON, strict mapping, secure loading |
+| Interpretation | `src/Radix.Core/Interpretation` | Display-only positional and sign-magnitude decoding |
+| Standard library | `src/Radix.StdLib` | Reusable project definitions and examples |
+| CLI | `src/Radix.Cli` | Headless validation, simulation, reports, benchmarks |
+| Editor | `src/Radix.Editor` | Mutable project state, layout, rendering, gesture handling |
+
+Dependencies point inward: the editor and CLI depend on Core; Core does not depend on Avalonia or the standard library.
+
+## 3. Signal model
+
+```csharp
+public readonly record struct SignalValue(int Index);
+public const int UndrivenIndex = -1;
+```
+
+A `SignalDomain` is immutable after construction and contains:
+
+- a stable string ID,
+- display name and optional description,
+- an ordered list of value labels (`ValueCount`, `ValueName`),
+- a driver-resolution policy.
+
+The kernel treats `-1` as **undriven**, which is not necessarily a value of the domain. A domain may also define its own high-impedance or unknown symbol, as the four-state domain does. This distinction matters: "no active driver" is a net-resolution state, not a signal value that user logic can inspect directly.
+
+### 3.1 Driver policies
+
+`IDriverResolution` receives all active driver values in compiled pin order and returns `(value, conflict)`.
+
+- `SingleDriverResolution`: one active driver passes through; multiple active drivers produce a deterministic conflict value and a conflict flag. The conflict value is currently the first driver's value for binary-compatible behavior, but the warning identifies the net.
+- `PriorityDriverResolution`: a per-domain priority table chooses the winner; if equal-priority drivers disagree, `ConflictValue` is used and `Conflict` is reported.
+
+Resolution depends only on values and their compiled order, never on wall-clock time or insertion order of unrelated events. Per-net conflict diagnostics are emitted once per net per run.
+
+### 3.2 Domain creation
+
+Projects own complete domain definitions, so loading a project never depends on a global registry. The editor can create a domain with arbitrary unique labels and a single-driver policy. More complex driver policies are currently authored in JSON.
+
+## 4. Hierarchy and flattening
+
+A `CircuitDefinition` has:
+
+- interface pins (`PinDeclaration`), each with a direction and domain;
+- instances, each referring to either another definition or an inline primitive spec;
+- authored nets with a domain, optional initial value, and pin references;
+- port bindings from interface pin ID to net ID.
+
+Definitions can instantiate other definitions, including multiple times. The model stores no separate runtime object per hierarchy level.
+
+`CircuitCompiler`:
+
+1. Runs `CircuitValidator` over the entire project.
+2. Detects missing root, missing definitions, and recursive definition cycles before instantiation.
+3. Recursively expands the root definition. Each authored net and primitive pin is an element in a union-find structure. Connecting a child port to a parent net unions the corresponding elements.
+4. Assigns compiled indices to pin elements and net groups.
+5. Rejects conflicting domains, duplicate/unknown pins, initial-value conflicts, and invalid primitive/domain combinations.
+6. Produces `CompiledCircuit` with flat arrays and lookup maps from `(path, netId)` and `(path, instanceId, pinId)` to indices.
+
+The flattened representation is immutable. That is why the engine has no dictionary lookups in its hot loop and why the editor can keep editing the mutable project while an older compiled snapshot remains untouched.
+
+Maximum hierarchy depth is 64. Recursive cycles are a validation error, not a stack overflow.
+
+### 4.1 Compiled arrays
+
+`CompiledCircuit` contains:
+
+- `CompiledComponent`: instance path/definition/instance IDs, primitive spec, first pin, pin count.
+- `CompiledPin`: owning component, local pin index, stable pin ID, direction, net index.
+- `CompiledNet`: resolved domain, driver pin indices, distinct sink component indices, initial value, label, representative authored net metadata.
+- `CompiledPort`: root interface pin to net index.
+
+Net groups merge multiple authored nets into one compiled net, including nets from inside child instances. Ports of nested definitions do not become runtime entities; they are resolved into compiled nets. Only root ports are exposed for external input and reports.
+
+## 5. Primitive semantics
+
+The built-in primitive set is deliberately small and domain-agnostic.
+
+| Primitive | Inputs | Outputs | Semantics |
+| --- | --- | --- | --- |
+| `constant` | 0 | 1 | Emits one domain index |
+| `lookup` | 0–16 | 1 | Mixed-radix truth table; optional transport delay |
+| `delay` | 1 | 1 | Transport delay with explicit initial output |
+| `waveform` | 0 | 1 | Cyclic phases with per-phase durations |
+| `probe` | 1 | 0 | No semantic effect; named observation point |
+
+The lookup table is indexed by input pin declaration order, first input most significant, using each connected net's domain radix. For a two-input binary lookup the table has four entries; for two ternary inputs it has nine.
+
+Every primitive validates its table/phase/value indices against the connected domains at compile time. A primitive whose table is too small is a compile error, not a silent modulo or fallback.
+
+### 5.1 Why lookup tables instead of hardcoded gates
+
+A lookup table is an explicit behavioral primitive. A NAND is a project definition containing a two-input lookup with the table `[1,1,1,0]`. This keeps the engine honest and lets users create ternary, quaternary, or custom-domain functions without adding code. It also makes standard-library definitions inspectable and editable.
+
+The cost is that a lookup evaluation computes a table index rather than executing a specialized Boolean instruction. Benchmarks show the managed event overhead dominates for event-driven designs, and the tradeoff preserves extensibility. A future optimizing compiler may recognize common lookup shapes without changing semantics.
+
+### 5.2 Delay models
+
+- A lookup's output commit is scheduled at `now + DelayTicks`.
+- A delay primitive initializes its output at its declared initial value and schedules each accepted input commit at `now + DelayTicks`.
+- Zero-delay lookup outputs commit at the current timestamp, but only after the evaluation event completes. A component is evaluated at most once per wake, and a commit that resolves a net schedules affected components for the same timestamp.
+
+This is a **transport-delay, event-driven** model with zero-delay logical evaluation. It is not an inertial-delay or analog RC model. Users who want sequential feedback construct it with latches/flip-flops and deliberate delays.
+
+## 6. Simulation semantics
+
+### 6.1 Reset
+
+On reset:
+
+1. Simulated time is zero, counters and runtime diagnostics are cleared.
+2. Every pin is `Undriven`.
+3. Every net starts at its declared initial value or undriven.
+4. Primitive runtimes are recreated in component order; constants and waveform sources seed their outputs; delays seed their initial outputs.
+5. Every component is scheduled for a time-zero evaluation.
+
+The constructor performs a reset. `AdvanceTo(0)` processes all events at time zero, which is how source primitives settle before the first advance.
+
+### 6.2 Event ordering
+
+The event heap orders by:
+
+1. `Time` ascending;
+2. monotonic insertion `Sequence` ascending (FIFO for simultaneous events).
+
+This ordering is the entire concurrency model. Simultaneous events do not run concurrently, and no behavior depends on managed thread scheduling or hash iteration order.
+
+Event kinds:
+
+- `WakeComponent`: an input net changed or the component is being initialized.
+- `CommitOutput`: a primitive's output value becomes visible at a pin.
+- `PrimitiveTimer`: a delayed/timed internal action (used by waveform and delays).
+
+When a component is scheduled more than once before it runs, the evaluation coalesces through a pending flag. This avoids redundant work for many input changes in the same timestamp.
+
+### 6.3 Net propagation
+
+`CommitOutput` updates a pin value. If the pin is on a compiled net:
+
+1. Collect active driver values (and the optional external input value) in compiled pin order.
+2. Ask the domain's driver policy to resolve.
+3. Report a conflict once per net per run.
+4. If the net value changed, record a trace entry and schedule every distinct sink component.
+
+A net transition is the unit of trace history. Pin values that do not change never generate commits.
+
+### 6.4 Convergence and oscillation
+
+- Every component evaluation increments an evaluation count for the current timestamp.
+- If a component exceeds `MaxEvaluationsPerComponentPerTimestamp` (default 64), the engine halts with `RAD100` and a message naming the instance and timestamp.
+- Legitimate sequential feedback uses delays/latches and does not spin at one timestamp; those designs converge normally.
+- A component evaluation that changes no outputs does not schedule more work and naturally settles.
+
+This mechanism catches combinational cycles without delays. It cannot prove the absence of oscillation across timestamps; that is a user/analysis concern, and the editor surfaces runtime diagnostics and traces.
+
+### 6.5 External drives
+
+`SetExternalInput(netIndex, value)` is a testbench/GUI facility:
+
+- one external value is allowed per net;
+- the value participates in resolution along with component drivers;
+- `-1` clears it;
+- changing it resolves the net immediately and schedules downstream components at the current time.
+
+Root port input values map to this facility. A GUI drive sequence is replayed from time zero when the user adds an earlier external event, which keeps the current state deterministic.
+
+## 7. Determinism and traces
+
+Determinism requirements:
+
+- no wall-clock reads in the engine;
+- stable event ordering;
+- stable component/pin/net index assignment;
+- no unordered collection iteration in simulation-sensitive paths;
+- no floating-point math in the kernel's discrete path (model edit coordinates are doubles, but they do not affect semantics).
+
+`SimulationTrace` is a bounded ring buffer of `NetChange(time, netIndex, old, new)`. It does not affect simulation results. The editor builds waveforms from it in one pass over the trace, filtering visible nets. When capacity is exceeded, old events are overwritten and `TotalRecorded` still reports the true total.
+
+Reproducibility tests compile the same project multiple times, run identical schedules, and compare final values, transition counts, and trace entries.
+
+## 8. Validation model
+
+Validation has two phases because some checks require flattened connectivity.
+
+`CircuitValidator` checks structural/model invariants that can be decided per definition:
+
+- format version, names, settings;
+- domain identity and value labels;
+- definition identity, root existence, hierarchy cycles;
+- interface pins, instance references, primitive parameter ranges;
+- net domains, initial values, duplicate pins, pin-on-two-nets, missing pins;
+- port bindings and interface pin domain consistency;
+- unconnected primitive inputs and multi-driver warnings.
+
+`CircuitCompiler` performs connectivity-dependent checks:
+
+- actual connected domain compatibility across nested boundaries;
+- lookup table sizing for the multiply-connected input domains;
+- primitive output value validity;
+- port reachability and driving warnings;
+- initial-value conflicts when merging authored nets.
+
+Diagnostics have stable codes (`RAD...`), severity, and optional definition/instance/net/pin/path locations. Errors stop compilation; warnings do not. The CLI exits nonzero for validation/compile failure.
+
+## 9. Project format and security
+
+The format is documented in [project-format.md](project-format.md). Key security choices:
+
+- JSON deserialization uses `UnmappedMemberHandling.Disallow`, so unknown fields fail loudly.
+- Primitive kinds are a closed whitelist. No type names, assembly paths, scripts, or code are deserialized or executed.
+- All string references are validated against project-owned definitions, domains, instances, and nets.
+- Loading is size-unbounded in this build; callers should avoid opening untrusted gigantic files until a size limit is added.
+- Writes go to a temporary file in the destination directory and then atomically replace the target.
+
+A future plugin system would need an explicit trust model and separate versioning; it must not piggyback on the JSON loader.
+
+## 10. Editor architecture
+
+### 10.1 Separation
+
+- `EditorViewModel` owns the mutable `CircuitProject`, current definition, selection, undo stacks, and a `SimulatorHost`.
+- `SimulatorHost` compiles the **current definition** as the root, replays external drives, and exposes read/format values. It never renders.
+- `CircuitLayout` is a pure derivation of the current definition: component boxes, pin visuals, port pills, wires, junctions, and content bounds.
+- `CircuitCanvas` renders layout snapshots and translates pointer gestures into view-model calls. It owns only transient interaction state and the viewport transform.
+- `WaveformView` renders immutable `WaveformSnapshot` data.
+
+No simulation state lives in the canvas, and the kernel is usable without Avalonia.
+
+### 10.2 Editing transactions
+
+Undo/redo stores serialized project snapshots plus the current definition and selection IDs. This gives correct handling of:
+
+- adding/removing definitions, instances, pins, and nets;
+- net merges from wiring;
+- primitive parameter changes;
+- domain changes;
+- component movement.
+
+A drag captures one snapshot on the first movement, not one per pointer move. Structural edits invalidate the running engine because compiled indices may change.
+
+Editor-side structural rules:
+
+- Two endpoints with declared but different domains are rejected with a status message.
+- Two existing nets must have the same domain to merge.
+- Connecting a primitive pin to a different-domain net is allowed if the primitive pin has no declared domain; compile-time validation then decides whether its table fits the actual domains.
+- Removing a component removes its pin references and then removes empty nets that are not bound to ports.
+- A net bound to an interface pin cannot be deleted directly; remove the pin first.
+
+### 10.3 Simulation root choice
+
+The editor compiles the **currently edited definition** as the root. This lets a user navigate into `std.dff`, drive `D` and `CLK`, and observe `Q` without constructing a wrapper. The project root remains the default opening definition and the CLI's default simulation root.
+
+Consequence: navigating to a subcircuit does not show the parent's surrounding state. This is intentional but should be made visible in UI copy; the definition header identifies the simulated root.
+
+### 10.4 Visual model
+
+Automatic layout derives:
+
+- a fixed-width box whose height grows with the larger of input/output pin counts;
+- title and instance ID in the header;
+- a left input column and right output column;
+- orthogonal wires with a shared vertical trunk for nets with more than two endpoints;
+- interface ports in left input and right output gutters.
+
+Pin values are rendered as small off-box badges; wire segments carry the current net value as a label at sufficient zoom. Domain-specific colors distinguish binary low/high, ternary values, and other finite domains. These are visual conveniences only.
+
+The layout is recomputed after every project mutation. That is simple and adequate for the current designs; it is not an incremental layout engine.
+
+### 10.5 Headless GUI testing
+
+`tests/Radix.Editor.Tests` uses `Avalonia.Headless` with offscreen Skia. It:
+
+- constructs the full window and view model;
+- runs simulation through the view model;
+- captures a `RenderTargetBitmap` of the entire window;
+- saves screenshots under ignored `artifacts/editor/`;
+- exercises empty-project rendering.
+
+These tests do not create an OS window. They are the required safe visual test path. See [MANUAL_TESTING.md](../MANUAL_TESTING.md) for interaction checks.
+
+## 11. Performance design
+
+Implemented:
+
+- flat compiled arrays and precomputed sink lists;
+- binary event heap with stable sequence numbers;
+- pending-evaluation coalescing;
+- no allocations in event objects (struct heap entries) and no per-event LINQ;
+- bounded trace with ring storage;
+- primitive runtimes created once per reset, not per evaluation;
+- one-pass waveform snapshot construction;
+- automatic compile cache? No: compilation is explicit. The editor recompiles on Begin/after invalidation, not per frame.
+
+Not implemented:
+
+- JIT/expression specialization;
+- multithreaded event processing;
+- incremental recompilation;
+- spatial indexing for very large editor canvases beyond O(n) hit tests;
+- waveform downsampling for millions of transitions.
+
+Measured baseline: 2,000-gate chain at 50 ticks → 200,150 events in ~21 ms (~9.3M events/s); 10,000-gate chain → ~1.0M events in ~98 ms (~10.2M events/s) on an AMD Ryzen 9 9950X3D with .NET 10. See [benchmarks.md](benchmarks.md) for exact runs and caveats.
+
+## 12. Extension points and non-goals
+
+### Adding a primitive kind
+
+Requires:
+
+1. a `PrimitiveSpec` subtype,
+2. compiler shape/validation support,
+3. a `PrimitiveRuntime` implementation,
+4. serializer DTO support,
+5. a project-format version review/tests.
+
+This is deliberate: primitives are the kernel trust boundary. User-defined components do not require code and are the intended extension path for architectures.
+
+### Analog/electrical simulation
+
+Not implemented. The discrete engine is the wrong substrate for continuous electrical analysis: nets would need energy state, integration timesteps, nonlinear device models, and a different convergence solver. A future physical layer should:
+
+- reuse the project and UI but introduce an explicit physical-model asset type and unit system;
+- use a numerical solver (modified nodal analysis or similar) with documented integration and tolerances;
+- translate digital/analog boundaries explicitly, not by pretending domain indices are voltages;
+- keep the discrete event engine unchanged for digital designs.
+
+This is an architectural boundary in the project format and UI, not a promise that discrete signals approximate electrical behavior.
+
+### Buses and numeric encodings
+
+There is no first-class bus. Users can create a definition with N pins and use lookup tables; the compiler intentionally does not impose width or encoding. Numeric interpretation (`PositionalFormat`, `SignMagnitudeFormat`) operates on an ordered span of value indices for display/reporting only. Complement conventions are documented on the format classes and in tests; they never affect net values.
+
+### Concurrency
+
+The engine is single-threaded by design so event order remains obvious and reproducible. Parallel deterministic simulation would require a partitioning/island model and a proof of independence; it is not present.
+
+## 13. Testing strategy
+
+- **Unit tests** for domains, resolution, model validation, engine semantics, serialization, and numeric formats.
+- **Structural tests** for compiler flattening, port mapping, hierarchy, and diagnostics.
+- **Behavioral circuits**: NAND truth table, delay timing, DFF edge capture/hold, ternary half adder, full adder, four-bit counter.
+- **Determinism tests**: repeated runs produce identical values and traces.
+- **Differential tests**: randomized combinational designs compare the event engine against a reference evaluator.
+- **Round-trip tests**: projects serialize, reload, validate, and simulate identically; malformed/unknown data is rejected.
+- **Headless GUI tests**: view-model editing plus offscreen render captures.
+
+Tests are the primary correctness evidence. The manual test document covers what automation intentionally cannot: human interaction, visual judgment, and window-manager behavior.

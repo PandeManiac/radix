@@ -247,6 +247,23 @@
                   <TextBlock Grid.Column="1" Text="{Binding Project.Name}" FontSize="11.5" />
                 </Grid>
                 <TextBlock Text="Changes are committed as one undo step when you leave a field." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,6,0,0" />
+
+                <TextBlock Text="SIGNAL DOMAINS" Classes="section" />
+                <ItemsControl ItemsSource="{Binding Domains}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DomainChoice">
+                      <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="#425A70" Margin="2,1" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Border Background="#F8FAFC" BorderBrush="#E2E8EE" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
+                  <StackPanel Spacing="4">
+                    <TextBox Watermark="domain name" Text="{Binding NewDomainName, Mode=TwoWay}" />
+                    <TextBox Watermark="values, e.g. 0 1 2" Text="{Binding NewDomainValues, Mode=TwoWay}" />
+                    <Button Content="Add domain" Command="{Binding AddDomainCommand}" HorizontalAlignment="Left" />
+                  </StackPanel>
+                </Border>
+                <TextBlock Text="Values are arbitrary symbols. Arithmetic meaning belongs to interpretation tools, never to the kernel." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,0" />
               </StackPanel>
             </ScrollViewer>
           </TabItem>

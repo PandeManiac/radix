@@ -24,8 +24,6 @@ public sealed class EditorViewModel : ObservableObject
     private readonly Stack<EditorSnapshot> _redo = new();
     private readonly RelayCommand _undoCommand;
     private readonly RelayCommand _redoCommand;
-    private readonly ObservableCollection<string> _domains = [];
-
     private CircuitProject _project;
     private string _definitionId = string.Empty;
     private ComponentInstance? _selectedInstance;
@@ -44,6 +42,9 @@ public sealed class EditorViewModel : ObservableObject
     private string _newPinName = string.Empty;
     private bool _newPinIsInput = true;
     private string _advanceTicksText = "10";
+    private string _newDomainName = string.Empty;
+    private string _newDomainValues = "0 1 2";
+
 
     public EditorViewModel(CircuitProject project)
     {
@@ -51,6 +52,7 @@ public sealed class EditorViewModel : ObservableObject
         EnsureProjectShape();
         _definitionId = _project.RootDefinitionId;
         Simulator = new SimulatorHost(_project, Definition);
+        _advanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
 
         _undoCommand = new RelayCommand(Undo, () => _undo.Count > 0);
         _redoCommand = new RelayCommand(Redo, () => _redo.Count > 0);
@@ -61,6 +63,7 @@ public sealed class EditorViewModel : ObservableObject
         AddDefinitionCommand = new RelayCommand(AddDefinition);
         RemoveDefinitionCommand = new RelayCommand(RemoveDefinition);
         AddPinCommand = new RelayCommand(AddPin);
+        AddDomainCommand = new RelayCommand(AddDomain);
         DeleteSelectionCommand = new RelayCommand(DeleteSelection, () => _selectedInstance is not null || _selectedNet is not null);
         BeginCommand = new RelayCommand(BeginSimulation);
         AdvanceCommand = new RelayCommand(AdvanceSimulation);
@@ -124,6 +127,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand RemoveDefinitionCommand { get; }
 
     public ICommand AddPinCommand { get; }
+
+    public ICommand AddDomainCommand { get; }
 
     public ICommand DeleteSelectionCommand { get; }
 
@@ -299,6 +304,18 @@ public sealed class EditorViewModel : ObservableObject
         set => SetField(ref _advanceTicksText, value);
     }
 
+    public string NewDomainName
+    {
+        get => _newDomainName;
+        set => SetField(ref _newDomainName, value);
+    }
+
+    public string NewDomainValues
+    {
+        get => _newDomainValues;
+        set => SetField(ref _newDomainValues, value);
+    }
+
     public void SetPlacementPoint(Point world)
     {
         _placementPoint = world;
@@ -376,6 +393,7 @@ public sealed class EditorViewModel : ObservableObject
         _redo.Clear();
         Simulator = new SimulatorHost(_project, Definition);
         RefreshAll(fit: true);
+        AdvanceTicksText = project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         IsDirty = true;
         StatusText = "New project";
     }
@@ -395,6 +413,7 @@ public sealed class EditorViewModel : ObservableObject
             _redo.Clear();
             Simulator = new SimulatorHost(_project, Definition);
             RefreshAll(fit: true);
+            AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
             IsDirty = false;
             StatusText = $"Opened {Path.GetFileName(path)}";
             return true;
@@ -564,6 +583,54 @@ public sealed class EditorViewModel : ObservableObject
         RefreshAll(fit: true);
         IsDirty = true;
         StatusText = $"Removed {removed}";
+    }
+
+    public void AddDomain()
+    {
+        string name = NewDomainName.Trim();
+        if (name.Length == 0)
+        {
+            StatusText = "Give the domain a name.";
+            return;
+        }
+
+        string[] values = NewDomainValues.Split([' ', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        if (values.Length == 0 || values.Length > 64)
+        {
+            StatusText = "A domain needs between 1 and 64 value labels.";
+            return;
+        }
+
+        if (values.Distinct(StringComparer.Ordinal).Count() != values.Length)
+        {
+            StatusText = "Domain value labels must be unique.";
+            return;
+        }
+
+        string stem = Slug(name);
+        string id = DefinitionEditor.UniqueId(stem, candidate => _project.FindDomain(candidate) is not null);
+        SignalDomain domain;
+        try
+        {
+            domain = new SignalDomain(
+                id,
+                name,
+                values,
+                new SingleDriverResolution(),
+                "User-defined discrete domain. Values are symbols, not arithmetic digits.");
+        }
+        catch (ArgumentException exception)
+        {
+            StatusText = "Invalid domain: " + exception.Message;
+            return;
+        }
+
+        PushUndo();
+        _project.Domains.Add(domain);
+        NewDomainName = string.Empty;
+        AfterMutation(structural: true);
+        NewPinDomain = Domains.FirstOrDefault(d => d.Id == id) ?? NewPinDomain;
+        StatusText = $"Added domain {domain.Name} ({domain.ValueCount} values)";
     }
 
     public void AddPin()
@@ -1037,13 +1104,11 @@ public sealed class EditorViewModel : ObservableObject
 
     private void RefreshDomains()
     {
-        _domains.Clear();
         Domains.Clear();
         foreach (SignalDomain domain in _project.Domains)
         {
             bool standard = StandardDomains.All().Any(d => string.Equals(d.Id, domain.Id, StringComparison.Ordinal));
             var choice = new DomainChoice(domain.Id, domain.Name, standard);
-            _domains.Add(domain.Id);
             Domains.Add(choice);
         }
 
@@ -1186,6 +1251,14 @@ public sealed class EditorViewModel : ObservableObject
         else
         {
             string definitionId = Definition.Id;
+            Fields.Add(new EditableField(
+                "Project name",
+                _project.Name,
+                apply: value =>
+                {
+                    RenameProject(value);
+                    return true;
+                }));
             Fields.Add(new EditableField("Id", Definition.Id, isReadOnly: true));
             Fields.Add(new EditableField(
                 "Name",
@@ -1378,6 +1451,7 @@ public sealed class EditorViewModel : ObservableObject
         {
             RefreshDefinitions();
             RefreshPalette();
+            RefreshDomains();
             RefreshPins();
             RefreshIoPins();
             RefreshEvents();
@@ -1394,6 +1468,7 @@ public sealed class EditorViewModel : ObservableObject
         RefreshSimStatus();
         RaisePropertyChanged(nameof(DefinitionTitle));
         RaisePropertyChanged(nameof(ProjectSubtitle));
+        RaisePropertyChanged(nameof(ProjectTitle));
         UpdateCommandStates();
         VisualInvalidated?.Invoke();
     }
@@ -1442,29 +1517,37 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         var rows = new List<WaveformRow>();
-        var engine = Simulator.Engine;
-        var trace = engine.Trace;
+        var targets = new Dictionary<int, (string Label, SignalDomain Domain, int Start, List<WaveValueChange> Changes)>();
         foreach (Net net in Definition.Nets.Take(16))
         {
-            if (!Simulator.TryNetIndex(net.Id, out int netIndex, out SignalDomain? domain) || domain is null)
+            if (!Simulator.TryNetIndex(net.Id, out int netIndex, out SignalDomain? domain) || domain is null ||
+                targets.ContainsKey(netIndex))
             {
                 continue;
             }
 
-            var changes = new List<WaveValueChange>();
-            foreach (NetChange change in trace)
-            {
-                if (change.Net == netIndex)
-                {
-                    changes.Add(new WaveValueChange(change.Time, change.NewValue));
-                }
-            }
-
-            int start = Simulator.Circuit.Nets[netIndex].InitialValue;
-            rows.Add(new WaveformRow(Simulator.NetLabel(netIndex), domain, start, changes));
+            targets[netIndex] = (
+                Simulator.NetLabel(netIndex),
+                domain,
+                Simulator.Circuit.Nets[netIndex].InitialValue,
+                new List<WaveValueChange>());
         }
 
-        long end = Math.Max(1, engine.Now);
+        // One pass over the trace, not one pass per visible net.
+        foreach (NetChange change in Simulator.Engine.Trace)
+        {
+            if (targets.TryGetValue(change.Net, out var target))
+            {
+                target.Changes.Add(new WaveValueChange(change.Time, change.NewValue));
+            }
+        }
+
+        foreach ((string label, SignalDomain domain, int start, List<WaveValueChange> changes) in targets.Values)
+        {
+            rows.Add(new WaveformRow(label, domain, start, changes));
+        }
+
+        long end = Math.Max(1, Simulator.Engine.Now);
         return new SimulationEngineSnapshot(new WaveformSnapshot(0, end, rows));
     }
 
@@ -1675,18 +1758,16 @@ public sealed class EditorViewModel : ObservableObject
         return _project.FindDefinition(instance.DefinitionId)?.Name ?? "missing definition";
     }
 
-    private string UniquePlacementId(string label)
+    private string UniquePlacementId(string label) =>
+        DefinitionEditor.UniqueInstanceId(Definition, Slug(label));
+
+    private static string Slug(string label)
     {
         string stem = new string(label
             .ToLowerInvariant()
             .Select(c => char.IsLetterOrDigit(c) ? c : '-')
             .ToArray()).Trim('-');
-        if (stem.Length == 0)
-        {
-            stem = "part";
-        }
-
-        return DefinitionEditor.UniqueInstanceId(Definition, stem);
+        return stem.Length == 0 ? "part" : stem;
     }
 
     private double NextPlacementX()
@@ -1767,6 +1848,7 @@ public sealed class EditorViewModel : ObservableObject
             Simulator = new SimulatorHost(_project, Definition);
             IsDirty = snapshot.Dirty;
             RefreshAll(fit: false);
+            AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         }
         catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException)
         {

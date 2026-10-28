@@ -120,6 +120,28 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void CustomDomainCanBeCreatedAndUsedForPins()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.NewDomainName = "Five state";
+        viewModel.NewDomainValues = "lo mid hi X Z";
+        viewModel.AddDomain();
+
+        Core.Signals.SignalDomain? domain = viewModel.Project.FindDomain("five-state");
+        Assert.NotNull(domain);
+        Assert.Equal(5, domain!.ValueCount);
+
+        DomainChoice choice = viewModel.Domains.Single(d => d.Id == domain.Id);
+        viewModel.NewPinName = "BUS";
+        viewModel.NewPinDomain = choice;
+        viewModel.AddPin();
+
+        PinDeclaration pin = viewModel.Definition.Pins.Single(p => p.Name == "BUS");
+        Assert.Equal(domain.Id, pin.DomainId);
+        Assert.Equal(domain.Id, viewModel.Definition.FindPortNet(pin.Id)!.DomainId);
+    }
+
+    [Fact]
     public void NewProjectContainsStandardDomainAndRoot()
     {
         var viewModel = CreateEmptyEditor();

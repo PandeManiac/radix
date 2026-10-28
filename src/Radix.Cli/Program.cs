@@ -85,7 +85,9 @@ internal static class Program
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
-                  [--set <pin>=<value>]      Drive an input pin (comma-separated list allowed)
+                  [--set <pin>=<value>]      Drive an input pin at time zero
+                  [--schedule <tick>:<pin>=<value>]
+                                             Drive an input at a simulated tick (repeatable)
                   [--bus <pin,pin,...>]      Pin order for numeric display (LSB first)
                   [--format <id>]            Decode the bus using a numeric format
                   [--trace]                  Print net transitions (bounded)
@@ -143,7 +145,7 @@ internal static class Program
 
     private static int SimulateCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["definition", "ticks", "set", "bus", "format", "trace", "max-changes"]);
+        (var positional, var options) = Parse(args, ["definition", "ticks", "set", "schedule", "bus", "format", "trace", "max-changes"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine("usage: radix simulate <project.radix> [options]");
@@ -176,6 +178,31 @@ internal static class Program
                     return 2;
                 }
             }
+        }
+
+        var scheduled = new List<(long Time, int Port, int Value)>();
+        if (options.TryGetValue("schedule", out List<string>? schedules))
+        {
+            foreach (string entry in schedules.SelectMany(s => s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
+            {
+                int colon = entry.IndexOf(':', StringComparison.Ordinal);
+                if (colon <= 0 ||
+                    !long.TryParse(entry[..colon], NumberStyles.Integer, CultureInfo.InvariantCulture, out long time) ||
+                    time < 0 || time > ticks ||
+                    !TryResolveAssignment(engine, entry[(colon + 1)..], out int port, out int value))
+                {
+                    Console.Error.WriteLine($"invalid --schedule entry '{entry}' (expected <tick>:<pin>=<value> within 0..{ticks}).");
+                    return 2;
+                }
+
+                scheduled.Add((time, port, value));
+            }
+        }
+
+        foreach ((long time, int port, int value) in scheduled.OrderBy(s => s.Time))
+        {
+            engine.AdvanceTo(time);
+            engine.SetPortValue(port, value);
         }
 
         engine.AdvanceTo(ticks);
@@ -314,16 +341,33 @@ internal static class Program
 
     private static bool TryApplyAssignment(SimulationEngine engine, string assignment)
     {
+        if (!TryResolveAssignment(engine, assignment, out int portIndex, out int value))
+        {
+            return false;
+        }
+
+        engine.SetPortValue(portIndex, value);
+        return true;
+    }
+
+    private static bool TryResolveAssignment(
+        SimulationEngine engine,
+        string assignment,
+        out int portIndex,
+        out int value)
+    {
+        portIndex = -1;
+        value = -1;
         int equals = assignment.IndexOf('=', StringComparison.Ordinal);
         if (equals <= 0 || equals == assignment.Length - 1)
         {
-            Console.Error.WriteLine($"invalid --set assignment '{assignment}' (expected pin=value).");
+            Console.Error.WriteLine($"invalid assignment '{assignment}' (expected pin=value).");
             return false;
         }
 
         string pin = assignment[..equals].Trim();
         string valueText = assignment[(equals + 1)..].Trim();
-        int portIndex = engine.FindPortIndex(pin);
+        portIndex = engine.FindPortIndex(pin);
         if (portIndex < 0)
         {
             Console.Error.WriteLine($"unknown interface pin '{pin}'.");
@@ -337,7 +381,6 @@ internal static class Program
             return false;
         }
 
-        int value; 
         if (!int.TryParse(valueText, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
         {
             int byLabel = -1;
@@ -365,7 +408,6 @@ internal static class Program
             return false;
         }
 
-        engine.SetPortValue(portIndex, value);
         return true;
     }
 
