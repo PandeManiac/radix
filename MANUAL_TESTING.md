@@ -104,7 +104,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 ## 7. Numeric lanes
 
 1. Open `examples/binary-counter.radix`. In **NUMERIC LANES**, expected: `Count · Unsigned binary` with pins `Q0 · Q1 · Q2 · Q3`.
-2. Begin, then advance 100 ticks. Expected: the lane value tracks the four Q outputs as an unsigned binary number (`5` at t=100), and the value changes when you advance again.
+2. Begin, then advance 100 ticks. Expected: the lane value tracks the four Q outputs as an unsigned binary number (`5` at t=100), and the value changes when you advance again. A fixed **NUMERIC LANES** legend at the lower-left of the canvas mirrors the value; it stays readable while zooming and panning.
 3. Expected: the output-only `Count` lane has no drive box. Attempting to drive it through code reports that every pin must be an input.
 4. Delete the lane, then undo. Expected: it returns, one undo step.
 5. Add a lane: select `Unsigned binary`, tick `Q0`..`Q3` in a different order check sequence, enter a name, click **Add numeric lane**. Expected: the lane uses declaration order (Q0 first, least significant) regardless of tick order, and the card explains the grouping.
@@ -119,7 +119,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 ## 8. Custom numeric formats
 
-1. Open `examples/accumulator-cpu.radix`. Expected: the **CUSTOM NUMERIC FORMATS** list contains `Signed 4-bit` (binary, radix 2, digits 0/1, radix complement), and the **Result** lane uses it instead of an unsigned format.
+1. Open `examples/accumulator-cpu.radix`. Expected: the **CUSTOM NUMERIC FORMATS** list contains `Signed 4-bit` (binary, radix 2, digits 0/1, radix complement), the **Result** lane uses it instead of an unsigned format, and the canvas legend labels that lane `Signed 4-bit`.
 2. Begin, drive **Data** with `15` and **Opcode** with `1` (load), then advance the clock. Expected: Result reads `-1` (two's-complement interpretation of `1111`), while Q0..Q3 are all 1. Then drive **Data** with `1`, **Opcode** with `2` (add), and advance. Expected: Result reads `0` and CARRY is 1 (4-bit wrap), with Q0..Q3 all 0.
 3. In a new project, create four binary input pins and a `Custom unsigned` format: domain `Binary`, digits `0 1`, radix `2`, mode **Standard positional**, LSB first. Expected: it appears in the custom-format list and in the lane format picker.
 4. Add a lane over the four input pins using `Custom unsigned`, begin, and drive `9`. Expected: pins encode 1001 and the lane reads `9`.
@@ -192,7 +192,7 @@ Do not file these as new failures until they change in the README:
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - editor-created domains use single-driver resolution only;
 - waveform tail is bounded and may omit old transitions;
-- numeric lanes and custom formats appear only in the inspector; canvas numeric annotations and in-place format editing are not implemented;
+- numeric formats can be added and removed but not edited in place; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, random drives, or waveform-window assertions;
 - undo snapshots whole projects and is capped at 80 entries;
 - the editor does not auto-save or recover crash state.

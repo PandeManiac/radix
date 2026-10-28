@@ -6,6 +6,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Radix.Editor.Controls;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -108,6 +109,40 @@ public sealed class RenderingTests
         Assert.Equal(3, viewModel.NumericLanes.Count);
         Assert.Contains(viewModel.NumericLanes, lane => lane.CanDrive);
         Assert.Contains(viewModel.NumericLanes, lane => !lane.CanDrive);
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
+    [AvaloniaFact]
+    public void AccumulatorCanvasRendersReadableNumericLaneOverlay()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateAccumulatorCpuDemo());
+        viewModel.BeginSimulation();
+        viewModel.AdvanceTicksText = "100";
+        viewModel.AdvanceSimulation();
+
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.Measure(new Size(1480, 920));
+        window.Arrange(new Rect(0, 0, 1480, 920));
+        Dispatcher.UIThread.RunJobs();
+
+        var canvas = Assert.IsType<CircuitCanvas>(window.FindControl<CircuitCanvas>("CircuitCanvas"));
+        Assert.Equal(3, viewModel.NumericLanes.Count);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-accumulator-lane-overlay.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        Assert.True(canvas.LaneOverlayBounds.Width > 200, "the overlay should reserve a readable width");
+        Assert.True(canvas.LaneOverlayBounds.Height > 100, "three lanes should produce a readable legend");
+        Assert.True(canvas.LaneOverlayBounds.Bottom <= canvas.Bounds.Height);
+
+        window.Close();
         Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
     }
 

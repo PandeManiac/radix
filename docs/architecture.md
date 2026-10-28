@@ -397,6 +397,8 @@ A `NumericLane` persists a named, ordered list of **interface pin IDs** plus a f
 
 Encoding follows the same boundary. An `INumericFormat` can encode a value into signal indices; for a lane whose pins are all inputs, the editor encodes, checks every pin's domain, and then applies one batch of ordinary external drives. The batch is validated before mutation so a failed lane drive cannot leave a partially applied value. No vector signal, bus driver, or numeric net state reaches the compiler or engine.
 
+The canvas renders a definition's lanes as a fixed-size, screen-space legend at the lower-left. It deliberately does not use world coordinates: at the initial fit zoom, a world-scaled legend would shrink below legibility and would add empty space to `CircuitLayout.ContentBounds`. The legend is capped at seven rows, remaining rows stay in the inspector, and pointer presses inside its bounds are consumed so the circuit underneath is not accidentally selected. Like the lane data itself, it is presentation only and cannot affect compilation or routing.
+
 ### Concurrency
 
 The engine is single-threaded by design so event order remains obvious and reproducible. Parallel deterministic simulation would require a partitioning/island model and a proof of independence; it is not present.

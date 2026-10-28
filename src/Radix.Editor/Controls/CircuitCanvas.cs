@@ -82,6 +82,13 @@ public sealed class CircuitCanvas : Control
 
     public Viewport Viewport { get; } = new();
 
+    /// <summary>
+    /// Screen-space bounds of the numeric-lane legend from the last render. The legend
+    /// is a fixed-size overlay because world-scaled lane text becomes unreadable when
+    /// the initial fit zooms out; it does not affect routing or content bounds.
+    /// </summary>
+    public Rect LaneOverlayBounds { get; private set; }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
@@ -191,6 +198,7 @@ public sealed class CircuitCanvas : Control
         DrawWires(context, viewModel, layout);
         DrawComponents(context, viewModel, layout);
         DrawPorts(context, viewModel, layout);
+        DrawLaneOverlay(context, viewModel);
         DrawRubberBand(context);
         DrawHoverTooltip(context);
         DrawConnectionPreview(context);
@@ -561,6 +569,89 @@ public sealed class CircuitCanvas : Control
         }
     }
 
+    private void DrawLaneOverlay(DrawingContext context, EditorViewModel viewModel)
+    {
+        LaneOverlayBounds = default;
+        IReadOnlyList<NumericLaneListItem> lanes = viewModel.NumericLanes;
+        if (lanes.Count == 0)
+        {
+            return;
+        }
+
+        const int maxRows = 7;
+        const double rowHeight = 34;
+        int shown = Math.Min(lanes.Count, maxRows);
+        double width = Math.Min(330, Math.Max(220, Bounds.Width - 28));
+        double height = 28 + (shown * rowHeight) + 8 + (lanes.Count > shown ? 14 : 0);
+        var panel = new Rect(
+            14,
+            Math.Max(12, Bounds.Height - height - 46),
+            width,
+            height);
+        LaneOverlayBounds = panel;
+
+        context.DrawRectangle(_panelBackground, new Pen(_boxBorder, 1.1), panel, 6, 6);
+        FormattedText header = Text("NUMERIC LANES", 9.5, _muted, FontWeight.SemiBold);
+        context.DrawText(header, new Point(panel.X + 10, panel.Y + 7));
+        var separator = new Pen(WithOpacity(_boxBorder, 0.7), 0.8);
+        context.DrawLine(
+            separator,
+            new Point(panel.X + 10, panel.Y + 25),
+            new Point(panel.Right - 10, panel.Y + 25));
+
+        for (int i = 0; i < shown; i++)
+        {
+            NumericLaneListItem lane = lanes[i];
+            double rowTop = panel.Y + 28 + (i * rowHeight);
+            if (i > 0)
+            {
+                context.DrawLine(
+                    new Pen(WithOpacity(_boxBorder, 0.45), 0.6),
+                    new Point(panel.X + 10, rowTop),
+                    new Point(panel.Right - 10, rowTop));
+            }
+
+            string valueText = lane.ValueText;
+            bool valid = valueText is not ("—" or "invalid" or "missing");
+            FormattedText value = Text(
+                valueText,
+                11.5,
+                valid ? _ink : _undrivenBrush,
+                FontWeight.SemiBold);
+            value.MaxTextWidth = 88;
+            value.Trimming = TextTrimming.CharacterEllipsis;
+            double pillWidth = Math.Min(value.Width + 14, width * 0.42);
+            var pill = new Rect(panel.Right - 10 - pillWidth, rowTop + 7, pillWidth, 20);
+            context.DrawRectangle(
+                _badgeBackground,
+                new Pen(valid ? _accentSoft : _undrivenBrush, 0.9),
+                pill,
+                4,
+                4);
+            context.DrawText(value, new Point(pill.X + 5, pill.Y + 2));
+
+            double textWidth = Math.Max(12, panel.Width - pillWidth - 32);
+            FormattedText name = Text(lane.Name, 10.5, _ink, FontWeight.SemiBold);
+            name.MaxTextWidth = textWidth;
+            name.Trimming = TextTrimming.CharacterEllipsis;
+            context.DrawText(name, new Point(panel.X + 10, rowTop + 4));
+
+            FormattedText detail = Text($"{lane.FormatName} · {lane.PinSummary}", 8.5, _muted);
+            detail.MaxTextWidth = textWidth;
+            detail.Trimming = TextTrimming.CharacterEllipsis;
+            context.DrawText(detail, new Point(panel.X + 10, rowTop + 18));
+        }
+
+        if (lanes.Count > shown)
+        {
+            FormattedText more = Text(
+                $"+{lanes.Count - shown} more in the inspector",
+                8.5,
+                _muted);
+            context.DrawText(more, new Point(panel.X + 10, panel.Bottom - 16));
+        }
+    }
+
     private void DrawRubberBand(DrawingContext context)
     {
         if (!_rubberBanding)
@@ -646,8 +737,14 @@ public sealed class CircuitCanvas : Control
         }
 
         Focus();
-        PointerPoint point = e.GetCurrentPoint(this);
         Point screen = e.GetPosition(this);
+        if (LaneOverlayBounds.Contains(screen))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        PointerPoint point = e.GetCurrentPoint(this);
         Point world = Viewport.ScreenToWorld(screen);
         _pointerScreen = screen;
         _pointerWorld = world;
