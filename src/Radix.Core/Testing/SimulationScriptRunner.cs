@@ -195,6 +195,14 @@ public static class SimulationScriptRunner
                 }
             }
 
+            foreach (ScriptNetExpectation expectation in step.NetExpectations)
+            {
+                if (CheckNet(engine, expectation) is { } message)
+                {
+                    failures.Add(new ScriptFailure(stepNumber, step.At, message));
+                }
+            }
+
             if (step.Window is { } window)
             {
                 long deadline = step.At + window.Ticks;
@@ -208,6 +216,7 @@ public static class SimulationScriptRunner
                         engine,
                         window.PinExpectations,
                         window.LaneExpectations,
+                        window.NetExpectations,
                         mismatches);
                     if (mismatches.Count == 0)
                     {
@@ -249,6 +258,7 @@ public static class SimulationScriptRunner
                         engine,
                         stability.PinExpectations,
                         stability.LaneExpectations,
+                        stability.NetExpectations,
                         mismatches);
                     if (mismatches.Count > 0)
                     {
@@ -583,6 +593,7 @@ public static class SimulationScriptRunner
                 engine,
                 setup.PinExpectations,
                 setup.LaneExpectations,
+                setup.NetExpectations,
                 mismatches);
             if (mismatches.Count > 0)
             {
@@ -608,6 +619,7 @@ public static class SimulationScriptRunner
         SimulationEngine engine,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
+        IReadOnlyList<ScriptNetExpectation> netExpectations,
         List<string> mismatches)
     {
         mismatches.Clear();
@@ -622,6 +634,14 @@ public static class SimulationScriptRunner
         foreach (ScriptLaneExpectation expectation in laneExpectations)
         {
             if (CheckLane(project, definition, engine, expectation) is { } message)
+            {
+                mismatches.Add(message);
+            }
+        }
+
+        foreach (ScriptNetExpectation expectation in netExpectations)
+        {
+            if (CheckNet(engine, expectation) is { } message)
             {
                 mismatches.Add(message);
             }
@@ -682,6 +702,26 @@ public static class SimulationScriptRunner
               $"got {DescribeValue(port.Domain, actual)}";
     }
 
+    /// <summary>Returns a failure message, or null when the internal net matches.</summary>
+    private static string? CheckNet(SimulationEngine engine, ScriptNetExpectation expectation)
+    {
+        if (!TryFindNet(engine, expectation.Reference, out int netIndex, out CompiledNet net, out string error))
+        {
+            return error;
+        }
+
+        if (!TryResolveValue(net.Domain, expectation.Expected, out int expected, out error))
+        {
+            return $"invalid expectation for net '{expectation.Reference}': {error}";
+        }
+
+        int actual = engine.GetNetValue(netIndex);
+        return actual == expected
+            ? null
+            : $"net '{expectation.Reference}': expected {DescribeValue(net.Domain, expected)}, " +
+              $"got {DescribeValue(net.Domain, actual)}";
+    }
+
     /// <summary>Returns a failure message, or null when the lane matches.</summary>
     private static string? CheckLane(
         CircuitProject project,
@@ -734,6 +774,47 @@ public static class SimulationScriptRunner
             : $"lane '{lane.Id}': expected {expectation.Expected.ToString(CultureInfo.InvariantCulture)}, " +
               $"got {decoded.Value.ToString(CultureInfo.InvariantCulture)} " +
               $"({format.Describe(values.Length)} over {string.Join(",", lane.PinIds)})";
+    }
+
+    private static bool TryFindNet(
+        SimulationEngine engine,
+        ScriptNetReference reference,
+        out int netIndex,
+        out CompiledNet net,
+        out string error)
+    {
+        if (engine.Circuit.TryGetNet(new NetLocation(reference.Path, reference.NetId), out netIndex))
+        {
+            net = engine.Circuit.Nets[netIndex];
+            error = string.Empty;
+            return true;
+        }
+
+        net = null!;
+        error = $"unknown internal net '{reference}'. Authored nets available: " +
+                $"{DescribeAvailableNets(engine.Circuit)}.";
+        return false;
+    }
+
+    private static string DescribeAvailableNets(CompiledCircuit circuit)
+    {
+        const int limit = 8;
+        string[] names = circuit.NetIndexByLocation.Keys
+            .Select(location => location.Path.Length == 0
+                ? location.NetId
+                : $"{location.Path}/{location.NetId}")
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (names.Length == 0)
+        {
+            return "none";
+        }
+
+        string shown = string.Join(", ", names.Take(limit));
+        return names.Length > limit
+            ? $"{shown}, ... ({names.Length} total)"
+            : shown;
     }
 
     private static bool TryFindPort(

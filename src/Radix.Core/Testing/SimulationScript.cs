@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Radix.Core.Model;
 
 namespace Radix.Core.Testing;
 
@@ -38,6 +39,20 @@ public readonly record struct ScriptDrive(string PinId, ScriptValue Value);
 /// <summary>An expected interface-pin value at a scripted tick.</summary>
 public readonly record struct ScriptPinExpectation(string PinId, ScriptValue Expected);
 
+/// <summary>
+/// An authored net at a hierarchy path, relative to the script's simulated
+/// definition. The root definition has an empty path; a nested instance uses the
+/// instance IDs joined with '/'. Unlike a pin reference, a net reference names the
+/// authored wiring itself, including nets that never reach an interface.
+/// </summary>
+public readonly record struct ScriptNetReference(string Path, string NetId)
+{
+    public override string ToString() => Path.Length == 0 ? NetId : $"{Path}/{NetId}";
+}
+
+/// <summary>An expected internal-net value at a scripted tick.</summary>
+public sealed record ScriptNetExpectation(ScriptNetReference Reference, ScriptValue Expected);
+
 /// <summary>An expected decoded numeric-lane value at a scripted tick.</summary>
 public sealed class ScriptLaneExpectation
 {
@@ -63,11 +78,13 @@ public sealed class ScriptWindow
     public ScriptWindow(
         long ticks,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
-        IReadOnlyList<ScriptLaneExpectation> laneExpectations)
+        IReadOnlyList<ScriptLaneExpectation> laneExpectations,
+        IReadOnlyList<ScriptNetExpectation> netExpectations)
     {
         Ticks = ticks;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
+        NetExpectations = netExpectations;
     }
 
     /// <summary>Maximum ticks after the step's tick, inclusive, to wait for a match.</summary>
@@ -76,6 +93,8 @@ public sealed class ScriptWindow
     public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
 
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
+
+    public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
 }
 
 /// <summary>
@@ -88,11 +107,13 @@ public sealed class ScriptStability
     public ScriptStability(
         long ticks,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
-        IReadOnlyList<ScriptLaneExpectation> laneExpectations)
+        IReadOnlyList<ScriptLaneExpectation> laneExpectations,
+        IReadOnlyList<ScriptNetExpectation> netExpectations)
     {
         Ticks = ticks;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
+        NetExpectations = netExpectations;
     }
 
     /// <summary>Number of ticks after the step's tick that the values must hold, inclusive.</summary>
@@ -101,6 +122,8 @@ public sealed class ScriptStability
     public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
 
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
+
+    public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
 }
 
 /// <summary>
@@ -113,11 +136,13 @@ public sealed class ScriptSetup
     public ScriptSetup(
         long ticks,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
-        IReadOnlyList<ScriptLaneExpectation> laneExpectations)
+        IReadOnlyList<ScriptLaneExpectation> laneExpectations,
+        IReadOnlyList<ScriptNetExpectation> netExpectations)
     {
         Ticks = ticks;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
+        NetExpectations = netExpectations;
     }
 
     /// <summary>Number of ticks before the step that the values must hold.</summary>
@@ -126,6 +151,8 @@ public sealed class ScriptSetup
     public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
 
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
+
+    public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
 }
 
 /// <summary>Expected number of value changes on one interface pin over an interval.</summary>
@@ -220,6 +247,7 @@ public sealed class SimulationScriptStep
         IReadOnlyList<ScriptDrive> drives,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
+        IReadOnlyList<ScriptNetExpectation> netExpectations,
         bool? expectHalted,
         string? description,
         ScriptWindow? window = null,
@@ -233,6 +261,7 @@ public sealed class SimulationScriptStep
         Drives = drives;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
+        NetExpectations = netExpectations;
         ExpectHalted = expectHalted;
         Description = description;
         Window = window;
@@ -251,6 +280,9 @@ public sealed class SimulationScriptStep
     public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
 
     public IReadOnlyList<ScriptLaneExpectation> LaneExpectations { get; }
+
+    /// <summary>Expected values on authored nets, addressed by hierarchy path.</summary>
+    public IReadOnlyList<ScriptNetExpectation> NetExpectations { get; }
 
     /// <summary>Optional assertion about the engine's halt state after this step settles.</summary>
     public bool? ExpectHalted { get; }
@@ -277,7 +309,7 @@ public sealed class SimulationScriptStep
 
     public bool HasActions =>
         Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
-        ExpectHalted is not null || Window is not null || Stability is not null ||
+        NetExpectations.Count > 0 || ExpectHalted is not null || Window is not null || Stability is not null ||
         Transitions is not null || Edges is not null || Sequence is not null ||
         Setup is not null;
 }
@@ -389,6 +421,7 @@ public sealed class SimulationScript
             var drives = MapDrives(step.Set, stepNumber);
             var pinExpectations = MapExpectations(step.Expect, stepNumber, "expect");
             var laneExpectations = MapLaneExpectations(step.ExpectLane, stepNumber, "expectLane");
+            var netExpectations = MapNetExpectations(step.ExpectNet, stepNumber, "expectNet");
             if (step.Within is not null && step.Stable is not null)
             {
                 throw new SimulationScriptException(
@@ -438,6 +471,7 @@ public sealed class SimulationScript
                 drives,
                 pinExpectations,
                 laneExpectations,
+                netExpectations,
                 step.ExpectHalted,
                 step.Description,
                 window,
@@ -504,6 +538,38 @@ public sealed class SimulationScript
         return expectations;
     }
 
+    private static List<ScriptNetExpectation> MapNetExpectations(
+        Dictionary<string, JsonElement>? source,
+        int stepNumber,
+        string field)
+    {
+        var expectations = new List<ScriptNetExpectation>();
+        if (source is null)
+        {
+            return expectations;
+        }
+
+        if (source.Count == 0)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} has an empty '{field}' object.");
+        }
+
+        foreach ((string reference, JsonElement element) in source)
+        {
+            if (!TryParseNetReference(reference, out ScriptNetReference parsed, out string error))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} '{field}' has an invalid net reference '{reference}': {error}");
+            }
+
+            expectations.Add(new ScriptNetExpectation(
+                parsed,
+                ReadValue(element, stepNumber, $"{field}.{reference}")));
+        }
+
+        return expectations;
+    }
+
     private static List<ScriptLaneExpectation> MapLaneExpectations(
         Dictionary<string, JsonElement>? source,
         int stepNumber,
@@ -542,7 +608,7 @@ public sealed class SimulationScript
             return null;
         }
 
-        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes) =
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets) =
             MapWindowContents(source, stepNumber, at, "setup");
         if (ticks > at)
         {
@@ -550,7 +616,7 @@ public sealed class SimulationScript
                 $"Step {stepNumber} 'setup.ticks' ({ticks}) cannot start before t=0 for a step at t={at}.");
         }
 
-        return new ScriptSetup(ticks, pins, lanes);
+        return new ScriptSetup(ticks, pins, lanes, nets);
     }
 
     private static ScriptWindow? MapWindow(WindowDto? source, int stepNumber, long at)
@@ -560,9 +626,9 @@ public sealed class SimulationScript
             return null;
         }
 
-        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes) =
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets) =
             MapWindowContents(source, stepNumber, at, "within");
-        return new ScriptWindow(ticks, pins, lanes);
+        return new ScriptWindow(ticks, pins, lanes, nets);
     }
 
     private static ScriptStability? MapStability(WindowDto? source, int stepNumber, long at)
@@ -572,9 +638,9 @@ public sealed class SimulationScript
             return null;
         }
 
-        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes) =
+        (long ticks, List<ScriptPinExpectation> pins, List<ScriptLaneExpectation> lanes, List<ScriptNetExpectation> nets) =
             MapWindowContents(source, stepNumber, at, "stable");
-        return new ScriptStability(ticks, pins, lanes);
+        return new ScriptStability(ticks, pins, lanes, nets);
     }
 
     private static ScriptTransitionWindow? MapTransitions(TransitionsDto? source, int stepNumber, long at)
@@ -770,7 +836,7 @@ public sealed class SimulationScript
         return new ScriptEdgeSequenceWindow(ticks, items);
     }
 
-    private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes)
+    private static (long Ticks, List<ScriptPinExpectation> Pins, List<ScriptLaneExpectation> Lanes, List<ScriptNetExpectation> Nets)
         MapWindowContents(WindowDto source, int stepNumber, long at, string field)
     {
         if (source.Ticks is null)
@@ -792,13 +858,62 @@ public sealed class SimulationScript
 
         var pinExpectations = MapExpectations(source.Expect, stepNumber, $"{field}.expect");
         var laneExpectations = MapLaneExpectations(source.ExpectLane, stepNumber, $"{field}.expectLane");
-        if (pinExpectations.Count == 0 && laneExpectations.Count == 0)
+        var netExpectations = MapNetExpectations(source.ExpectNet, stepNumber, $"{field}.expectNet");
+        if (pinExpectations.Count == 0 && laneExpectations.Count == 0 && netExpectations.Count == 0)
         {
             throw new SimulationScriptException(
-                $"Step {stepNumber} '{field}' needs at least one 'expect' or 'expectLane' entry.");
+                $"Step {stepNumber} '{field}' needs at least one 'expect', 'expectLane', or 'expectNet' entry.");
         }
 
-        return (ticks, pinExpectations, laneExpectations);
+        return (ticks, pinExpectations, laneExpectations, netExpectations);
+    }
+
+    /// <summary>
+    /// Parses an authored-net reference relative to the script's simulated definition.
+    /// A bare id names a net in the root definition; <c>instance/netId</c> names a net
+    /// under a hierarchy path, whose segments are instance IDs. IDs never contain '/',
+    /// so the last segment is always the net id.
+    /// </summary>
+    public static bool TryParseNetReference(string? reference, out ScriptNetReference result, out string error)
+    {
+        result = default;
+        string text = reference?.Trim() ?? string.Empty;
+        if (text.Length == 0)
+        {
+            error = "a net reference cannot be blank.";
+            return false;
+        }
+
+        int slash = text.LastIndexOf('/');
+        string path = slash < 0 ? string.Empty : text[..slash];
+        string netId = slash < 0 ? text : text[(slash + 1)..];
+        if (netId.Length == 0 || !Identifiers.IsValid(netId))
+        {
+            error = $"net id '{netId}' is not valid. {Identifiers.Rule}";
+            return false;
+        }
+
+        if (slash == 0)
+        {
+            error = "a net reference cannot start with '/'.";
+            return false;
+        }
+
+        if (path.Length > 0)
+        {
+            foreach (string segment in path.Split('/'))
+            {
+                if (!Identifiers.IsValid(segment))
+                {
+                    error = $"path segment '{segment}' is not valid. {Identifiers.Rule}";
+                    return false;
+                }
+            }
+        }
+
+        result = new ScriptNetReference(path, netId);
+        error = string.Empty;
+        return true;
     }
 
     private static string NormalizeId(string id, string kind, int stepNumber, string field)
@@ -906,6 +1021,8 @@ public sealed class SimulationScript
 
         public Dictionary<string, JsonElement>? ExpectLane { get; set; }
 
+        public Dictionary<string, JsonElement>? ExpectNet { get; set; }
+
         public bool? ExpectHalted { get; set; }
 
         public WindowDto? Setup { get; set; }
@@ -967,5 +1084,7 @@ public sealed class SimulationScript
         public Dictionary<string, JsonElement>? Expect { get; set; }
 
         public Dictionary<string, JsonElement>? ExpectLane { get; set; }
+
+        public Dictionary<string, JsonElement>? ExpectNet { get; set; }
     }
 }

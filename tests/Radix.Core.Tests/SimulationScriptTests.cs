@@ -1288,6 +1288,182 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void InternalNetExpectationsResolveRootAndNestedPaths()
+    {
+        var builder = new ProjectBuilder("internal nets");
+        DefinitionBuilder leaf = builder.Define("leaf", "Leaf");
+        Net leafInput = leaf.AddPin("a", "A", PinDirection.Input, "binary");
+        Net leafOutput = leaf.AddPin("y", "Y", PinDirection.Output, "binary");
+        leaf.AddPrimitive("g1", new LookupSpec(1, [0, 1]));
+        leaf.AddPrimitive("g2", new LookupSpec(1, [0, 1]));
+        Net midpoint = leaf.AddNet("mid", "binary");
+        leaf.Connect(leafInput, leaf.Pin("g1", "in0"));
+        leaf.Connect(midpoint, leaf.Pin("g1", "out"), leaf.Pin("g2", "in0"));
+        leaf.Connect(leafOutput, leaf.Pin("g2", "out"));
+
+        DefinitionBuilder root = builder.Define("root", "Root");
+        Net input = root.AddPin("a", "A", PinDirection.Input, "binary");
+        Net output = root.AddPin("y", "Y", PinDirection.Output, "binary");
+        root.AddPrimitive("g", new LookupSpec(1, [0, 1]));
+        root.AddInstance("u1", "leaf");
+        Net wire = root.AddNet("w", "binary");
+        root.Connect(input, root.Pin("g", "in0"));
+        root.Connect(wire, root.Pin("g", "out"), root.Pin("u1", "a"));
+        root.Connect(output, root.Pin("u1", "y"));
+
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                {
+                  "at": 0,
+                  "set": { "a": 1 },
+                  "expect": { "y": 1 },
+                  "expectNet": { "w": 1, "u1/mid": 1 }
+                },
+                {
+                  "at": 20,
+                  "set": { "a": 0 },
+                  "expect": { "y": 0 },
+                  "expectNet": { "w": 0, "u1/mid": 0 }
+                }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(builder.Build("root"), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal("root", result.DefinitionId);
+        Assert.Equal(2, result.StepsExecuted);
+    }
+
+    [Fact]
+    public void InternalNetExpectationsWorkInSetupSettleAndStabilityWindows()
+    {
+        var builder = new ProjectBuilder("internal windows");
+        DefinitionBuilder definition = builder.Define("root", "Root");
+        Net input = definition.AddPin("a", "A", PinDirection.Input, "binary");
+        Net output = definition.AddPin("y", "Y", PinDirection.Output, "binary");
+        definition.AddPrimitive("g1", new LookupSpec(1, [0, 1]));
+        definition.AddPrimitive("g2", new LookupSpec(1, [0, 1], delayTicks: 3));
+        Net wire = definition.AddNet("w", "binary");
+        definition.Connect(input, definition.Pin("g1", "in0"));
+        definition.Connect(wire, definition.Pin("g1", "out"), definition.Pin("g2", "in0"));
+        definition.Connect(output, definition.Pin("g2", "out"));
+
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "set": { "a": 0 } },
+                {
+                  "at": 10,
+                  "setup": { "ticks": 3, "expectNet": { "w": 0, "y_net": 0 } },
+                  "set": { "a": 1 },
+                  "within": { "ticks": 5, "expectNet": { "w": 1, "y_net": 1 } }
+                },
+                { "at": 30, "stable": { "ticks": 5, "expectNet": { "w": 1, "y_net": 1 } } },
+                { "at": 40, "set": { "a": 0 } },
+                { "at": 50, "stable": { "ticks": 5, "expectNet": { "w": 0, "y_net": 0 } } },
+                {
+                  "at": 60,
+                  "setup": { "ticks": 3, "expectNet": { "w": 0, "y_net": 0 } },
+                  "set": { "a": 1 }
+                },
+                { "at": 70, "within": { "ticks": 5, "expectNet": { "w": 1, "y_net": 1 } } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(builder.Build("root"), script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+        Assert.Equal(7, result.StepsExecuted);
+        Assert.Equal(70, result.FinalTime);
+    }
+
+    [Fact]
+    public void InternalNetFailureReportsTheReferenceAndDomainValues()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [
+                { "at": 0, "expectNet": { "ff/nope": 1 } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateDFlipFlopDemo(),
+            script);
+
+        Assert.False(result.Passed);
+        ScriptFailure failure = Assert.Single(result.Failures);
+        Assert.Contains("unknown internal net 'ff/nope'", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("Authored nets available:", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMalformedNetReferencesAndEmptyNetWindows()
+    {
+        Assert.Contains(
+            "cannot be blank",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectNet": { "": 1 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "net id '' is not valid",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectNet": { "u1/": 1 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "path segment '' is not valid",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectNet": { "u1//w": 1 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "path segment 'bad net' is not valid",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectNet": { "bad net/w": 1 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "empty 'expectNet' object",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "expectNet": {} } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "at least one 'expect', 'expectLane', or 'expectNet'",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "within": { "ticks": 5 } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnknownPinIsAFailureNotAnException()
     {
         SimulationScript script = SimulationScript.LoadFromString(
