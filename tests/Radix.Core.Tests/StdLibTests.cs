@@ -779,6 +779,41 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryMachinesAddBothArgumentTrits()
+    {
+        // ADD 3 exercises the high argument trit; the earlier wiring added only the low
+        // digit, so this would silently produce 5 again instead of 8.
+        CircuitProject callProject = ExampleProjects.CreateTernaryCallMachineDemo();
+        SetCallMachineProgram(
+            callProject,
+            [1, 2, 0, 0, 0, 0, 0, 0, 0],
+            [5, 3, 0, 0, 0, 0, 0, 0, 0]);
+        SimulationEngine call = Engine("demo.t-machine-3", callProject);
+        call.Drive("clk", 0);
+        Settle(call, 120);
+        PulseTernaryClock(call, settle: 120);
+        Assert.Equal(5, ReadTernaryPair(call, "q"));
+        PulseTernaryClock(call, settle: 120);
+        Assert.Equal(8, ReadTernaryPair(call, "q"));
+        Assert.Empty(call.RuntimeDiagnostics);
+
+        CircuitProject branchProject = ExampleProjects.CreateTernaryBranchMachineDemo();
+        SetMachineProgram(
+            branchProject,
+            "demo.t-machine-2",
+            [1, 2, 0, 0, 0, 0, 0, 0, 0],
+            [5, 3, 0, 0, 0, 0, 0, 0, 0]);
+        SimulationEngine branch = Engine("demo.t-machine-2", branchProject);
+        branch.Drive("clk", 0);
+        Settle(branch, 120);
+        PulseTernaryClock(branch, settle: 120);
+        Assert.Equal(5, ReadTernaryPair(branch, "q"));
+        PulseTernaryClock(branch, settle: 120);
+        Assert.Equal(8, ReadTernaryPair(branch, "q"));
+        Assert.Empty(branch.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryCallMachinePushesAndPopsNestedReturns()
     {
         CircuitProject project = ExampleProjects.CreateTernaryCallMachineDemo();
@@ -1080,31 +1115,21 @@ public sealed class StdLibTests
         engine.Read($"{prefix}0") + (3 * engine.Read($"{prefix}1"));
 
     /// <summary>Rewrites the stack machine's four instruction ROMs for a scenario test.</summary>
-    private static void SetStackMachineProgram(CircuitProject project, int[] program, int[] operands)
-    {
-        CircuitDefinition root = project.RequireDefinition("demo.t-stack");
-        int[] opcodeLow = new int[9];
-        int[] opcodeHigh = new int[9];
-        int[] argumentLow = new int[9];
-        int[] argumentHigh = new int[9];
-        for (int address = 0; address < 9; address++)
-        {
-            opcodeLow[address] = program[address] % 3;
-            opcodeHigh[address] = program[address] / 3;
-            argumentLow[address] = operands[address] % 3;
-            argumentHigh[address] = operands[address] / 3;
-        }
-
-        SetRom(root, "rom_op_low", opcodeLow);
-        SetRom(root, "rom_op_high", opcodeHigh);
-        SetRom(root, "rom_arg_low", argumentLow);
-        SetRom(root, "rom_arg_high", argumentHigh);
-    }
+    private static void SetStackMachineProgram(CircuitProject project, int[] program, int[] operands) =>
+        SetMachineProgram(project, "demo.t-stack", program, operands);
 
     /// <summary>Rewrites the call machine's four instruction ROMs for a scenario test.</summary>
-    private static void SetCallMachineProgram(CircuitProject project, int[] program, int[] operands)
+    private static void SetCallMachineProgram(CircuitProject project, int[] program, int[] operands) =>
+        SetMachineProgram(project, "demo.t-machine-3", program, operands);
+
+    /// <summary>Rewrites the four instruction ROMs of a ternary machine for a scenario test.</summary>
+    private static void SetMachineProgram(
+        CircuitProject project,
+        string definitionId,
+        int[] program,
+        int[] operands)
     {
-        CircuitDefinition root = project.RequireDefinition("demo.t-machine-3");
+        CircuitDefinition root = project.RequireDefinition(definitionId);
         int[] opcodeLow = new int[9];
         int[] opcodeHigh = new int[9];
         int[] argumentLow = new int[9];

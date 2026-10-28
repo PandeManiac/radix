@@ -1394,7 +1394,7 @@ public static class ExampleProjects
         for (int lane = 0; lane < 2; lane++)
         {
             root.AddInstance($"alu_mux{lane}", "std.t-mux", 620, 300 + (lane * 220));
-            root.Connect(lane == 0 ? argument[0] : zero, root.Pin($"alu_mux{lane}", "a"));
+            root.Connect(argument[lane], root.Pin($"alu_mux{lane}", "a"));
             root.Connect(sum[lane], root.Pin($"alu_mux{lane}", "b"));
             root.Connect(isAdd, root.Pin($"alu_mux{lane}", "s"));
             root.Connect(alu[lane], root.Pin($"alu_mux{lane}", "y"));
@@ -2139,7 +2139,7 @@ public static class ExampleProjects
         for (int lane = 0; lane < 2; lane++)
         {
             root.AddInstance($"alu_mux{lane}", "std.t-mux", 860, 400 + (lane * 200));
-            root.Connect(lane == 0 ? argument[0] : zero, root.Pin($"alu_mux{lane}", "a"));
+            root.Connect(argument[lane], root.Pin($"alu_mux{lane}", "a"));
             root.Connect(sum[lane], root.Pin($"alu_mux{lane}", "b"));
             root.Connect(isAdd, root.Pin($"alu_mux{lane}", "s"));
             root.Connect(alu[lane], root.Pin($"alu_mux{lane}", "y"));

@@ -15680,6 +15680,10 @@
             {
               "instance": "pc_mux_branch1",
               "pin": "b"
+            },
+            {
+              "instance": "alu_mux1",
+              "pin": "a"
             }
           ]
         },
@@ -15834,10 +15838,6 @@
             {
               "instance": "pc_adder",
               "pin": "b1"
-            },
-            {
-              "instance": "alu_mux1",
-              "pin": "a"
             }
           ]
         },
