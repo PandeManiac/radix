@@ -1129,7 +1129,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         _project.Name = trimmed;
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
     }
 
     public void NewProject()
@@ -1526,7 +1526,7 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         instance.X += dx;
         instance.Y += dy;
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
     }
 
     public void NudgeSelection(double dx, double dy)
@@ -1547,7 +1547,7 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
 
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
     }
 
     /// <summary>
@@ -1569,7 +1569,7 @@ public sealed class EditorViewModel : ObservableObject
             instance.X = Math.Round(left, 1);
         }
 
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
         StatusText = $"Aligned {instances.Count} parts to the left";
     }
 
@@ -1588,7 +1588,7 @@ public sealed class EditorViewModel : ObservableObject
             instance.Y = Math.Round(top, 1);
         }
 
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
         StatusText = $"Aligned {instances.Count} parts to the top";
     }
 
@@ -1616,7 +1616,7 @@ public sealed class EditorViewModel : ObservableObject
             instances[i].X = Math.Round(first + (step * i), 1);
         }
 
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
         StatusText = $"Spread {instances.Count} parts horizontally";
     }
 
@@ -1640,7 +1640,7 @@ public sealed class EditorViewModel : ObservableObject
             instances[i].Y = Math.Round(first + (step * i), 1);
         }
 
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
         StatusText = $"Spread {instances.Count} parts vertically";
     }
 
@@ -2762,7 +2762,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         net.WireColor = normalized;
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
         StatusText = normalized is null ? "Wire color set to automatic" : $"Wire color set to {normalized}";
     }
 
@@ -2783,7 +2783,7 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         net.RoutePoints.Add(new NetWaypoint(Math.Round(point.X, 1), Math.Round(point.Y, 1)));
         SelectNet(net.Id);
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
         StatusText = "Added wire bendpoint";
     }
 
@@ -2803,7 +2803,7 @@ public sealed class EditorViewModel : ObservableObject
 
         net.RoutePoints[index] = new NetWaypoint(Math.Round(point.X, 1), Math.Round(point.Y, 1));
         IsDirty = true;
-        RebuildLayout();
+        RebuildLayout(reuseRoutes: true);
         VisualInvalidated?.Invoke();
     }
 
@@ -2817,7 +2817,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         net.RoutePoints.RemoveAt(index);
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
         StatusText = "Removed wire bendpoint";
     }
 
@@ -2831,7 +2831,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         net.RoutePoints.Clear();
-        AfterMutation(structural: false, invalidateSimulation: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
         StatusText = "Wire route reset to automatic";
     }
 
@@ -4067,7 +4067,7 @@ public sealed class EditorViewModel : ObservableObject
 
                     PushUndo();
                     net.WireColor = normalized;
-                    AfterMutation(structural: false, invalidateSimulation: false);
+                    AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
                     return true;
                 }));
             Fields.Add(new EditableField(
@@ -4108,7 +4108,7 @@ public sealed class EditorViewModel : ObservableObject
                 {
                     PushUndo();
                     Definition.Description = string.IsNullOrWhiteSpace(value) ? null : value;
-                    AfterMutation(structural: false, invalidateSimulation: false);
+                    AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
                     return true;
                 }));
             Fields.Add(new EditableField("Instances", Definition.Instances.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
@@ -4446,7 +4446,10 @@ public sealed class EditorViewModel : ObservableObject
     /// presentation-only changes (positions, labels, colors, routes, numeric lanes),
     /// which must not discard the running engine or its drive history.
     /// </summary>
-    private void AfterMutation(bool structural, bool invalidateSimulation = true)
+    private void AfterMutation(
+        bool structural,
+        bool invalidateSimulation = true,
+        LayoutRefreshMode layoutRefresh = LayoutRefreshMode.Canonical)
     {
         IsDirty = true;
         if (invalidateSimulation)
@@ -4454,7 +4457,16 @@ public sealed class EditorViewModel : ObservableObject
             Simulator.Retarget(_project, Definition);
         }
 
-        RebuildLayout();
+        switch (layoutRefresh)
+        {
+            case LayoutRefreshMode.Canonical:
+                RebuildLayout();
+                break;
+            case LayoutRefreshMode.Reuse:
+                RebuildLayout(reuseRoutes: true);
+                break;
+        }
+
         if (structural)
         {
             RefreshDefinitions();
@@ -4483,6 +4495,13 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(ProjectTitle));
         UpdateCommandStates();
         VisualInvalidated?.Invoke();
+    }
+
+    private enum LayoutRefreshMode
+    {
+        Canonical,
+        Reuse,
+        None,
     }
 
     private void RebuildLayout(bool reuseRoutes = false)

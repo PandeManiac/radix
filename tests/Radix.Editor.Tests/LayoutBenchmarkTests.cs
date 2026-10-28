@@ -52,6 +52,16 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
 
             canonical.Stop();
 
+            var nudgeModel = new EditorViewModel(project);
+            ComponentInstance nudgeInstance = nudgeModel.Definition.Instances[count / 2];
+            var nudgeWatch = Stopwatch.StartNew();
+            for (int i = 1; i <= 10; i++)
+            {
+                nudgeModel.NudgeInstance(nudgeInstance.Id, 1, i % 2);
+            }
+
+            nudgeWatch.Stop();
+
             long drag = long.MaxValue;
             long end = long.MaxValue;
             for (int run = 0; run < 3; run++)
@@ -75,7 +85,7 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
 
             output.WriteLine(
                 $"{count} gates: construct {construct} ms, canonical frames {canonical.ElapsedMilliseconds} ms, " +
-                $"reused frames {drag} ms, final rebuild {end} ms");
+                $"nudge frames {nudgeWatch.ElapsedMilliseconds} ms, reused frames {drag} ms, final rebuild {end} ms");
         }
     }
 

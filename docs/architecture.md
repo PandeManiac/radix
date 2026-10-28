@@ -353,11 +353,11 @@ Pin values are rendered as small off-box badges; wire segments carry the current
 
 The active definition and canvas viewport are stored as optional top-level project view metadata. `CircuitCanvas` applies a saved viewport after layout instead of fitting, and reports every later pan/zoom to the view model. Viewport changes are deliberately excluded from dirty-state comparison: moving the camera must not make a saved circuit look modified. Selection, drive history, and waveform history remain transient.
 
-Component boxes and ports are rebuilt after every project mutation. During an active drag the editor passes the previous layout as a route cache: a net reuses its routed geometry when its ordered pin/port endpoints, authored bendpoints, and every cached segment relative to changed body bounds are unchanged. Adding, moving, or removing a body only invalidates nets whose routes intersect the changed bounds; a net whose terminals or bendpoints changed always reroutes. `EndDrag` and every non-drag mutation rebuild canonically, so a committed or saved project never inherits an approximate route. This is route reuse, not an incremental layout engine: structural edits still rebuild all boxes, ports, and changed routes. Measured drag behavior is in [benchmarks.md](benchmarks.md#editor-layout).
+Component boxes and ports are rebuilt after every layout-affecting mutation. During an active drag, keyboard nudges, arrange-selection alignment/spacing, and bendpoint edits, the editor passes the previous layout as a route cache: a net reuses its routed geometry when its ordered pin/port endpoints, authored bendpoints, and every cached segment relative to changed body bounds are unchanged. Adding, moving, or removing a body only invalidates nets whose routes intersect the changed bounds; a net whose terminals or bendpoints changed always reroutes. `EndDrag`, structural edits, and undo/redo rebuild canonically, so a structural change or committed drag never inherits a stale route. This is route reuse, not a fully incremental layout engine: boxes and ports are still rebuilt, and structural edits canonicalize every route. Measured behavior is in [benchmarks.md](benchmarks.md#editor-layout).
 
 Definition navigation keeps a session-only trail: `OpenDefinition` records each newly opened definition, `NavigateBack`/`NavigateForward` move the index without adding entries, and opening a definition after backing up drops the forward tail. Trails are reset whenever the project object is replaced (new, open, recovery, import, undo/redo, definition creation or removal) so a stale ID from one project cannot navigate another. The trail is intentionally not part of the project format; it is a navigation convenience, not document state.
 
-Presentation-only mutations do not call `SimulatorHost.Retarget`. Instance positions and labels, arrange-selection alignment and spacing, wire colors and bendpoints, numeric lane/format definitions, and project/definition metadata mark the project dirty and rebuild layout while leaving the compiled circuit, simulated time, and external-drive history intact. Connectivity changes, interface or domain changes, net initial values, and primitive parameters take the invalidating path. This keeps a running experiment alive while arranging or annotating it; undo/redo restores a whole-project snapshot and therefore starts a fresh simulation.
+Presentation-only mutations do not call `SimulatorHost.Retarget`. Instance positions and labels, arrange-selection alignment and spacing, wire colors and bendpoints, numeric lane/format definitions, and project/definition metadata mark the project dirty while leaving the compiled circuit, simulated time, and external-drive history intact. Position and bendpoint edits reuse valid routes; metadata and wire-color changes skip layout entirely because geometry and cached route data did not change. Connectivity changes, interface or domain changes, net initial values, and primitive parameters take the invalidating path. This keeps a running experiment alive while arranging or annotating it; undo/redo restores a whole-project snapshot and therefore starts a fresh simulation.
 
 ### 10.5 Theming
 
@@ -412,7 +412,7 @@ Implemented:
 - one-pass waveform snapshot construction;
 - one indexed validation pass per definition for instance, pin, and driver checks;
 - explicit compilation: the editor recompiles on Begin or after invalidation, not per frame;
-- route reuse during drag: unchanged nets keep routed geometry, changed terminals/bendpoints or intersecting moved bodies invalidate, and release rebuilds canonically;
+- route reuse during drag and presentation-only position/bendpoint edits: unchanged nets keep routed geometry, changed terminals/bendpoints or intersecting moved bodies invalidate, and structural edits or release rebuild canonically;
 - single-pass obstacle marking per route grid, instead of an obstacle scan at every A* expansion.
 
 Not implemented:
@@ -420,7 +420,7 @@ Not implemented:
 - JIT/expression specialization;
 - multithreaded event processing;
 - incremental recompilation;
-- incremental structural layout: drag frames reuse routes, but every structural edit rebuilds all boxes and ports;
+- incremental structural layout: position-only edits reuse routes, but place/delete/connect edits still rebuild all boxes, ports, and routes;
 - spatial indexing for very large editor canvases beyond O(n) hit tests;
 - waveform downsampling for millions of transitions.
 
@@ -428,7 +428,7 @@ Before the validation index, net pin references and driver counts each scanned t
 
 Measured baseline: 2,000-gate chain at 50 ticks → 200,150 events in ~21 ms (~9.4M events/s); 20,000-gate chain → 2,000,150 events in ~170 ms (~11.8M events/s) on an AMD Ryzen 9 9950X3D with .NET 10.
 
-On the editor side, a synthetic 1,000-gate chain in Release takes ~0.45 s to construct or canonically rebuild after a drag, but ten drag frames take ~22 ms when unchanged routes are reused (versus ~4.64 s with a full rebuild each frame). These are interaction latency including view-model refresh, not isolated router time. See [benchmarks.md](benchmarks.md#editor-layout).
+On the editor side, a synthetic 1,000-gate chain in Release takes ~0.41–0.45 s to construct or canonically rebuild after a drag, but ten drag frames take ~14 ms when unchanged routes are reused (versus ~4.48 s with a full rebuild each frame), and ten keyboard nudges take ~71 ms instead of ~4.5 s. These are interaction latency including view-model refresh, not isolated router time. See [benchmarks.md](benchmarks.md#editor-layout).
 
 ## 12. Extension points and non-goals
 

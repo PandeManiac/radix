@@ -73,6 +73,46 @@ public sealed class WireRoutingTests
     }
 
     [Fact]
+    public void NudgingReusesUnchangedRoutesAndReroutesMovedConnections()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
+        CircuitLayout initial = Assert.IsType<CircuitLayout>(viewModel.Layout);
+        ComponentInstance instance = viewModel.Definition.Instances.First(i => i.Id.StartsWith("ff", StringComparison.Ordinal));
+        var connectedNets = viewModel.Definition.Nets
+            .Where(net => net.Pins.Any(pin => string.Equals(pin.InstanceId, instance.Id, StringComparison.Ordinal)))
+            .Select(net => net.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        NetWire[] unaffected = initial.Wires
+            .Where(wire => !connectedNets.Contains(wire.NetId))
+            .ToArray();
+        NetWire[] moved = initial.Wires
+            .Where(wire => connectedNets.Contains(wire.NetId))
+            .ToArray();
+        Assert.NotEmpty(unaffected);
+        Assert.NotEmpty(moved);
+
+        viewModel.NudgeInstance(instance.Id, 5, 0);
+        CircuitLayout nudged = Assert.IsType<CircuitLayout>(viewModel.Layout);
+
+        Assert.Contains(nudged.Wires, unaffected.Contains);
+        Assert.DoesNotContain(nudged.Wires, wire => moved.Contains(wire));
+        AssertWiresClear(nudged);
+    }
+
+    [Fact]
+    public void RenamingAProjectDoesNotRebuildGeometry()
+    {
+        var viewModel = new EditorViewModel(ExampleProjects.CreateFullAdderDemo());
+        CircuitLayout layout = Assert.IsType<CircuitLayout>(viewModel.Layout);
+
+        viewModel.RenameProject("Renamed project");
+
+        Assert.Same(layout, viewModel.Layout);
+        Assert.Equal("Renamed project", viewModel.Project.Name);
+    }
+
+    [Fact]
     public void MovingABodyInvalidatesRoutesThroughItButReusesOthers()
     {
         var builder = new ProjectBuilder("route-cache");
