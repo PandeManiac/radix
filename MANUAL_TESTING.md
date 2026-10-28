@@ -219,6 +219,7 @@ These steps use a terminal only; they never open a window. Run from the reposito
 13. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-adder-2.radix examples/tests/ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0, covering sums 16, 9, 8, and 0.
 14. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-accumulator.radix examples/tests/ternary-accumulator.radixtest`. Expected: `PASS: 17 step(s) through t=410`, exit code 0; the `Result` lane goes 5 → 8 → 3 (wrap) → 3 (hold) → 8.
 15. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-machine.radix examples/tests/ternary-machine.radixtest`. Expected: `PASS: 32 step(s) through t=2260`, exit code 0; PC walks 0..8, ACC follows 1, 3, 5, 5, 2, 4, 5, 5, 5, then restarts with 1.
+16. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-branch-machine.radix examples/tests/ternary-branch-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; MEM1 becomes 4, a BZ falls through, a later BZ jumps to PC 8, LOADM reads 4 back into ACC, and PC wraps to 0.
 
 ## 14. Ternary multi-trit addition
 
@@ -278,7 +279,19 @@ This uses the GUI. The machine fetches a two-trit instruction from lookup ROMs a
 5. Select the `rom_op` instance and edit its table in the inspector. Change entry 0 (PC 0) from 1 to 2 and commit. Expected: one undo step, a diagnostic-free project, and PC 0 now executes ADD instead of LOAD (ACC becomes 1+1=2 on the next pass). Undo restores LOAD.
 6. Double-click `pc_reg` and `acc_reg`. Expected: each contains two mux/flip-flop slices; the PC register's `LOAD` input is tied to a constant 2, while the accumulator's comes from the decoder and a ternary max gate. No errors or warnings appear.
 
-## 19. Tiny program-driven CPU
+## 19. Ternary branch machine
+
+This uses the GUI. The machine has a 2-trit opcode, a 2-trit argument, three words of writable trit memory, and branch control.
+
+1. Open `examples/ternary-branch-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: **PC** = 0, **ACC** = 0, **MEM0..2** = 0, **Opcode** = 1, **Argument** = 2 (LOAD 2).
+2. Set `CLK = 2`, settle, then set `CLK = 0`. Expected: **PC** = 1, **ACC** = 2, opcode 2, argument 2 (ADD 2 is next).
+3. Pulse three more times. Expected after each pulse: (PC 2, ACC 4), (PC 3, ACC 4, **MEM1** = 4), (PC 4, ACC 4). The third pulse executed `STORE 1`, and the fourth fetched `BZ 8` and did **not** branch because ACC is 4.
+4. Pulse twice more. Expected: (PC 5, ACC 0) and (PC 6, ACC 0, MEM2 = 0). Then pulse again: **PC** jumps straight to 8, skipping the `LOAD 1` at PC 7, because `BZ 8` sees ACC = 0. Opcode/argument read 4 and 1 (LOADM 1).
+5. Pulse twice more. Expected: **PC** = 0 and **ACC** = 4 — `LOADM 1` read the stored word — then **PC** = 1 with ACC = 2 as the program restarts.
+6. Select `write_mem1` and change its table entry for `(STORE, 1)` from 2 to 0, then commit. Expected: one undo step and no diagnostics; the next `STORE 1` leaves MEM1 unchanged. Undo restores the write.
+7. Double-click `mem_reg1`. Expected: a `std.t-reg-2` instance body, and inside it the same two mux/flip-flop slices as the other registers. Double-click `mem_read_low`. Expected: one 4-input lookup primitive whose 81-entry table is the read mux; no errors or warnings appear.
+
+## 20. Tiny program-driven CPU
 
 This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
 
@@ -305,7 +318,7 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 20. Known limitations to verify as *limitations*
+## 21. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -315,6 +328,7 @@ Do not file these as new failures until they change in the README:
 - selection, external drive history, and waveform history are not saved; viewport and active definition are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
+- the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no subroutine call stack, no halt instruction, and drops the adder carry on ADD, so its 0..8 accumulator wraps rather than overflowing;
 - in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
 - layout is not incremental: drag frames reuse unchanged routes, but releasing a drag and structural edits rebuild all geometry, so very large definitions may pause briefly;
 - waveform tail is bounded and may omit old transitions;

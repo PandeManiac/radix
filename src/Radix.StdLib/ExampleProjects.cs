@@ -19,6 +19,7 @@ public static class ExampleProjects
     public const string TernaryAdder2File = "ternary-adder-2.radix";
     public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
     public const string TernaryMachineFile = "ternary-machine.radix";
+    public const string TernaryBranchMachineFile = "ternary-branch-machine.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
 
@@ -33,6 +34,7 @@ public static class ExampleProjects
         new(TernaryAdder2File, "Ternary 2-trit adder", "Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane.", CreateTernaryAdder2Demo()),
         new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
         new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
+        new(TernaryBranchMachineFile, "Ternary branch machine", "A ternary machine with LOAD/STORE/ADD, three words of trit memory, and conditional JMP/BZ control.", CreateTernaryBranchMachineDemo()),
         new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
     ];
@@ -1114,5 +1116,332 @@ public static class ExampleProjects
         root.Connect(clk, root.Pin("acc_reg", "clk"));
 
         return builder.Build("demo.t-machine");
+    }
+
+    /// <summary>
+    /// A ternary machine with conditional branching and three words of writable trit
+    /// memory. Instructions are four lookup ROMs addressed by the two-trit program
+    /// counter: a two-trit opcode and a two-trit argument (an address for the memory
+    /// opcodes, an absolute target for the branch opcodes).
+    /// </summary>
+    public static CircuitProject CreateTernaryBranchMachineDemo()
+    {
+        var builder = new ProjectBuilder("Ternary branch machine");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.t-machine-2", "Ternary branch machine");
+        root.Definition.Description =
+            "A stored-program ternary machine with branching and three words of writable trit memory. " +
+            "Each rising CLK edge (0 -> 2) executes the instruction at PC and then either advances PC or " +
+            "loads a target. Opcodes: 0 NOP, 1 LOAD arg, 2 ADD arg (mod 9), 3 STORE arg, 4 LOADM arg, " +
+            "5 JMP target, 6 BZ target (jump when ACC is 0). The shipped nine-instruction program stores a " +
+            "value, tests ACC, branches to a LOADM that reads the stored word, and wraps back to the start.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.TernaryId);
+        var pc = new Net[2];
+        var acc = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            pc[i] = root.SetInitial(
+                root.AddPin($"pc{i}", $"PC{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+            acc[i] = root.SetInitial(
+                root.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        var opcode = new Net[2];
+        var argument = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            opcode[i] = root.SetInitial(
+                root.AddPin($"op{i}", $"OP{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+            argument[i] = root.SetInitial(
+                root.AddPin($"arg{i}", $"ARG{i}", PinDirection.Output, StandardDomains.TernaryId),
+                0);
+        }
+
+        var memory = new Net[3][];
+        for (int word = 0; word < 3; word++)
+        {
+            memory[word] = new Net[2];
+            for (int lane = 0; lane < 2; lane++)
+            {
+                memory[word][lane] = root.SetInitial(
+                    root.AddPin(
+                        $"m{word}_{lane}",
+                        $"M{word}.{lane}",
+                        PinDirection.Output,
+                        StandardDomains.TernaryId),
+                    0);
+            }
+
+            root.AddNumericLane($"mem{word}", $"MEM{word}", NumericFormats.UnsignedTernary.Id, $"m{word}_0", $"m{word}_1");
+        }
+
+        root.AddNumericLane("pc", "PC", NumericFormats.UnsignedTernary.Id, "pc0", "pc1");
+        root.AddNumericLane("acc", "ACC", NumericFormats.UnsignedTernary.Id, "q0", "q1");
+        root.AddNumericLane("opcode", "Opcode", NumericFormats.UnsignedTernary.Id, "op0", "op1");
+        root.AddNumericLane("argument", "Argument", NumericFormats.UnsignedTernary.Id, "arg0", "arg1");
+
+        Net zero = root.Rename(root.AddNet("zero", StandardDomains.TernaryId), "zero");
+        Net one = root.Rename(root.AddNet("one", StandardDomains.TernaryId), "one");
+        Net always = root.Rename(root.AddNet("always", StandardDomains.TernaryId), "always 2");
+
+        var nextPc = new Net[2];
+        var pcSum = new Net[2];
+        var sum = new Net[2];
+        var alu = new Net[2];
+        var read = new Net[2];
+        var accInput = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            nextPc[lane] = root.Rename(root.AddNet($"next_pc{lane}", StandardDomains.TernaryId), $"next PC lane {lane}");
+            pcSum[lane] = root.Rename(root.AddNet($"pc_sum{lane}", StandardDomains.TernaryId), $"PC + 1 lane {lane}");
+            sum[lane] = root.Rename(root.AddNet($"sum{lane}", StandardDomains.TernaryId), $"ACC + ARG lane {lane}");
+            alu[lane] = root.Rename(root.AddNet($"alu{lane}", StandardDomains.TernaryId), $"ALU lane {lane}");
+            read[lane] = root.Rename(root.AddNet($"read{lane}", StandardDomains.TernaryId), $"memory read lane {lane}");
+            accInput[lane] = root.Rename(root.AddNet($"acc_in{lane}", StandardDomains.TernaryId), $"register D{lane}");
+        }
+
+        Net isLoad = root.Rename(root.AddNet("is_load", StandardDomains.TernaryId), "LOAD");
+        Net isAdd = root.Rename(root.AddNet("is_add", StandardDomains.TernaryId), "ADD");
+        Net isStore = root.Rename(root.AddNet("is_store", StandardDomains.TernaryId), "STORE");
+        Net isLoadM = root.Rename(root.AddNet("is_loadm", StandardDomains.TernaryId), "LOADM");
+        Net isJump = root.Rename(root.AddNet("is_jump", StandardDomains.TernaryId), "JMP");
+        Net isBranchZero = root.Rename(root.AddNet("is_bz", StandardDomains.TernaryId), "BZ");
+        Net writeAdd = root.Rename(root.AddNet("write_add", StandardDomains.TernaryId), "LOAD or ADD");
+        Net writeAcc = root.Rename(root.AddNet("write_acc", StandardDomains.TernaryId), "write ACC");
+        Net accZeroLow = root.Rename(root.AddNet("acc_zero_low", StandardDomains.TernaryId), "ACC lane 0 is zero");
+        Net accZeroHigh = root.Rename(root.AddNet("acc_zero_high", StandardDomains.TernaryId), "ACC lane 1 is zero");
+        Net accZero = root.Rename(root.AddNet("acc_zero", StandardDomains.TernaryId), "ACC is zero");
+        Net branchZero = root.Rename(root.AddNet("branch_zero", StandardDomains.TernaryId), "BZ is taken");
+        Net branchTaken = root.Rename(root.AddNet("branch_taken", StandardDomains.TernaryId), "branch taken");
+        var storeWord = new Net[3];
+        for (int word = 0; word < 3; word++)
+        {
+            storeWord[word] = root.Rename(root.AddNet($"store_word{word}", StandardDomains.TernaryId), $"STORE into MEM{word}");
+        }
+
+        root.AddPrimitive("const0", new ConstantSpec(0), 60, 1180);
+        root.AddPrimitive("const1", new ConstantSpec(1), 60, 1000);
+        root.AddPrimitive("const2", new ConstantSpec(2), 60, 820);
+        root.Connect(zero, root.Pin("const0", PrimitiveShapes.OutputPinId));
+        root.Connect(one, root.Pin("const1", PrimitiveShapes.OutputPinId));
+        root.Connect(always, root.Pin("const2", PrimitiveShapes.OutputPinId));
+
+        // The program counter and the arithmetic unit are both 2-trit adders: one is
+        // wired to add the constant 1, the other adds ACC and the instruction argument.
+        root.AddInstance("pc_adder", StandardLibrary.TernaryAdder2Id, 300, 40);
+        root.Connect(pc[0], root.Pin("pc_adder", "a0"));
+        root.Connect(pc[1], root.Pin("pc_adder", "a1"));
+        root.Connect(one, root.Pin("pc_adder", "b0"));
+        root.Connect(zero, root.Pin("pc_adder", "b1"));
+        root.Connect(pcSum[0], root.Pin("pc_adder", "s0"));
+        root.Connect(pcSum[1], root.Pin("pc_adder", "s1"));
+
+        root.AddInstance("alu", StandardLibrary.TernaryAdder2Id, 300, 300);
+        root.Connect(acc[0], root.Pin("alu", "a0"));
+        root.Connect(acc[1], root.Pin("alu", "a1"));
+        root.Connect(argument[0], root.Pin("alu", "b0"));
+        root.Connect(zero, root.Pin("alu", "b1"));
+        root.Connect(sum[0], root.Pin("alu", "s0"));
+        root.Connect(sum[1], root.Pin("alu", "s1"));
+
+        // Instruction ROMs. A lookup indexes its first input most significantly, so
+        // connecting PC1 before PC0 makes the table order read as program order:
+        // entry p is the instruction fetched at PC p.
+        int[] program = [1, 2, 3, 6, 1, 3, 6, 1, 4];
+        int[] operands = [2, 2, 1, 8, 0, 2, 8, 1, 1];
+        int[] opcodeLow = new int[9];
+        int[] opcodeHigh = new int[9];
+        int[] argumentLow = new int[9];
+        int[] argumentHigh = new int[9];
+        for (int address = 0; address < 9; address++)
+        {
+            opcodeLow[address] = program[address] % 3;
+            opcodeHigh[address] = program[address] / 3;
+            argumentLow[address] = operands[address] % 3;
+            argumentHigh[address] = operands[address] / 3;
+        }
+
+        void Rom(string id, int[] table, Net output, double y)
+        {
+            root.AddPrimitive(id, new LookupSpec(2, table, 1), 300, y);
+            root.Connect(pc[1], root.Pin(id, "in0"));
+            root.Connect(pc[0], root.Pin(id, "in1"));
+            root.Connect(output, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        Rom("rom_op_low", opcodeLow, opcode[0], 600);
+        Rom("rom_op_high", opcodeHigh, opcode[1], 760);
+        Rom("rom_arg_low", argumentLow, argument[0], 920);
+        Rom("rom_arg_high", argumentHigh, argument[1], 1080);
+
+        // Opcode decode: one lookup per control line. Connections put OP1 first so the
+        // table index is the numeric opcode value, and a single entry carries the 2.
+        void Decode(string id, int opcodeValue, Net output, double y)
+        {
+            int[] table = new int[9];
+            table[opcodeValue] = 2;
+            root.AddPrimitive(id, new LookupSpec(2, table, 1), 620, y);
+            root.Connect(opcode[1], root.Pin(id, "in0"));
+            root.Connect(opcode[0], root.Pin(id, "in1"));
+            root.Connect(output, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        Decode("decode_load", 1, isLoad, 40);
+        Decode("decode_add", 2, isAdd, 200);
+        Decode("decode_store", 3, isStore, 360);
+        Decode("decode_loadm", 4, isLoadM, 520);
+        Decode("decode_jump", 5, isJump, 680);
+        Decode("decode_bz", 6, isBranchZero, 840);
+
+        // Memory write enables: STORE writes ACC into the addressed word only.
+        void StoreEnable(string id, int address, Net output, double y)
+        {
+            int[] table = new int[9];
+            for (int store = 0; store < 3; store++)
+            {
+                for (int target = 0; target < 3; target++)
+                {
+                    table[(store * 3) + target] = store == 2 && target == address ? 2 : 0;
+                }
+            }
+
+            root.AddPrimitive(id, new LookupSpec(2, table, 1), 620, y);
+            root.Connect(isStore, root.Pin(id, "in0"));
+            root.Connect(argument[0], root.Pin(id, "in1"));
+            root.Connect(output, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        StoreEnable("write_mem0", 0, storeWord[0], 1360);
+        StoreEnable("write_mem1", 1, storeWord[1], 1520);
+        StoreEnable("write_mem2", 2, storeWord[2], 1680);
+
+        // The zero test runs once per ACC lane; a branch needs both lanes at zero and
+        // the BZ opcode, so minimum and maximum gates can combine the 0/2 signals.
+        root.AddPrimitive("acc_zero_low", new LookupSpec(1, [2, 0, 0], 1), 620, 1840);
+        root.AddPrimitive("acc_zero_high", new LookupSpec(1, [2, 0, 0], 1), 620, 1980);
+        root.Connect(acc[0], root.Pin("acc_zero_low", "in0"));
+        root.Connect(acc[1], root.Pin("acc_zero_high", "in0"));
+        root.Connect(accZeroLow, root.Pin("acc_zero_low", PrimitiveShapes.OutputPinId));
+        root.Connect(accZeroHigh, root.Pin("acc_zero_high", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("acc_zero", "std.t-min", 860, 1840);
+        root.Connect(accZeroLow, root.Pin("acc_zero", "a"));
+        root.Connect(accZeroHigh, root.Pin("acc_zero", "b"));
+        root.Connect(accZero, root.Pin("acc_zero", "y"));
+
+        root.AddInstance("bz_gate", "std.t-min", 860, 2040);
+        root.Connect(accZero, root.Pin("bz_gate", "a"));
+        root.Connect(isBranchZero, root.Pin("bz_gate", "b"));
+        root.Connect(branchZero, root.Pin("bz_gate", "y"));
+
+        root.AddInstance("branch_gate", "std.t-max", 1100, 2040);
+        root.Connect(branchZero, root.Pin("branch_gate", "a"));
+        root.Connect(isJump, root.Pin("branch_gate", "b"));
+        root.Connect(branchTaken, root.Pin("branch_gate", "y"));
+
+        // PC selector: the incremented PC normally, the instruction argument on a branch.
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddInstance($"pc_mux{lane}", "std.t-mux", 1100, 120 + (lane * 220));
+            root.Connect(pcSum[lane], root.Pin($"pc_mux{lane}", "a"));
+            root.Connect(argument[lane], root.Pin($"pc_mux{lane}", "b"));
+            root.Connect(branchTaken, root.Pin($"pc_mux{lane}", "s"));
+            root.Connect(nextPc[lane], root.Pin($"pc_mux{lane}", "y"));
+        }
+
+        // ALU selector: the zero-extended immediate for LOAD, the sum for ADD.
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddInstance($"alu_mux{lane}", "std.t-mux", 620, 300 + (lane * 220));
+            root.Connect(lane == 0 ? argument[0] : zero, root.Pin($"alu_mux{lane}", "a"));
+            root.Connect(sum[lane], root.Pin($"alu_mux{lane}", "b"));
+            root.Connect(isAdd, root.Pin($"alu_mux{lane}", "s"));
+            root.Connect(alu[lane], root.Pin($"alu_mux{lane}", "y"));
+        }
+
+        // Memory read: a single lookup per lane selects the addressed word, because the
+        // address and the three word trits are four ternary inputs (81 entries).
+        void MemoryRead(string id, int lane, Net output, double y)
+        {
+            int[] table = new int[81];
+            for (int address = 0; address < 3; address++)
+            {
+                for (int word0 = 0; word0 < 3; word0++)
+                {
+                    for (int word1 = 0; word1 < 3; word1++)
+                    {
+                        for (int word2 = 0; word2 < 3; word2++)
+                        {
+                            int index = (((address * 3) + word0) * 3 + word1) * 3 + word2;
+                            table[index] = address == 0 ? word0 : address == 1 ? word1 : word2;
+                        }
+                    }
+                }
+            }
+
+            root.AddPrimitive(id, new LookupSpec(4, table, 1), 860, y);
+            root.Connect(argument[0], root.Pin(id, "in0"));
+            root.Connect(memory[0][lane], root.Pin(id, "in1"));
+            root.Connect(memory[1][lane], root.Pin(id, "in2"));
+            root.Connect(memory[2][lane], root.Pin(id, "in3"));
+            root.Connect(output, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        MemoryRead("mem_read_low", 0, read[0], 40);
+        MemoryRead("mem_read_high", 1, read[1], 220);
+
+        // Register input: the ALU result, or the memory word for LOADM.
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddInstance($"mem_mux{lane}", "std.t-mux", 1100, 640 + (lane * 220));
+            root.Connect(alu[lane], root.Pin($"mem_mux{lane}", "a"));
+            root.Connect(read[lane], root.Pin($"mem_mux{lane}", "b"));
+            root.Connect(isLoadM, root.Pin($"mem_mux{lane}", "s"));
+            root.Connect(accInput[lane], root.Pin($"mem_mux{lane}", "y"));
+        }
+
+        root.AddInstance("write_add", "std.t-max", 620, 1660);
+        root.Connect(isLoad, root.Pin("write_add", "a"));
+        root.Connect(isAdd, root.Pin("write_add", "b"));
+        root.Connect(writeAdd, root.Pin("write_add", "y"));
+
+        root.AddInstance("write_acc", "std.t-max", 860, 1660);
+        root.Connect(writeAdd, root.Pin("write_acc", "a"));
+        root.Connect(isLoadM, root.Pin("write_acc", "b"));
+        root.Connect(writeAcc, root.Pin("write_acc", "y"));
+
+        root.AddInstance("pc_reg", StandardLibrary.TernaryRegister2Id, 1340, 120);
+        root.Connect(pc[0], root.Pin("pc_reg", "q0"));
+        root.Connect(pc[1], root.Pin("pc_reg", "q1"));
+        root.Connect(nextPc[0], root.Pin("pc_reg", "d0"));
+        root.Connect(nextPc[1], root.Pin("pc_reg", "d1"));
+        root.Connect(always, root.Pin("pc_reg", "load"));
+        root.Connect(clk, root.Pin("pc_reg", "clk"));
+
+        root.AddInstance("acc_reg", StandardLibrary.TernaryRegister2Id, 1340, 640);
+        root.Connect(acc[0], root.Pin("acc_reg", "q0"));
+        root.Connect(acc[1], root.Pin("acc_reg", "q1"));
+        root.Connect(accInput[0], root.Pin("acc_reg", "d0"));
+        root.Connect(accInput[1], root.Pin("acc_reg", "d1"));
+        root.Connect(writeAcc, root.Pin("acc_reg", "load"));
+        root.Connect(clk, root.Pin("acc_reg", "clk"));
+
+        for (int word = 0; word < 3; word++)
+        {
+            string id = $"mem_reg{word}";
+            root.AddInstance(id, StandardLibrary.TernaryRegister2Id, 1580, 640 + (word * 260));
+            root.Connect(memory[word][0], root.Pin(id, "q0"));
+            root.Connect(memory[word][1], root.Pin(id, "q1"));
+            root.Connect(acc[0], root.Pin(id, "d0"));
+            root.Connect(acc[1], root.Pin(id, "d1"));
+            root.Connect(storeWord[word], root.Pin(id, "load"));
+            root.Connect(clk, root.Pin(id, "clk"));
+        }
+
+        return builder.Build("demo.t-machine-2");
     }
 }

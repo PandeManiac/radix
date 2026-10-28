@@ -153,6 +153,8 @@ Instructions are `opcode(4) | operand(4)`: `0` NOP, `1` LDA #, `2` ADD #, `3` ST
 
 This is deliberately a *demonstration*, not an architectural commitment: the definition format, library, and simulator do not privilege x86, binary, fixed-width words, or any particular ISA. A ternary processor or a different instruction encoding is the same kind of project.
 
+`examples/ternary-branch-machine.radix` is that claim in ternary form. It keeps the 2-trit program counter and register-based state of `ternary-machine.radix`, then adds two things the earlier demonstration lacked: **control flow** and **writable memory**. Four 9-entry lookup ROMs hold a 2-trit opcode and a 2-trit argument per program word; a lookup per control line decodes the opcode into LOAD, ADD, STORE, LOADM, JMP, and BZ. Branching is a ternary mux on the program-counter input, selected by `max(BZ ∧ ACC = 0, JMP)`, and the zero test is `min` of two per-lane lookups. Memory is three 2-trit registers (the ordinary `std.t-reg-2` part) with per-word write enables decoded from STORE and the argument trit, plus one 81-entry lookup per lane that reads the addressed word. No kernel or definition-format change was needed; the program stays editable data in the ROM tables, so retargeting the machine means editing nine table entries rather than code.
+
 ## 6. Simulation semantics
 
 ### 6.1 Reset
@@ -457,7 +459,7 @@ The engine is single-threaded by design so event order remains obvious and repro
 
 - **Unit tests** for domains, resolution, model validation, engine semantics, serialization, numeric formats, and script parsing.
 - **Structural tests** for compiler flattening, port mapping, hierarchy, and diagnostics.
-- **Behavioral circuits**: NAND truth table, delay timing, DFF edge capture/hold, ternary half/full adders and both the balanced and unsigned hierarchical 2-trit adders over every trit pair, ternary latch hold/capture, trit flip-flop edge sampling, the ternary mux over all select values, the two-trit ternary register's load/hold behaviour, the two-trit ternary counter over all nine states, the ternary accumulator's load/add/hold/wrap sequence, the ternary program machine's ten-edge instruction loop, full adder, four-bit counter.
+- **Behavioral circuits**: NAND truth table, delay timing, DFF edge capture/hold, ternary half/full adders and both the balanced and unsigned hierarchical 2-trit adders over every trit pair, ternary latch hold/capture, trit flip-flop edge sampling, the ternary mux over all select values, the two-trit ternary register's load/hold behaviour, the two-trit ternary counter over all nine states, the ternary accumulator's load/add/hold/wrap sequence, the ternary program machine's ten-edge instruction loop, the branch machine's nine-edge store/branch/load-memory loop, full adder, four-bit counter.
 - **Scripted experiments**: `.radixtest` files drive inputs and assert interface pins or numeric lanes at absolute ticks. The runner uses the public compiler/engine API, disables trace storage, and treats an unexpected halt as a failure. Shipped scripts under `examples/tests/` are part of the core suite, so a timing change to an example cannot silently invalidate its demonstration.
 - **Determinism tests**: repeated runs produce identical values and traces.
 - **Differential tests**: randomized combinational designs compare the event engine against a reference evaluator.

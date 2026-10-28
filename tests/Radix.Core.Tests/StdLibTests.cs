@@ -436,6 +436,49 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void TernaryBranchMachineBranchesStoresAndReadsMemory()
+    {
+        CircuitProject project = ExampleProjects.CreateTernaryBranchMachineDemo();
+        SimulationEngine engine = Engine("demo.t-machine-2", project);
+        engine.Drive("clk", 0);
+        Settle(engine, 120);
+
+        Assert.Equal(0, ReadTernaryPair(engine, "pc"));
+        Assert.Equal(0, ReadTernaryPair(engine, "q"));
+        Assert.Equal(1, ReadTernaryPair(engine, "op"));
+        Assert.Equal(2, ReadTernaryPair(engine, "arg"));
+        for (int word = 0; word < 3; word++)
+        {
+            Assert.Equal(0, ReadTernaryPair(engine, $"m{word}_"));
+        }
+
+        // Program: LOAD 2, ADD 2, STORE 1, BZ 8 (not taken), LOAD 0, STORE 2,
+        // BZ 8 (taken, skipping the LOAD 1 at 7), LOADM 1, then PC wraps to 0.
+        (int Pc, int Accumulator, int Mem1)[] expected =
+        [
+            (1, 2, 0), (2, 4, 0), (3, 4, 4), (4, 4, 4), (5, 0, 4),
+            (6, 0, 4), (8, 0, 4), (0, 4, 4), (1, 2, 4),
+        ];
+
+        for (int step = 0; step < expected.Length; step++)
+        {
+            PulseTernaryClock(engine, settle: 120);
+            (int pc, int accumulator, int memory) = expected[step];
+            Assert.Equal(pc, ReadTernaryPair(engine, "pc"));
+            Assert.Equal(accumulator, ReadTernaryPair(engine, "q"));
+            Assert.Equal(memory, ReadTernaryPair(engine, "m1_"));
+            Assert.Equal(0, ReadTernaryPair(engine, "m2_"));
+        }
+
+        // The fetched instruction tracks the new PC immediately: PC 1 fetches ADD 2.
+        Assert.Equal(2, ReadTernaryPair(engine, "op"));
+        Assert.Equal(2, ReadTernaryPair(engine, "arg"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TernaryRegisterLoadsOnTheEdgeAndHoldsWhenDisabled()
     {
         SimulationEngine engine = Engine(StandardLibrary.TernaryRegister2Id);
