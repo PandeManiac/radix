@@ -27,9 +27,13 @@ public static class StandardLibrary
     public const string BalancedTernaryRegister2Id = "std.bt-reg-2";
     public const string QuaternaryLatchId = "std.q4-latch";
     public const string QuaternaryDFlipFlopId = "std.q4-dff";
+    public const string QuaternaryLoadMuxId = "std.q4-load-mux";
+    public const string QuaternaryRegister2Id = "std.q4-reg-2";
     public const string QuaternaryIncId = "std.q4-inc";
     public const string QuaternaryCarryId = "std.q4-carry";
     public const string QuaternaryAddId = "std.q4-add";
+    public const string QuaternaryFullAdderId = "std.q4-full-adder";
+    public const string QuaternaryAdder2Id = "std.q4-adder-2";
     public const string TernaryFullAdderId = "std.t-full-adder";
     public const string TernaryAdder2Id = "std.t-adder-2";
     public const string TernaryRegister2Id = "std.t-reg-2";
@@ -844,6 +848,39 @@ public static class StandardLibrary
             added.Add(QuaternaryDFlipFlopId);
         }
 
+        if (project.FindDefinition(QuaternaryLoadMuxId) is null)
+        {
+            int[] selectTable = new int[64];
+            for (int a = 0; a < 4; a++)
+            {
+                for (int b = 0; b < 4; b++)
+                {
+                    for (int select = 0; select < 4; select++)
+                    {
+                        selectTable[(a * 16) + (b * 4) + select] = select == 3 ? b : a;
+                    }
+                }
+            }
+
+            AddLookupDefinition(
+                project,
+                QuaternaryLoadMuxId,
+                "Quaternary load select",
+                StandardDomains.QuaternaryId,
+                ["a", "b", "s"],
+                ["A", "B", "LOAD"],
+                selectTable,
+                description: "Selects B when LOAD=3 and A for every other LOAD value. " +
+                             "This is the explicit load-control selector used by the quaternary register, not a general 2:1 mux.");
+            added.Add(QuaternaryLoadMuxId);
+        }
+
+        if (project.FindDefinition(QuaternaryRegister2Id) is null)
+        {
+            AddQuaternaryRegister2(project);
+            added.Add(QuaternaryRegister2Id);
+        }
+
         if (project.FindDefinition(QuaternaryIncId) is null)
         {
             AddLookupDefinition(
@@ -893,6 +930,18 @@ public static class StandardLibrary
                 table,
                 description: "Adds two radix-4 digits modulo 4; carry is a separate lookup such as std.q4-carry.");
             added.Add(QuaternaryAddId);
+        }
+
+        if (project.FindDefinition(QuaternaryFullAdderId) is null)
+        {
+            AddQuaternaryFullAdder(project);
+            added.Add(QuaternaryFullAdderId);
+        }
+
+        if (project.FindDefinition(QuaternaryAdder2Id) is null)
+        {
+            AddQuaternaryAdder2(project);
+            added.Add(QuaternaryAdder2Id);
         }
 
         return added;
@@ -960,6 +1009,125 @@ public static class StandardLibrary
         builder.Connect(d, builder.Pin("master", "d"));
         builder.Connect(masterQ, builder.Pin("master", "q"), builder.Pin("slave", "d"));
         builder.Connect(q, builder.Pin("slave", "q"));
+    }
+
+    private static void AddQuaternaryRegister2(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, QuaternaryRegister2Id, "Quaternary 2-digit register");
+        builder.Definition.Description =
+            "Two radix-4 flip-flops sharing LOAD and CLK. LOAD=3 captures D on the rising CLK edge " +
+            "(0 -> 3); every other LOAD value holds the current digit. Q powers up at 0.";
+
+        var data = new Net[2];
+        var output = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            data[lane] = builder.AddPin($"d{lane}", $"D{lane}", PinDirection.Input, StandardDomains.QuaternaryId);
+            output[lane] = builder.SetInitial(
+                builder.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.QuaternaryId),
+                0);
+        }
+
+        Net load = builder.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net clock = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.QuaternaryId);
+
+        builder.AddNumericLane("data", "Data", NumericFormats.UnsignedQuaternary.Id, "d0", "d1");
+        builder.AddNumericLane("result", "Result", NumericFormats.UnsignedQuaternary.Id, "q0", "q1");
+
+        for (int lane = 0; lane < 2; lane++)
+        {
+            Net selected = builder.Rename(
+                builder.AddNet($"selected{lane}", StandardDomains.QuaternaryId),
+                $"next Q{lane}");
+            builder.AddInstance($"select{lane}", QuaternaryLoadMuxId, 260, 60 + (lane * 200));
+            builder.AddInstance($"ff{lane}", QuaternaryDFlipFlopId, 600, 60 + (lane * 200));
+
+            builder.Connect(output[lane], builder.Pin($"select{lane}", "a"), builder.Pin($"ff{lane}", "q"));
+            builder.Connect(data[lane], builder.Pin($"select{lane}", "b"));
+            builder.Connect(load, builder.Pin($"select{lane}", "s"));
+            builder.Connect(selected, builder.Pin($"select{lane}", "y"), builder.Pin($"ff{lane}", "d"));
+            builder.Connect(clock, builder.Pin($"ff{lane}", "clk"));
+        }
+    }
+
+    private static void AddQuaternaryFullAdder(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, QuaternaryFullAdderId, "Quaternary full adder");
+        builder.Definition.Description =
+            "Adds three radix-4 digits: A+B+CIN = 4*COUT + S, with both S and COUT in 0..3. " +
+            "COUT is a full carry digit (0..2 for valid digit inputs), not a Boolean flag.";
+
+        Net a = builder.AddPin("a", "A", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net b = builder.AddPin("b", "B", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net cin = builder.AddPin("cin", "CIN", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net s = builder.AddPin("s", "S", PinDirection.Output, StandardDomains.QuaternaryId);
+        Net cout = builder.AddPin("cout", "COUT", PinDirection.Output, StandardDomains.QuaternaryId);
+
+        int[] sumTable = new int[64];
+        int[] carryTable = new int[64];
+        for (int ai = 0; ai < 4; ai++)
+        {
+            for (int bi = 0; bi < 4; bi++)
+            {
+                for (int ci = 0; ci < 4; ci++)
+                {
+                    int total = ai + bi + ci;
+                    int index = ((ai * 4) + bi) * 4 + ci;
+                    sumTable[index] = total % 4;
+                    carryTable[index] = total / 4;
+                }
+            }
+        }
+
+        builder.AddPrimitive("sum", new LookupSpec(3, sumTable, GateDelay), 160, 60);
+        builder.AddPrimitive("carry", new LookupSpec(3, carryTable, GateDelay), 160, 240);
+        builder.Connect(a, builder.Pin("sum", "in0"), builder.Pin("carry", "in0"));
+        builder.Connect(b, builder.Pin("sum", "in1"), builder.Pin("carry", "in1"));
+        builder.Connect(cin, builder.Pin("sum", "in2"), builder.Pin("carry", "in2"));
+        builder.Connect(s, builder.Pin("sum", "out"));
+        builder.Connect(cout, builder.Pin("carry", "out"));
+    }
+
+    private static void AddQuaternaryAdder2(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, QuaternaryAdder2Id, "Quaternary 2-digit adder");
+        builder.Definition.Description =
+            "Adds two radix-4 2-digit numbers into a three-digit result: S0 + 4*S1 + 16*COUT = A+B. " +
+            "The low full adder seeds a zero digit; its carry feeds the high digit.";
+
+        var aNets = new Net[2];
+        var bNets = new Net[2];
+        var sNets = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            aNets[i] = builder.AddPin($"a{i}", $"A{i}", PinDirection.Input, StandardDomains.QuaternaryId);
+            bNets[i] = builder.AddPin($"b{i}", $"B{i}", PinDirection.Input, StandardDomains.QuaternaryId);
+            sNets[i] = builder.AddPin($"s{i}", $"S{i}", PinDirection.Output, StandardDomains.QuaternaryId);
+        }
+
+        Net cout = builder.AddPin("cout", "COUT", PinDirection.Output, StandardDomains.QuaternaryId);
+        Net zero = builder.AddNet("zero", StandardDomains.QuaternaryId);
+        builder.AddPrimitive("const0", new ConstantSpec(0), 60, 340);
+        builder.Connect(zero, builder.Pin("const0", PrimitiveShapes.OutputPinId));
+        Net carry = builder.AddNet("carry", StandardDomains.QuaternaryId);
+
+        builder.AddInstance("low", QuaternaryFullAdderId, 300, 100);
+        builder.Connect(aNets[0], builder.Pin("low", "a"));
+        builder.Connect(bNets[0], builder.Pin("low", "b"));
+        builder.Connect(zero, builder.Pin("low", "cin"));
+        builder.Connect(sNets[0], builder.Pin("low", "s"));
+        builder.Connect(carry, builder.Pin("low", "cout"));
+
+        builder.AddInstance("high", QuaternaryFullAdderId, 680, 100);
+        builder.Connect(aNets[1], builder.Pin("high", "a"));
+        builder.Connect(bNets[1], builder.Pin("high", "b"));
+        builder.Connect(carry, builder.Pin("high", "cin"));
+        builder.Connect(sNets[1], builder.Pin("high", "s"));
+        builder.Connect(cout, builder.Pin("high", "cout"));
+
+        builder.AddNumericLane("a", "A", NumericFormats.UnsignedQuaternary.Id, "a0", "a1");
+        builder.AddNumericLane("b", "B", NumericFormats.UnsignedQuaternary.Id, "b0", "b1");
+        builder.AddNumericLane("s", "A + B", NumericFormats.UnsignedQuaternary.Id, "s0", "s1", "cout");
     }
 
     private static IEnumerable<string> AddTernaryDefinitions(CircuitProject project)

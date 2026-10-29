@@ -1210,6 +1210,126 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void QuaternaryLoadSelectChoosesBOnlyAtLoadThree()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryLoadMuxId);
+        for (int a = 0; a < 4; a++)
+        {
+            for (int b = 0; b < 4; b++)
+            {
+                engine.Drive("a", a);
+                engine.Drive("b", b);
+                for (int select = 0; select < 4; select++)
+                {
+                    engine.Drive("s", select);
+                    Settle(engine, 10);
+                    Assert.Equal(select == 3 ? b : a, engine.Read("y"));
+                }
+            }
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    [Fact]
+    public void QuaternaryRegisterLoadsOnRisingEdgeAndHoldsOtherwise()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryRegister2Id);
+        engine.Drive("clk", 0);
+        engine.Drive("load", 0);
+        engine.Drive("d0", 3);
+        engine.Drive("d1", 2);
+        Settle(engine, 40);
+        Assert.Equal(0, engine.Read("q0"));
+        Assert.Equal(0, engine.Read("q1"));
+
+        engine.Drive("load", 3);
+        Settle(engine, 40);
+        Assert.Equal(0, engine.Read("q0"));
+        Assert.Equal(0, engine.Read("q1"));
+
+        engine.Drive("clk", 3);
+        Settle(engine, 60);
+        Assert.Equal(3, engine.Read("q0"));
+        Assert.Equal(2, engine.Read("q1"));
+
+        engine.Drive("clk", 0);
+        engine.Drive("load", 0);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        Settle(engine, 40);
+        Assert.Equal(3, engine.Read("q0"));
+        Assert.Equal(2, engine.Read("q1"));
+
+        engine.Drive("load", 1);
+        engine.Drive("clk", 3);
+        Settle(engine, 60);
+        Assert.Equal(3, engine.Read("q0"));
+        Assert.Equal(2, engine.Read("q1"));
+
+        engine.Drive("clk", 0);
+        engine.Drive("load", 3);
+        engine.Drive("d0", 1);
+        engine.Drive("d1", 0);
+        Settle(engine, 20);
+        engine.Drive("clk", 3);
+        Settle(engine, 60);
+        Assert.Equal(1, engine.Read("q0"));
+        Assert.Equal(0, engine.Read("q1"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void QuaternaryFullAdderCoversEveryDigitTriple()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryFullAdderId);
+        for (int a = 0; a < 4; a++)
+        {
+            for (int b = 0; b < 4; b++)
+            {
+                for (int cin = 0; cin < 4; cin++)
+                {
+                    engine.Drive("a", a);
+                    engine.Drive("b", b);
+                    engine.Drive("cin", cin);
+                    Settle(engine, 12);
+                    int total = a + b + cin;
+                    Assert.Equal(total % 4, engine.Read("s"));
+                    Assert.Equal(total / 4, engine.Read("cout"));
+                }
+            }
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    [Fact]
+    public void QuaternaryAdder2CoversEveryTwoDigitPair()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryAdder2Id);
+        for (int a = 0; a < 16; a++)
+        {
+            for (int b = 0; b < 16; b++)
+            {
+                engine.Drive("a0", a % 4);
+                engine.Drive("a1", a / 4);
+                engine.Drive("b0", b % 4);
+                engine.Drive("b1", b / 4);
+                Settle(engine, 20);
+                int total = a + b;
+                Assert.Equal(total % 4, engine.Read("s0"));
+                Assert.Equal((total / 4) % 4, engine.Read("s1"));
+                Assert.Equal(total / 16, engine.Read("cout"));
+            }
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void QuaternaryCounterCyclesThroughAllSixteenStates()
     {
         CircuitProject project = ExampleProjects.CreateQuaternaryCounterDemo();
