@@ -2486,6 +2486,71 @@ public sealed class EditorViewModelTests
         return project;
     }
 
+    [Fact]
+    public void GeneratePartAddsEditableDefinitionsAndUndoesAsOneStep()
+    {
+        var viewModel = CreateEmptyEditor();
+        int definitionsBefore = viewModel.Project.Definitions.Count;
+        int dffsBefore = viewModel.Project.Definitions.Count(d => d.Id == StandardLibrary.DFlipFlopId);
+
+        viewModel.SelectedGeneratedPartKind = "RAM";
+        viewModel.GeneratedPartWidthText = "8";
+        viewModel.GeneratedPartWordsText = "16";
+
+        Assert.True(viewModel.IsRamGenerator);
+        Assert.True(viewModel.GeneratePartCommand.CanExecute(null));
+        Assert.True(viewModel.GeneratePart());
+        Assert.Equal("gen.ram-16x8", viewModel.Definition.Id);
+        Assert.Equal(definitionsBefore + 2, viewModel.Project.Definitions.Count);
+        Assert.Equal(dffsBefore, viewModel.Project.Definitions.Count(d => d.Id == StandardLibrary.DFlipFlopId));
+        Assert.NotNull(viewModel.Project.FindDefinition("gen.word-reg-8"));
+        Assert.True(viewModel.IsDirty);
+        Assert.Contains("gen.ram-16x8", viewModel.StatusText);
+
+        viewModel.Undo();
+        Assert.Equal(definitionsBefore, viewModel.Project.Definitions.Count);
+        Assert.Equal(viewModel.Project.RootDefinitionId, viewModel.Definition.Id);
+    }
+
+    [Fact]
+    public void GeneratePartDisablesInvalidShapes()
+    {
+        var viewModel = CreateEmptyEditor();
+        Assert.False(viewModel.IsRamGenerator);
+
+        viewModel.GeneratedPartWidthText = "0";
+        Assert.False(viewModel.GeneratePartCommand.CanExecute(null));
+        viewModel.GeneratedPartWidthText = "256";
+        Assert.True(viewModel.GeneratePartCommand.CanExecute(null));
+
+        viewModel.SelectedGeneratedPartKind = "RAM";
+        viewModel.GeneratedPartWidthText = "8";
+        viewModel.GeneratedPartWordsText = "6";
+        Assert.True(viewModel.IsRamGenerator);
+        Assert.False(viewModel.GeneratePartCommand.CanExecute(null));
+        viewModel.GeneratedPartWordsText = "64";
+        Assert.True(viewModel.GeneratePartCommand.CanExecute(null));
+        viewModel.GeneratedPartWidthText = "128";
+        Assert.False(viewModel.GeneratePartCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void GeneratePartCanBuildAnAluAndCounter()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.SelectedGeneratedPartKind = "ALU";
+        viewModel.GeneratedPartWidthText = "16";
+        Assert.True(viewModel.GeneratePart());
+        Assert.Equal("gen.alu-16", viewModel.Definition.Id);
+
+        viewModel.SelectedGeneratedPartKind = "Counter";
+        viewModel.GeneratedPartWidthText = "8";
+        Assert.True(viewModel.GeneratePart());
+        Assert.Equal("gen.counter-8", viewModel.Definition.Id);
+        Assert.NotNull(viewModel.Project.FindDefinition("gen.reg-8"));
+        Assert.NotNull(viewModel.Project.FindDefinition("gen.adder-8"));
+    }
+
     private static EditorViewModel CreateEmptyEditor()
     {
         var project = CircuitProject.CreateEmpty("Editor test");

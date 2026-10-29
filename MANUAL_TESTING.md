@@ -197,6 +197,8 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 ### Generated parts
 
+**In-editor check.** In a new project, find **GENERATE PART** under the Library panel. Choose `Register`, enter width `12`, and click **Generate into project**. Expected: `gen.reg-12` opens, the inspector lists 12-bit **Data** and **Q** lanes, the status line reports the generated root, and the library is ordinary editable definitions. One undo restores the previous project and active definition. Choose `RAM`, width `6`, words `8`, and generate. Expected: `gen.ram-8x6` opens with **Address**, **Data**, and **Read** lanes and a generated word-register dependency. Set width `0` or words `6`; expected: the button disables and no definitions are added.
+
 1. In a terminal, run `dotnet run --project src/Radix.Cli -- generate register --width 16 --out scratch/reg-16.radixlib`. Expected: the command reports `gen.reg-16`, a small definition count containing only the root and its standard-library dependencies, and writes the file. `--out` without an extension appends `.radixlib`.
 2. Run `dotnet run --project src/Radix.Cli -- validate scratch/reg-16.radixlib`. Expected: `OK`, with a compiled component count and no errors.
 3. Import `reg-16.radixlib` into a new project. Expected: `gen.reg-16` opens with 16 **D** pins, 16 **Q** pins, **LOAD**, **CLR**, and **CLK**; the inspector lists 16-bit **Data** and **Q** lanes over `unsigned-binary`; `std.dff` and `std.mux2` are reused rather than duplicated.

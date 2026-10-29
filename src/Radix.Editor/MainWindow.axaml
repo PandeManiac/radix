@@ -130,6 +130,18 @@
               <Button Content="Export part…" Click="ExportLibrary_Click" ToolTip.Tip="Export the current definition and its dependencies as a reusable library" />
             </StackPanel>
 
+            <TextBlock Text="GENERATE PART" Classes="section" Margin="4,10,4,4" />
+            <ComboBox
+                ItemsSource="{Binding GeneratedPartKinds}"
+                SelectedItem="{Binding SelectedGeneratedPartKind, Mode=TwoWay}"
+                ToolTip.Tip="Build an ordinary part at a width the bundled standard library does not ship" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="4" Margin="0,4,0,0">
+              <TextBox Watermark="width" Text="{Binding GeneratedPartWidthText, Mode=TwoWay}" ToolTip.Tip="Datapath width in bits" />
+              <TextBox Grid.Column="1" Watermark="words" IsVisible="{Binding IsRamGenerator}" Text="{Binding GeneratedPartWordsText, Mode=TwoWay}" ToolTip.Tip="RAM word count; must be a power of two" />
+            </Grid>
+            <Button Content="Generate into project" Command="{Binding GeneratePartCommand}" Margin="0,4,0,0" HorizontalAlignment="Left" ToolTip.Tip="Create validated, editable definitions and add them to this project as one undo step" />
+            <TextBlock Text="Widths 1..256. RAM: 2..128 words, width 1..64, at most 4096 stored bits. Generated parts are ordinary definitions." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,3,0,0" />
+
             <Border
                 IsVisible="{Binding HasMultipleSelection}"
                 Background="{DynamicResource App.PanelAltBackground}"

@@ -77,6 +77,10 @@ public sealed class EditorViewModel : ObservableObject
     private string? _editingDomainId;
 
     private readonly List<string> _recentProjectPaths = [];
+    private readonly RelayCommand _generatePartCommand;
+    private string _generatedPartKind = "Register";
+    private string _generatedPartWidthText = "8";
+    private string _generatedPartWordsText = "16";
     private string _librarySearch = string.Empty;
     private string _netSearch = string.Empty;
     private string _netListSummary = string.Empty;
@@ -226,6 +230,8 @@ public sealed class EditorViewModel : ObservableObject
         _cancelSweepCommand = new RelayCommand(CancelSweep, () => IsSweepRunning);
         CancelSweepCommand = _cancelSweepCommand;
         ClearSweepResultCommand = new RelayCommand(ClearSweepResult);
+        _generatePartCommand = new RelayCommand(() => GeneratePart(), CanGeneratePart);
+        GeneratePartCommand = _generatePartCommand;
         ApplyProjectSettingsCommand = new RelayCommand(() => ApplyProjectSettings());
         ReloadProjectSettingsCommand = new RelayCommand(ReloadProjectSettings);
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
@@ -379,6 +385,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand AddPinCommand { get; }
 
     public ICommand AddDomainCommand { get; }
+
+    public ICommand GeneratePartCommand { get; }
 
     public ICommand CancelDomainEditCommand { get; }
 
@@ -783,6 +791,54 @@ public sealed class EditorViewModel : ObservableObject
             return "definition · " + Definition.Id;
         }
     }
+
+    public IReadOnlyList<string> GeneratedPartKinds { get; } =
+        ["Register", "Adder", "ALU", "Counter", "RAM"];
+
+    public string SelectedGeneratedPartKind
+    {
+        get => _generatedPartKind;
+        set
+        {
+            if (value is null)
+            {
+                return;
+            }
+
+            if (SetField(ref _generatedPartKind, value))
+            {
+                RaisePropertyChanged(nameof(IsRamGenerator));
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string GeneratedPartWidthText
+    {
+        get => _generatedPartWidthText;
+        set
+        {
+            if (SetField(ref _generatedPartWidthText, value))
+            {
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string GeneratedPartWordsText
+    {
+        get => _generatedPartWordsText;
+        set
+        {
+            if (SetField(ref _generatedPartWordsText, value))
+            {
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsRamGenerator =>
+        string.Equals(_generatedPartKind, "RAM", StringComparison.Ordinal);
 
     public string LibrarySearch
     {
@@ -2419,6 +2475,90 @@ public sealed class EditorViewModel : ObservableObject
             StatusText = "Import failed: " + exception.Message;
             return false;
         }
+    }
+
+    /// <summary>
+    /// Generates an ordinary part at the requested shape and merges it through the
+    /// same validated library path as a file import. The operation is one undo step.
+    /// </summary>
+    public bool GeneratePart()
+    {
+        if (!TryGetGeneratedPartShape(out int width, out int words, out bool isRam))
+        {
+            StatusText = "Generated part shape is invalid.";
+            return false;
+        }
+
+        try
+        {
+            GeneratedPart part = _generatedPartKind switch
+            {
+                "Register" => PartGenerator.CreateRegister(width),
+                "Adder" => PartGenerator.CreateAdder(width),
+                "ALU" => PartGenerator.CreateAlu(width),
+                "Counter" => PartGenerator.CreateCounter(width),
+                "RAM" => PartGenerator.CreateRam(words, width),
+                _ => throw new InvalidOperationException($"Unknown generated part kind '{_generatedPartKind}'."),
+            };
+
+            string json = ProjectLibrary.Export(part.Project, part.RootDefinitionId);
+            EditorSnapshot before = Capture();
+            LibraryImportResult result = ComponentLibraryService.Import(_project, json);
+            if (!result.Success || result.RootDefinitionId is not string rootId)
+            {
+                StatusText = result.Message;
+                return false;
+            }
+
+            PushUndo(before);
+            _definitionId = rootId;
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+            _selectedNet = null;
+            Simulator.Retarget(_project, Definition);
+            RefreshAll(fit: true);
+            ResetDefinitionHistory();
+            IsDirty = true;
+            StatusText = $"Generated {part.RootDefinitionId} — {result.Message}";
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or ProjectFormatException or CircuitValidationException)
+        {
+            StatusText = "Generate failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    private bool CanGeneratePart() => TryGetGeneratedPartShape(out _, out _, out _);
+
+    private bool TryGetGeneratedPartShape(out int width, out int words, out bool isRam)
+    {
+        width = 0;
+        words = 0;
+        isRam = IsRamGenerator;
+        if (!int.TryParse(
+                _generatedPartWidthText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out width))
+        {
+            return false;
+        }
+
+        if (!isRam)
+        {
+            return width is >= PartGenerator.MinWidth and <= PartGenerator.MaxWidth;
+        }
+
+        return int.TryParse(
+                   _generatedPartWordsText,
+                   NumberStyles.Integer,
+                   CultureInfo.InvariantCulture,
+                   out words) &&
+               width is >= PartGenerator.MinWidth and <= PartGenerator.MaxRamWidth &&
+               words is >= PartGenerator.MinRamWords and <= PartGenerator.MaxRamWords &&
+               (words & (words - 1)) == 0 &&
+               (long)words * width <= PartGenerator.MaxRamBits;
     }
 
     public bool SaveProject(string path)
