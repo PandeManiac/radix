@@ -223,21 +223,22 @@ Skia), one run reported:
 | 100 | 100 | 101 | 2 | 4 | 60 ms | 632 ms |
 | 250 | 250 | 251 | 2 | 4 | 153 ms | 536 ms |
 
-These initial measurements were exploratory single-run results and visibly
-non-monotonic. The benchmark was then changed to warm each size with one separate
-model and take the minimum of three measured runs. Best-of-three results on the
-same VM (.NET SDK 10.0.100, Release, headless Skia):
+The benchmark then added a separate warmup model and three measured runs per size,
+reporting minima. It now collects seven samples each for construction and ten
+canonical builds, reporting median and min–max range. Latest run on this VM
+(.NET SDK 10.0.100, Release, headless Skia):
 
-| Repeated child instances | Root instances | Root nets | Child primitives | Child nets | Best construct | Best of 3 ten-build runs |
+| Repeated child instances | Root instances | Root nets | Child primitives | Child nets | Construct median [range] | 10-build median [range] |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 25 | 25 | 26 | 2 | 4 | 10 ms | 116 ms |
-| 100 | 100 | 101 | 2 | 4 | 14 ms | 102 ms |
-| 250 | 250 | 251 | 2 | 4 | 38 ms | 359 ms |
+| 25 | 25 | 26 | 2 | 4 | 12 ms [10–29] | 107 ms [97–122] |
+| 100 | 100 | 101 | 2 | 4 | 25 ms [13–57] | 71 ms [70–100] |
+| 250 | 250 | 251 | 2 | 4 | 41 ms [40–47] | 365 ms [360–369] |
 
-The minimum is a lower-bound observation, not a median or typical latency; keep
-these results exploratory. The canvas lays out root instances only—the child
-primitives and nets are included in the project but are not expanded into
-per-instance child geometry in the root view.
+The earlier single-run and best-of-three samples above are retained as history;
+this seven-sample result is a better variability summary, but remains one benchmark
+session on a shared VM and is not a universal scaling guarantee. The canvas lays
+out root instances only—the child primitives and nets are included in the project
+but are not expanded into per-instance child geometry in the root view.
 
 
 ### Interpretation
