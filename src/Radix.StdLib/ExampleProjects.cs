@@ -31,6 +31,7 @@ public static class ExampleProjects
     public const string BalancedTernaryAccumulatorFile = "balanced-ternary-accumulator.radix";
     public const string AccumulatorFile = "accumulator-cpu.radix";
     public const string TinyCpuFile = "tiny-cpu.radix";
+    public const string ByteMachineFile = "byte-machine.radix";
     public const string EightBitAluFile = "8-bit-alu.radix";
     public const string MultiplierFile = "multiplier.radix";
 
@@ -59,6 +60,7 @@ public static class ExampleProjects
         new(EightBitAluFile, "8-bit ALU", "Eight-bit ADD/AND/OR/XOR selected by two opcode bits, with carry and zero flags and numeric A/B/Y lanes.", CreateEightBitAluDemo()),
         new(MultiplierFile, "4 × 4 multiplier", "An array multiplier built from AND partial products and three 8-bit adders, with A, B, and 8-bit P numeric lanes.", CreateMultiplierDemo()),
         new(TinyCpuFile, "Tiny program-driven CPU", "A complete 4-bit CPU: instruction ROM, program counter, decode logic, ALU, registers, and a small program.", CreateTinyCpuDemo()),
+        new(ByteMachineFile, "8-bit program machine", "A sixteen-instruction accumulator machine built from a generated 16×12 program ROM and 16×8 data RAM, with arithmetic, logic, branches, and memory addressing.", CreateByteMachineDemo()),
     ];
 
     public static CircuitProject CreateMultiplierDemo()
@@ -405,6 +407,371 @@ public static class ExampleProjects
         }
 
         return builder.Build("demo.accumulator");
+    }
+
+    /// <summary>
+    /// Builds an 8-bit accumulator machine from generated memory parts. Instructions
+    /// are 12-bit words: a 4-bit opcode and an 8-bit operand. The program ROM and data
+    /// RAM are ordinary generated definitions, so the kernel still has no memory or
+    /// instruction concept.
+    /// </summary>
+    public static CircuitProject CreateByteMachineDemo(int[]? program = null)
+    {
+        program ??=
+        [
+            0x112, // 0: LDA #0x12
+            0x234, // 1: ADD #0x34 -> 0x46
+            0x300, // 2: STA 0
+            0x100, // 3: LDA #0x00
+            0xA00, // 4: ADD@ 0 -> 0x46
+            0x301, // 5: STA 1
+            0x6FF, // 6: XOR #0xFF -> 0xB9
+            0x80C, // 7: JZ 12 (not zero)
+            0x100, // 8: LDA #0x00
+            0x80C, // 9: JZ 12 (zero, skip two words)
+            0x17F, // 10: skipped
+            0x302, // 11: skipped
+            0x17F, // 12: LDA #0x7F
+            0x302, // 13: STA 2
+            0x902, // 14: LDA@ 2 -> 0x7F
+            0x700, // 15: JMP 0
+        ];
+        if (program.Length > 16)
+        {
+            throw new ArgumentException("The byte machine ROM holds 16 instructions.", nameof(program));
+        }
+
+        var words = new ulong[16];
+        for (int i = 0; i < words.Length; i++)
+        {
+            words[i] = i < program.Length ? (ulong)program[i] & 0xFFF : 0;
+        }
+
+        var builder = new ProjectBuilder("8-bit program machine");
+        StandardLibrary.Install(builder.Project);
+        MergeGenerated(builder.Project, PartGenerator.CreateRam(16, 8));
+        MergeGenerated(builder.Project, PartGenerator.CreateRom(16, 12, words));
+
+        var root = builder.Define("demo.byte-machine", "8-bit program machine");
+        root.Definition.Description =
+            "A sixteen-instruction, eight-bit accumulator machine. Instructions are " +
+            "opcode(4) | operand(8): 0 NOP, 1 LDA #, 2 ADD #, 3 STA addr, 4 AND #, " +
+            "5 OR #, 6 XOR #, 7 JMP addr, 8 JZ addr, 9 LDA@ addr, 10 ADD@ addr, 11 HLT. " +
+            "The program ROM and 16x8 data RAM are generated parts; the ALU is std.alu-8. " +
+            "STA and the @ forms use the low operand nibble as a RAM address. PC is four " +
+            "bits, so JMP/JZ targets and the program loop wrap at 16. CLR synchronously " +
+            "clears PC and ACC but leaves RAM contents intact.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BinaryId);
+        Net reset = root.AddPin("reset", "RESET", PinDirection.Input, StandardDomains.BinaryId);
+
+        var pc = new Net[4];
+        var acc = new Net[8];
+        var memory = new Net[8];
+        var instruction = new Net[12];
+        for (int i = 0; i < 4; i++)
+        {
+            pc[i] = root.SetInitial(
+                root.AddPin($"pc{i}", $"PC{i}", PinDirection.Output, StandardDomains.BinaryId),
+                0);
+        }
+
+        for (int i = 0; i < 12; i++)
+        {
+            instruction[i] = root.SetInitial(
+                root.AddPin($"ir{i}", $"IR{i}", PinDirection.Output, StandardDomains.BinaryId),
+                0);
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            acc[i] = root.SetInitial(
+                root.AddPin($"acc{i}", $"ACC{i}", PinDirection.Output, StandardDomains.BinaryId),
+                0);
+            memory[i] = root.AddPin($"mem{i}", $"MEM{i}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        Net zero = root.SetInitial(
+            root.AddPin("zero", "ZERO", PinDirection.Output, StandardDomains.BinaryId),
+            0);
+        Net carry = root.SetInitial(
+            root.AddPin("carry", "CARRY", PinDirection.Output, StandardDomains.BinaryId),
+            0);
+        Net halted = root.AddPin("halted", "HALTED", PinDirection.Output, StandardDomains.BinaryId);
+
+        root.AddNumericLane("acc", "Accumulator", NumericFormats.UnsignedBinary.Id, [.. PinIds("acc", 8)]);
+        root.AddNumericLane("mem", "Memory read", NumericFormats.UnsignedBinary.Id, [.. PinIds("mem", 8)]);
+        root.AddNumericLane("pc", "Program counter", NumericFormats.UnsignedBinary.Id, [.. PinIds("pc", 4)]);
+        root.AddNumericLane(
+            "instruction",
+            "Instruction",
+            NumericFormats.UnsignedBinary.Id,
+            [.. PinIds("ir", 12)]);
+        root.AddNumericLane(
+            "opcode",
+            "Opcode",
+            NumericFormats.UnsignedBinary.Id,
+            [.. Enumerable.Range(8, 4).Select(i => $"ir{i}")]);
+        root.AddNumericLane(
+            "operand",
+            "Operand",
+            NumericFormats.UnsignedBinary.Id,
+            [.. Enumerable.Range(0, 8).Select(i => $"ir{i}")]);
+        root.AddNumericLane(
+            "address",
+            "Address",
+            NumericFormats.UnsignedBinary.Id,
+            [.. Enumerable.Range(0, 4).Select(i => $"ir{i}")]);
+
+        Net constZero = root.AddNet("const_zero", StandardDomains.BinaryId);
+        Net constOne = root.AddNet("const_one", StandardDomains.BinaryId);
+        root.AddPrimitive("const0", new ConstantSpec(0), 40, 2120);
+        root.AddPrimitive("const1", new ConstantSpec(1), 40, 2200);
+        root.Connect(constZero, root.Pin("const0", PrimitiveShapes.OutputPinId));
+        root.Connect(constOne, root.Pin("const1", PrimitiveShapes.OutputPinId));
+
+        // Program memory: generated 16 x 12 ROM. Address 0 is PC=0.
+        root.AddInstance("rom", "gen.rom-16x12", 160, 80);
+        for (int bit = 0; bit < 4; bit++)
+        {
+            root.Connect(pc[bit], root.Pin("rom", $"addr{bit}"));
+        }
+
+        for (int bit = 0; bit < 12; bit++)
+        {
+            root.Connect(instruction[bit], root.Pin("rom", $"d{bit}"));
+        }
+
+        Net Decode(string id, int opcode, double y)
+        {
+            int[] table = new int[16];
+            table[opcode] = 1;
+            root.AddPrimitive(id, new LookupSpec(4, table), 560, y);
+            for (int input = 0; input < 4; input++)
+            {
+                root.Connect(instruction[11 - input], root.Pin(id, $"in{input}"));
+            }
+
+            Net signal = root.AddNet($"{id}_net", StandardDomains.BinaryId);
+            root.Connect(signal, root.Pin(id, PrimitiveShapes.OutputPinId));
+            return signal;
+        }
+
+        Net ctlLda = Decode("ctl_lda", 1, 80);
+        Net ctlAdd = Decode("ctl_add", 2, 160);
+        Net ctlSta = Decode("ctl_sta", 3, 240);
+        Net ctlAnd = Decode("ctl_and", 4, 320);
+        Net ctlOr = Decode("ctl_or", 5, 400);
+        Net ctlXor = Decode("ctl_xor", 6, 480);
+        Net ctlJmp = Decode("ctl_jmp", 7, 560);
+        Net ctlJz = Decode("ctl_jz", 8, 640);
+        Net ctlLdaMem = Decode("ctl_lda_mem", 9, 720);
+        Net ctlAddMem = Decode("ctl_add_mem", 10, 800);
+        Net ctlHalt = Decode("ctl_halt", 11, 880);
+
+        int[] zeroTable = new int[256];
+        zeroTable[0] = 1;
+        root.AddPrimitive("zero_flag", new LookupSpec(8, zeroTable), 560, 980);
+        for (int input = 0; input < 8; input++)
+        {
+            root.Connect(acc[7 - input], root.Pin("zero_flag", $"in{input}"));
+        }
+
+        root.Connect(zero, root.Pin("zero_flag", PrimitiveShapes.OutputPinId));
+
+        Net memoryOperand = root.AddNet("memory_operand", StandardDomains.BinaryId);
+        root.AddInstance("or_memory_operand", "std.or", 820, 720);
+        root.Connect(ctlLdaMem, root.Pin("or_memory_operand", "a"));
+        root.Connect(ctlAddMem, root.Pin("or_memory_operand", "b"));
+        root.Connect(memoryOperand, root.Pin("or_memory_operand", "y"));
+
+        Net addActive = root.AddNet("add_active", StandardDomains.BinaryId);
+        root.AddInstance("or_add_active", "std.or", 820, 160);
+        root.Connect(ctlAdd, root.Pin("or_add_active", "a"));
+        root.Connect(ctlAddMem, root.Pin("or_add_active", "b"));
+        root.Connect(addActive, root.Pin("or_add_active", "y"));
+
+        Net logicActive = root.AddNet("logic_active", StandardDomains.BinaryId);
+        root.AddInstance("or_logic_active", "std.or", 820, 320);
+        root.Connect(ctlAnd, root.Pin("or_logic_active", "a"));
+        root.Connect(ctlOr, root.Pin("or_logic_active", "b"));
+        root.Connect(logicActive, root.Pin("or_logic_active", "y"));
+
+        Net aluActiveBase = root.AddNet("alu_active_base", StandardDomains.BinaryId);
+        root.AddInstance("or_alu_active_base", "std.or", 1040, 240);
+        root.Connect(addActive, root.Pin("or_alu_active_base", "a"));
+        root.Connect(logicActive, root.Pin("or_alu_active_base", "b"));
+        root.Connect(aluActiveBase, root.Pin("or_alu_active_base", "y"));
+
+        Net aluActive = root.AddNet("alu_active", StandardDomains.BinaryId);
+        root.AddInstance("or_alu_active", "std.or", 1260, 240);
+        root.Connect(aluActiveBase, root.Pin("or_alu_active", "a"));
+        root.Connect(ctlXor, root.Pin("or_alu_active", "b"));
+        root.Connect(aluActive, root.Pin("or_alu_active", "y"));
+
+        Net aluOp0 = root.AddNet("alu_op0", StandardDomains.BinaryId);
+        root.AddInstance("or_alu_op0", "std.or", 1040, 400);
+        root.Connect(ctlAnd, root.Pin("or_alu_op0", "a"));
+        root.Connect(ctlXor, root.Pin("or_alu_op0", "b"));
+        root.Connect(aluOp0, root.Pin("or_alu_op0", "y"));
+
+        Net aluOp1 = root.AddNet("alu_op1", StandardDomains.BinaryId);
+        root.AddInstance("or_alu_op1", "std.or", 1040, 480);
+        root.Connect(ctlOr, root.Pin("or_alu_op1", "a"));
+        root.Connect(ctlXor, root.Pin("or_alu_op1", "b"));
+        root.Connect(aluOp1, root.Pin("or_alu_op1", "y"));
+
+        Net jzTaken = root.AddNet("jz_taken", StandardDomains.BinaryId);
+        root.AddInstance("and_jz", "std.and", 820, 560);
+        root.Connect(ctlJz, root.Pin("and_jz", "a"));
+        root.Connect(zero, root.Pin("and_jz", "b"));
+        root.Connect(jzTaken, root.Pin("and_jz", "y"));
+
+        Net branch = root.AddNet("branch", StandardDomains.BinaryId);
+        root.AddInstance("or_branch", "std.or", 1040, 560);
+        root.Connect(ctlJmp, root.Pin("or_branch", "a"));
+        root.Connect(jzTaken, root.Pin("or_branch", "b"));
+        root.Connect(branch, root.Pin("or_branch", "y"));
+
+        root.AddInstance("buf_halted", "std.buf", 1260, 880);
+        root.Connect(ctlHalt, root.Pin("buf_halted", "a"));
+        root.Connect(halted, root.Pin("buf_halted", "y"));
+
+        // PC + 1; a jump replaces it with the low operand nibble, while HLT holds it.
+        root.AddInstance("pc_inc", "std.ripple-adder-4", 1040, 60);
+        var pcSum = new Net[4];
+        for (int bit = 0; bit < 4; bit++)
+        {
+            root.Connect(pc[bit], root.Pin("pc_inc", $"a{bit}"));
+            root.Connect(bit == 0 ? constOne : constZero, root.Pin("pc_inc", $"b{bit}"));
+            pcSum[bit] = root.AddNet($"pc_inc{bit}", StandardDomains.BinaryId);
+            root.Connect(pcSum[bit], root.Pin("pc_inc", $"s{bit}"));
+        }
+
+        root.AddInstance("pc_reg", "std.reg-4", 1560, 60);
+        for (int bit = 0; bit < 4; bit++)
+        {
+            Net held = root.AddNet($"pc_held{bit}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_pc_halt{bit}", "std.mux2", 1280, 60 + (bit * 100));
+            root.Connect(pcSum[bit], root.Pin($"mux_pc_halt{bit}", "a"));
+            root.Connect(pc[bit], root.Pin($"mux_pc_halt{bit}", "b"));
+            root.Connect(ctlHalt, root.Pin($"mux_pc_halt{bit}", "s"));
+            root.Connect(held, root.Pin($"mux_pc_halt{bit}", "y"));
+
+            Net next = root.AddNet($"pc_next{bit}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_pc_branch{bit}", "std.mux2", 1420, 60 + (bit * 100));
+            root.Connect(held, root.Pin($"mux_pc_branch{bit}", "a"));
+            root.Connect(instruction[bit], root.Pin($"mux_pc_branch{bit}", "b"));
+            root.Connect(branch, root.Pin($"mux_pc_branch{bit}", "s"));
+            root.Connect(next, root.Pin($"mux_pc_branch{bit}", "y"));
+
+            root.Connect(next, root.Pin("pc_reg", $"d{bit}"));
+            root.Connect(pc[bit], root.Pin("pc_reg", $"q{bit}"));
+        }
+
+        root.Connect(constOne, root.Pin("pc_reg", "load"));
+        root.Connect(reset, root.Pin("pc_reg", "clr"));
+        root.Connect(clk, root.Pin("pc_reg", "clk"));
+
+        // Data memory: generated 16 x 8 RAM, addressed by the low operand nibble.
+        root.AddInstance("ram", "gen.ram-16x8", 2700, 500);
+        for (int bit = 0; bit < 4; bit++)
+        {
+            root.Connect(instruction[bit], root.Pin("ram", $"addr{bit}"));
+        }
+
+        for (int bit = 0; bit < 8; bit++)
+        {
+            root.Connect(acc[bit], root.Pin("ram", $"d{bit}"));
+            root.Connect(memory[bit], root.Pin("ram", $"q{bit}"));
+        }
+
+        root.Connect(ctlSta, root.Pin("ram", "we"));
+        root.Connect(clk, root.Pin("ram", "clk"));
+
+        // ALU B is the immediate operand or the addressed memory word.
+        root.AddInstance("alu", StandardLibrary.Alu8Id, 2200, 900);
+        for (int bit = 0; bit < 8; bit++)
+        {
+            Net operand = root.AddNet($"alu_b{bit}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_alu_b{bit}", "std.mux2", 1980, 880 + (bit * 100));
+            root.Connect(instruction[bit], root.Pin($"mux_alu_b{bit}", "a"));
+            root.Connect(memory[bit], root.Pin($"mux_alu_b{bit}", "b"));
+            root.Connect(memoryOperand, root.Pin($"mux_alu_b{bit}", "s"));
+            root.Connect(operand, root.Pin($"mux_alu_b{bit}", "y"));
+            root.Connect(acc[bit], root.Pin("alu", $"a{bit}"));
+            root.Connect(operand, root.Pin("alu", $"b{bit}"));
+        }
+
+        root.Connect(aluOp0, root.Pin("alu", "op0"));
+        root.Connect(aluOp1, root.Pin("alu", "op1"));
+        root.Connect(carry, root.Pin("alu", "carry"));
+
+        root.AddInstance("acc_reg", "std.reg-8", 2700, 1300);
+        for (int bit = 0; bit < 8; bit++)
+        {
+            Net loaded = root.AddNet($"acc_loaded{bit}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_acc_lda{bit}", "std.mux2", 1800, 1200 + (bit * 100));
+            root.Connect(acc[bit], root.Pin($"mux_acc_lda{bit}", "a"));
+            root.Connect(instruction[bit], root.Pin($"mux_acc_lda{bit}", "b"));
+            root.Connect(ctlLda, root.Pin($"mux_acc_lda{bit}", "s"));
+            root.Connect(loaded, root.Pin($"mux_acc_lda{bit}", "y"));
+
+            Net read = root.AddNet($"acc_read{bit}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_acc_mem{bit}", "std.mux2", 2020, 1200 + (bit * 100));
+            root.Connect(loaded, root.Pin($"mux_acc_mem{bit}", "a"));
+            root.Connect(memory[bit], root.Pin($"mux_acc_mem{bit}", "b"));
+            root.Connect(ctlLdaMem, root.Pin($"mux_acc_mem{bit}", "s"));
+            root.Connect(read, root.Pin($"mux_acc_mem{bit}", "y"));
+
+            Net next = root.AddNet($"acc_next{bit}", StandardDomains.BinaryId);
+            root.AddInstance($"mux_acc_alu{bit}", "std.mux2", 2240, 1200 + (bit * 100));
+            root.Connect(read, root.Pin($"mux_acc_alu{bit}", "a"));
+            Net aluBit = root.AddNet($"alu_y{bit}", StandardDomains.BinaryId);
+            root.Connect(aluBit, root.Pin("alu", $"y{bit}"));
+            root.Connect(aluBit, root.Pin($"mux_acc_alu{bit}", "b"));
+            root.Connect(aluActive, root.Pin($"mux_acc_alu{bit}", "s"));
+            root.Connect(next, root.Pin($"mux_acc_alu{bit}", "y"));
+
+            root.Connect(next, root.Pin("acc_reg", $"d{bit}"));
+            root.Connect(acc[bit], root.Pin("acc_reg", $"q{bit}"));
+        }
+
+        root.Connect(constOne, root.Pin("acc_reg", "load"));
+        root.Connect(reset, root.Pin("acc_reg", "clr"));
+        root.Connect(clk, root.Pin("acc_reg", "clk"));
+
+        return builder.Build("demo.byte-machine");
+    }
+
+    private static string[] PinIds(string prefix, int count) =>
+        [.. Enumerable.Range(0, count).Select(index => $"{prefix}{index}")];
+
+    private static void MergeGenerated(CircuitProject target, GeneratedPart part)
+    {
+        foreach (SignalDomain domain in part.Project.Domains)
+        {
+            if (target.FindDomain(domain.Id) is null)
+            {
+                target.Domains.Add(domain);
+            }
+        }
+
+        foreach (NumericFormatDefinition format in part.Project.CustomNumericFormats)
+        {
+            if (target.CustomNumericFormats.All(existing => existing.Id != format.Id))
+            {
+                target.CustomNumericFormats.Add(format);
+            }
+        }
+
+        foreach (CircuitDefinition definition in part.Project.Definitions)
+        {
+            if (target.FindDefinition(definition.Id) is null)
+            {
+                target.Definitions.Add(definition);
+            }
+        }
     }
 
     /// <summary>

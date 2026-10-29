@@ -31,6 +31,7 @@ public sealed class SimulationScriptTests
         { "binary-counter.radix", "counter-counts.radixtest" },
         { "accumulator-cpu.radix", "accumulator.radixtest" },
         { "tiny-cpu.radix", "tiny-cpu.radixtest" },
+        { "byte-machine.radix", "byte-machine.radixtest" },
         { "8-bit-alu.radix", "eight-bit-alu.radixtest" },
     };
 

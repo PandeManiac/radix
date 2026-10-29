@@ -1,0 +1,108 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "8-bit program machine runs a branch, memory, and loop",
+  "description": "LDA/ADD/STA store 0x46, an indirect ADD reads it back, XOR produces 0xB9, an untaken JZ falls through, a taken JZ skips two words, and the final LDA@/JMP loop reads the stored 0x7F back.",
+  "definition": "demo.byte-machine",
+  "steps": [
+    { "at": 0, "set": { "clk": 0, "reset": 0 } },
+    {
+      "at": 20,
+      "expect": { "zero": 1, "carry": 0, "halted": 0 },
+      "expectLane": { "pc": 0, "acc": 0, "mem": 0, "instruction": 274, "opcode": 1, "operand": 18 }
+    },
+    { "at": 30, "set": { "clk": 1 } },
+    {
+      "at": 100,
+      "expect": { "zero": 0 },
+      "expectLane": { "pc": 1, "acc": 18, "mem": 0, "instruction": 564, "opcode": 2, "operand": 52 }
+    },
+    { "at": 110, "set": { "clk": 0 } },
+    { "at": 130, "set": { "clk": 1 } },
+    {
+      "at": 200,
+      "expectLane": { "pc": 2, "acc": 70, "mem": 0, "instruction": 768, "opcode": 3, "operand": 0 }
+    },
+    { "at": 210, "set": { "clk": 0 } },
+    { "at": 230, "set": { "clk": 1 } },
+    {
+      "at": 300,
+      "expectLane": { "pc": 3, "acc": 70, "mem": 70, "instruction": 256, "opcode": 1, "operand": 0 }
+    },
+    { "at": 310, "set": { "clk": 0 } },
+    { "at": 330, "set": { "clk": 1 } },
+    {
+      "at": 400,
+      "expect": { "zero": 1 },
+      "expectLane": { "pc": 4, "acc": 0, "mem": 70, "instruction": 2560, "opcode": 10, "operand": 0 }
+    },
+    { "at": 410, "set": { "clk": 0 } },
+    { "at": 430, "set": { "clk": 1 } },
+    {
+      "at": 500,
+      "expect": { "zero": 0 },
+      "expectLane": { "pc": 5, "acc": 70, "mem": 0, "instruction": 769, "opcode": 3, "operand": 1 }
+    },
+    { "at": 510, "set": { "clk": 0 } },
+    { "at": 530, "set": { "clk": 1 } },
+    {
+      "at": 600,
+      "expectLane": { "pc": 6, "acc": 70, "mem": 0, "instruction": 1791, "opcode": 6, "operand": 255 }
+    },
+    { "at": 610, "set": { "clk": 0 } },
+    { "at": 630, "set": { "clk": 1 } },
+    {
+      "at": 700,
+      "expectLane": { "pc": 7, "acc": 185, "mem": 0, "instruction": 2060, "opcode": 8, "operand": 12 }
+    },
+    { "at": 710, "set": { "clk": 0 } },
+    { "at": 730, "set": { "clk": 1 } },
+    {
+      "at": 800,
+      "expectLane": { "pc": 8, "acc": 185, "instruction": 256, "opcode": 1, "operand": 0 }
+    },
+    { "at": 810, "set": { "clk": 0 } },
+    { "at": 830, "set": { "clk": 1 } },
+    {
+      "at": 900,
+      "expect": { "zero": 1 },
+      "expectLane": { "pc": 9, "acc": 0, "instruction": 2060, "opcode": 8, "operand": 12 }
+    },
+    { "at": 910, "set": { "clk": 0 } },
+    { "at": 930, "set": { "clk": 1 } },
+    {
+      "at": 1000,
+      "expectLane": { "pc": 12, "acc": 0, "instruction": 383, "opcode": 1, "operand": 127 }
+    },
+    { "at": 1010, "set": { "clk": 0 } },
+    { "at": 1030, "set": { "clk": 1 } },
+    {
+      "at": 1100,
+      "expectLane": { "pc": 13, "acc": 127, "instruction": 770, "opcode": 3, "operand": 2 }
+    },
+    { "at": 1110, "set": { "clk": 0 } },
+    { "at": 1130, "set": { "clk": 1 } },
+    {
+      "at": 1200,
+      "expectLane": { "pc": 14, "acc": 127, "mem": 127, "instruction": 2306, "opcode": 9, "operand": 2 }
+    },
+    { "at": 1210, "set": { "clk": 0 } },
+    { "at": 1230, "set": { "clk": 1 } },
+    {
+      "at": 1300,
+      "expectLane": { "pc": 15, "acc": 127, "mem": 70, "instruction": 1792, "opcode": 7, "operand": 0 }
+    },
+    { "at": 1310, "set": { "clk": 0 } },
+    { "at": 1330, "set": { "clk": 1 } },
+    {
+      "at": 1400,
+      "expectLane": { "pc": 0, "acc": 127, "mem": 127, "instruction": 274, "opcode": 1, "operand": 18 }
+    },
+    { "at": 1410, "set": { "clk": 0 } },
+    { "at": 1430, "set": { "clk": 1 } },
+    {
+      "at": 1500,
+      "expectLane": { "pc": 1, "acc": 18, "mem": 0, "instruction": 564, "opcode": 2, "operand": 52 }
+    }
+  ]
+}

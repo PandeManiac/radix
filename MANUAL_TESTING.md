@@ -521,7 +521,35 @@ This uses the GUI, so run it yourself. The machine is built entirely from librar
 5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
 6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
 
-## 25. Four-state bus resolution
+## 25. 8-bit generated-memory machine
+
+This uses the GUI. The program ROM and data RAM are generated definitions, not kernel features.
+
+1. Open `examples/byte-machine.radix`. Expected: the canvas shows `gen.rom-16x12`, `gen.ram-16x8`, the ALU, PC and accumulator registers, and decoder lookups; the Definition list contains both generated roots. The lane legend shows **ACC**, **MEM**, **PC**, **INSTRUCTION**, **OPCODE**, **OPERAND**, and **ADDRESS**.
+2. Click **Begin**, drive `CLK = 0`, `RESET = 0`, and settle. Expected: `PC = 0`, `ACC = 0`, `MEM = 0`, `ZERO = 1`, `HALTED = 0`, instruction `274` (0x112), opcode `1`, operand `18` — LDA #0x12.
+3. Pulse `CLK` (0 → 1 → settle → 0) and check each row:
+
+| Edge | PC | ACC | MEM | Instruction | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 18 | 0 | 564 (0x234) | LDA #0x12 done; ADD #0x34 fetched |
+| 2 | 2 | 70 | 0 | 768 (0x300) | 0x12 + 0x34 = 0x46 |
+| 3 | 3 | 70 | 70 | 256 (0x100) | STA 0 wrote 0x46 |
+| 4 | 4 | 0 | 70 | 2560 (0xA00) | LDA #0 |
+| 5 | 5 | 70 | 0 | 769 (0x301) | ADD@ 0 read 0x46 back |
+| 6 | 6 | 70 | 0 | 1791 (0x6FF) | STA 1 stored it |
+| 7 | 7 | 185 | 0 | 2060 (0x80C) | XOR #0xFF produced 0xB9 |
+| 8 | 8 | 185 | 70 | 256 (0x100) | JZ 12 not taken; LDA #0 fetched |
+| 9 | 9 | 0 | 0 | 2060 (0x80C) | zero flag set |
+| 10 | 12 | 0 | 0 | 383 (0x17F) | JZ 12 skipped two words |
+| 11 | 13 | 127 | 0 | 770 (0x302) | LDA #0x7F |
+| 12 | 14 | 127 | 127 | 2306 (0x902) | STA 2 wrote 0x7F |
+| 13 | 15 | 127 | 70 | 1792 (0x700) | LDA@ 2 read 0x7F back; MEM shows address 0 now |
+| 14 | 0 | 127 | 127 | 274 (0x112) | JMP 0; MEM shows stored word 2 |
+
+4. Drive `RESET = 1`, settle, pulse `CLK`, then return `RESET = 0`. Expected: `PC = 0` and `ACC = 0`; RAM still holds 0x46 at words 0 and 1 and 0x7F at word 2, visible by stepping to the relevant `LDA@` instruction. No errors or warnings appear.
+5. Check **Trace** and **Waveform**: clock, PC, accumulator, instruction, RAM read, and write-enable transitions are recorded. `HLT` (opcode 11) is covered by the core tests with a custom program; it holds PC and ACC while `HALTED` is 1 until reset.
+
+## 26. Four-state bus resolution
 
 This uses the GUI. Both data inputs and the bus are on the four-state domain; indices 0 and 1 are logic values, 2 is X, and 3 is Z. The enable pins are binary.
 
@@ -534,7 +562,7 @@ This uses the GUI. Both data inputs and the bus are on the four-state domain; in
 7. Set `EN A = 1`, `A = 2`. Expected: **BUS** = X and **CONFLICT** = 1; X has higher priority than 1 in this domain.
 8. Expected limitation: the resolution policy is the domain's one priority table; there is no wired-AND/open-drain option, and the diagnostic reports a conflict per net once, not per transition.
 
-## 26. 4 × 4 multiplier
+## 27. 4 × 4 multiplier
 
 This uses the GUI and a terminal. The multiplier wraps `std.mult-4`, an array multiplier built from sixteen AND gates and three 8-bit adders.
 
@@ -546,7 +574,7 @@ This uses the GUI and a terminal. The multiplier wraps `std.mult-4`, an array mu
 6. Run `dotnet run --project src/Radix.Cli -- sweep examples/multiplier.radix --ticks 80 --max-rows 256`. Expected: `rows: 256 (settle 80 tick(s))`, columns `a0 a1 a2 a3 b0 b1 b2 b3 p0 … p7`, and a final row `1 1 1 1 | 1 1 1 1 | 1 0 0 0 0 1 1 1` (15 × 15 = 225).
 7. Expected limitation: the part is fixed at four bits per operand and an eight-bit product; there is no parameterized width, and the example does not chain multipliers into a wider array.
 
-## 27. Hierarchy graph
+## 28. Hierarchy graph
 
 This uses a terminal.
 
@@ -557,7 +585,7 @@ This uses a terminal.
 5. Pass both `--json` and `--dot`, an unknown `--definition`, or a depth of `65`. Expected: each is refused with exit code `2` and a usage or validation message; no partial report is printed.
 6. Expected limitations: the graph is a structural projection, not a compiled or scheduled view. It does not lay out a schematic, does not show nets or lane values, and its tree prints each definition's children only once when the same part is reused in several branches.
 
-## 28. Known limitations to verify as *limitations*
+## 29. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
@@ -568,6 +596,7 @@ Do not file these as new failures until they change in the README:
 - selection, external drive history, waveform history, and the waveform time range are not saved; viewport, active definition, and waveform pins are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
+- the 8-bit machine has a 16-word program ROM, 16 data words, a 4-bit PC, and no stack, subroutine, interrupt, or branch beyond JZ; JMP/JZ targets wrap at 16, HLT holds PC and ACC until reset, and memory instructions use only the low operand nibble as an address. Its generated ROM and RAM are fixed definitions, not runtime-sized memories;
 - the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack holds nine returns with a two-trit pointer and latches a stack-error flag for call overflow or return underflow, but still overwrites the oldest return address on overflow and does not detect collisions with data;
 - the ternary RAMs are fixed at 3×2 and 9×2 words; there is no runtime-sized memory, byte-lane view, or protection between program and data;
 - the ternary stack machine has a 9-word stack and a 2-trit pointer: eight pushes are safe, a ninth wraps and latches the fault; ADD is modulo 9 because the 2-trit adder carry is dropped, and BZ does not pop its condition;

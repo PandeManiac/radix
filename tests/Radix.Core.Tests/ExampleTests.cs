@@ -115,6 +115,116 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void ByteMachineRunsArithmeticMemoryBranchesAndGeneratedParts()
+    {
+        CircuitProject project = ExampleProjects.CreateByteMachineDemo();
+        CircuitDefinition root = project.RequireDefinition("demo.byte-machine");
+        Assert.Contains(project.Definitions, definition => definition.Id == "gen.rom-16x12");
+        Assert.Contains(project.Definitions, definition => definition.Id == "gen.ram-16x8");
+        Assert.Equal(
+            ["Accumulator", "Memory read", "Program counter", "Instruction", "Opcode", "Operand", "Address"],
+            root.NumericLanes.Select(lane => lane.Name));
+
+        var engine = TestFixtures.Simulate(project, "demo.byte-machine");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(120);
+
+        Assert.Equal(0, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 8));
+        Assert.Equal(0x112, ReadLane(engine, "ir", 12));
+        Assert.Equal(1, engine.Read("zero"));
+
+        PulseClock(engine);                    // LDA #0x12
+        Assert.Equal(1, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x12, ReadLane(engine, "acc", 8));
+        Assert.Equal(0x234, ReadLane(engine, "ir", 12));
+
+        PulseClock(engine);                    // ADD #0x34
+        Assert.Equal(2, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x46, ReadLane(engine, "acc", 8));
+
+        PulseClock(engine);                    // STA 0
+        Assert.Equal(3, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x46, ReadLane(engine, "mem", 8));
+
+        PulseClock(engine);                    // LDA #0
+        Assert.Equal(0, ReadLane(engine, "acc", 8));
+        Assert.Equal(1, engine.Read("zero"));
+
+        PulseClock(engine);                    // ADD@ 0
+        Assert.Equal(0x46, ReadLane(engine, "acc", 8));
+
+        PulseClock(engine);                    // STA 1
+        PulseClock(engine);                    // XOR #0xFF
+        Assert.Equal(0xB9, ReadLane(engine, "acc", 8));
+
+        PulseClock(engine);                    // JZ 12, not taken
+        Assert.Equal(8, ReadLane(engine, "pc", 4));
+
+        PulseClock(engine);                    // LDA #0
+        Assert.Equal(0, ReadLane(engine, "acc", 8));
+        PulseClock(engine);                    // JZ 12, taken
+        Assert.Equal(12, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 8));
+
+        PulseClock(engine);                    // LDA #0x7F
+        Assert.Equal(0x7F, ReadLane(engine, "acc", 8));
+        PulseClock(engine);                    // STA 2
+        Assert.Equal(0x7F, ReadLane(engine, "mem", 8));
+        PulseClock(engine);                    // LDA@ 2 reads the stored byte back
+        Assert.Equal(0x7F, ReadLane(engine, "acc", 8));
+        PulseClock(engine);                    // JMP 0
+        Assert.Equal(0, ReadLane(engine, "pc", 4));
+        Assert.Equal(0x7F, ReadLane(engine, "acc", 8));
+
+        Assert.Equal(0, engine.Read("halted"));
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void ByteMachineHaltHoldsPcAndResetClearsState()
+    {
+        int[] program =
+        [
+            0x100, // LDA #0
+            0xB00, // HLT
+            0x000, 0x000, 0x000, 0x000, 0x000, 0x000,
+            0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000,
+        ];
+        var engine = TestFixtures.Simulate(
+            ExampleProjects.CreateByteMachineDemo(program),
+            "demo.byte-machine");
+        engine.Drive("clk", 0);
+        engine.Drive("reset", 0);
+        engine.Settle(120);
+
+        PulseClock(engine);
+        Assert.Equal(1, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 8));
+        Assert.Equal(1, engine.Read("halted"));
+
+        PulseClock(engine);
+        Assert.Equal(1, engine.Read("halted"));
+        Assert.Equal(1, ReadLane(engine, "pc", 4));
+
+        PulseClock(engine);
+        Assert.Equal(1, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 8));
+
+        engine.Drive("reset", 1);
+        engine.Settle(40);
+        PulseClock(engine);
+        Assert.Equal(0, ReadLane(engine, "pc", 4));
+        Assert.Equal(0, ReadLane(engine, "acc", 8));
+        Assert.Equal(0, engine.Read("halted"));
+        engine.Drive("reset", 0);
+        engine.Settle(40);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void MultiplierExampleCarriesNumericLanesAndComputes()
     {
         CircuitProject project = ExampleProjects.CreateMultiplierDemo();
