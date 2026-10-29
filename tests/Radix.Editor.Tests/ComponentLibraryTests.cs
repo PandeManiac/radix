@@ -201,6 +201,51 @@ public sealed class ComponentLibraryTests
     }
 
     [Fact]
+    public void GeneratedPartLibraryImportsReusesStdPartsAndSimulates()
+    {
+        GeneratedPart part = PartGenerator.CreateRam(8, 4);
+        string json = Radix.Core.Serialization.ProjectLibrary.Export(part.Project, part.RootDefinitionId);
+        var target = CreateEmptyEditor();
+        int before = target.Project.Definitions.Count;
+        int dffsBefore = target.Project.Definitions.Count(d => d.Id == StandardLibrary.DFlipFlopId);
+
+        LibraryImportResult result = ComponentLibraryService.Import(target.Project, json);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(part.RootDefinitionId, result.RootDefinitionId);
+        Assert.Equal(before + 2, target.Project.Definitions.Count);
+        Assert.Equal(dffsBefore, target.Project.Definitions.Count(d => d.Id == StandardLibrary.DFlipFlopId));
+        Assert.NotNull(target.Project.FindDefinition("gen.word-reg-4"));
+
+        var engine = new Radix.Core.Simulation.SimulationEngine(
+            Radix.Core.Compilation.CircuitCompiler.Compile(target.Project, result.RootDefinitionId));
+        void Drive(string pinId, int value) => engine.SetPortValue(engine.FindPortIndex(pinId), value);
+
+        Drive("addr0", 1);
+        Drive("addr1", 1);
+        Drive("addr2", 0);
+        Drive("d0", 1);
+        Drive("d1", 0);
+        Drive("d2", 0);
+        Drive("d3", 1);
+        Drive("we", 1);
+        Drive("clk", 0);
+        engine.AdvanceTo(20);
+        Drive("clk", 1);
+        engine.AdvanceTo(50);
+        Drive("clk", 0);
+        Drive("we", 0);
+        engine.AdvanceTo(90);
+
+        Assert.Equal(1, engine.GetPortValue(engine.FindPortIndex("q0")));
+        Assert.Equal(0, engine.GetPortValue(engine.FindPortIndex("q1")));
+        Assert.Equal(0, engine.GetPortValue(engine.FindPortIndex("q2")));
+        Assert.Equal(1, engine.GetPortValue(engine.FindPortIndex("q3")));
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void DomainConflictAbortsWithoutPartialMerge()
     {
         var builder = new ProjectBuilder("Conflict library");

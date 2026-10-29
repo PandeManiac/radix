@@ -35,6 +35,7 @@ internal static class Program
                 "sweep" => SweepCommand(args[1..]),
                 "inspect" => InspectCommand(args[1..]),
                 "graph" => GraphCommand(args[1..]),
+                "generate" or "gen" => GenerateCommand(args[1..]),
                 "examples" => ExamplesCommand(args[1..]),
                 "bench" or "benchmark" => BenchCommand(args[1..]),
                 "version" or "--version" => PrintVersion(),
@@ -119,6 +120,11 @@ internal static class Program
                   [--depth <n>]              Tree depth (default 6, max 64)
                   [--json]                   Emit one machine-readable JSON report
                   [--dot]                    Emit Graphviz DOT
+              generate register|adder|ram     Build a width-parameterized part library
+                  --width <n>                Register/adder width, or RAM word width
+                  --words <n>                RAM word count (power of two)
+                  --out <file.radixlib>      Output library path
+                  [--force]                  Overwrite an existing file
               examples [directory]           Write the bundled example projects
               bench [--gates <n>] [--ticks <n>]
                                              Measure event throughput on a synthetic chain
@@ -817,6 +823,88 @@ internal static class Program
             Console.Write(HierarchyReport.ToText(graph, depth));
         }
 
+        return 0;
+    }
+
+    private static int GenerateCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["width", "words", "out"], ["force"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix generate <register|adder|ram> --width <n> [--words <n>] --out <file.radixlib> [--force]");
+            return 2;
+        }
+
+        string? widthText = GetOption(options, "width");
+        string? output = GetOption(options, "out");
+        if (widthText is null)
+        {
+            Console.Error.WriteLine("generate: --width is required.");
+            return 2;
+        }
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            Console.Error.WriteLine("generate: --out is required.");
+            return 2;
+        }
+
+        string kind = positional[0].ToLowerInvariant();
+        GeneratedPart part;
+        try
+        {
+            int width = GetIntOption(options, "width", 0, PartGenerator.MinWidth, PartGenerator.MaxWidth);
+            part = kind switch
+            {
+                "register" or "reg" => PartGenerator.CreateRegister(width),
+                "adder" => PartGenerator.CreateAdder(width),
+                "ram" when GetOption(options, "words") is not null =>
+                    PartGenerator.CreateRam(
+                        GetIntOption(options, "words", 0, PartGenerator.MinRamWords, PartGenerator.MaxRamWords),
+                        width),
+                "ram" => throw new ProjectFormatException("generate ram requires --words."),
+                _ => throw new ProjectFormatException(
+                    $"unknown generated part '{positional[0]}'; expected register, adder, or ram."),
+            };
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            Console.Error.WriteLine($"generate: {exception.Message}");
+            return 2;
+        }
+
+        string extension = Path.GetExtension(output);
+        if (extension.Length == 0)
+        {
+            output += ProjectLibrary.Extension;
+        }
+        else if (!string.Equals(extension, ProjectLibrary.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"generate: output must use the {ProjectLibrary.Extension} extension.");
+            return 2;
+        }
+
+        bool force = options.ContainsKey("force");
+        if (File.Exists(output) && !force)
+        {
+            Console.Error.WriteLine($"generate: '{output}' already exists; pass --force to overwrite.");
+            return 2;
+        }
+
+        string? directory = Path.GetDirectoryName(Path.GetFullPath(output));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string json = ProjectLibrary.Export(part.Project, part.RootDefinitionId);
+        CircuitProject library = ProjectSerializer.LoadFromString(json);
+        File.WriteAllText(output, json);
+        Console.WriteLine(
+            $"generated {part.RootDefinitionId} -> {output} " +
+            $"({library.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
+            $"{json.Length.ToString("N0", CultureInfo.InvariantCulture)} chars)");
         return 0;
     }
 

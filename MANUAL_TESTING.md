@@ -195,6 +195,16 @@ If counter values differ, record the values and diagnostics; this is a correctne
 7. Attempt to import a library whose domain ID exists locally with different values or driver policy. Expected: import is refused with a domain message and the project is completely unchanged.
 8. Export a definition that instantiates other definitions. Expected: the `.radixlib` contains the dependency closure and imports successfully into a project that does not have those dependencies.
 
+### Generated parts
+
+1. In a terminal, run `dotnet run --project src/Radix.Cli -- generate register --width 16 --out scratch/reg-16.radixlib`. Expected: the command reports `gen.reg-16`, a small definition count containing only the root and its standard-library dependencies, and writes the file. `--out` without an extension appends `.radixlib`.
+2. Run `dotnet run --project src/Radix.Cli -- validate scratch/reg-16.radixlib`. Expected: `OK`, with a compiled component count and no errors.
+3. Import `reg-16.radixlib` into a new project. Expected: `gen.reg-16` opens with 16 **D** pins, 16 **Q** pins, **LOAD**, **CLR**, and **CLK**; the inspector lists 16-bit **Data** and **Q** lanes over `unsigned-binary`; `std.dff` and `std.mux2` are reused rather than duplicated.
+4. Click **Begin**, drive `CLK = 0`, set `D` to `0x1234`, `LOAD = 1`, `CLR = 0`, and pulse `CLK`. Expected: **Q** reads `0x1234` in the lane. Set `LOAD = 0`, change `D`, pulse again, and expect Q to hold. Set `LOAD = CLR = 1`, pulse, and expect Q = 0 (CLR wins).
+5. Run `generate adder --width 32 --out scratch/adder-32.radixlib`, import it, drive `A = 0xFFFFFFFF`, `B = 1`, `CIN = 0`, and settle. Expected: **A**, **B**, and **SUM** lanes; SUM reads `0` and `COUT` is 1 after the carry chain has settled.
+6. Run `generate ram --words 16 --width 8 --out scratch/ram-16x8.radixlib`, import it, write `0xA5` to address 3, then read addresses 0..15. Expected: **Address**, **Data**, and **Read** lanes; only address 3 returns `0xA5`, and the other words remain 0. Set `WE = 0`, change `Data`, and pulse `CLK`; the word must hold.
+7. Run the same `generate` command again with an existing output path and no `--force`. Expected: exit code 2 and no file change. Add `--force`; expected: it overwrites. Try `--width 0`, `--words 6`, and a 128×64 RAM; each is refused with the documented range.
+
 ## 10. Domains and project round trip
 
 1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, leave **Single driver** selected, and click **Add domain**.
@@ -548,6 +558,7 @@ Do not file these as new failures until they change in the README:
 - auto-routing is heuristic; dense circuits may need bendpoints, and components are not collision-moved automatically;
 - extraction refuses nets with drivers on both sides because there is no inout pin direction;
 - library equivalence ignores labels/layout and numeric-lane presentation; conflicting IDs are renamed rather than offering a merge dialog;
+- generated libraries are fixed definitions, not live templates: changing a width means generating and importing another part. The generator covers binary registers, ripple adders, and RAMs only, caps registers and adders at 256 bits, RAMs at 128 power-of-two words / 64-bit words / 4096 stored bits, and generated RAMs use per-word address lookups plus a binary read mux tree;
 - selection, external drive history, waveform history, and the waveform time range are not saved; viewport, active definition, and waveform pins are saved;
 - no analog solver, JIT, parallel engine, or first-class bus/vector type;
 - the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
