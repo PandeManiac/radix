@@ -34,6 +34,7 @@ internal static class Program
                 "test" => TestCommand(args[1..]),
                 "sweep" => SweepCommand(args[1..]),
                 "inspect" => InspectCommand(args[1..]),
+                "graph" => GraphCommand(args[1..]),
                 "examples" => ExamplesCommand(args[1..]),
                 "bench" or "benchmark" => BenchCommand(args[1..]),
                 "version" or "--version" => PrintVersion(),
@@ -113,6 +114,11 @@ internal static class Program
                   [--ticks <n>]              Ticks to settle after each row (default 10)
                   [--max-rows <n>]           Combination limit (default 4096)
               inspect <project.radix>        Print the project structure
+              graph <project.radix>          Print the definition hierarchy
+                  [--definition <id>]        Root for the tree (default: project root)
+                  [--depth <n>]              Tree depth (default 6, max 64)
+                  [--json]                   Emit one machine-readable JSON report
+                  [--dot]                    Emit Graphviz DOT
               examples [directory]           Write the bundled example projects
               bench [--gates <n>] [--ticks <n>]
                                              Measure event throughput on a synthetic chain
@@ -760,6 +766,55 @@ internal static class Program
             {
                 Console.WriteLine($"    lane:      {lane.Id} ({lane.Name}) format={lane.FormatId} pins=[{string.Join(", ", lane.PinIds)}]");
             }
+        }
+
+        return 0;
+    }
+
+    private static int GraphCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["definition", "depth"], ["json", "dot"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix graph <project.radix> [--definition <id>] [--depth <n>] [--json|--dot]");
+            return 2;
+        }
+
+        bool json = options.ContainsKey("json");
+        bool dot = options.ContainsKey("dot");
+        if (json && dot)
+        {
+            Console.Error.WriteLine("usage: --json and --dot are mutually exclusive.");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0], validate: false);
+        string? definitionId = GetOption(options, "definition");
+        if (definitionId is not null && project.FindDefinition(definitionId) is null)
+        {
+            Console.Error.WriteLine($"unknown definition '{definitionId}'.");
+            return 2;
+        }
+
+        int depth = GetIntOption(
+            options,
+            "depth",
+            HierarchyReport.DefaultDepth,
+            0,
+            HierarchyReport.MaxDepth);
+        HierarchyGraph graph = HierarchyGraph.Build(project, definitionId);
+        if (json)
+        {
+            Console.WriteLine(HierarchyReport.ToJson(graph));
+        }
+        else if (dot)
+        {
+            Console.Write(HierarchyReport.ToDot(graph));
+        }
+        else
+        {
+            Console.Write(HierarchyReport.ToText(graph, depth));
         }
 
         return 0;

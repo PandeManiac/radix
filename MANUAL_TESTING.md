@@ -498,7 +498,18 @@ This uses the GUI and a terminal. The multiplier wraps `std.mult-4`, an array mu
 6. Run `dotnet run --project src/Radix.Cli -- sweep examples/multiplier.radix --ticks 80 --max-rows 256`. Expected: `rows: 256 (settle 80 tick(s))`, columns `a0 a1 a2 a3 b0 b1 b2 b3 p0 … p7`, and a final row `1 1 1 1 | 1 1 1 1 | 1 0 0 0 0 1 1 1` (15 × 15 = 225).
 7. Expected limitation: the part is fixed at four bits per operand and an eight-bit product; there is no parameterized width, and the example does not chain multipliers into a wider array.
 
-## 27. Known limitations to verify as *limitations*
+## 27. Hierarchy graph
+
+This uses a terminal.
+
+1. Run `dotnet run --project src/Radix.Cli -- graph examples/tiny-cpu.radix --depth 3`. Expected: project, root, and definition/reference counts, followed by the CPU definition and its child parts with pin/part/net/lane counts. Reused parts show `×N`; a child already expanded elsewhere ends with `(shown above)`, and children at the depth boundary end with `(depth limit)`.
+2. Run the same command with `--definition std.dff --depth 1`. Expected: the tree starts at `D flip-flop`, not at the project root, while the summary still describes the whole project.
+3. Run `graph examples/quaternary-counter.radix --json`. Expected: one `radix-hierarchy-report` object with `format`, `version`, `project`, `rootDefinitionId`, `definitions`, `references`, a node per definition (counts plus `usedBy`/`instanceUses`), and grouped edges carrying their instance IDs. Parse it with a JSON tool to confirm it is valid.
+4. Run `graph examples/quaternary-counter.radix --dot > q4.dot`, then render it with Graphviz if available. Expected: a directed graph with one box per definition, `peripheries=2` on the selected root, labels naming each definition's counts, and `×N` edge labels. Missing child definitions would appear as dashed nodes rather than disappearing.
+5. Pass both `--json` and `--dot`, an unknown `--definition`, or a depth of `65`. Expected: each is refused with exit code `2` and a usage or validation message; no partial report is printed.
+6. Expected limitations: the graph is a structural projection, not a compiled or scheduled view. It does not lay out a schematic, does not show nets or lane values, and its tree prints each definition's children only once when the same part is reused in several branches.
+
+## 28. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
