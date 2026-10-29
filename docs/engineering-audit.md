@@ -138,7 +138,9 @@ the verification baseline is clean.
   allocation failure. The setting is saved with the project (format v7) and
   editable in Simulation Settings. The loader also refuses project and library files
   above 64 MiB before parsing, closing the untrusted-file size gap noted below.
-  Runtime diagnostic accumulation remains open.
+  Runtime warnings are now capped at 1,000 per run: suppressed warnings are counted
+  by the engine and summarized as RAD151 in the editor, while halt diagnostics
+  bypass the cap.
 - The earlier intermittent failure of
   `SweepHonorsCancellationInsideASingleSettleRow` was observed once under a full
   parallel run and passed both in isolation and on the next full run; the test

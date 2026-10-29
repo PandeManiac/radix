@@ -422,6 +422,13 @@ public sealed class SimulatorHost
         if (Engine is not null)
         {
             all.AddRange(Engine.RuntimeDiagnostics);
+            if (Engine.SuppressedRuntimeDiagnostics > 0)
+            {
+                all.Add(new Diagnostic(
+                    SimulationEngine.SuppressedDiagnosticsCode,
+                    DiagnosticSeverity.Warning,
+                    $"{Engine.SuppressedRuntimeDiagnostics} further runtime warning(s) were suppressed after the {Engine.Options.MaxRuntimeDiagnostics}-warning cap."));
+            }
         }
 
         return all;

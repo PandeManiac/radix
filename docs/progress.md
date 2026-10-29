@@ -12,7 +12,7 @@ humans; update it at each milestone instead of relying on chat history.
   `be9ba54` exactly.
 - Latest verified code commit: `3a85bc9`.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
-  0 warnings; core tests pass 387/387; editor tests pass 177/177.
+  0 warnings; core tests pass 388/388; editor tests pass 177/177.
 
 ## Reproducible setup and commands
 
@@ -43,13 +43,12 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 4. Added a 64 MiB project/library file-size guard enforced before parsing.
 5. Added `scripts/linux-test-natives.sh` and reproduced the engine benchmark on
    this VM (`docs/benchmarks.md`).
+6. Capped runtime warnings at 1,000 per run; suppressed warnings are counted by the
+   engine and summarized as `RAD151` in the Diagnostics tab.
 
 ## Known issues and limitations
 
 - No remote; pushes are impossible until one is configured.
-- Runtime diagnostics are not capped, so a circuit that reports a warning on every
-  evaluation can still accumulate diagnostics during a very long run. Candidate
-  next fix: cap `RuntimeDiagnostics` and surface the suppressed count.
 - `SweepHonorsCancellationInsideASingleSettleRow` is timing-sensitive (30 ms
   deadline); it failed once under a full parallel run and passed on reruns.
 - Everything under "Explicit limitations" in `README.md` still applies (no analog
@@ -57,9 +56,8 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Cap runtime diagnostics and expose the suppressed count in the editor.
-2. Add randomized differential tests across example domains with persisted seeds
+1. Add randomized differential tests across example domains with persisted seeds
    (from the audit's missing-verification list).
-3. Reproduce the editor layout benchmark on this VM and record it.
-4. Continue the roadmap: large-definition scalability, richer hierarchy/library
+2. Reproduce the editor layout benchmark on this VM and record it.
+3. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

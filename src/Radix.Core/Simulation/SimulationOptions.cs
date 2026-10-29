@@ -18,6 +18,12 @@ public sealed class SimulationOptions
     /// </summary>
     public int MaxPendingEvents { get; init; } = 1_000_000;
 
+    /// <summary>
+    /// Maximum runtime warnings retained for inspection. Zero disables the cap.
+    /// Halt diagnostics are always retained, so the count never hides why a run stopped.
+    /// </summary>
+    public int MaxRuntimeDiagnostics { get; init; } = 1000;
+
     /// <summary>Capacity of the net-change trace ring buffer. Zero disables storage.</summary>
     public int MaxRecordedChanges { get; init; } = 500_000;
 

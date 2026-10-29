@@ -260,6 +260,35 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void RuntimeWarningCapSuppressesRepeatedDiagnostics()
+    {
+        var options = new SimulationOptions
+        {
+            MaxRuntimeDiagnostics = 5,
+            MaxRecordedChanges = 0,
+            RecordTrace = false,
+            MaxEvaluationsPerComponentPerTimestamp = 64,
+        };
+
+        var builder = new ProjectBuilder("warning cap");
+        var root = builder.Define("root", "Root");
+        for (int i = 0; i < 20; i++)
+        {
+            Net net = root.AddNet($"n{i}", StandardDomains.BinaryId);
+            root.AddPrimitive($"a{i}", new LookupSpec(0, [0]));
+            root.AddPrimitive($"b{i}", new LookupSpec(0, [1]));
+            root.Connect(net, root.Pin($"a{i}", "out"));
+            root.Connect(net, root.Pin($"b{i}", "out"));
+        }
+
+        SimulationEngine engine = Engine(builder.Build("root"), options);
+        engine.AdvanceTo(0);
+
+        Assert.Equal(5, engine.RuntimeDiagnostics.Count(d => d.Severity == DiagnosticSeverity.Warning));
+        Assert.Equal(15, engine.SuppressedRuntimeDiagnostics);
+    }
+
+    [Fact]
     public void ZeroInputLookupActsAsConstant()
     {
         var builder = new ProjectBuilder("zero lookup");

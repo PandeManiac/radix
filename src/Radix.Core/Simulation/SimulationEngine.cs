@@ -28,6 +28,12 @@ public sealed class SimulationEngine
     /// </summary>
     public const string EventLimitCode = "RAD150";
 
+    /// <summary>
+    /// Emitted by the editor when runtime warnings were dropped after
+    /// <see cref="SimulationOptions.MaxRuntimeDiagnostics"/> was reached.
+    /// </summary>
+    public const string SuppressedDiagnosticsCode = "RAD151";
+
     private readonly CompiledCircuit _circuit;
     private readonly SimulationOptions _options;
     private readonly int[] _pinValues;
@@ -40,6 +46,8 @@ public sealed class SimulationEngine
     private readonly DiagnosticBag _runtimeDiagnostics = new();
     private readonly SimulationTrace _trace;
     private readonly Dictionary<int, int> _externalValues = [];
+    private int _runtimeWarningCount;
+    private int _suppressedRuntimeDiagnostics;
 
     private PrimitiveRuntime[] _runtimes = [];
     private long _now;
@@ -98,6 +106,9 @@ public sealed class SimulationEngine
     /// <summary>Runtime warnings/errors (driver conflicts, non-convergence).</summary>
     public IReadOnlyList<Diagnostic> RuntimeDiagnostics => _runtimeDiagnostics;
 
+    /// <summary>Runtime warnings dropped after the configured diagnostic cap.</summary>
+    public int SuppressedRuntimeDiagnostics => _suppressedRuntimeDiagnostics;
+
     /// <summary>Restores time zero, all values, traces, and runtime state.</summary>
     public void Reset()
     {
@@ -109,6 +120,8 @@ public sealed class SimulationEngine
         EventsProcessed = 0;
         ComponentEvaluations = 0;
         NetTransitions = 0;
+        _runtimeWarningCount = 0;
+        _suppressedRuntimeDiagnostics = 0;
 
         _queue.Clear();
         _runtimeDiagnostics.Clear();
@@ -336,10 +349,11 @@ public sealed class SimulationEngine
         if (resolution.Conflict && !_conflictReported[netIndex])
         {
             _conflictReported[netIndex] = true;
-            _runtimeDiagnostics.Warning(
+            AddRuntimeWarning(
                 DriverConflictCode,
                 $"Multiple active drivers on net '{net.RepresentativeNetId}' violate the '{net.Domain.Drivers.Kind}' driver policy for domain '{net.Domain.Id}'.",
                 net.RepresentativeDefinitionId,
+                instanceId: null,
                 netId: net.RepresentativeNetId,
                 path: net.RepresentativePath);
         }
@@ -400,12 +414,35 @@ public sealed class SimulationEngine
 
     internal void ReportRuntimeWarning(string code, string message, CompiledComponent component)
     {
-        _runtimeDiagnostics.Warning(
+        AddRuntimeWarning(
             code,
             message,
             component.DefinitionId,
             component.InstanceId,
+            netId: null,
             path: component.Path);
+    }
+
+    /// <summary>
+    /// Retains a runtime warning unless the configured cap is reached. Suppressed
+    /// warnings are counted so callers can report how many were dropped.
+    /// </summary>
+    private void AddRuntimeWarning(
+        string code,
+        string message,
+        string? definitionId,
+        string? instanceId,
+        string? netId,
+        string? path)
+    {
+        if (_options.MaxRuntimeDiagnostics > 0 && _runtimeWarningCount >= _options.MaxRuntimeDiagnostics)
+        {
+            _suppressedRuntimeDiagnostics++;
+            return;
+        }
+
+        _runtimeWarningCount++;
+        _runtimeDiagnostics.Warning(code, message, definitionId, instanceId, netId, path);
     }
 
     /// <summary>
