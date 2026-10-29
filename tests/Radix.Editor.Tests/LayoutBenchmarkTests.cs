@@ -169,6 +169,74 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
             $"{canonicalWatch.ElapsedMilliseconds} ms, ten route-reused drag frames {reuseWatch.ElapsedMilliseconds} ms");
     }
 
+    [Fact]
+    public void GeneratedHierarchyLayoutBenchmark()
+    {
+        if (Environment.GetEnvironmentVariable("RADIX_LAYOUT_BENCH") != "1")
+        {
+            return;
+        }
+
+        foreach (int count in new[] { 25, 100, 250 })
+        {
+            CircuitProject project = RepeatedChildHierarchy(count);
+            CircuitDefinition root = project.FindDefinition("main")!;
+            CircuitDefinition child = project.FindDefinition("child")!;
+
+            var constructWatch = Stopwatch.StartNew();
+            var viewModel = new EditorViewModel(project);
+            constructWatch.Stop();
+
+            var layoutWatch = Stopwatch.StartNew();
+            for (int i = 0; i < 10; i++)
+            {
+                _ = CircuitLayout.Build(viewModel.Definition, viewModel.Project);
+            }
+
+            layoutWatch.Stop();
+            output.WriteLine(
+                $"{count} repeated children: root instances {root.Instances.Count}, root nets {root.Nets.Count}, " +
+                $"child primitives {child.Instances.Count}, child nets {child.Nets.Count}, " +
+                $"construct {constructWatch.ElapsedMilliseconds} ms, ten canonical builds {layoutWatch.ElapsedMilliseconds} ms");
+        }
+    }
+
+    private static CircuitProject RepeatedChildHierarchy(int childInstanceCount)
+    {
+        var builder = new ProjectBuilder("generated-hierarchy-layout-benchmark");
+        DefinitionBuilder child = builder.Define("child", "Two-stage lookup child");
+        Net inputA = child.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net inputB = child.AddPin("b", "B", PinDirection.Input, StandardDomains.BinaryId);
+        Net output = child.AddPin("out", "OUT", PinDirection.Output, StandardDomains.BinaryId);
+        child.AddPrimitive("first", new LookupSpec(2, [0, 1, 1, 0]), 0, 0);
+        child.AddPrimitive("second", new LookupSpec(2, [0, 1, 1, 0]), 240, 0);
+        child.Connect(inputA, child.Pin("first", "in0"));
+        child.Connect(inputB, child.Pin("first", "in1"));
+        Net middle = child.AddNet("middle", StandardDomains.BinaryId);
+        child.Connect(middle, child.Pin("first", "out"));
+        child.Connect(middle, child.Pin("second", "in0"));
+        child.Connect(inputB, child.Pin("second", "in1"));
+        child.Connect(output, child.Pin("second", "out"));
+
+        DefinitionBuilder root = builder.Define("main", "Generated hierarchy root");
+        Net rootInput = root.AddPin("in", "IN", PinDirection.Input, StandardDomains.BinaryId);
+        Net rootOutput = root.AddPin("out", "OUT", PinDirection.Output, StandardDomains.BinaryId);
+        for (int i = 0; i < childInstanceCount; i++)
+        {
+            root.AddInstance($"child{i}", "child", (i % 20) * 300, (i / 20) * 140);
+            root.Connect(rootInput, root.Pin($"child{i}", "b"));
+            Net input = i == 0 ? rootInput : root.Definition.FindNet($"chain{i}")!;
+            root.Connect(input, root.Pin($"child{i}", "a"));
+
+            Net destination = i == childInstanceCount - 1
+                ? rootOutput
+                : root.AddNet($"chain{i + 1}", StandardDomains.BinaryId);
+            root.Connect(destination, root.Pin($"child{i}", "out"));
+        }
+
+        return builder.Build("main");
+    }
+
     private static void Warmup()
     {
         CircuitProject project = SyntheticChain(50);
