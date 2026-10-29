@@ -92,6 +92,9 @@ this audit. No license file or CI workflow was present.
 - Full editor tests on Linux with native Skia dependencies and on Windows CI.
 - Repeated randomized differential tests across all example signal domains with
   seeds persisted in failure reports.
+  Addressed in the follow-up pass: the differential suite now covers ternary,
+  quaternary, balanced-ternary, and four-state networks plus serialization replay,
+  and its failure messages include the seed, trial, and step.
 - Stress coverage for event-queue growth, sequence/time boundary overflow, deeply
   nested but valid hierarchies, very large JSON files, and cancellation during
   high-activity simulation.

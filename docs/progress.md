@@ -10,9 +10,9 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `7d97858`.
+- Latest verified code commit: `ea1250a`.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
-  0 warnings; core tests pass 388/388; editor tests pass 178/178.
+  0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
 ## Reproducible setup and commands
 
@@ -45,6 +45,9 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    this VM (`docs/benchmarks.md`).
 6. Capped runtime warnings at 1,000 per run; suppressed warnings are counted by the
    engine and summarized as `RAD151` in the Diagnostics tab.
+7. Extended randomized differential tests to ternary, quaternary, balanced-ternary,
+   and four-state networks, and added serialization-replay equivalence checks across
+   representative examples. Failures report the seed, trial, and step.
 
 ## Known issues and limitations
 
@@ -56,8 +59,6 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Add randomized differential tests across example domains with persisted seeds
-   (from the audit's missing-verification list).
-2. Reproduce the editor layout benchmark on this VM and record it.
-3. Continue the roadmap: large-definition scalability, richer hierarchy/library
+1. Reproduce the editor layout benchmark on this VM and record it.
+2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.
