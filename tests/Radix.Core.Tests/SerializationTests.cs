@@ -208,6 +208,32 @@ public sealed class SerializationTests
     }
 
     [Fact]
+    public void LoadRejectsFilesAboveTheConfiguredByteLimitBeforeParsing()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "radix-size-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string path = Path.Combine(directory, "project.radix");
+            ProjectSerializer.Save(path, TestCircuits.ValidProject());
+            long length = new FileInfo(path).Length;
+
+            ProjectFormatException error = Assert.Throws<ProjectFormatException>(() =>
+                ProjectSerializer.Load(path, maxBytes: length - 1));
+            Assert.Contains("above the supported limit", error.Message, StringComparison.Ordinal);
+
+            CircuitProject loaded = ProjectSerializer.Load(path, maxBytes: length);
+            Assert.Equal("valid", loaded.Name);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void JsonUsesDocumentedFormatName()
     {
         JsonObject json = Json(TestCircuits.ValidProject());

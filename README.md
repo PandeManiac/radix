@@ -277,6 +277,7 @@ These are deliberate current boundaries, not hidden behavior:
 - Undo snapshots the whole project and retains up to 80 states. This is simple and reliable, not asymptotically optimal for very large designs.
 - Very large traces are bounded (default 500,000 net changes); old changes are dropped and the UI shows only a subset of nets.
 - Pending event growth is bounded by a configurable cap (default 1,000,000; `0` disables it). Reaching it halts the run with `RAD150` and clears the queue. Runtime diagnostics are not capped, so a circuit that emits a warning on every evaluation can still accumulate diagnostics during a very long run.
+- Project and library files above 64 MiB are refused before parsing; the loader's byte limit is a per-call parameter.
 
 ## Repository layout
 

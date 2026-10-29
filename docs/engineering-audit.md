@@ -136,8 +136,9 @@ the verification baseline is clean.
   1,000,000; `0` disables) bounds the event queue and halts with `RAD150` when a
   circuit schedules events faster than they drain, instead of growing until an
   allocation failure. The setting is saved with the project (format v7) and
-  editable in Simulation Settings. Runtime diagnostic accumulation and a maximum
-  project-file size remain open.
+  editable in Simulation Settings. The loader also refuses project and library files
+  above 64 MiB before parsing, closing the untrusted-file size gap noted below.
+  Runtime diagnostic accumulation remains open.
 - The earlier intermittent failure of
   `SweepHonorsCancellationInsideASingleSettleRow` was observed once under a full
   parallel run and passed both in isolation and on the next full run; the test

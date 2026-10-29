@@ -358,7 +358,7 @@ Because libraries are ordinary projects, they can also be opened directly as pro
 - Primitive behavior is a closed built-in set; adding a primitive requires code and tests.
 - String IDs and all references are validated before simulation.
 - The loader accepts comments, trailing commas, and indented JSON; it does not resolve external references or URLs.
-- There is currently no maximum file size or maximum table count beyond the per-table 1,048,576-entry limit. Treat untrusted projects as a potential resource-exhaustion vector until a configurable size limit is added.
+- The loader refuses files above `ProjectSerializer.DefaultMaxProjectFileBytes` (64 MiB) before reading them; the limit is a per-call parameter so internal callers can lower it. Per-table entries remain capped at 1,048,576, but there is no separate cap on the number of tables. Treat untrusted projects as a potential resource-exhaustion vector.
 - `ProjectSerializer.Save` writes via a temporary file and atomic move, but callers are responsible for choosing a safe destination. The editor uses the platform file picker.
 
 ## What is not persisted

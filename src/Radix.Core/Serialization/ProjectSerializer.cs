@@ -40,13 +40,43 @@ public static class ProjectSerializer
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
+    /// <summary>
+    /// Largest project file the loader reads by default. Untrusted projects are a
+    /// resource-exhaustion vector, so the size is checked before the file is read.
+    /// </summary>
+    public const long DefaultMaxProjectFileBytes = 64L * 1024 * 1024;
+
     public static string DefaultExtension => Extension;
 
-    public static CircuitProject Load(string path, bool validate = true)
+    public static CircuitProject Load(
+        string path,
+        bool validate = true,
+        long maxBytes = DefaultMaxProjectFileBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        string json = File.ReadAllText(path, Encoding.UTF8);
-        return LoadFromString(json, validate);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBytes);
+
+        return LoadFromString(ReadProjectText(path, maxBytes), validate);
+    }
+
+    /// <summary>
+    /// Reads project or library text after enforcing the byte limit, so callers that
+    /// parse JSON themselves (library import) keep the same untrusted-input guard.
+    /// </summary>
+    public static string ReadProjectText(string path, long maxBytes = DefaultMaxProjectFileBytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBytes);
+
+        string fullPath = Path.GetFullPath(path);
+        long length = new FileInfo(fullPath).Length;
+        if (length > maxBytes)
+        {
+            throw new ProjectFormatException(
+                $"Project file '{Path.GetFileName(fullPath)}' is {length.ToString(CultureInfo.InvariantCulture)} bytes, above the supported limit of {maxBytes.ToString(CultureInfo.InvariantCulture)} bytes.");
+        }
+
+        return File.ReadAllText(fullPath, Encoding.UTF8);
     }
 
     public static CircuitProject LoadFromString(string json, bool validate = true)

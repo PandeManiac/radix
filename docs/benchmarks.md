@@ -66,6 +66,23 @@ evaluations/sec:      6,117,066
 halted:               false
 ```
 
+### This VM (2026-10-29)
+
+Re-measured on a different host to separate engine behavior from one machine's
+speed: an 8-vCPU cloud VM with 15 GiB RAM, .NET SDK 10.0.100, Release build, and
+the same commands.
+
+| Gates | Validate | Compile | Flatten | Simulate | Events/sec | Evals/sec |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2,000 | 34.1 ms | 90.5 ms | 56.5 ms | 47.7 ms | 4,194,504 | 2,180,618 |
+| 10,000 | 160.9 ms | 159.9 ms | -1.0 ms | 186.6 ms | 5,361,148 | 2,787,663 |
+| 20,000 | 227.9 ms | 243.5 ms | 15.6 ms | 261.5 ms | 7,649,796 | 3,977,798 |
+
+These absolute numbers are slower than the reference machine above, which is
+expected on a shared virtual host. The near-linear growth in compile time and the
+flat per-event simulation cost match the earlier results. A negative `flatten`
+value is timer noise, because it is computed as a difference of two stopwatches.
+
 ## Validation scaling fix
 
 Before the validation index change, the same 20,000-gate run took **~2,036 ms to compile, of which ~1,985 ms was validation**. Two nested scans were responsible:

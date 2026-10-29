@@ -2497,7 +2497,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         try
         {
-            string json = File.ReadAllText(path);
+            string json = ProjectSerializer.ReadProjectText(path);
             EditorSnapshot before = Capture();
             LibraryImportResult result = ComponentLibraryService.Import(_project, json);
             if (!result.Success || result.RootDefinitionId is not string rootId)
