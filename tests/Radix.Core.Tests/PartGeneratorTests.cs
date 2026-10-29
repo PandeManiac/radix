@@ -178,6 +178,78 @@ public sealed class PartGeneratorTests
 
     [Theory]
     [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(16)]
+    [InlineData(32)]
+    public void GeneratedMuxSelectsWholeWords(int width)
+    {
+        GeneratedPart part = PartGenerator.CreateMux(width);
+        SimulationEngine engine = TestFixtures.Simulate(part.Project, part.RootDefinitionId);
+        uint mask = Mask(width);
+        uint a = 0x1234_5678u & mask;
+        uint b = 0x0FED_CBA9u & mask;
+        DriveValue(engine, "a", width, a);
+        DriveValue(engine, "b", width, b);
+
+        engine.Drive("s", 0);
+        engine.Settle((width * 2) + 20);
+        Assert.Equal(a, ReadValue(engine, "y", width));
+
+        engine.Drive("s", 1);
+        engine.Settle((width * 2) + 20);
+        Assert.Equal(b, ReadValue(engine, "y", width));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(16)]
+    [InlineData(32)]
+    public void GeneratedComparatorReportsUnsignedOrder(int width)
+    {
+        GeneratedPart part = PartGenerator.CreateComparator(width);
+        SimulationEngine engine = TestFixtures.Simulate(part.Project, part.RootDefinitionId);
+        uint mask = Mask(width);
+        (uint A, uint B)[] cases =
+        [
+            (0, 0),
+            (0, mask),
+            (mask, 0),
+            (mask, mask),
+            (1, 2),
+            (2, 1),
+            (0x5555_5555u & mask, 0xAAAA_AAAAu & mask),
+            (0x1234_5678u & mask, 0x1234_5678u & mask),
+        ];
+
+        foreach ((uint caseA, uint caseB) in cases)
+        {
+            uint a = caseA & mask;
+            uint b = caseB & mask;
+            DriveValue(engine, "a", width, a);
+            DriveValue(engine, "b", width, b);
+            engine.Settle((width * 6) + 40);
+
+            int eq = engine.Read("eq");
+            int lt = engine.Read("lt");
+            int gt = engine.Read("gt");
+            Assert.True(
+                eq == (a == b ? 1 : 0) &&
+                lt == (a < b ? 1 : 0) &&
+                gt == (a > b ? 1 : 0),
+                $"width {width}, a {a}, b {b}: eq={eq}, lt={lt}, gt={gt}");
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Theory]
+    [InlineData(1)]
     [InlineData(4)]
     [InlineData(8)]
     public void GeneratedCounterLoadsHoldsIncrementsAndWraps(int width)

@@ -374,6 +374,170 @@ public static class PartGenerator
         return Finish(project, builder.Definition.Id, $"ram-{words}x{width}");
     }
 
+    public static GeneratedPart CreateMux(int width)
+    {
+        RequireWidth(width);
+        CircuitProject project = CreateProject($"{width}-bit 2:1 multiplexer");
+        var builder = new DefinitionBuilder(project, $"gen.mux-{width}", $"{width}-bit 2:1 multiplexer");
+        builder.Definition.Description =
+            $"Generated {width}-bit 2:1 multiplexer. S=0 selects A, S=1 selects B; " +
+            "each bit is an ordinary std.mux2.";
+
+        var a = new Net[width];
+        var b = new Net[width];
+        var y = new Net[width];
+        for (int bit = 0; bit < width; bit++)
+        {
+            a[bit] = builder.AddPin($"a{bit}", $"A{bit}", PinDirection.Input, StandardDomains.BinaryId);
+            b[bit] = builder.AddPin($"b{bit}", $"B{bit}", PinDirection.Input, StandardDomains.BinaryId);
+            y[bit] = builder.AddPin($"y{bit}", $"Y{bit}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        Net select = builder.AddPin("s", "S", PinDirection.Input, StandardDomains.BinaryId);
+        builder.AddNumericLane("a", "A", NumericFormats.UnsignedBinary.Id, PinIds("a", width));
+        builder.AddNumericLane("b", "B", NumericFormats.UnsignedBinary.Id, PinIds("b", width));
+        builder.AddNumericLane("y", "Y", NumericFormats.UnsignedBinary.Id, PinIds("y", width));
+
+        for (int bit = 0; bit < width; bit++)
+        {
+            string id = $"mux{bit}";
+            builder.AddInstance(id, "std.mux2", 80 + (bit * 220), 100);
+            builder.Connect(a[bit], builder.Pin(id, "a"));
+            builder.Connect(b[bit], builder.Pin(id, "b"));
+            builder.Connect(select, builder.Pin(id, "s"));
+            builder.Connect(y[bit], builder.Pin(id, "y"));
+        }
+
+        return Finish(project, builder.Definition.Id, $"mux-{width}");
+    }
+
+    public static GeneratedPart CreateComparator(int width)
+    {
+        RequireWidth(width);
+        CircuitProject project = CreateProject($"{width}-bit unsigned comparator");
+        var builder = new DefinitionBuilder(project, $"gen.cmp-{width}", $"{width}-bit unsigned comparator");
+        builder.Definition.Description =
+            $"Generated {width}-bit unsigned comparator. EQ is 1 when A = B, LT when A < B, " +
+            "and GT when A > B. It compares from the most-significant bit down with ordinary gates, " +
+            "so wider widths need no lookup with 2^(2*width) entries.";
+
+        var a = new Net[width];
+        var b = new Net[width];
+        for (int bit = 0; bit < width; bit++)
+        {
+            a[bit] = builder.AddPin($"a{bit}", $"A{bit}", PinDirection.Input, StandardDomains.BinaryId);
+            b[bit] = builder.AddPin($"b{bit}", $"B{bit}", PinDirection.Input, StandardDomains.BinaryId);
+        }
+
+        Net equal = builder.AddPin("eq", "EQ", PinDirection.Output, StandardDomains.BinaryId);
+        Net less = builder.AddPin("lt", "LT", PinDirection.Output, StandardDomains.BinaryId);
+        Net greater = builder.AddPin("gt", "GT", PinDirection.Output, StandardDomains.BinaryId);
+        builder.AddNumericLane("a", "A", NumericFormats.UnsignedBinary.Id, PinIds("a", width));
+        builder.AddNumericLane("b", "B", NumericFormats.UnsignedBinary.Id, PinIds("b", width));
+
+        Net zero = builder.AddNet("zero", StandardDomains.BinaryId);
+        Net one = builder.AddNet("one", StandardDomains.BinaryId);
+        builder.AddPrimitive("const0", new ConstantSpec(0), 60, 80);
+        builder.AddPrimitive("const1", new ConstantSpec(1), 60, 200);
+        builder.Connect(zero, builder.Pin("const0", PrimitiveShapes.OutputPinId));
+        builder.Connect(one, builder.Pin("const1", PrimitiveShapes.OutputPinId));
+
+        Net equalSoFar = one;
+        Net lessSoFar = zero;
+        Net greaterSoFar = zero;
+        for (int bit = width - 1; bit >= 0; bit--)
+        {
+            double x = 80 + ((width - 1 - bit) * 460);
+            string notA = $"not_a{bit}";
+            string notB = $"not_b{bit}";
+            string xor = $"xor{bit}";
+            string eqBit = $"eq_bit{bit}";
+            string aGreater = $"a_gt_b{bit}";
+            string aLess = $"a_lt_b{bit}";
+            string eqGreater = $"eq_gt{bit}";
+            string eqLess = $"eq_lt{bit}";
+            string nextGreater = $"next_gt{bit}";
+            string nextLess = $"next_lt{bit}";
+            string nextEqual = $"next_eq{bit}";
+
+            Net notANet = builder.AddNet($"{notA}_out", StandardDomains.BinaryId);
+            Net notBNet = builder.AddNet($"{notB}_out", StandardDomains.BinaryId);
+            Net xorNet = builder.AddNet($"{xor}_out", StandardDomains.BinaryId);
+            Net eqBitNet = builder.AddNet($"{eqBit}_out", StandardDomains.BinaryId);
+            Net greaterHere = builder.AddNet($"{aGreater}_out", StandardDomains.BinaryId);
+            Net lessHere = builder.AddNet($"{aLess}_out", StandardDomains.BinaryId);
+            Net eqGreaterNet = builder.AddNet($"{eqGreater}_out", StandardDomains.BinaryId);
+            Net eqLessNet = builder.AddNet($"{eqLess}_out", StandardDomains.BinaryId);
+
+            builder.AddInstance(notA, "std.not", x, 100);
+            builder.Connect(a[bit], builder.Pin(notA, "a"));
+            builder.Connect(notANet, builder.Pin(notA, "y"));
+
+            builder.AddInstance(notB, "std.not", x, 220);
+            builder.Connect(b[bit], builder.Pin(notB, "a"));
+            builder.Connect(notBNet, builder.Pin(notB, "y"));
+
+            builder.AddInstance(xor, "std.xor", x, 340);
+            builder.Connect(a[bit], builder.Pin(xor, "a"));
+            builder.Connect(b[bit], builder.Pin(xor, "b"));
+            builder.Connect(xorNet, builder.Pin(xor, "y"));
+
+            builder.AddInstance(eqBit, "std.not", x + 220, 340);
+            builder.Connect(xorNet, builder.Pin(eqBit, "a"));
+            builder.Connect(eqBitNet, builder.Pin(eqBit, "y"));
+
+            builder.AddInstance(aGreater, "std.and", x + 220, 100);
+            builder.Connect(a[bit], builder.Pin(aGreater, "a"));
+            builder.Connect(notBNet, builder.Pin(aGreater, "b"));
+            builder.Connect(greaterHere, builder.Pin(aGreater, "y"));
+
+            builder.AddInstance(aLess, "std.and", x + 220, 220);
+            builder.Connect(notANet, builder.Pin(aLess, "a"));
+            builder.Connect(b[bit], builder.Pin(aLess, "b"));
+            builder.Connect(lessHere, builder.Pin(aLess, "y"));
+
+            builder.AddInstance(eqGreater, "std.and", x + 440, 100);
+            builder.Connect(equalSoFar, builder.Pin(eqGreater, "a"));
+            builder.Connect(greaterHere, builder.Pin(eqGreater, "b"));
+            builder.Connect(eqGreaterNet, builder.Pin(eqGreater, "y"));
+
+            builder.AddInstance(eqLess, "std.and", x + 440, 220);
+            builder.Connect(equalSoFar, builder.Pin(eqLess, "a"));
+            builder.Connect(lessHere, builder.Pin(eqLess, "b"));
+            builder.Connect(eqLessNet, builder.Pin(eqLess, "y"));
+
+            Net nextGreaterNet = bit == 0
+                ? greater
+                : builder.AddNet($"greater{bit}", StandardDomains.BinaryId);
+            builder.AddInstance(nextGreater, "std.or", x + 660, 100);
+            builder.Connect(greaterSoFar, builder.Pin(nextGreater, "a"));
+            builder.Connect(eqGreaterNet, builder.Pin(nextGreater, "b"));
+            builder.Connect(nextGreaterNet, builder.Pin(nextGreater, "y"));
+
+            Net nextLessNet = bit == 0
+                ? less
+                : builder.AddNet($"less{bit}", StandardDomains.BinaryId);
+            builder.AddInstance(nextLess, "std.or", x + 660, 220);
+            builder.Connect(lessSoFar, builder.Pin(nextLess, "a"));
+            builder.Connect(eqLessNet, builder.Pin(nextLess, "b"));
+            builder.Connect(nextLessNet, builder.Pin(nextLess, "y"));
+
+            Net nextEqualNet = bit == 0
+                ? equal
+                : builder.AddNet($"equal{bit}", StandardDomains.BinaryId);
+            builder.AddInstance(nextEqual, "std.and", x + 660, 340);
+            builder.Connect(equalSoFar, builder.Pin(nextEqual, "a"));
+            builder.Connect(eqBitNet, builder.Pin(nextEqual, "b"));
+            builder.Connect(nextEqualNet, builder.Pin(nextEqual, "y"));
+
+            equalSoFar = nextEqualNet;
+            lessSoFar = nextLessNet;
+            greaterSoFar = nextGreaterNet;
+        }
+
+        return Finish(project, builder.Definition.Id, $"cmp-{width}");
+    }
+
     private static string AddRegister(CircuitProject project, int width)
     {
         string id = $"gen.reg-{width}";

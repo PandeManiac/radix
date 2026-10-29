@@ -793,7 +793,7 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public IReadOnlyList<string> GeneratedPartKinds { get; } =
-        ["Register", "Adder", "ALU", "Counter", "RAM"];
+        ["Register", "Adder", "ALU", "Counter", "Mux", "Comparator", "RAM"];
 
     public string SelectedGeneratedPartKind
     {
@@ -2497,6 +2497,8 @@ public sealed class EditorViewModel : ObservableObject
                 "Adder" => PartGenerator.CreateAdder(width),
                 "ALU" => PartGenerator.CreateAlu(width),
                 "Counter" => PartGenerator.CreateCounter(width),
+                "Mux" => PartGenerator.CreateMux(width),
+                "Comparator" => PartGenerator.CreateComparator(width),
                 "RAM" => PartGenerator.CreateRam(words, width),
                 _ => throw new InvalidOperationException($"Unknown generated part kind '{_generatedPartKind}'."),
             };

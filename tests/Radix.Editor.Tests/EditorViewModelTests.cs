@@ -2549,6 +2549,14 @@ public sealed class EditorViewModelTests
         Assert.Equal("gen.counter-8", viewModel.Definition.Id);
         Assert.NotNull(viewModel.Project.FindDefinition("gen.reg-8"));
         Assert.NotNull(viewModel.Project.FindDefinition("gen.adder-8"));
+
+        viewModel.SelectedGeneratedPartKind = "Mux";
+        Assert.True(viewModel.GeneratePart());
+        Assert.Equal("gen.mux-8", viewModel.Definition.Id);
+
+        viewModel.SelectedGeneratedPartKind = "Comparator";
+        Assert.True(viewModel.GeneratePart());
+        Assert.Equal("gen.cmp-8", viewModel.Definition.Id);
     }
 
     private static EditorViewModel CreateEmptyEditor()

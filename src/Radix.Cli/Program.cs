@@ -121,7 +121,7 @@ internal static class Program
                   [--json]                   Emit one machine-readable JSON report
                   [--dot]                    Emit Graphviz DOT
               generate <kind>                Build a width-parameterized part library
-                  register|adder|alu|counter --width <n>
+                  register|adder|alu|counter|mux|comparator --width <n>
                                              Generated part and datapath width
                   ram --width <n> --words <n>
                                              RAM word width and word count
@@ -835,7 +835,7 @@ internal static class Program
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix generate <register|adder|alu|counter|ram> --width <n> [--words <n>] --out <file.radixlib> [--force]");
+                "usage: radix generate <register|adder|alu|counter|mux|comparator|ram> --width <n> [--words <n>] --out <file.radixlib> [--force]");
             return 2;
         }
 
@@ -864,13 +864,15 @@ internal static class Program
                 "adder" => PartGenerator.CreateAdder(width),
                 "alu" => PartGenerator.CreateAlu(width),
                 "counter" or "ctr" => PartGenerator.CreateCounter(width),
+                "mux" => PartGenerator.CreateMux(width),
+                "cmp" or "comparator" => PartGenerator.CreateComparator(width),
                 "ram" when GetOption(options, "words") is not null =>
                     PartGenerator.CreateRam(
                         GetIntOption(options, "words", 0, PartGenerator.MinRamWords, PartGenerator.MaxRamWords),
                         width),
                 "ram" => throw new ProjectFormatException("generate ram requires --words."),
                 _ => throw new ProjectFormatException(
-                    $"unknown generated part '{positional[0]}'; expected register, adder, alu, counter, or ram."),
+                    $"unknown generated part '{positional[0]}'; expected register, adder, alu, counter, mux, comparator, or ram."),
             };
         }
         catch (ArgumentOutOfRangeException exception)
