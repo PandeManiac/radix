@@ -1,12 +1,14 @@
 using System.Diagnostics;
 using System.Globalization;
 using Radix.Core;
+using Radix.Core.Analysis;
 using Radix.Core.Compilation;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
 using Radix.Core.Simulation;
+using Radix.Core.Testing;
 using Radix.StdLib;
 
 namespace Radix.Cli;
@@ -29,7 +31,11 @@ internal static class Program
             {
                 "validate" => ValidateCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
+                "test" => TestCommand(args[1..]),
+                "sweep" => SweepCommand(args[1..]),
                 "inspect" => InspectCommand(args[1..]),
+                "graph" => GraphCommand(args[1..]),
+                "generate" or "gen" => GenerateCommand(args[1..]),
                 "examples" => ExamplesCommand(args[1..]),
                 "bench" or "benchmark" => BenchCommand(args[1..]),
                 "version" or "--version" => PrintVersion(),
@@ -39,6 +45,11 @@ internal static class Program
         catch (ProjectFormatException exception)
         {
             Console.Error.WriteLine($"project format error: {exception.Message}");
+            return 2;
+        }
+        catch (SimulationScriptException exception)
+        {
+            Console.Error.WriteLine($"test script error: {exception.Message}");
             return 2;
         }
         catch (CircuitValidationException exception)
@@ -82,6 +93,8 @@ internal static class Program
 
             Commands:
               validate <project.radix>       Validate structure and compile the project
+                  [--all]                    Also compile every definition as a root
+                  [--json]                   Emit one machine-readable JSON report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -92,14 +105,42 @@ internal static class Program
                   [--format <id>]            Decode the bus using a numeric format
                   [--trace]                  Print net transitions (bounded)
                   [--max-changes <n>]        Trace print limit (default 200)
+              test <project.radix> <script-or-directory> [<more>...]
+                                             Run scripted drives and assertions
+                  [--definition <id>]        Definition to simulate (default: script or root)
+                  [--json]                   Emit one machine-readable JSON report
+                                             Directories are searched recursively for *.radixtest
+              sweep <project.radix>          Exhaustively drive input combinations
+                  [--definition <id>]        Definition to sweep (default: project root)
+                  [--ticks <n>]              Ticks to settle after each row (default 10)
+                  [--max-rows <n>]           Combination limit (default 4096)
               inspect <project.radix>        Print the project structure
+              graph <project.radix>          Print the definition hierarchy
+                  [--definition <id>]        Root for the tree (default: project root)
+                  [--depth <n>]              Tree depth (default 6, max 64)
+                  [--json]                   Emit one machine-readable JSON report
+                  [--dot]                    Emit Graphviz DOT
+              generate <kind>                Build a width-parameterized part library
+                  register|adder|alu|counter|mux|comparator --width <n>
+                                             Generated part and datapath width
+                  ram|rom --width <n> --words <n>
+                                             RAM/ROM word width and word count
+                  --contents <file>          ROM contents as one hex word per line
+                  --words <n>                RAM word count (power of two)
+                  --out <file.radixlib>      Output library path
+                  [--force]                  Overwrite an existing file
               examples [directory]           Write the bundled example projects
               bench [--gates <n>] [--ticks <n>]
                                              Measure event throughput on a synthetic chain
 
             Numeric formats:
-              unsigned-binary, twos-complement, ones-complement, sign-magnitude,
-              unsigned-ternary, ternary-top-negative, balanced-ternary
+              Built-ins: unsigned-binary, twos-complement, ones-complement,
+              sign-magnitude, unsigned-ternary, unsigned-quaternary,
+              ternary-top-negative, balanced-ternary.
+              Projects may also define custom formats, listed by `radix inspect`.
+
+            Test scripts are JSON files (.radixtest) with timed drives and assertions;
+            see docs/test-scripts.md for the format and semantics.
 
             Exit codes: 0 success, 1 validation/simulation failure, 2 usage or I/O error.
 
@@ -109,37 +150,79 @@ internal static class Program
 
     private static int ValidateCommand(string[] args)
     {
-        (var positional, _) = Parse(args, []);
+        (var positional, var options) = Parse(args, ["all", "json"]);
         if (positional.Count != 1)
         {
-            Console.Error.WriteLine("usage: radix validate <project.radix>");
+            Console.Error.WriteLine("usage: radix validate <project.radix> [--all] [--json]");
             return 2;
         }
 
+        bool json = options.ContainsKey("json");
         CircuitProject project = ProjectSerializer.Load(positional[0], validate: false);
-        Console.WriteLine(
-            $"project '{project.Name}' — {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
-            $"{project.Domains.Count.ToString(CultureInfo.InvariantCulture)} domains, root '{project.RootDefinitionId}'");
+        if (!json)
+        {
+            Console.WriteLine(
+                $"project '{project.Name}' — {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
+                $"{project.Domains.Count.ToString(CultureInfo.InvariantCulture)} domains, root '{project.RootDefinitionId}'");
+        }
 
-        bool compiled = CircuitCompiler.TryCompile(
-            project,
-            project.RootDefinitionId,
-            out CompiledCircuit? circuit,
-            out DiagnosticBag report);
-        PrintDiagnostics(report, Console.Out);
+        bool validateAll = options.ContainsKey("all");
+        CompiledCircuit? circuit = null;
+        DiagnosticBag report;
+        bool compiled = validateAll
+            ? CircuitCompiler.TryValidateAllDefinitions(project, out report)
+            : CircuitCompiler.TryCompile(
+                project,
+                project.RootDefinitionId,
+                out circuit,
+                out report);
+
+        if (json)
+        {
+            Console.WriteLine(ValidationReport.ToJson(
+                project,
+                project.RootDefinitionId,
+                validateAll,
+                compiled,
+                report,
+                circuit));
+        }
+        else
+        {
+            PrintDiagnostics(report, Console.Out);
+        }
 
         if (!compiled || report.HasErrors)
         {
-            Console.Error.WriteLine(
-                $"INVALID: {report.ErrorCount.ToString(CultureInfo.InvariantCulture)} error(s), " +
-                $"{report.WarningCount.ToString(CultureInfo.InvariantCulture)} warning(s).");
+            if (!json)
+            {
+                Console.Error.WriteLine(
+                    $"INVALID: {report.ErrorCount.ToString(CultureInfo.InvariantCulture)} error(s), " +
+                    $"{report.WarningCount.ToString(CultureInfo.InvariantCulture)} warning(s).");
+            }
+
             return 1;
         }
 
-        Console.WriteLine(
-            $"OK: {circuit!.Components.Count.ToString(CultureInfo.InvariantCulture)} primitive components, " +
-            $"{circuit.Nets.Count.ToString(CultureInfo.InvariantCulture)} nets, " +
-            $"{circuit.Pins.Count.ToString(CultureInfo.InvariantCulture)} pins.");
+        if (validateAll)
+        {
+            if (!json)
+            {
+                Console.WriteLine(
+                    $"OK: {project.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions compile as roots.");
+            }
+
+            return 0;
+        }
+
+        if (!json)
+        {
+            Console.WriteLine(
+                $"OK: {circuit!.Components.Count.ToString(CultureInfo.InvariantCulture)} primitive components, " +
+                $"{circuit.Nets.Count.ToString(CultureInfo.InvariantCulture)} nets, " +
+                $"{circuit.Pins.Count.ToString(CultureInfo.InvariantCulture)} pins.");
+        }
+
         return 0;
     }
 
@@ -224,10 +307,12 @@ internal static class Program
         if (options.ContainsKey("format"))
         {
             string formatId = GetOption(options, "format")!;
-            INumericFormat? format = NumericFormats.All.FirstOrDefault(f => string.Equals(f.Id, formatId, StringComparison.OrdinalIgnoreCase));
+            INumericFormat? format = NumericFormatCatalog.All(project).FirstOrDefault(f =>
+                string.Equals(f.Id, formatId, StringComparison.OrdinalIgnoreCase));
             if (format is null)
             {
-                Console.Error.WriteLine($"unknown numeric format '{formatId}'. Known: {string.Join(", ", NumericFormats.All.Select(f => f.Id))}");
+                Console.Error.WriteLine(
+                    $"unknown numeric format '{formatId}'. Known: {string.Join(", ", NumericFormatCatalog.All(project).Select(f => f.Id))}");
                 return 2;
             }
 
@@ -262,6 +347,191 @@ internal static class Program
         }
 
         return engine.IsHalted ? 1 : 0;
+    }
+
+    private static int TestCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["definition"], ["json"]);
+        bool json = options.ContainsKey("json");
+        if (positional.Count < 2)
+        {
+            Console.Error.WriteLine(
+                "usage: radix test <project.radix> <script-or-directory> [<more>...] [--definition <id>]");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0]);
+        string? definitionOverride = GetOption(options, "definition");
+        if (definitionOverride is not null && project.FindDefinition(definitionOverride) is null)
+        {
+            Console.Error.WriteLine($"unknown definition '{definitionOverride}'.");
+            return 2;
+        }
+
+        if (positional.Count == 2 && !Directory.Exists(positional[1]))
+        {
+            return RunSingleTest(project, positional[1], definitionOverride, json);
+        }
+
+        var paths = new List<string>();
+        bool emptyDirectory = false;
+        foreach (string argument in positional.Skip(1))
+        {
+            if (!Directory.Exists(argument))
+            {
+                paths.Add(argument);
+                continue;
+            }
+
+            IReadOnlyList<string> discovered = SimulationScriptSuiteRunner.Discover(argument);
+            if (discovered.Count == 0)
+            {
+                Console.Error.WriteLine($"script error: no .radixtest scripts found in '{argument}'.");
+                emptyDirectory = true;
+                continue;
+            }
+
+            paths.AddRange(discovered);
+        }
+
+        paths = paths
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (paths.Count == 0)
+        {
+            return 2;
+        }
+
+        if (paths.Count == 1 && !emptyDirectory)
+        {
+            return RunSingleTest(project, paths[0], definitionOverride, json);
+        }
+
+        return RunTestSuite(project, paths, definitionOverride, emptyDirectory, json);
+    }
+
+    private static int RunSingleTest(
+        CircuitProject project,
+        string path,
+        string? definitionOverride,
+        bool json = false)
+    {
+        SimulationScript script = SimulationScript.Load(path);
+        SimulationScriptResult result = SimulationScriptRunner.Run(project, script, definitionOverride);
+        if (json)
+        {
+            Console.WriteLine(SimulationScriptReport.ToJson(project, result, path));
+            return result.Passed ? 0 : 1;
+        }
+
+        Console.WriteLine($"test:       {result.ScriptName}");
+        Console.WriteLine($"project:    {project.Name}");
+        Console.WriteLine($"definition: {result.DefinitionId}");
+        PrintDiagnostics(result.Diagnostics, Console.Out);
+
+        if (result.Passed)
+        {
+            Console.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"PASS: {result.StepsExecuted} step(s) through t={result.FinalTime}; " +
+                $"{result.EventsProcessed} events."));
+            return 0;
+        }
+
+        Console.Error.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"FAIL: {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)."));
+        foreach (ScriptFailure failure in result.Failures)
+        {
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"  step {failure.Step} (t={failure.At}): {failure.Message}"));
+        }
+
+        return 1;
+    }
+
+    private static int RunTestSuite(
+        CircuitProject project,
+        IReadOnlyList<string> paths,
+        string? definitionOverride,
+        bool emptyDirectory,
+        bool json = false)
+    {
+        SimulationScriptSuiteResult suite = SimulationScriptSuiteRunner.RunFiles(
+            project,
+            paths,
+            definitionOverride);
+        if (json)
+        {
+            Console.WriteLine(SimulationScriptReport.ToJson(project, suite, emptyDirectory));
+            return emptyDirectory || suite.HasErrors ? 2 : suite.HasFailures ? 1 : 0;
+        }
+
+        Console.WriteLine($"project:    {project.Name}");
+        Console.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"scripts:    {suite.Entries.Count}"));
+
+        for (int i = 0; i < suite.Entries.Count; i++)
+        {
+            SimulationScriptSuiteEntry entry = suite.Entries[i];
+            Console.WriteLine();
+            Console.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"[{i + 1}/{suite.Entries.Count}] {entry.Path}"));
+            if (entry.Error is not null)
+            {
+                Console.Error.WriteLine($"ERROR: {entry.Error}");
+                continue;
+            }
+
+            SimulationScriptResult result = entry.Result!;
+            Console.WriteLine($"test:       {result.ScriptName}");
+            Console.WriteLine($"definition: {result.DefinitionId}");
+            PrintDiagnostics(result.Diagnostics, Console.Out);
+            if (result.Passed)
+            {
+                Console.WriteLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"PASS: {result.StepsExecuted} step(s) through t={result.FinalTime}; " +
+                    $"{result.EventsProcessed} events."));
+                continue;
+            }
+
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"FAIL: {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)."));
+            foreach (ScriptFailure failure in result.Failures)
+            {
+                Console.Error.WriteLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"  step {failure.Step} (t={failure.At}): {failure.Message}"));
+            }
+        }
+
+        Console.WriteLine();
+        if (emptyDirectory || suite.HasErrors)
+        {
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"SUITE ERROR: {suite.ErrorCount} script(s) could not run, {suite.FailedCount} failed, {suite.PassedCount} passed.{(emptyDirectory ? " One or more directories contained no scripts." : string.Empty)}"));
+            return 2;
+        }
+
+        if (suite.HasFailures)
+        {
+            Console.Error.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"FAIL: {suite.FailedCount} of {suite.Entries.Count} script(s) failed."));
+            return 1;
+        }
+
+        Console.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"PASS: {suite.Entries.Count} script(s), {suite.StepsExecuted} step(s), " +
+            $"{suite.EventsProcessed} events."));
+        return 0;
     }
 
     private static void PrintPorts(SimulationEngine engine)
@@ -411,6 +681,54 @@ internal static class Program
         return true;
     }
 
+    private static int SweepCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["definition", "ticks", "max-rows"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix sweep <project.radix> [--definition <id>] [--ticks <n>] [--max-rows <n>]");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0]);
+        string? definitionId = GetOption(options, "definition");
+        if (definitionId is not null && project.FindDefinition(definitionId) is null)
+        {
+            Console.Error.WriteLine($"unknown definition '{definitionId}'.");
+            return 2;
+        }
+
+        long settleTicks = GetLongOption(options, "ticks", 10, 0, 100_000);
+        int maxRows = GetIntOption(options, "max-rows", InputSweep.DefaultMaxRows, 1, 1_000_000);
+        InputSweepResult result;
+        try
+        {
+            result = InputSweep.Run(project, definitionId, settleTicks, maxRows);
+        }
+        catch (InputSweepException exception)
+        {
+            Console.Error.WriteLine($"sweep error: {exception.Message}");
+            return 1;
+        }
+
+        Console.WriteLine($"project:    {project.Name}");
+        Console.WriteLine($"definition: {result.DefinitionId}");
+        Console.WriteLine($"inputs:     {FormatSweepPorts(result.Inputs)}");
+        Console.WriteLine($"outputs:    {FormatSweepPorts(result.Outputs)}");
+        Console.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"rows:       {result.Rows.Count} (settle {result.SettleTicks} tick(s))"));
+        Console.WriteLine();
+        Console.WriteLine(InputSweepTable.Format(result));
+        return 0;
+    }
+
+    private static string FormatSweepPorts(IReadOnlyList<SweepPort> ports) =>
+        ports.Count == 0
+            ? "(none)"
+            : string.Join("  ", ports.Select(port => $"{port.PinId}:{port.Domain.Id}"));
+
     private static int InspectCommand(string[] args)
     {
         (var positional, _) = Parse(args, []);
@@ -435,6 +753,18 @@ internal static class Program
             Console.WriteLine($"  {domain.Id} — {domain.Name}: [{string.Join(", ", domain.ValueNames)}], drivers={domain.Drivers.Kind}");
         }
 
+        if (project.CustomNumericFormats.Count > 0)
+        {
+            Console.WriteLine("Custom numeric formats:");
+            foreach (NumericFormatDefinition format in project.CustomNumericFormats)
+            {
+                Console.WriteLine(
+                    $"  {format.Id} — {format.Name}: domain={format.DomainId}, radix={format.Radix}, " +
+                    $"digits=[{string.Join(", ", format.DigitValues)}], weighting={format.Weighting}, " +
+                    $"sign={(format.NegativeSignValue is int sign ? sign.ToString(CultureInfo.InvariantCulture) : "none")}");
+            }
+        }
+
         Console.WriteLine("Definitions:");
         foreach (CircuitDefinition definition in project.Definitions)
         {
@@ -442,9 +772,200 @@ internal static class Program
             Console.WriteLine($"    pins:      {string.Join(", ", definition.Pins.Select(p => $"{p.Id}:{p.Direction.ToString().ToLowerInvariant()}:{p.DomainId}"))}");
             Console.WriteLine($"    instances: {definition.Instances.Count.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"    nets:      {definition.Nets.Count.ToString(CultureInfo.InvariantCulture)}");
+            foreach (NumericLane lane in definition.NumericLanes)
+            {
+                Console.WriteLine($"    lane:      {lane.Id} ({lane.Name}) format={lane.FormatId} pins=[{string.Join(", ", lane.PinIds)}]");
+            }
         }
 
         return 0;
+    }
+
+    private static int GraphCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["definition", "depth"], ["json", "dot"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix graph <project.radix> [--definition <id>] [--depth <n>] [--json|--dot]");
+            return 2;
+        }
+
+        bool json = options.ContainsKey("json");
+        bool dot = options.ContainsKey("dot");
+        if (json && dot)
+        {
+            Console.Error.WriteLine("usage: --json and --dot are mutually exclusive.");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0], validate: false);
+        string? definitionId = GetOption(options, "definition");
+        if (definitionId is not null && project.FindDefinition(definitionId) is null)
+        {
+            Console.Error.WriteLine($"unknown definition '{definitionId}'.");
+            return 2;
+        }
+
+        int depth = GetIntOption(
+            options,
+            "depth",
+            HierarchyReport.DefaultDepth,
+            0,
+            HierarchyReport.MaxDepth);
+        HierarchyGraph graph = HierarchyGraph.Build(project, definitionId);
+        if (json)
+        {
+            Console.WriteLine(HierarchyReport.ToJson(graph));
+        }
+        else if (dot)
+        {
+            Console.Write(HierarchyReport.ToDot(graph));
+        }
+        else
+        {
+            Console.Write(HierarchyReport.ToText(graph, depth));
+        }
+
+        return 0;
+    }
+
+    private static int GenerateCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, ["width", "words", "out", "contents"], ["force"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix generate <register|adder|alu|counter|mux|comparator|ram> --width <n> [--words <n>] --out <file.radixlib> [--force]");
+            return 2;
+        }
+
+        string? widthText = GetOption(options, "width");
+        string? output = GetOption(options, "out");
+        if (widthText is null)
+        {
+            Console.Error.WriteLine("generate: --width is required.");
+            return 2;
+        }
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            Console.Error.WriteLine("generate: --out is required.");
+            return 2;
+        }
+
+        string kind = positional[0].ToLowerInvariant();
+        GeneratedPart part;
+        try
+        {
+            int width = GetIntOption(options, "width", 0, PartGenerator.MinWidth, PartGenerator.MaxWidth);
+            part = kind switch
+            {
+                "register" or "reg" => PartGenerator.CreateRegister(width),
+                "adder" => PartGenerator.CreateAdder(width),
+                "alu" => PartGenerator.CreateAlu(width),
+                "counter" or "ctr" => PartGenerator.CreateCounter(width),
+                "mux" => PartGenerator.CreateMux(width),
+                "cmp" or "comparator" => PartGenerator.CreateComparator(width),
+                "ram" when GetOption(options, "words") is not null =>
+                    PartGenerator.CreateRam(
+                        GetIntOption(options, "words", 0, PartGenerator.MinRamWords, PartGenerator.MaxRamWords),
+                        width),
+                "rom" when GetOption(options, "words") is not null =>
+                    PartGenerator.CreateRom(
+                        GetIntOption(options, "words", 0, PartGenerator.MinRamWords, PartGenerator.MaxRomWords),
+                        width,
+                        ReadRomContents(GetOption(options, "contents"), width)),
+                "ram" or "rom" => throw new ProjectFormatException($"generate {kind} requires --words."),
+                _ => throw new ProjectFormatException(
+                    $"unknown generated part '{positional[0]}'; expected register, adder, alu, counter, mux, comparator, ram, or rom."),
+            };
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            Console.Error.WriteLine($"generate: {exception.Message}");
+            return 2;
+        }
+
+        string extension = Path.GetExtension(output);
+        if (extension.Length == 0)
+        {
+            output += ProjectLibrary.Extension;
+        }
+        else if (!string.Equals(extension, ProjectLibrary.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"generate: output must use the {ProjectLibrary.Extension} extension.");
+            return 2;
+        }
+
+        bool force = options.ContainsKey("force");
+        if (File.Exists(output) && !force)
+        {
+            Console.Error.WriteLine($"generate: '{output}' already exists; pass --force to overwrite.");
+            return 2;
+        }
+
+        string? directory = Path.GetDirectoryName(Path.GetFullPath(output));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string json = ProjectLibrary.Export(part.Project, part.RootDefinitionId);
+        CircuitProject library = ProjectSerializer.LoadFromString(json);
+        File.WriteAllText(output, json);
+        Console.WriteLine(
+            $"generated {part.RootDefinitionId} -> {output} " +
+            $"({library.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
+            $"{json.Length.ToString("N0", CultureInfo.InvariantCulture)} chars)");
+        return 0;
+    }
+
+    private static IReadOnlyList<ulong>? ReadRomContents(string? path, int width)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var values = new List<ulong>();
+        string[] lines = File.ReadAllLines(path);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string text = lines[i];
+            int comment = text.IndexOf('#');
+            if (comment >= 0)
+            {
+                text = text[..comment];
+            }
+
+            text = text.Trim();
+            if (text.Length == 0)
+            {
+                continue;
+            }
+
+            if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[2..];
+            }
+
+            if (!ulong.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong value))
+            {
+                throw new ProjectFormatException(
+                    $"ROM contents line {i + 1} '{lines[i].Trim()}' is not a hexadecimal word.");
+            }
+
+            if (width < 64 && value >= (1UL << width))
+            {
+                throw new ProjectFormatException(
+                    $"ROM contents line {i + 1} value 0x{value:X} does not fit in {width} bits.");
+            }
+
+            values.Add(value);
+        }
+
+        return values;
     }
 
     private static int ExamplesCommand(string[] args)
@@ -481,6 +1002,10 @@ internal static class Program
         int ticks = GetIntOption(options, "ticks", 50, 1, 100_000);
         CircuitProject project = BuildBench(gates);
 
+        var validateWatch = Stopwatch.StartNew();
+        CircuitValidator.Validate(project, "bench");
+        validateWatch.Stop();
+
         var compileWatch = Stopwatch.StartNew();
         CompiledCircuit circuit = CircuitCompiler.Compile(project, "bench");
         compileWatch.Stop();
@@ -504,7 +1029,9 @@ internal static class Program
         Console.WriteLine("RADIX benchmark (synthetic zero-delay inverter chain, one clock tick = one full ripple)");
         Console.WriteLine($"  gates:                {gates.ToString(CultureInfo.InvariantCulture)}");
         Console.WriteLine($"  ticks simulated:      {ticks.ToString(CultureInfo.InvariantCulture)}");
-        Console.WriteLine($"  compile:              {compileWatch.Elapsed.TotalMilliseconds:F1} ms");
+        Console.WriteLine($"  validate:             {validateWatch.Elapsed.TotalMilliseconds:F1} ms");
+        Console.WriteLine($"  compile (incl. validate): {compileWatch.Elapsed.TotalMilliseconds:F1} ms");
+        Console.WriteLine($"  flatten (compile - validate): {(compileWatch.Elapsed - validateWatch.Elapsed).TotalMilliseconds:F1} ms");
         Console.WriteLine($"  simulate:             {runWatch.Elapsed.TotalMilliseconds:F1} ms");
         Console.WriteLine($"  events:               {events.ToString("N0", CultureInfo.InvariantCulture)}");
         Console.WriteLine($"  component evals:      {engine.ComponentEvaluations.ToString("N0", CultureInfo.InvariantCulture)}");
@@ -546,7 +1073,10 @@ internal static class Program
         return builder.Build();
     }
 
-    private static (List<string> Positional, Dictionary<string, List<string>> Options) Parse(string[] args, string[] knownOptions)
+    private static (List<string> Positional, Dictionary<string, List<string>> Options) Parse(
+        string[] args,
+        string[] knownOptions,
+        string[]? flagOptions = null)
     {
         var positional = new List<string>();
         var options = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -560,13 +1090,14 @@ internal static class Program
             }
 
             string key = argument[2..];
-            if (!knownOptions.Contains(key, StringComparer.OrdinalIgnoreCase))
+            bool flag = flagOptions?.Contains(key, StringComparer.OrdinalIgnoreCase) == true;
+            if (!flag && !knownOptions.Contains(key, StringComparer.OrdinalIgnoreCase))
             {
                 throw new ProjectFormatException($"unknown option '--{key}'.");
             }
 
             string? value = null;
-            if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+            if (!flag && i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
                 value = args[++i];
             }

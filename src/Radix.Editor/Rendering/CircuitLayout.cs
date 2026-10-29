@@ -87,16 +87,20 @@ public sealed class NetWire
         IReadOnlyList<Point> points,
         IReadOnlyList<(Point A, Point B)> segments,
         IReadOnlyList<Point> junctions,
+        IReadOnlyList<Point> breaks,
         Point labelPoint,
-        IReadOnlyList<EditorPin> endpoints)
+        IReadOnlyList<EditorPin> endpoints,
+        IReadOnlyList<NetWaypoint> routePoints)
     {
         NetId = netId;
         DomainId = domainId;
         Points = points;
         Segments = segments;
         Junctions = junctions;
+        Breaks = breaks;
         LabelPoint = labelPoint;
         Endpoints = endpoints;
+        RoutePoints = routePoints;
     }
 
     public string NetId { get; }
@@ -107,11 +111,18 @@ public sealed class NetWire
 
     public IReadOnlyList<(Point A, Point B)> Segments { get; }
 
+    /// <summary>Branch points only; a crossing is never a junction.</summary>
     public IReadOnlyList<Point> Junctions { get; }
+
+    /// <summary>Points where a different net's wire visually bridges over this one.</summary>
+    public IReadOnlyList<Point> Breaks { get; internal set; }
 
     public Point LabelPoint { get; }
 
     public IReadOnlyList<EditorPin> Endpoints { get; }
+
+    /// <summary>Author bendpoints, drawn as draggable handles when the net is selected.</summary>
+    public IReadOnlyList<NetWaypoint> RoutePoints { get; }
 }
 
 public readonly record struct PinHit(EditorPin Pin, Point Position, PinDirection Direction, string? DeclaredDomain);
@@ -124,16 +135,20 @@ public sealed class CircuitLayout
     public const double BoxBottomPadding = 12;
 
     private CircuitLayout(
+        CircuitDefinition definition,
         IReadOnlyList<ComponentBox> components,
         IReadOnlyList<PortBox> ports,
         IReadOnlyList<NetWire> wires,
         Rect contentBounds)
     {
+        Definition = definition;
         Components = components;
         Ports = ports;
         Wires = wires;
         ContentBounds = contentBounds;
     }
+
+    public CircuitDefinition Definition { get; }
 
     public IReadOnlyList<ComponentBox> Components { get; }
 
@@ -143,7 +158,48 @@ public sealed class CircuitLayout
 
     public Rect ContentBounds { get; }
 
-    public static CircuitLayout Build(CircuitDefinition definition, CircuitProject project)
+    public NetWire? FindWire(string netId) =>
+        Wires.FirstOrDefault(w => string.Equals(w.NetId, netId, StringComparison.Ordinal));
+
+    public IReadOnlyCollection<string> NetsForInstance(ComponentInstance instance)
+    {
+        var nets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Net net in Definition.Nets)
+        {
+            if (net.Pins.Any(p => string.Equals(p.InstanceId, instance.Id, StringComparison.Ordinal)))
+            {
+                nets.Add(net.Id);
+            }
+        }
+
+        return nets;
+    }
+
+    public IReadOnlyCollection<string> NetsForPin(EditorPin pin)
+    {
+        var nets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Net net in Definition.Nets)
+        {
+            bool match = pin.Kind == EditorPinKind.Port
+                ? Definition.FindPortNet(pin.PinId)?.Id == net.Id
+                : net.Pins.Any(p =>
+                    string.Equals(p.InstanceId, pin.OwnerId, StringComparison.Ordinal) &&
+                    string.Equals(p.PinId, pin.PinId, StringComparison.Ordinal));
+            if (match)
+            {
+                nets.Add(net.Id);
+            }
+        }
+
+        return nets;
+    }
+
+    /// <summary>
+    /// Builds layout geometry. Passing the previous layout for the same definition
+    /// allows unchanged nets to reuse their routes, which keeps dragging responsive;
+    /// callers that need a canonical route should rebuild without it.
+    /// </summary>
+    public static CircuitLayout Build(CircuitDefinition definition, CircuitProject project, CircuitLayout? previous = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(project);
@@ -153,10 +209,7 @@ public sealed class CircuitLayout
         {
             IReadOnlyList<PinDescriptor> descriptors = project.GetInstancePins(instance);
             string title = instance.Label ?? TitleFor(instance, project);
-            int rows = Math.Max(1, Math.Max(
-                descriptors.Count(p => p.Direction == PinDirection.Input),
-                descriptors.Count(p => p.Direction == PinDirection.Output)));
-            double height = HeaderHeight + (rows * PinSpacing) + BoxBottomPadding;
+            double height = MeasureHeight(descriptors);
             var bounds = new Rect(instance.X, instance.Y, BoxWidth, height);
 
             var pins = new List<PinVisual>(descriptors.Count);
@@ -202,7 +255,7 @@ public sealed class CircuitLayout
             ports.Add(new PortBox(pin, bounds, net.Id, connector, extend));
         }
 
-        var wires = BuildWires(definition, components, ports);
+        var wires = BuildWires(definition, components, ports, previous);
 
         Rect content = componentBounds;
         foreach (PortBox port in ports)
@@ -215,7 +268,20 @@ public sealed class CircuitLayout
             content = new Rect(0, 0, 800, 500);
         }
 
-        return new CircuitLayout(components, ports, wires, content.Inflate(20));
+        return new CircuitLayout(definition, components, ports, wires, content.Inflate(20));
+    }
+
+    /// <summary>
+    /// Body height for an instance with these interface pins. Shared with auto layout
+    /// so arrangement reserves exactly the space the router and hit testing see.
+    /// </summary>
+    public static double MeasureHeight(IReadOnlyList<PinDescriptor> pins)
+    {
+        ArgumentNullException.ThrowIfNull(pins);
+        int rows = Math.Max(1, Math.Max(
+            pins.Count(p => p.Direction == PinDirection.Input),
+            pins.Count(p => p.Direction == PinDirection.Output)));
+        return HeaderHeight + (rows * PinSpacing) + BoxBottomPadding;
     }
 
     private static string DisplayPinName(ComponentInstance instance, PinDescriptor descriptor)
@@ -256,17 +322,37 @@ public sealed class CircuitLayout
     private static List<NetWire> BuildWires(
         CircuitDefinition definition,
         IReadOnlyList<ComponentBox> components,
-        IReadOnlyList<PortBox> ports)
+        IReadOnlyList<PortBox> ports,
+        CircuitLayout? previous)
     {
         var componentByInstance = components.ToDictionary(c => c.Instance.Id, StringComparer.Ordinal);
         var portsByNet = ports
             .GroupBy(p => p.NetId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
-        var wires = new List<NetWire>();
+        var wires = new List<NetWire>(definition.Nets.Count);
+        var routedSegments = new List<(Point A, Point B)>();
+        int ordinal = 0;
+
+        CircuitLayout? reuse = ReferenceEquals(previous?.Definition, definition) ? previous : null;
+        Dictionary<string, NetWire> previousWires = reuse is null
+            ? []
+            : reuse.Wires.ToDictionary(w => w.NetId, StringComparer.Ordinal);
+        Dictionary<string, ComponentBox> previousComponents = reuse is null
+            ? []
+            : reuse.Components.ToDictionary(c => c.Instance.Id, StringComparer.Ordinal);
+        Dictionary<string, PortBox> previousPorts = reuse is null
+            ? []
+            : reuse.Ports.ToDictionary(p => p.Pin.Id, StringComparer.Ordinal);
+        var previousPortsByNet = previousPorts.Values
+            .GroupBy(p => p.NetId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
+        List<Rect> changedObstacles = reuse is null
+            ? []
+            : ChangedObstacles(components, ports, previousComponents, previousPorts);
 
         foreach (Net net in definition.Nets)
         {
-            var endpoints = new List<Endpoint>();
+            var terminals = new List<WireTerminal>();
             var editorPins = new List<EditorPin>();
 
             foreach (PinRef pinRef in net.Pins)
@@ -282,7 +368,11 @@ public sealed class CircuitLayout
                     continue;
                 }
 
-                endpoints.Add(new Endpoint(pin.Position, pin.Direction == PinDirection.Input ? -1 : 1, pin.Direction));
+                terminals.Add(new WireTerminal(
+                    pin.Position,
+                    pin.Direction == PinDirection.Input ? -1 : 1,
+                    false,
+                    pin.Direction));
                 editorPins.Add(EditorPin.ForInstance(box.Instance.Id, pin.PinId));
             }
 
@@ -290,101 +380,300 @@ public sealed class CircuitLayout
             {
                 foreach (PortBox port in netPorts)
                 {
-                    endpoints.Add(new Endpoint(port.Connector, port.ExtendDirection, port.Pin.Direction));
+                    terminals.Add(new WireTerminal(port.Connector, port.ExtendDirection, true, port.Pin.Direction));
                     editorPins.Add(EditorPin.ForPort(port.Pin.Id));
                 }
             }
 
-            if (endpoints.Count == 0)
+            if (terminals.Count == 0)
             {
                 continue;
             }
 
-            var points = new List<Point>();
-            var segments = new List<(Point A, Point B)>();
-            var junctions = new List<Point>();
-            Point labelPoint;
-
-            if (endpoints.Count == 1)
+            if (previousWires.TryGetValue(net.Id, out NetWire? previousWire) &&
+                CanReuseWire(net, previousWire, terminals, editorPins, previousComponents, previousPortsByNet, changedObstacles))
             {
-                Endpoint only = endpoints[0];
-                Point end = only.Position + new Vector(only.ExtendDirection * 26, 0);
-                AddSegment(points, segments, only.Position, end);
-                labelPoint = new Point((only.Position.X + end.X) / 2, only.Position.Y);
-            }
-            else if (endpoints.Count == 2)
-            {
-                Endpoint a = endpoints[0];
-                Endpoint b = endpoints[1];
-                Point ea = a.Position + new Vector(a.ExtendDirection * 20, 0);
-                Point eb = b.Position + new Vector(b.ExtendDirection * 20, 0);
-                double midX = (ea.X + eb.X) / 2;
-                AddSegment(points, segments, a.Position, ea);
-                AddSegment(points, segments, ea, new Point(midX, ea.Y));
-                AddSegment(points, segments, new Point(midX, ea.Y), new Point(midX, eb.Y));
-                AddSegment(points, segments, new Point(midX, eb.Y), eb);
-                AddSegment(points, segments, eb, b.Position);
-                labelPoint = new Point(midX, (ea.Y + eb.Y) / 2);
-            }
-            else
-            {
-                var extensions = new List<Point>(endpoints.Count);
-                foreach (Endpoint endpoint in endpoints)
-                {
-                    Point ext = endpoint.Position + new Vector(endpoint.ExtendDirection * 20, 0);
-                    extensions.Add(ext);
-                    AddSegment(points, segments, endpoint.Position, ext);
-                }
-
-                double trunkX = extensions.Average(p => p.X);
-                double minY = extensions.Min(p => p.Y);
-                double maxY = extensions.Max(p => p.Y);
-
-                foreach (Point ext in extensions)
-                {
-                    AddSegment(points, segments, ext, new Point(trunkX, ext.Y));
-                    junctions.Add(new Point(trunkX, ext.Y));
-                }
-
-                if (Math.Abs(maxY - minY) > 0.5)
-                {
-                    AddSegment(points, segments, new Point(trunkX, minY), new Point(trunkX, maxY));
-                }
-
-                labelPoint = new Point(trunkX, (minY + maxY) / 2);
+                wires.Add(previousWire);
+                routedSegments.AddRange(previousWire.Segments);
+                ordinal++;
+                continue;
             }
 
-            if (segments.Count > 0)
+            WireRouter.RoutedWire routed = WireRouter.Route(
+                net,
+                ordinal++,
+                terminals,
+                components,
+                ports,
+                routedSegments);
+            if (routed.Segments.Count == 0)
             {
-                wires.Add(new NetWire(net.Id, net.DomainId, points, segments, junctions, labelPoint, editorPins));
+                continue;
             }
+
+            wires.Add(new NetWire(
+                net.Id,
+                net.DomainId,
+                routed.Points,
+                routed.Segments,
+                routed.Junctions,
+                [],
+                routed.LabelPoint,
+                editorPins,
+                routed.AuthoredPoints));
+            routedSegments.AddRange(routed.Segments);
         }
 
+        AddCrossingBreaks(wires);
         return wires;
     }
 
-    private static void AddSegment(
-        List<Point> points,
-        List<(Point A, Point B)> segments,
-        Point from,
-        Point to)
+    /// <summary>Bounds that changed since the previous layout, including removals.</summary>
+    private static List<Rect> ChangedObstacles(
+        IReadOnlyList<ComponentBox> components,
+        IReadOnlyList<PortBox> ports,
+        Dictionary<string, ComponentBox> previousComponents,
+        Dictionary<string, PortBox> previousPorts)
     {
-        if (Math.Abs(from.X - to.X) < 0.01 && Math.Abs(from.Y - to.Y) < 0.01)
+        var changed = new List<Rect>();
+        var currentComponentIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ComponentBox box in components)
+        {
+            currentComponentIds.Add(box.Instance.Id);
+            if (!previousComponents.TryGetValue(box.Instance.Id, out ComponentBox? old))
+            {
+                changed.Add(box.Bounds);
+            }
+            else if (old.Bounds != box.Bounds)
+            {
+                changed.Add(old.Bounds);
+                changed.Add(box.Bounds);
+            }
+        }
+
+        foreach ((string instanceId, ComponentBox old) in previousComponents)
+        {
+            if (!currentComponentIds.Contains(instanceId))
+            {
+                changed.Add(old.Bounds);
+            }
+        }
+
+        var currentPortIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (PortBox port in ports)
+        {
+            currentPortIds.Add(port.Pin.Id);
+            if (!previousPorts.TryGetValue(port.Pin.Id, out PortBox? old))
+            {
+                changed.Add(port.Bounds);
+            }
+            else if (old.Bounds != port.Bounds || old.Connector != port.Connector)
+            {
+                changed.Add(old.Bounds);
+                changed.Add(port.Bounds);
+            }
+        }
+
+        foreach ((string pinId, PortBox old) in previousPorts)
+        {
+            if (!currentPortIds.Contains(pinId))
+            {
+                changed.Add(old.Bounds);
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// True when a cached wire still connects the same endpoints through the same
+    /// authored bendpoints and no moved component body now blocks it.
+    /// </summary>
+    private static bool CanReuseWire(
+        Net net,
+        NetWire wire,
+        List<WireTerminal> terminals,
+        List<EditorPin> editorPins,
+        Dictionary<string, ComponentBox> previousComponents,
+        Dictionary<string, PortBox[]> previousPortsByNet,
+        List<Rect> changedObstacles)
+    {
+        if (!wire.Endpoints.SequenceEqual(editorPins) ||
+            wire.RoutePoints.Count != net.RoutePoints.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < net.RoutePoints.Count; i++)
+        {
+            if (wire.RoutePoints[i] != net.RoutePoints[i])
+            {
+                return false;
+            }
+        }
+
+        var previousTerminals = new List<WireTerminal>(terminals.Count);
+        foreach (PinRef pinRef in net.Pins)
+        {
+            if (!previousComponents.TryGetValue(pinRef.InstanceId, out ComponentBox? box) ||
+                box.FindPin(pinRef.PinId) is not PinVisual pin)
+            {
+                return false;
+            }
+
+            previousTerminals.Add(new WireTerminal(
+                pin.Position,
+                pin.Direction == PinDirection.Input ? -1 : 1,
+                false,
+                pin.Direction));
+        }
+
+        if (previousPortsByNet.TryGetValue(net.Id, out PortBox[]? previousPorts))
+        {
+            foreach (PortBox port in previousPorts)
+            {
+                previousTerminals.Add(new WireTerminal(port.Connector, port.ExtendDirection, true, port.Pin.Direction));
+            }
+        }
+
+        if (previousTerminals.Count != terminals.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < terminals.Count; i++)
+        {
+            if (previousTerminals[i] != terminals[i])
+            {
+                return false;
+            }
+        }
+
+        foreach ((Point a, Point b) in wire.Segments)
+        {
+            foreach (Rect obstacle in changedObstacles)
+            {
+                if (SegmentHits(a, b, obstacle.Inflate(3)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SegmentHits(Point a, Point b, Rect rect)
+    {
+        double minX = Math.Min(a.X, b.X);
+        double maxX = Math.Max(a.X, b.X);
+        double minY = Math.Min(a.Y, b.Y);
+        double maxY = Math.Max(a.Y, b.Y);
+        return maxX >= rect.Left &&
+               minX <= rect.Right &&
+               maxY >= rect.Top &&
+               minY <= rect.Bottom;
+    }
+
+    /// <summary>
+    /// Marks a visual gap in the lower-priority wire wherever two distinct nets cross.
+    /// Junctions are deliberately excluded: a dot always means an electrical connection.
+    /// </summary>
+    private static void AddCrossingBreaks(List<NetWire> wires)
+    {
+        if (wires.Count < 2 || wires.Count > 900)
         {
             return;
         }
 
-        if (points.Count == 0 || !NearlyEqual(points[^1], from))
+        foreach (NetWire wire in wires)
         {
-            points.Add(from);
+            wire.Breaks = [];
         }
 
-        points.Add(to);
-        segments.Add((from, to));
+        var order = wires.OrderBy(w => w.NetId, StringComparer.Ordinal).ToArray();
+        var breakPoints = new Dictionary<NetWire, HashSet<Point>>();
+        for (int i = 0; i < order.Length; i++)
+        {
+            NetWire under = order[i];
+            Rect underBounds = WireBounds(under);
+            for (int j = i + 1; j < order.Length; j++)
+            {
+                NetWire over = order[j];
+                if (!underBounds.Intersects(WireBounds(over)))
+                {
+                    continue;
+                }
+
+                foreach ((Point a1, Point a2) in under.Segments)
+                {
+                    foreach ((Point b1, Point b2) in over.Segments)
+                    {
+                        if (!WireRouter.Intersects(a1, a2, b1, b2, out Point crossing))
+                        {
+                            continue;
+                        }
+
+                        if (NearAnyVertex(crossing, under) || NearAnyVertex(crossing, over))
+                        {
+                            continue;
+                        }
+
+                        if (!breakPoints.TryGetValue(under, out HashSet<Point>? points))
+                        {
+                            points = [];
+                            breakPoints[under] = points;
+                        }
+
+                        points.Add(crossing);
+                    }
+                }
+            }
+        }
+
+        foreach ((NetWire wire, HashSet<Point> points) in breakPoints)
+        {
+            wire.Breaks = points.OrderBy(p => p.X).ThenBy(p => p.Y).ToArray();
+        }
     }
 
-    private static bool NearlyEqual(Point a, Point b) =>
-        Math.Abs(a.X - b.X) < 0.01 && Math.Abs(a.Y - b.Y) < 0.01;
+    private static bool NearAnyVertex(Point point, NetWire wire)
+    {
+        foreach (Point vertex in wire.Points)
+        {
+            if (Math.Abs(vertex.X - point.X) < 2 && Math.Abs(vertex.Y - point.Y) < 2)
+            {
+                return true;
+            }
+        }
+
+        foreach (Point junction in wire.Junctions)
+        {
+            if (Math.Abs(junction.X - point.X) < 2 && Math.Abs(junction.Y - point.Y) < 2)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Rect WireBounds(NetWire wire)
+    {
+        double minX = double.MaxValue;
+        double minY = double.MaxValue;
+        double maxX = double.MinValue;
+        double maxY = double.MinValue;
+        foreach ((Point a, Point b) in wire.Segments)
+        {
+            minX = Math.Min(minX, Math.Min(a.X, b.X));
+            minY = Math.Min(minY, Math.Min(a.Y, b.Y));
+            maxX = Math.Max(maxX, Math.Max(a.X, b.X));
+            maxY = Math.Max(maxY, Math.Max(a.Y, b.Y));
+        }
+
+        return new Rect(minX, minY, Math.Max(0, maxX - minX), Math.Max(0, maxY - minY));
+    }
 
     public ComponentBox? HitComponent(Point point)
     {
@@ -485,5 +774,5 @@ public sealed class CircuitLayout
         return Distance(point, new Point(a.X + (t * dx), a.Y + (t * dy)));
     }
 
-    private readonly record struct Endpoint(Point Position, int ExtendDirection, PinDirection Direction);
+
 }

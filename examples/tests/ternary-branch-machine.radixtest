@@ -1,0 +1,69 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Ternary branch machine stores, branches, and reads memory",
+  "description": "Program: LOAD 2, ADD 2, STORE 1, BZ 8 (not taken), LOAD 0, STORE 2, BZ 8 (taken), LOADM 1, wrap to 0.",
+  "definition": "demo.t-machine-2",
+  "steps": [
+    { "at": 0, "set": { "clk": 0 } },
+    {
+      "at": 60,
+      "expectLane": { "pc": 0, "acc": 0, "read": 0, "opcode": 1, "argument": 2 },
+      "description": "reset state fetches LOAD 2"
+    },
+    { "at": 160, "set": { "clk": 2 } },
+    {
+      "at": 280,
+      "expectLane": { "pc": 1, "acc": 2, "read": 0, "opcode": 2, "argument": 2 },
+      "description": "LOAD 2 executed; ADD 2 fetched"
+    },
+    { "at": 300, "set": { "clk": 0 } },
+    { "at": 380, "set": { "clk": 2 } },
+    { "at": 500, "expectLane": { "pc": 2, "acc": 4, "opcode": 3, "argument": 1 } },
+    { "at": 520, "set": { "clk": 0 } },
+    { "at": 600, "set": { "clk": 2 } },
+    {
+      "at": 720,
+      "expectLane": { "pc": 3, "acc": 4, "read": 0, "opcode": 6, "argument": 8 },
+      "description": "STORE 1 wrote word 1 through the memory part"
+    },
+    { "at": 740, "set": { "clk": 0 } },
+    { "at": 820, "set": { "clk": 2 } },
+    {
+      "at": 940,
+      "expectLane": { "pc": 4, "acc": 4, "opcode": 1, "argument": 0 },
+      "description": "BZ 8 not taken because ACC is 4"
+    },
+    { "at": 960, "set": { "clk": 0 } },
+    { "at": 1040, "set": { "clk": 2 } },
+    { "at": 1160, "expectLane": { "pc": 5, "acc": 0, "opcode": 3, "argument": 2 } },
+    { "at": 1180, "set": { "clk": 0 } },
+    { "at": 1260, "set": { "clk": 2 } },
+    {
+      "at": 1380,
+      "expectLane": { "pc": 6, "acc": 0, "read": 0, "opcode": 6, "argument": 8 },
+      "description": "STORE 2 wrote MEM2"
+    },
+    { "at": 1400, "set": { "clk": 0 } },
+    { "at": 1480, "set": { "clk": 2 } },
+    {
+      "at": 1600,
+      "expectLane": { "pc": 8, "acc": 0, "read": 4, "opcode": 4, "argument": 1 },
+      "description": "BZ 8 taken; LOADM 1 is fetched and the read port shows 4"
+    },
+    { "at": 1620, "set": { "clk": 0 } },
+    { "at": 1700, "set": { "clk": 2 } },
+    {
+      "at": 1820,
+      "expectLane": { "pc": 0, "acc": 4, "read": 0, "opcode": 1, "argument": 2 },
+      "description": "LOADM 1 returned the stored word and PC wrapped"
+    },
+    { "at": 1840, "set": { "clk": 0 } },
+    { "at": 1920, "set": { "clk": 2 } },
+    {
+      "at": 2040,
+      "expectLane": { "pc": 1, "acc": 2, "read": 0 },
+      "description": "program restarts with LOAD 2 and MEM1 stays 4"
+    }
+  ]
+}

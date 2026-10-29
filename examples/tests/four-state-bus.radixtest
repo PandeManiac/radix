@@ -1,0 +1,64 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Four-state bus resolves Z, values, and conflicts",
+  "description": "Both drivers disabled leaves Z (3); one enabled drives its value; two different values tie to X (2) and raise CONFLICT; agreement is not a conflict; Z yields to a driven value.",
+  "definition": "demo.four-state-bus",
+  "steps": [
+    {
+      "at": 0,
+      "set": { "ena": 0, "enb": 0, "a": 0, "b": 0 }
+    },
+    {
+      "at": 2,
+      "expect": { "bus": 3, "alert": 0 },
+      "description": "both drivers high-impedance"
+    },
+    { "at": 20, "set": { "ena": 1 } },
+    { "at": 22, "expect": { "bus": 0, "alert": 0 } },
+    {
+      "at": 40,
+      "set": { "enb": 1, "b": 1 }
+    },
+    {
+      "at": 42,
+      "expect": { "bus": 2, "alert": 1 },
+      "description": "0 against 1 resolves to X"
+    },
+    {
+      "at": 60,
+      "set": { "b": 0 }
+    },
+    {
+      "at": 62,
+      "expect": { "bus": 0, "alert": 0 },
+      "description": "both drivers agree on 0"
+    },
+    {
+      "at": 80,
+      "set": { "enb": 0, "b": 2 }
+    },
+    {
+      "at": 82,
+      "expect": { "bus": 0 },
+      "description": "a Z driver yields to the enabled 0"
+    },
+    {
+      "at": 100,
+      "set": { "ena": 0, "enb": 1, "b": 1 }
+    },
+    {
+      "at": 102,
+      "expect": { "bus": 1, "alert": 0 }
+    },
+    {
+      "at": 120,
+      "set": { "ena": 1, "a": 2 }
+    },
+    {
+      "at": 122,
+      "expect": { "bus": 2, "alert": 1 },
+      "description": "X against 1 stays X"
+    }
+  ]
+}

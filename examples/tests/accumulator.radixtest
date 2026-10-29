@@ -1,0 +1,28 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Accumulator loads, adds, and wraps with a signed result lane",
+  "description": "LOADS 15 (decoded as -1), then ADDs 1 to wrap to 0 and raise carry.",
+  "definition": "demo.accumulator",
+  "steps": [
+    { "at": 0, "set": { "clk": 0, "d0": 1, "d1": 1, "d2": 1, "d3": 1, "op0": 1, "op1": 0 } },
+    { "at": 40 },
+    { "at": 50, "set": { "clk": 1 } },
+    {
+      "at": 100,
+      "expect": { "q0": 1, "q1": 1, "q2": 1, "q3": 1, "carry": 0 },
+      "expectLane": { "result": -1, "data": 15, "opcode": 1 }
+    },
+    {
+      "at": 110,
+      "set": { "clk": 0, "d0": 1, "d1": 0, "d2": 0, "d3": 0, "op0": 0, "op1": 1 }
+    },
+    { "at": 160 },
+    { "at": 170, "set": { "clk": 1 } },
+    {
+      "at": 220,
+      "expect": { "carry": 1 },
+      "expectLane": { "result": 0, "data": 1, "opcode": 2 }
+    }
+  ]
+}

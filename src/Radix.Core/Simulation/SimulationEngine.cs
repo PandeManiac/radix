@@ -83,6 +83,12 @@ public sealed class SimulationEngine
     /// <summary>Bounded trace of all recorded net transitions since reset.</summary>
     public SimulationTrace Trace => _trace;
 
+    /// <summary>
+    /// Raised synchronously after a net's resolved value changes. Observers run inside
+    /// the event loop, so they must be fast and must not mutate the engine.
+    /// </summary>
+    public event Action<NetChange>? NetChanged;
+
     /// <summary>Runtime warnings/errors (driver conflicts, non-convergence).</summary>
     public IReadOnlyList<Diagnostic> RuntimeDiagnostics => _runtimeDiagnostics;
 
@@ -166,21 +172,47 @@ public sealed class SimulationEngine
 
     /// <summary>
     /// Processes all events with time less than or equal to <paramref name="targetTime"/>,
-    /// then moves the clock to the target if the engine did not halt.
+    /// then moves the clock to the target if the engine did not halt. A caller running
+    /// offline analysis can pass a token to stop a long advance without touching a
+    /// live editor simulation.
     /// </summary>
-    public void AdvanceTo(long targetTime)
+    public void AdvanceTo(long targetTime, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(targetTime, _now);
+        cancellationToken.ThrowIfCancellationRequested();
         if (_halted)
         {
             return;
         }
 
+        if (!cancellationToken.CanBeCanceled)
+        {
+            // The ordinary editor and CLI path keeps the original tight loop.
+            while (!_halted && _queue.TryPeek(out SimEvent next) && next.Time <= targetTime)
+            {
+                ProcessNextEvent();
+            }
+
+            if (!_halted)
+            {
+                _now = targetTime;
+            }
+
+            return;
+        }
+
+        int processed = 0;
         while (!_halted && _queue.TryPeek(out SimEvent next) && next.Time <= targetTime)
         {
+            if ((++processed & 0x3FF) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             ProcessNextEvent();
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_halted)
         {
             _now = targetTime;
@@ -299,7 +331,7 @@ public sealed class SimulationEngine
             _conflictReported[netIndex] = true;
             _runtimeDiagnostics.Warning(
                 DriverConflictCode,
-                $"Multiple drivers on net '{net.RepresentativeNetId}' disagree under domain '{net.Domain.Id}'.",
+                $"Multiple active drivers on net '{net.RepresentativeNetId}' violate the '{net.Domain.Drivers.Kind}' driver policy for domain '{net.Domain.Id}'.",
                 net.RepresentativeDefinitionId,
                 netId: net.RepresentativeNetId,
                 path: net.RepresentativePath);
@@ -317,6 +349,8 @@ public sealed class SimulationEngine
         {
             _trace.Add(new NetChange(_now, netIndex, oldValue, resolution.Value));
         }
+
+        NetChanged?.Invoke(new NetChange(_now, netIndex, oldValue, resolution.Value));
 
         foreach (int componentIndex in net.SinkComponents)
         {

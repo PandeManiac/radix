@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 
@@ -16,7 +17,15 @@ public static class ProjectSerializer
 {
     public const string FormatName = "radix-project";
 
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// Version 2 adds optional per-net wire colors and author bendpoints. Version 3
+    /// adds optional definition-scoped numeric lanes. Version 4 adds optional custom
+    /// numeric-format descriptors. Version 5 adds optional editor view metadata.
+    /// Version 6 adds optional per-definition waveform pin selections inside that view.
+    /// Older files load unchanged; every version up to <see cref="CurrentVersion"/> is
+    /// accepted, and saving always writes the current version.
+    /// </summary>
+    public const int CurrentVersion = CircuitProject.CurrentFormatVersion;
 
     private const string Extension = ".radix";
 
@@ -100,10 +109,14 @@ public static class ProjectSerializer
         }
     }
 
-    public static string SaveToString(CircuitProject project)
+    /// <summary>
+    /// Serializes a project. <paramref name="includeView"/> exists so dirty-state
+    /// comparisons can ignore presentation-only pan/zoom changes.
+    /// </summary>
+    public static string SaveToString(CircuitProject project, bool includeView = true)
     {
         ArgumentNullException.ThrowIfNull(project);
-        ProjectDto dto = MapProjectDto(project);
+        ProjectDto dto = MapProjectDto(project, includeView);
         string json = JsonSerializer.Serialize(dto, JsonOptions);
         return json + Environment.NewLine;
     }
@@ -147,9 +160,48 @@ public static class ProjectSerializer
             project.Settings.TraceAllNets = settings.TraceAllNets;
         }
 
+        if (dto.View is ViewDto view)
+        {
+            project.View.ActiveDefinitionId = view.Definition;
+            project.View.Scale = view.Scale;
+            project.View.OffsetX = view.OffsetX;
+            project.View.OffsetY = view.OffsetY;
+
+            if (view.WaveformPins is not null)
+            {
+                foreach ((string definitionId, List<string>? netIds) in view.WaveformPins)
+                {
+                    if (string.IsNullOrWhiteSpace(definitionId) || netIds is null)
+                    {
+                        continue;
+                    }
+
+                    var pins = new List<string>();
+                    foreach (string netId in netIds)
+                    {
+                        if (!string.IsNullOrWhiteSpace(netId) &&
+                            !pins.Contains(netId, StringComparer.Ordinal))
+                        {
+                            pins.Add(netId);
+                        }
+                    }
+
+                    if (pins.Count > 0)
+                    {
+                        project.View.WaveformPins[definitionId] = pins;
+                    }
+                }
+            }
+        }
+
         foreach (DomainDto domainDto in dto.Domains ?? [])
         {
             project.Domains.Add(MapDomain(domainDto));
+        }
+
+        foreach (NumericFormatDto formatDto in dto.CustomNumericFormats ?? [])
+        {
+            project.CustomNumericFormats.Add(MapNumericFormat(formatDto));
         }
 
         foreach (DefinitionDto definitionDto in dto.Definitions ?? [])
@@ -215,6 +267,46 @@ public static class ProjectSerializer
         }
     }
 
+    private static NumericFormatDefinition MapNumericFormat(NumericFormatDto dto)
+    {
+        string id = dto.Id ?? "<missing>";
+        if (dto.NegativeSignValue is not null &&
+            !string.IsNullOrWhiteSpace(dto.Weighting) &&
+            !string.Equals(dto.Weighting, "standard", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ProjectFormatException(
+                $"Custom numeric format '{id}' is sign-magnitude but declares weighting '{dto.Weighting}'.");
+        }
+
+        try
+        {
+            return new NumericFormatDefinition(
+                dto.Id ?? throw new ProjectFormatException("Custom numeric format is missing 'id'."),
+                dto.Name ?? dto.Id ?? string.Empty,
+                dto.Domain ?? throw new ProjectFormatException($"Custom numeric format '{id}' is missing 'domain'."),
+                dto.Digits ?? throw new ProjectFormatException($"Custom numeric format '{id}' is missing 'digits'."),
+                dto.Radix ?? throw new ProjectFormatException($"Custom numeric format '{id}' is missing 'radix'."),
+                ParseWeighting(dto.Weighting, id),
+                dto.LeastSignificantFirst,
+                dto.NegativeSignValue,
+                dto.Description);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ProjectFormatException($"Custom numeric format '{id}' is invalid: {exception.Message}", exception);
+        }
+    }
+
+    private static WeightingMode ParseWeighting(string? value, string formatId) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "standard" => WeightingMode.Standard,
+            "radix-complement" => WeightingMode.RadixComplement,
+            "diminished-radix-complement" => WeightingMode.DiminishedRadixComplement,
+            _ => throw new ProjectFormatException(
+                $"Custom numeric format '{formatId}' has unknown weighting '{value}'."),
+        };
+
     private static CircuitDefinition MapDefinition(DefinitionDto dto)
     {
         string id = dto.Id ?? "<missing>";
@@ -251,6 +343,22 @@ public static class ProjectSerializer
             definition.Ports.Add(new PortBinding(
                 port.Pin ?? throw new ProjectFormatException($"Definition '{id}' has a port without 'pin'."),
                 port.Net ?? throw new ProjectFormatException($"Definition '{id}' has a port without 'net'.")));
+        }
+
+        foreach (NumericLaneDto lane in dto.NumericLanes ?? [])
+        {
+            var numericLane = new NumericLane
+            {
+                Id = lane.Id ?? throw new ProjectFormatException($"Definition '{id}' has a numeric lane without 'id'."),
+                Name = lane.Name ?? lane.Id ?? string.Empty,
+                FormatId = lane.Format ?? throw new ProjectFormatException($"Numeric lane '{lane.Id}' in definition '{id}' is missing 'format'."),
+            };
+            foreach (string pinId in lane.Pins ?? [])
+            {
+                numericLane.PinIds.Add(pinId);
+            }
+
+            definition.NumericLanes.Add(numericLane);
         }
 
         return definition;
@@ -320,13 +428,37 @@ public static class ProjectSerializer
     private static Net MapNet(NetDto dto, string definitionId)
     {
         string id = dto.Id ?? throw new ProjectFormatException($"Definition '{definitionId}' has a net without 'id'.");
+        if (!WireAnnotation.TryNormalizeColor(dto.Color, out string? wireColor))
+        {
+            throw new ProjectFormatException(
+                $"Net '{definitionId}.{id}' has invalid wire color '{dto.Color}'; use #RRGGBB or 'auto'.");
+        }
+
         var net = new Net
         {
             Id = id,
             DomainId = dto.Domain ?? throw new ProjectFormatException($"Net '{definitionId}.{id}' is missing 'domain'."),
             Label = dto.Label,
             InitialValue = dto.Initial,
+            WireColor = wireColor,
         };
+
+        foreach (PointDto point in dto.Route ?? [])
+        {
+            var waypoint = new NetWaypoint(point.X, point.Y);
+            if (!waypoint.IsFinite)
+            {
+                throw new ProjectFormatException($"Net '{definitionId}.{id}' has a non-finite or out-of-range route point.");
+            }
+
+            net.RoutePoints.Add(waypoint);
+        }
+
+        if (net.RoutePoints.Count > WireAnnotation.MaxRoutePoints)
+        {
+            throw new ProjectFormatException(
+                $"Net '{definitionId}.{id}' has {net.RoutePoints.Count} route points; the maximum is {WireAnnotation.MaxRoutePoints}.");
+        }
 
         foreach (PinRefDto pin in dto.Pins ?? [])
         {
@@ -347,7 +479,7 @@ public static class ProjectSerializer
             _ => throw new ProjectFormatException($"{location} has unknown direction '{value}'."),
         };
 
-    private static ProjectDto MapProjectDto(CircuitProject project)
+    private static ProjectDto MapProjectDto(CircuitProject project, bool includeView)
     {
         var dto = new ProjectDto
         {
@@ -363,7 +495,27 @@ public static class ProjectSerializer
                 DefaultAdvanceTicks = project.Settings.DefaultAdvanceTicks,
                 TraceAllNets = project.Settings.TraceAllNets,
             },
+            View = includeView
+                ? new ViewDto
+                {
+                    Definition = project.View.ActiveDefinitionId,
+                    Scale = project.View.Scale,
+                    OffsetX = project.View.OffsetX,
+                    OffsetY = project.View.OffsetY,
+                    WaveformPins = project.View.WaveformPins.Any(entry => entry.Value.Count > 0)
+                        ? project.View.WaveformPins
+                            .Where(entry => entry.Value.Count > 0)
+                            .ToDictionary(
+                                entry => entry.Key,
+                                entry => entry.Value.ToList(),
+                                StringComparer.Ordinal)
+                        : null,
+                }
+                : null,
             Domains = project.Domains.Select(MapDomainDto).ToList(),
+            CustomNumericFormats = project.CustomNumericFormats.Count == 0
+                ? null
+                : project.CustomNumericFormats.Select(MapNumericFormatDto).ToList(),
             Definitions = project.Definitions.Select(MapDefinitionDto).ToList(),
         };
 
@@ -393,6 +545,24 @@ public static class ProjectSerializer
         };
     }
 
+    private static NumericFormatDto MapNumericFormatDto(NumericFormatDefinition format) => new()
+    {
+        Id = format.Id,
+        Name = format.Name,
+        Domain = format.DomainId,
+        Digits = format.DigitValues.ToList(),
+        Radix = format.Radix,
+        Weighting = format.Weighting switch
+        {
+            WeightingMode.RadixComplement => "radix-complement",
+            WeightingMode.DiminishedRadixComplement => "diminished-radix-complement",
+            _ => "standard",
+        },
+        LeastSignificantFirst = format.LeastSignificantFirst,
+        NegativeSignValue = format.NegativeSignValue,
+        Description = format.Description,
+    };
+
     private static DefinitionDto MapDefinitionDto(CircuitDefinition definition) => new()
     {
         Id = definition.Id,
@@ -412,9 +582,22 @@ public static class ProjectSerializer
             Domain = net.DomainId,
             Label = net.Label,
             Initial = net.InitialValue,
+            Color = net.WireColor,
+            Route = net.RoutePoints.Count == 0
+                ? null
+                : net.RoutePoints.Select(point => new PointDto { X = point.X, Y = point.Y }).ToList(),
             Pins = net.Pins.Select(pin => new PinRefDto { Instance = pin.InstanceId, Pin = pin.PinId }).ToList(),
         }).ToList(),
         Ports = definition.Ports.Select(port => new PortDto { Pin = port.PinId, Net = port.NetId }).ToList(),
+        NumericLanes = definition.NumericLanes.Count == 0
+            ? null
+            : definition.NumericLanes.Select(lane => new NumericLaneDto
+            {
+                Id = lane.Id,
+                Name = lane.Name,
+                Format = lane.FormatId,
+                Pins = lane.PinIds.ToList(),
+            }).ToList(),
     };
 
     private static InstanceDto MapInstanceDto(ComponentInstance instance)

@@ -169,6 +169,39 @@ public sealed class CompilerTests
     }
 
     [Fact]
+    public void ValidateAllReportsBrokenUnusedDefinitions()
+    {
+        var builder = new ProjectBuilder("unused broken part");
+        var root = builder.Define("root", "Root");
+        Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("ok", new LookupSpec(1, [1, 0]));
+        root.Connect(a, root.Pin("ok", "in0"));
+        root.Connect(y, root.Pin("ok", "out"));
+
+        var broken = builder.Define("broken", "Broken part");
+        Net b = broken.AddPin("b", "B", PinDirection.Input, StandardDomains.BinaryId);
+        Net by = broken.AddPin("by", "BY", PinDirection.Output, StandardDomains.BinaryId);
+        broken.AddPrimitive("bad", new LookupSpec(1, [0, 5]));
+        broken.Connect(b, broken.Pin("bad", "in0"));
+        broken.Connect(by, broken.Pin("bad", "out"));
+        CircuitProject project = builder.Build("root");
+
+        Assert.True(CircuitCompiler.TryCompile(project, "root", out _, out DiagnosticBag rootReport));
+        Assert.False(rootReport.HasErrors);
+
+        Assert.False(CircuitCompiler.TryValidateAllDefinitions(project, out DiagnosticBag allReport));
+        Assert.Contains(allReport, diagnostic =>
+            diagnostic.Code == "RAD112" && diagnostic.DefinitionId == "broken");
+        Assert.Single(allReport, diagnostic => diagnostic.Code == "RAD112");
+
+        Assert.True(CircuitCompiler.TryValidateAllDefinitions(
+            TestCircuits.ValidProject(),
+            out DiagnosticBag validReport));
+        Assert.False(validReport.HasErrors);
+    }
+
+    [Fact]
     public void EmptyDefinitionCompiles()
     {
         var builder = new ProjectBuilder("empty");

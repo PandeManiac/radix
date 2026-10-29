@@ -30,6 +30,9 @@ public static class DefinitionEditor
     public static string UniquePinId(CircuitDefinition definition, string stem = "p") =>
         UniqueId(stem, id => definition.FindPin(id) is not null);
 
+    public static string UniqueLaneId(CircuitDefinition definition, string stem = "lane") =>
+        UniqueId(stem, id => definition.FindNumericLane(id) is not null);
+
     public static PinDeclaration? AddPin(
         CircuitProject project,
         CircuitDefinition definition,
@@ -69,6 +72,31 @@ public static class DefinitionEditor
         return pin;
     }
 
+    /// <summary>
+    /// Moves an interface pin within the declaration order. Order affects canvas
+    /// pin layout and the default order of new numeric lanes; nets bind by pin ID,
+    /// so connectivity is unchanged.
+    /// </summary>
+    public static bool MovePin(CircuitDefinition definition, string pinId, int offset)
+    {
+        int index = definition.Pins.FindIndex(pin => string.Equals(pin.Id, pinId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        int target = index + offset;
+        if (target < 0 || target >= definition.Pins.Count || offset == 0)
+        {
+            return false;
+        }
+
+        PinDeclaration pin = definition.Pins[index];
+        definition.Pins.RemoveAt(index);
+        definition.Pins.Insert(target, pin);
+        return true;
+    }
+
     public static bool RemovePin(CircuitDefinition definition, string pinId)
     {
         PinDeclaration? pin = definition.FindPin(pinId);
@@ -85,6 +113,144 @@ public static class DefinitionEditor
             definition.Nets.Remove(net);
         }
 
+        foreach (NumericLane lane in definition.NumericLanes)
+        {
+            lane.PinIds.RemoveAll(id => string.Equals(id, pinId, StringComparison.Ordinal));
+        }
+
+        definition.NumericLanes.RemoveAll(lane => lane.PinIds.Count == 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Adds a numeric lane over existing interface pins, preserving the caller's
+    /// order and dropping duplicates. Returns null when no known pin remains.
+    /// </summary>
+    public static NumericLane? AddNumericLane(
+        CircuitDefinition definition,
+        string name,
+        string formatId,
+        IEnumerable<string> pinIds)
+    {
+        var ordered = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string pinId in pinIds)
+        {
+            if (definition.FindPin(pinId) is not null && seen.Add(pinId))
+            {
+                ordered.Add(pinId);
+            }
+        }
+
+        if (ordered.Count == 0)
+        {
+            return null;
+        }
+
+        string trimmed = name.Trim();
+        var lane = new NumericLane
+        {
+            Id = UniqueLaneId(definition),
+            Name = trimmed.Length == 0 ? $"Bus {ordered.Count}" : trimmed,
+            FormatId = formatId,
+        };
+        lane.PinIds.AddRange(ordered);
+        definition.NumericLanes.Add(lane);
+        return lane;
+    }
+
+    /// <summary>
+    /// Replaces a lane's name, format, and pin set in place. The lane keeps its ID so
+    /// nothing that refers to it has to be rewritten; callers own undo bookkeeping.
+    /// Returns false when the lane or every selected pin is gone.
+    /// </summary>
+    public static bool UpdateNumericLane(
+        CircuitDefinition definition,
+        string laneId,
+        string name,
+        string formatId,
+        IEnumerable<string> pinIds)
+    {
+        NumericLane? lane = definition.FindNumericLane(laneId);
+        if (lane is null)
+        {
+            return false;
+        }
+
+        var ordered = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string pinId in pinIds)
+        {
+            if (definition.FindPin(pinId) is not null && seen.Add(pinId))
+            {
+                ordered.Add(pinId);
+            }
+        }
+
+        if (ordered.Count == 0)
+        {
+            return false;
+        }
+
+        string trimmed = name.Trim();
+        lane.Name = trimmed.Length == 0 ? $"Bus {ordered.Count}" : trimmed;
+        lane.FormatId = formatId;
+        lane.PinIds.Clear();
+        lane.PinIds.AddRange(ordered);
+        return true;
+    }
+
+    /// <summary>
+    /// After an interface pin is removed, deletes net references that pointed at that
+    /// pin through instances of the definition. Empty nets with no port binding are
+    /// also removed; a bound port net is retained so the broken interface stays visible.
+    /// Returns the number of pin references and nets removed.
+    /// </summary>
+    public static (int PinReferences, int Nets) PruneInstancePinReferences(
+        CircuitProject project,
+        string definitionId,
+        string pinId)
+    {
+        int pinReferences = 0;
+        int nets = 0;
+        foreach (CircuitDefinition owner in project.Definitions)
+        {
+            foreach (Net net in owner.Nets)
+            {
+                pinReferences += net.Pins.RemoveAll(pinRef =>
+                    string.Equals(pinRef.PinId, pinId, StringComparison.Ordinal) &&
+                    string.Equals(owner.FindInstance(pinRef.InstanceId)?.DefinitionId, definitionId, StringComparison.Ordinal));
+            }
+
+            nets += owner.Nets.RemoveAll(net =>
+                net.Pins.Count == 0 &&
+                !owner.Ports.Any(port => string.Equals(port.NetId, net.Id, StringComparison.Ordinal)));
+        }
+
+        return (pinReferences, nets);
+    }
+
+    public static bool RemoveNumericLane(CircuitDefinition definition, string laneId)
+    {
+        NumericLane? lane = definition.FindNumericLane(laneId);
+        if (lane is null)
+        {
+            return false;
+        }
+
+        definition.NumericLanes.Remove(lane);
+        return true;
+    }
+
+    public static bool SetPinDirection(CircuitDefinition definition, string pinId, PinDirection direction)
+    {
+        PinDeclaration? pin = definition.FindPin(pinId);
+        if (pin is null)
+        {
+            return false;
+        }
+
+        pin.Direction = direction;
         return true;
     }
 
@@ -124,9 +290,11 @@ public static class DefinitionEditor
             return false;
         }
 
+        string previous = pin.Name;
         pin.Name = trimmed;
         Net? net = definition.FindPortNet(pinId);
-        if (net is not null && string.IsNullOrWhiteSpace(net.Label))
+        if (net is not null &&
+            (string.IsNullOrWhiteSpace(net.Label) || string.Equals(net.Label, previous, StringComparison.Ordinal)))
         {
             net.Label = trimmed;
         }

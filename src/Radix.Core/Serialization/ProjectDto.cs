@@ -14,9 +14,47 @@ internal sealed class ProjectDto
 
     public SettingsDto? Settings { get; set; }
 
+    public ViewDto? View { get; set; }
+
     public List<DomainDto>? Domains { get; set; }
 
+    public List<NumericFormatDto>? CustomNumericFormats { get; set; }
+
     public List<DefinitionDto>? Definitions { get; set; }
+}
+
+internal sealed class NumericFormatDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Domain { get; set; }
+
+    public List<long>? Digits { get; set; }
+
+    public long? Radix { get; set; }
+
+    public string? Weighting { get; set; }
+
+    public bool LeastSignificantFirst { get; set; } = true;
+
+    public int? NegativeSignValue { get; set; }
+
+    public string? Description { get; set; }
+}
+
+internal sealed class ViewDto
+{
+    public string? Definition { get; set; }
+
+    public double? Scale { get; set; }
+
+    public double? OffsetX { get; set; }
+
+    public double? OffsetY { get; set; }
+
+    public Dictionary<string, List<string>>? WaveformPins { get; set; }
 }
 
 internal sealed class SettingsDto
@@ -67,6 +105,19 @@ internal sealed class DefinitionDto
     public List<NetDto>? Nets { get; set; }
 
     public List<PortDto>? Ports { get; set; }
+
+    public List<NumericLaneDto>? NumericLanes { get; set; }
+}
+
+internal sealed class NumericLaneDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Format { get; set; }
+
+    public List<string>? Pins { get; set; }
 }
 
 internal sealed class PinDto
@@ -126,7 +177,20 @@ internal sealed class NetDto
 
     public int? Initial { get; set; }
 
+    /// <summary>Optional #RRGGBB wire color; omitted means domain-derived coloring.</summary>
+    public string? Color { get; set; }
+
+    /// <summary>Optional author bendpoints for wire routing.</summary>
+    public List<PointDto>? Route { get; set; }
+
     public List<PinRefDto>? Pins { get; set; }
+}
+
+internal sealed class PointDto
+{
+    public double X { get; set; }
+
+    public double Y { get; set; }
 }
 
 internal sealed class PinRefDto

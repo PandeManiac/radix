@@ -3,6 +3,7 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Radix.Editor.Controls"
+    xmlns:conv="using:Radix.Editor.Converters"
     xmlns:vm="using:Radix.Editor.ViewModels"
     x:DataType="vm:EditorViewModel"
     Title="RADIX — circuit workbench"
@@ -10,29 +11,44 @@
     Height="920"
     MinWidth="1040"
     MinHeight="660"
-    Background="#EDF2F6"
+    Background="{DynamicResource App.WindowBackground}"
     FontFamily="Inter"
     WindowStartupLocation="CenterScreen">
 
+  <Window.Resources>
+    <conv:HexColorBrushConverter x:Key="HexColorBrush" />
+  </Window.Resources>
+
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- Toolbar -->
-    <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="0,0,0,1" Padding="10,7">
+    <Border Grid.Row="0" Background="{DynamicResource App.ToolbarBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="10,7">
       <DockPanel>
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <TextBlock Text="RADIX" FontSize="18" FontWeight="Bold" Foreground="#1E3A55" VerticalAlignment="Center" Margin="4,0,2,0" />
-          <TextBlock Text="workbench" FontSize="11" Foreground="#7A8B9B" VerticalAlignment="Center" Margin="0,4,10,0" />
+          <TextBlock Text="RADIX" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource App.TextPrimary}" VerticalAlignment="Center" Margin="4,0,2,0" />
+          <TextBlock Text="workbench" FontSize="11" Foreground="{DynamicResource App.TextMuted}" VerticalAlignment="Center" Margin="0,4,10,0" />
 
-          <Button Classes="tool" Content="New" Command="{Binding NewProjectCommand}" />
+          <Button Classes="tool" Content="New" Click="NewProject_Click" />
           <Button Classes="tool" Content="Open…" Click="OpenProject_Click" />
+          <Button Classes="tool" Content="Recent ▾" IsEnabled="{Binding HasRecentProjects}" ToolTip.Tip="Projects opened or saved recently">
+            <Button.Flyout>
+              <MenuFlyout ItemsSource="{Binding RecentProjects}">
+                <MenuFlyout.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RecentProjectItem">
+                    <MenuItem Header="{Binding Header}" Command="{Binding OpenCommand}" ToolTip.Tip="{Binding Path}" />
+                  </DataTemplate>
+                </MenuFlyout.ItemTemplate>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
           <Button Classes="tool" Content="Save" Click="SaveProject_Click" />
           <Button Classes="tool" Content="Save as…" Click="SaveProjectAs_Click" />
 
-          <Border Width="1" Background="#DCE3EA" Margin="6,3" />
+          <Border Width="1" Background="{DynamicResource App.Border}" Margin="6,3" />
           <Button Classes="tool" Content="↶ Undo" Command="{Binding UndoCommand}" />
           <Button Classes="tool" Content="↷ Redo" Command="{Binding RedoCommand}" />
 
-          <Border Width="1" Background="#DCE3EA" Margin="6,3" />
-          <Button Content="Begin" Command="{Binding BeginCommand}" Background="#E8F4EE" BorderBrush="#B4D8C6" />
+          <Border Width="1" Background="{DynamicResource App.Border}" Margin="6,3" />
+          <Button Content="Begin" Command="{Binding BeginCommand}" Background="{DynamicResource App.SuccessBackground}" BorderBrush="{DynamicResource App.SuccessBorder}" />
           <Button Content="Advance" Command="{Binding AdvanceCommand}" />
           <TextBox Width="46" Text="{Binding AdvanceTicksText, Mode=TwoWay}" VerticalAlignment="Center" />
           <Button Classes="tool" Content="Event" Command="{Binding StepEventCommand}" />
@@ -40,13 +56,21 @@
           <Button Classes="tool" Content="Settle" Command="{Binding SettleCommand}" />
           <Button Classes="tool" Content="Clear inputs" Command="{Binding ClearDrivesCommand}" />
 
-          <Border Width="1" Background="#DCE3EA" Margin="6,3" />
+          <Border Width="1" Background="{DynamicResource App.Border}" Margin="6,3" />
           <Button Classes="tool" Content="Fit view" Command="{Binding FitCommand}" />
+          <Button Classes="tool" Content="Find…" Command="{Binding OpenSearchCommand}" ToolTip.Tip="Search every definition, instance, and net (Ctrl+P)" />
         </StackPanel>
 
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="#294B66" />
-          <TextBlock Text="{Binding SimStatusText}" Foreground="#7A8B9B" FontSize="11" />
+          <TextBlock Text="Wire labels" FontSize="10" Foreground="{DynamicResource App.TextMuted}" VerticalAlignment="Center" />
+          <ComboBox Width="82" ItemsSource="{Binding WireLabelModeOptions}" SelectedItem="{Binding WireLabelMode, Mode=TwoWay}" ToolTip.Tip="Show every net's name and value, only named nets, or no wire labels" />
+          <ComboBox x:Name="ThemeBox" Width="82" SelectedIndex="0" SelectionChanged="ThemeBox_SelectionChanged" ToolTip.Tip="Colour theme: follow the system, light, or dark">
+            <ComboBoxItem Content="Auto" />
+            <ComboBoxItem Content="Light" />
+            <ComboBoxItem Content="Dark" />
+          </ComboBox>
+          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="{DynamicResource App.TextSecondary}" />
+          <TextBlock Text="{Binding SimStatusText}" Foreground="{DynamicResource App.TextMuted}" FontSize="11" />
         </StackPanel>
       </DockPanel>
     </Border>
@@ -54,13 +78,15 @@
     <!-- Work area -->
     <Grid Grid.Row="1" ColumnDefinitions="306,*,382" Margin="8">
       <!-- Left panel -->
-      <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="1" CornerRadius="6" Padding="8">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <Border Grid.Column="0" Background="{DynamicResource App.PanelBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6" Padding="8">
+        <ScrollViewer x:Name="LeftScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
-            <TextBlock Text="{Binding ProjectTitle}" FontSize="14" FontWeight="SemiBold" Foreground="#22384C" Margin="4,4,4,0" />
+            <TextBlock Text="{Binding ProjectTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" Margin="4,4,4,0" />
             <TextBlock Text="{Binding ProjectSubtitle}" Classes="muted" FontSize="10.5" Margin="4,1,4,2" TextWrapping="Wrap" />
 
             <TextBlock Text="LIBRARY" Classes="section" />
+            <TextBox Watermark="search parts…" Text="{Binding LibrarySearch, Mode=TwoWay}" Margin="2,0,2,5" ToolTip.Tip="Filter by component name, category, or description" />
+            <TextBlock Text="No built-in parts match; matching definitions appear below." Classes="muted" FontSize="10" TextWrapping="Wrap" Margin="4,2,4,4" IsVisible="{Binding !HasPaletteResults}" />
             <ItemsControl ItemsSource="{Binding Palette}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PaletteItem">
@@ -79,17 +105,18 @@
               <ItemsControl ItemsSource="{Binding Definitions}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:DefinitionListItem">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                       <Button Classes="list" Command="{Binding OpenCommand}">
                         <StackPanel>
                           <StackPanel Orientation="Horizontal" Spacing="4">
-                            <TextBlock Text="{Binding Prefix}" Foreground="#2B6CB0" FontSize="11" />
+                            <TextBlock Text="{Binding Prefix}" Foreground="{DynamicResource App.Accent}" FontSize="11" />
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
                           </StackPanel>
                           <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="10" />
                         </StackPanel>
                       </Button>
-                      <Button Grid.Column="1" Classes="tool" Content="＋" Command="{Binding PlaceCommand}" ToolTip.Tip="Place an instance of this definition" Padding="6,2" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="tool" Content="⧉" Command="{Binding DuplicateCommand}" ToolTip.Tip="Duplicate this definition as an independent variant" Padding="6,2" VerticalAlignment="Center" />
+                      <Button Grid.Column="2" Classes="tool" Content="＋" Command="{Binding PlaceCommand}" ToolTip.Tip="Place an instance of this definition" Padding="6,2" VerticalAlignment="Center" />
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -98,25 +125,88 @@
             <StackPanel Orientation="Horizontal" Spacing="4" Margin="2,5,0,0">
               <Button Content="New component" Command="{Binding AddDefinitionCommand}" />
               <Button Content="Remove" Command="{Binding RemoveDefinitionCommand}" />
+              <Button Content="Auto arrange" Command="{Binding AutoArrangeCommand}" ToolTip.Tip="Layer the current definition by its wiring graph; sequential feedback stays grouped" />
             </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="4" Margin="2,4,0,0">
+              <Button Content="Import library…" Click="ImportLibrary_Click" ToolTip.Tip="Merge a .radixlib component library into this project" />
+              <Button Content="Export part…" Click="ExportLibrary_Click" ToolTip.Tip="Export the current definition and its dependencies as a reusable library" />
+            </StackPanel>
+
+            <TextBlock Text="GENERATE PART" Classes="section" Margin="4,10,4,4" />
+            <ComboBox
+                ItemsSource="{Binding GeneratedPartKinds}"
+                SelectedItem="{Binding SelectedGeneratedPartKind, Mode=TwoWay}"
+                ToolTip.Tip="Build an ordinary part at a width the bundled standard library does not ship" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="4" Margin="0,4,0,0">
+              <TextBox Watermark="width" Text="{Binding GeneratedPartWidthText, Mode=TwoWay}" ToolTip.Tip="Datapath width in bits" />
+              <TextBox Grid.Column="1" Watermark="words" IsVisible="{Binding NeedsGeneratedWordCount}" Text="{Binding GeneratedPartWordsText, Mode=TwoWay}" ToolTip.Tip="RAM or ROM word count; must be a power of two" />
+            </Grid>
+            <TextBox Watermark="ROM contents (hex, optional)" IsVisible="{Binding NeedsGeneratedContents}" Text="{Binding GeneratedPartContentsText, Mode=TwoWay}" Margin="0,4,0,0" ToolTip.Tip="Hexadecimal words separated by spaces or commas; empty means an all-zero ROM" />
+            <Button Content="Generate into project" Command="{Binding GeneratePartCommand}" Margin="0,4,0,0" HorizontalAlignment="Left" ToolTip.Tip="Create validated, editable definitions and add them to this project as one undo step" />
+            <TextBlock Text="Widths 1..256. RAM: 2..128 words, width 1..64, at most 4096 stored bits. ROM: 2..256 words, width 1..64, at most 16384 cells. Generated parts are ordinary definitions." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,3,0,0" />
+
+            <Border
+                IsVisible="{Binding HasMultipleSelection}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                Padding="6"
+                Margin="0,6,0,0">
+              <StackPanel Spacing="4">
+                <TextBlock Text="ARRANGE SELECTION" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource App.TextMuted}" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <Button Classes="tool" Content="Align left" Command="{Binding AlignLeftCommand}" ToolTip.Tip="Line the selected parts up on their leftmost edge" />
+                  <Button Classes="tool" Content="Align top" Command="{Binding AlignTopCommand}" ToolTip.Tip="Line the selected parts up on their topmost edge" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <Button Classes="tool" Content="Space ↔" Command="{Binding DistributeHorizontallyCommand}" ToolTip.Tip="Evenly space three or more selected parts between the outermost left edges" />
+                  <Button Classes="tool" Content="Space ↕" Command="{Binding DistributeVerticallyCommand}" ToolTip.Tip="Evenly space three or more selected parts between the outermost top edges" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
 
             <TextBlock Text="INTERFACE" Classes="section" />
             <ItemsControl ItemsSource="{Binding Pins}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PinListItem">
-                  <Grid ColumnDefinitions="*,Auto" Margin="2,1">
-                    <StackPanel Orientation="Horizontal" Spacing="5">
-                      <TextBlock Text="{Binding DirectionText}" FontSize="9" Foreground="#587089" Width="24" />
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding DomainId}" Classes="muted" FontSize="10" />
+                  <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="5,3" Margin="0,2">
+                    <StackPanel Spacing="3">
+                      <Grid ColumnDefinitions="24,*,Auto,Auto,Auto,Auto">
+                        <TextBlock Text="{Binding DirectionText}" FontSize="9" Foreground="{DynamicResource App.TextSecondary}" VerticalAlignment="Center" />
+                        <TextBox
+                            Grid.Column="1"
+                            Text="{Binding Name, Mode=TwoWay}"
+                            FontSize="11"
+                            Padding="5,2"
+                            LostFocus="PinName_LostFocus"
+                            KeyDown="PinName_KeyDown"
+                            ToolTip.Tip="Pin display name; press Enter or leave the field to commit" />
+                        <Button Grid.Column="2" Classes="tool" Content="↑" Command="{Binding MoveUpCommand}" Padding="4,1" ToolTip.Tip="Move pin up; declaration order affects canvas layout and the default order of new numeric lanes" />
+                        <Button Grid.Column="3" Classes="tool" Content="↓" Command="{Binding MoveDownCommand}" Padding="4,1" ToolTip.Tip="Move pin down; net bindings follow the pin ID, not its position" />
+                        <Button Grid.Column="4" Classes="tool" Content="⇄" Click="PinDirection_Click" Padding="5,1" ToolTip.Tip="Flip input/output direction" />
+                        <Button Grid.Column="5" Classes="tool" Content="×" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove pin and its net" Padding="5,1" />
+                      </Grid>
+                      <ComboBox
+                          ItemsSource="{Binding Domains}"
+                          SelectedItem="{Binding SelectedDomain, Mode=TwoWay}"
+                          SelectionChanged="PinDomain_SelectionChanged"
+                          FontSize="10.5"
+                          MinHeight="24"
+                          ToolTip.Tip="Pin and bound net domain">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:DomainChoice">
+                            <TextBlock Text="{Binding Label}" FontSize="10.5" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
                     </StackPanel>
-                    <Button Grid.Column="1" Classes="tool" Content="×" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove pin and its net" Padding="5,0" />
-                  </Grid>
+                  </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Border Background="#F8FAFC" BorderBrush="#E2E8EE" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,5,0,0">
+            <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,5,0,0">
               <StackPanel Spacing="4">
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBox Grid.ColumnSpan="2" Watermark="new pin name" Text="{Binding NewPinName, Mode=TwoWay}" />
@@ -142,39 +232,43 @@
       </Border>
 
       <!-- Canvas -->
-      <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#D9E1E8" BorderThickness="1" CornerRadius="6" Margin="8,0" ClipToBounds="True">
+      <Border Grid.Column="1" Background="{DynamicResource App.CanvasBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6" Margin="8,0" ClipToBounds="True">
         <Grid>
           <controls:CircuitCanvas x:Name="CircuitCanvas" />
-          <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Background="#F2F6FAEE" BorderBrush="#DDE5EC" BorderThickness="1" CornerRadius="5" Padding="8,4" IsHitTestVisible="False">
+          <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Background="{DynamicResource App.HudBackground}" BorderBrush="{DynamicResource App.HudBorder}" BorderThickness="1" CornerRadius="5" Padding="8,4" IsHitTestVisible="False">
             <StackPanel Orientation="Horizontal" Spacing="12">
-              <TextBlock Text="{Binding DefinitionTitle}" FontWeight="SemiBold" Foreground="#263D52" FontSize="11" />
-              <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="#2B6CB0" FontSize="11" />
-              <TextBlock Text="{Binding DiagnosticSummary}" Foreground="#7A8B9B" FontSize="10" />
+              <TextBlock Text="{Binding DefinitionTitle}" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" FontSize="11" />
+              <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" Foreground="{DynamicResource App.Accent}" FontSize="11" />
+              <TextBlock Text="{Binding DiagnosticSummary}" Foreground="{DynamicResource App.TextMuted}" FontSize="10" />
             </StackPanel>
           </Border>
           <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Orientation="Horizontal" Spacing="3" Margin="12">
+            <Button Classes="tool" Content="←" Command="{Binding BackCommand}" ToolTip.Tip="Back to the previously edited definition" />
+            <Button Classes="tool" Content="→" Command="{Binding ForwardCommand}" ToolTip.Tip="Forward to the definition you came back from" />
+            <Border Width="1" Background="{DynamicResource App.Border}" Margin="3,2" />
             <Button Classes="tool" Content="−" Click="ZoomOut_Click" ToolTip.Tip="Zoom out" />
             <Button Classes="tool" Content="+" Click="ZoomIn_Click" ToolTip.Tip="Zoom in" />
             <Button Classes="tool" Content="100%" Click="ResetZoom_Click" ToolTip.Tip="Reset zoom" />
             <Button Classes="tool" Content="⤢" Click="FitZoom_Click" ToolTip.Tip="Fit circuit" />
           </StackPanel>
-          <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" Background="#FFFFFFEA" BorderBrush="#DCE4EB" BorderThickness="1" CornerRadius="5" IsHitTestVisible="False" Padding="8,5">
+          <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" Background="{DynamicResource App.CanvasHintBackground}" BorderBrush="{DynamicResource App.CanvasHintBorder}" BorderThickness="1" CornerRadius="5" IsHitTestVisible="False" Padding="8,5">
             <StackPanel Spacing="2">
-              <TextBlock Text="DRAG A PIN TO A PIN OR WIRE TO CONNECT" FontSize="9" FontWeight="SemiBold" Foreground="#6A7B8C" />
-              <TextBlock Text="double-click a part to enter its definition" FontSize="9.5" Foreground="#5E7184" />
-              <TextBlock Text="ctrl+wheel zoom · middle/alt drag pan" FontSize="9.5" Foreground="#5E7184" />
+              <TextBlock Text="DRAG A PIN TO A PIN OR WIRE TO CONNECT" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource App.TextMuted}" />
+              <TextBlock Text="double-click a part to enter its definition" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+              <TextBlock Text="double-click a wire to add a bendpoint · drag handles · alt+click removes" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+              <TextBlock Text="ctrl+wheel zoom · middle/alt drag pan" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
             </StackPanel>
           </Border>
         </Grid>
       </Border>
 
       <!-- Right panel -->
-      <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="1" CornerRadius="6">
+      <Border Grid.Column="2" Background="{DynamicResource App.PanelBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6">
         <TabControl x:Name="RightTabs" Margin="2">
           <TabItem Header="Inspect">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ScrollViewer x:Name="InspectorScroll" VerticalScrollBarVisibility="Auto">
               <StackPanel Margin="10,6,14,10">
-                <TextBlock Text="{Binding SelectionTitle}" FontSize="15" FontWeight="SemiBold" Foreground="#22384C" />
+                <TextBlock Text="{Binding SelectionTitle}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
                 <TextBlock Text="{Binding SelectionSubtitle}" Classes="muted" FontSize="10" Margin="0,0,0,8" />
 
                 <ItemsControl ItemsSource="{Binding Fields}">
@@ -196,7 +290,115 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <StackPanel IsVisible="{Binding HasNetEndpoints}" Margin="0,6,0,0">
+                  <TextBlock Text="CONNECTED PINS" Classes="section" Margin="4,8,4,4" />
+                  <ItemsControl ItemsSource="{Binding NetEndpoints}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:NetEndpointItem">
+                        <Button
+                            Command="{Binding SelectCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="7,3"
+                            Margin="0,1"
+                            ToolTip.Tip="Select this part in the inspector">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                          </Grid>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+
+                <StackPanel IsVisible="{Binding HasDefinitionUsages}" Margin="0,6,0,0">
+                  <TextBlock Text="USED BY" Classes="section" Margin="4,8,4,4" />
+                  <ItemsControl ItemsSource="{Binding DefinitionUsages}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:DefinitionUsageItem">
+                        <Button
+                            Command="{Binding OpenCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="7,4"
+                            Margin="0,1"
+                            ToolTip.Tip="Open this parent definition and select its instances">
+                          <StackPanel Spacing="1">
+                            <TextBlock Text="{Binding ParentName}" FontWeight="SemiBold" FontSize="11.5" />
+                            <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                          </StackPanel>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+
+                <Border
+                  IsVisible="{Binding HasLookupTable}"
+                  Background="{DynamicResource App.PanelAltBackground}"
+                  BorderBrush="{DynamicResource App.Border}"
+                  BorderThickness="1"
+                  CornerRadius="5"
+                  Padding="6,5"
+                  Margin="0,6,0,0">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="LOOKUP TABLE" Classes="section" Margin="0" />
+                    <TextBlock Text="{Binding LookupTableSummary}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                    <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+                      <ItemsControl ItemsSource="{Binding LookupCells}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:LookupTableCell">
+                            <Grid ColumnDefinitions="104,*" Margin="0,1">
+                              <TextBlock
+                                Text="{Binding Address}"
+                                FontFamily="monospace"
+                                FontSize="9.5"
+                                Classes="muted"
+                                VerticalAlignment="Center" />
+                              <TextBox
+                                Grid.Column="1"
+                                Text="{Binding Value, Mode=TwoWay}"
+                                FontFamily="monospace"
+                                FontSize="10"
+                                Padding="4,1"
+                                MinHeight="22"
+                                LostFocus="LookupCell_LostFocus"
+                                KeyDown="LookupCell_KeyDown"
+                                ToolTip.Tip="Entry value; press Enter or leave the field to commit the whole table" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock Text="Addresses show the entry index and its input values, first input outermost. The whole table is validated before any change is applied." Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
                 <StackPanel IsVisible="{Binding HasSelectedNet}" Margin="0,6,0,0">
+                  <TextBlock Text="WIRE COLOR" Classes="section" Margin="4,8,4,4" />
+                  <ItemsControl ItemsSource="{Binding WireColorChoices}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="4" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:WireColorChoice">
+                        <Button
+                            Command="{Binding ApplyCommand}"
+                            Content="{Binding Label}"
+                            Background="{Binding Color, Converter={StaticResource HexColorBrush}}"
+                            BorderBrush="{DynamicResource App.Border}"
+                            Width="25"
+                            Height="23"
+                            Padding="0"
+                            FontSize="9"
+                            FontWeight="SemiBold"
+                            ToolTip.Tip="{Binding Tip}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                   <TextBlock Text="Net domain" Classes="muted" FontSize="10.5" Margin="0,0,0,3" />
                   <ComboBox ItemsSource="{Binding Domains}" SelectedItem="{Binding SelectedNetDomain, Mode=TwoWay}">
                     <ComboBox.ItemTemplate>
@@ -205,22 +407,37 @@
                       </DataTemplate>
                     </ComboBox.ItemTemplate>
                   </ComboBox>
+                  <TextBlock Text="Expose as interface pin" Classes="muted" FontSize="10.5" Margin="0,8,0,3" />
+                  <TextBox Watermark="pin name (optional)" Text="{Binding PromoteNetName, Mode=TwoWay}" />
+                  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
+                    <Button Content="Input" Command="{Binding PromoteInputCommand}" ToolTip.Tip="Expose this net as an input pin on the current definition" />
+                    <Button Content="Output" Command="{Binding PromoteOutputCommand}" ToolTip.Tip="Expose this net as an output pin on the current definition" />
+                  </StackPanel>
                 </StackPanel>
 
-                <Button Content="Delete selection" Command="{Binding DeleteSelectionCommand}" Classes="danger" Margin="0,12,0,0" HorizontalAlignment="Left" />
+                <Button Content="{Binding WaveformPinButtonText}" Command="{Binding ToggleWaveformPinCommand}" IsVisible="{Binding HasSelectedNet}" Margin="0,10,0,0" HorizontalAlignment="Left" ToolTip.Tip="Pin the selected net to the Waveform tab so it is listed first" />
+                <Button Content="Reset wire route" Command="{Binding ClearNetRouteCommand}" IsVisible="{Binding SelectedNetHasRoute}" Margin="0,6,0,0" HorizontalAlignment="Left" ToolTip.Tip="Return the selected wire to automatic orthogonal routing" />
+                <Button Content="Delete selection" Command="{Binding DeleteSelectionCommand}" Classes="danger" Margin="0,6,0,0" HorizontalAlignment="Left" />
+
+                <StackPanel IsVisible="{Binding HasSelectedInstance}" Margin="0,4,0,0">
+                  <TextBlock Text="REUSABLE PART" Classes="section" Margin="4,8,4,4" />
+                  <TextBox Watermark="component name" Text="{Binding NewComponentName, Mode=TwoWay}" />
+                  <Button Content="Extract selection" Command="{Binding ExtractSelectionCommand}" Margin="0,4,0,0" HorizontalAlignment="Left" ToolTip.Tip="Move the selected parts into a reusable definition and leave one instance in their place" />
+                  <TextBlock Text="Boundary nets become pins; internal wiring moves with the selection." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,3,0,0" />
+                </StackPanel>
 
                 <TextBlock Text="I/O PINS" Classes="section" />
                 <ItemsControl ItemsSource="{Binding IoPins}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:IoPinViewModel">
-                      <Border Background="#FBFCFD" BorderBrush="#E2E8EE" BorderThickness="1" CornerRadius="5" Padding="7,5" Margin="0,2">
+                      <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="7,5" Margin="0,2">
                         <StackPanel Spacing="3">
                           <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11.5" />
-                            <TextBlock Grid.Column="1" Text="{Binding DirectionText}" FontSize="9" Foreground="#708396" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding DirectionText}" FontSize="9" Foreground="{DynamicResource App.TextMuted}" VerticalAlignment="Center" />
                           </Grid>
                           <StackPanel Orientation="Horizontal" Spacing="5">
-                            <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="17" Foreground="#1E3A55" />
+                            <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="17" Foreground="{DynamicResource App.TextPrimary}" />
                             <TextBlock Text="{Binding DomainText}" Classes="muted" FontSize="9.5" VerticalAlignment="Bottom" Margin="0,0,0,3" />
                           </StackPanel>
                           <ItemsControl ItemsSource="{Binding Values}">
@@ -241,57 +458,427 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <TextBlock Text="NETS" Classes="section" />
+                <TextBlock Text="Browse this definition's connectivity. Selecting a row highlights its wire and opens the net inspector; the circuit is unchanged." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,0,0,4" />
+                <TextBox x:Name="NetFilterBox" Watermark="filter nets…" Text="{Binding NetSearch, Mode=TwoWay}" />
+                <TextBlock Text="{Binding NetListSummary}" Classes="muted" FontSize="9" Margin="0,2,0,2" />
+                <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding NetList}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:NetListItem">
+                        <Button Classes="list" Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" ToolTip.Tip="{Binding ValueHint}">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <StackPanel>
+                              <TextBlock Text="{Binding Name}" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+                              <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding ValueText}" FontFamily="monospace" FontSize="11.5" Foreground="{DynamicResource App.Accent}" VerticalAlignment="Center" />
+                          </Grid>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+                <TextBlock Text="No matching nets." Classes="muted" FontSize="9.5" IsVisible="{Binding !HasNetList}" />
+
+                <TextBlock Text="NUMERIC LANES" Classes="section" />
+                <TextBlock Text="Presentation-only ordering of interface pins. The first pin is least significant; nets, drivers, and simulation are untouched." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,0,0,4" />
+                <ItemsControl ItemsSource="{Binding NumericLanes}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:NumericLaneListItem">
+                      <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="7,5" Margin="0,2">
+                        <StackPanel Spacing="2">
+                          <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11.5" />
+                              <TextBlock Text="{Binding FormatName}" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding ValueText}" ToolTip.Tip="{Binding ValueHint}" FontFamily="monospace" FontSize="16" Foreground="{DynamicResource App.Accent}" Margin="8,0" VerticalAlignment="Center" />
+                            <Button Grid.Column="2" Classes="tool" Content="Edit" Command="{Binding EditCommand}" Padding="5,1" Margin="0,0,3,0" ToolTip.Tip="Load this lane into the editor below; its ID and value stay intact" />
+                            <Button Grid.Column="3" Classes="tool" Content="×" Command="{Binding RemoveCommand}" Padding="5,1" ToolTip.Tip="Remove this numeric lane (never changes signals)" />
+                          </Grid>
+                          <TextBlock Text="{Binding PinSummary}" Classes="muted" FontFamily="monospace" FontSize="9.5" TextWrapping="Wrap" />
+                          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding CanDrive}" Margin="0,2,0,0">
+                            <TextBox
+                                Text="{Binding DriveText, Mode=TwoWay}"
+                                KeyDown="LaneValue_KeyDown"
+                                Watermark="drive value…"
+                                FontSize="11"
+                                Padding="5,2"
+                                ToolTip.Tip="Type a whole number, then press Enter or click Drive. Every pin in this lane must be an input." />
+                            <Button Grid.Column="1" Content="Drive" Command="{Binding DriveCommand}" Margin="4,0,0,0" Padding="8,2" ToolTip.Tip="Encode this number and drive all lane input pins" />
+                          </Grid>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
+                  <StackPanel Spacing="4">
+                    <TextBox Watermark="lane name (optional)" Text="{Binding NewLaneName, Mode=TwoWay}" />
+                    <ComboBox ItemsSource="{Binding FormatChoices}" SelectedItem="{Binding SelectedLaneFormat, Mode=TwoWay}" ToolTip.Tip="Numeric interpretation used for this lane">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:NumericDisplayOption">
+                          <TextBlock Text="{Binding Label}" FontSize="11" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
+                      <ItemsControl ItemsSource="{Binding LanePinChoices}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:LanePinChoice">
+                            <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected, Mode=TwoWay}" FontSize="10.5" />
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock Text="Editing this lane. Saving keeps its ID and replaces its name, format, and pins." IsVisible="{Binding IsEditingLane}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="{Binding LaneSaveButtonText}" Command="{Binding AddNumericLaneCommand}" />
+                      <Button Content="Cancel lane edit" Command="{Binding CancelLaneEditCommand}" IsVisible="{Binding IsEditingLane}" />
+                    </StackPanel>
+                    <TextBlock Text="Pins are ordered as declared above. A lane may group pins from one domain only." Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
+                <TextBlock Text="CUSTOM NUMERIC FORMATS" Classes="section" />
+                <TextBlock Text="Project-owned display formats. They never affect signals; lanes choose one by ID." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,0,0,4" />
+                <ItemsControl ItemsSource="{Binding CustomNumericFormats}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CustomNumericFormatListItem">
+                      <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="7,5" Margin="0,2">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel Spacing="1">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" />
+                            <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                          </StackPanel>
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+                            <Button Classes="tool" Content="Edit" Command="{Binding EditCommand}" Padding="5,1" ToolTip.Tip="Load this format into the editor below" />
+                            <Button Classes="tool" Content="×" Command="{Binding RemoveCommand}" Padding="5,1" ToolTip.Tip="Remove this format (refused while a lane uses it)" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
+                  <StackPanel Spacing="4">
+                    <TextBox Watermark="format name" Text="{Binding NewFormatName, Mode=TwoWay}" />
+                    <ComboBox ItemsSource="{Binding Domains}" SelectedItem="{Binding NewFormatDomain, Mode=TwoWay}" ToolTip.Tip="Signal domain this format is intended for">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DomainChoice">
+                          <TextBlock Text="{Binding Label}" FontSize="11" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid ColumnDefinitions="*,100" ColumnSpacing="4">
+                      <TextBox Watermark="digits, e.g. -1 0 1" Text="{Binding NewFormatDigits, Mode=TwoWay}" ToolTip.Tip="Digit values in signal-index order, separated by spaces" />
+                      <TextBox Grid.Column="1" Watermark="radix" Text="{Binding NewFormatRadix, Mode=TwoWay}" ToolTip.Tip="Positional radix, at least 2" />
+                    </Grid>
+                    <ComboBox ItemsSource="{Binding FormatModes}" SelectedItem="{Binding SelectedFormatMode, Mode=TwoWay}" ToolTip.Tip="Weighting of the most significant position">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:NumericFormatModeChoice">
+                          <TextBlock Text="{Binding Label}" FontSize="11" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                      <CheckBox Content="LSB first" IsChecked="{Binding NewFormatLeastSignificantFirst, Mode=TwoWay}" FontSize="10.5" ToolTip.Tip="Place the least significant digit at the first pin" />
+                      <TextBox Grid.Column="1" Watermark="negative sign index" Text="{Binding NewFormatNegativeSign, Mode=TwoWay}" ToolTip.Tip="Sign-magnitude only: digit index that means negative" />
+                    </Grid>
+                    <TextBlock Text="{Binding FormatPreviewText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="{Binding FormatSaveButtonText}" Command="{Binding AddNumericFormatCommand}" />
+                      <Button Content="Cancel edit" Command="{Binding CancelFormatEditCommand}" IsVisible="{Binding IsEditingFormat}" />
+                    </StackPanel>
+                    <TextBlock Text="Digits are mapped by list position, not by value. A format's nominal domain is informational and is checked by lane warnings." Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
                 <TextBlock Text="PROJECT" Classes="section" />
                 <Grid ColumnDefinitions="92,*" Margin="0,2">
                   <TextBlock Text="Name" Classes="muted" FontSize="10.5" />
                   <TextBlock Grid.Column="1" Text="{Binding Project.Name}" FontSize="11.5" />
                 </Grid>
+
+                <TextBlock Text="SIMULATION SETTINGS" Classes="section" />
+                <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,2,0,0">
+                  <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
+                      <TextBlock Text="Default advance" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Ticks used by Advance after reopening this project" />
+                      <TextBox x:Name="DefaultAdvanceTicksBox" Grid.Column="1" Text="{Binding DefaultAdvanceTicksText, Mode=TwoWay}" ToolTip.Tip="Whole number of ticks, 1..1,000,000" />
+                      <TextBlock Grid.Column="2" Text="ticks" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
+                      <TextBlock Text="Zero-delay guard" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Maximum evaluations of one component at one tick before the engine reports non-convergence" />
+                      <TextBox x:Name="EvaluationGuardBox" Grid.Column="1" Text="{Binding EvaluationGuardText, Mode=TwoWay}" ToolTip.Tip="Whole number, 1..1,000,000; too low halts legitimate zero-delay chains" />
+                      <TextBlock Grid.Column="2" Text="evals" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
+                      <TextBlock Text="Trace capacity" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Net changes retained for the waveform and Trace tabs; zero disables recording" />
+                      <TextBox Grid.Column="1" Text="{Binding TraceCapacityText, Mode=TwoWay}" ToolTip.Tip="Whole number, 0..100,000,000; zero disables recording" />
+                      <TextBlock Grid.Column="2" Text="changes" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
+                    </Grid>
+                    <CheckBox Content="Record net transitions" IsChecked="{Binding RecordNetTransitions, Mode=TwoWay}" FontSize="10.5" ToolTip.Tip="Record transitions for the waveform and Trace tabs; capacity zero still disables recording" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="Apply settings" Command="{Binding ApplyProjectSettingsCommand}" ToolTip.Tip="Validate and save these settings as one undo step; the running simulation is reset" />
+                      <Button Classes="tool" Content="Revert" Command="{Binding ReloadProjectSettingsCommand}" ToolTip.Tip="Discard unapplied edits and reload the saved settings" />
+                    </StackPanel>
+                    <TextBlock Text="Saved with the project. Applying resets the simulation because engine options are fixed when it starts." Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
                 <TextBlock Text="Changes are committed as one undo step when you leave a field." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,6,0,0" />
 
                 <TextBlock Text="SIGNAL DOMAINS" Classes="section" />
                 <ItemsControl ItemsSource="{Binding Domains}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:DomainChoice">
-                      <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="#425A70" Margin="2,1" />
+                      <Grid ColumnDefinitions="*,Auto" Margin="2,2" ColumnSpacing="4">
+                        <StackPanel>
+                          <TextBlock Text="{Binding Label}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" />
+                          <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="tool" Content="Policy" Command="{Binding EditPolicyCommand}" Padding="5,1" VerticalAlignment="Center" ToolTip.Tip="Edit this domain's driver policy; value labels and count stay fixed" />
+                      </Grid>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <Border Background="#F8FAFC" BorderBrush="#E2E8EE" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
+                <Border Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="5" Padding="6" Margin="0,4,0,0">
                   <StackPanel Spacing="4">
-                    <TextBox Watermark="domain name" Text="{Binding NewDomainName, Mode=TwoWay}" />
-                    <TextBox Watermark="values, e.g. 0 1 2" Text="{Binding NewDomainValues, Mode=TwoWay}" />
-                    <Button Content="Add domain" Command="{Binding AddDomainCommand}" HorizontalAlignment="Left" />
+                    <TextBox Watermark="domain name" Text="{Binding NewDomainName, Mode=TwoWay}" IsEnabled="{Binding IsDomainValueFieldsEnabled}" />
+                    <TextBox Watermark="values, e.g. 0 1 2" Text="{Binding NewDomainValues, Mode=TwoWay}" IsEnabled="{Binding IsDomainValueFieldsEnabled}" />
+                    <ComboBox x:Name="DomainPolicyBox" ItemsSource="{Binding DriverPolicies}" SelectedItem="{Binding SelectedDriverPolicy, Mode=TwoWay}" ToolTip.Tip="How multiple active drivers on one net are resolved">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DriverPolicyChoice">
+                          <TextBlock Text="{Binding Label}" FontSize="11" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="{Binding DriverPolicyHint}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,110" ColumnSpacing="4" IsVisible="{Binding IsPriorityDriverPolicy}">
+                      <TextBox x:Name="DomainPrioritiesBox" Watermark="priorities, one per value" Text="{Binding NewDomainPriorities, Mode=TwoWay}" ToolTip.Tip="Priority for each value index, e.g. 1 1 3 0" />
+                      <TextBox x:Name="DomainConflictBox" Grid.Column="1" Watermark="conflict index" Text="{Binding NewDomainConflictValue, Mode=TwoWay}" ToolTip.Tip="Value index produced when equal-priority drivers disagree" />
+                    </Grid>
+                    <TextBlock Text="Editing driver policy only. Value labels and count stay fixed so existing signals remain valid." IsVisible="{Binding IsEditingDomainPolicy}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="{Binding DomainSaveButtonText}" Command="{Binding AddDomainCommand}" HorizontalAlignment="Left" />
+                      <Button Content="Cancel policy edit" Command="{Binding CancelDomainEditCommand}" IsVisible="{Binding IsEditingDomainPolicy}" />
+                    </StackPanel>
                   </StackPanel>
                 </Border>
-                <TextBlock Text="Values are arbitrary symbols. Arithmetic meaning belongs to interpretation tools, never to the kernel." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock Text="Values are arbitrary symbols. Arithmetic meaning belongs to interpretation tools, never to the kernel. A priority domain lets the highest-priority active driver win; ties between different values produce the conflict value." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,0" />
               </StackPanel>
             </ScrollViewer>
           </TabItem>
 
           <TabItem Header="Diagnostics">
-            <Grid RowDefinitions="Auto,*" Margin="10,8,12,10">
-              <StackPanel>
-                <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="#5C7185" />
-                <TextBlock Text="Validation, compile, and runtime messages" Classes="muted" FontSize="9.5" Margin="0,1,0,6" />
-              </StackPanel>
-              <ListBox Grid.Row="1" ItemsSource="{Binding Diagnostics}" Background="#FBFCFD" BorderBrush="#E3E9EF" BorderThickness="1">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="10,8,12,10">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                <StackPanel>
+                  <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
+                  <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition and selects the reported instance or net." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
+                </StackPanel>
+                <Button
+                  Grid.Column="1"
+                  Classes="tool"
+                  Content="Run script…"
+                  Click="RunTestScript_Click"
+                  IsEnabled="{Binding CanRunTestScripts}"
+                  VerticalAlignment="Top"
+                  ToolTip.Tip="Run a .radixtest script against the current in-memory project; the live simulation is not changed" />
+                <Button
+                  Grid.Column="2"
+                  Classes="tool"
+                  Content="Run folder…"
+                  Click="RunTestScriptSuite_Click"
+                  IsEnabled="{Binding CanRunTestScripts}"
+                  VerticalAlignment="Top"
+                  ToolTip.Tip="Run every .radixtest script below a folder against the current in-memory project" />
+              </Grid>
+
+              <Border
+                Grid.Row="1"
+                IsVisible="{Binding IsTestScriptRunning}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                Padding="7,5"
+                Margin="0,0,0,6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="{Binding TestScriptRunTitle}" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
+                    <ProgressBar
+                      Minimum="0"
+                      Maximum="100"
+                      Value="{Binding TestScriptProgressValue}"
+                      IsIndeterminate="{Binding TestScriptProgressIndeterminate}"
+                      Height="6"
+                      Foreground="{DynamicResource App.Accent}"
+                      Background="{DynamicResource App.SubtleBackground}" />
+                    <TextBlock Text="{Binding TestScriptProgressText}" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+                  </StackPanel>
+                  <Button
+                    Grid.Column="1"
+                    Classes="tool"
+                    Content="Cancel"
+                    Command="{Binding CancelTestScriptCommand}"
+                    VerticalAlignment="Center"
+                    Padding="6,1" />
+                </Grid>
+              </Border>
+
+              <Border
+                Grid.Row="2"
+                IsVisible="{Binding HasTestScriptResult}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                Padding="7,5"
+                Margin="0,0,0,6"
+                MaxHeight="190">
+                <Grid RowDefinitions="Auto,*">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                    <StackPanel Spacing="1">
+                      <TextBlock
+                        Text="{Binding TestScriptSummary}"
+                        Classes="diag"
+                        Classes.error="{Binding HasTestScriptFailures}"
+                        FontSize="10.5"
+                        TextWrapping="Wrap"
+                        ToolTip.Tip="{Binding TestScriptPath}" />
+                      <TextBlock
+                        Text="STALE · the circuit changed after this run; rerun for a current verdict"
+                        Classes="diag warning"
+                        FontSize="9.5"
+                        TextWrapping="Wrap"
+                        IsVisible="{Binding IsTestScriptResultStale}" />
+                    </StackPanel>
+                    <Button
+                      Grid.Column="1"
+                      Classes="tool"
+                      Content="Clear"
+                      Command="{Binding ClearTestScriptResultCommand}"
+                      Padding="6,1"
+                      VerticalAlignment="Top" />
+                  </Grid>
+                  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="130" Margin="0,4,0,0">
+                    <ItemsControl ItemsSource="{Binding TestScriptFailures}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TestScriptFailureItem">
+                          <TextBlock
+                            Text="{Binding Display}"
+                            Classes="diag error"
+                            FontSize="10"
+                            TextWrapping="Wrap"
+                            Margin="2,1" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+                </Grid>
+              </Border>
+
+              <ListBox Grid.Row="3" ItemsSource="{Binding Diagnostics}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:DiagnosticItem">
-                    <TextBlock Text="{Binding Display}" Foreground="{Binding Color}" FontSize="10.5" TextWrapping="Wrap" Margin="2,2" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                      <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" Classes.warning="{Binding IsWarning}" FontSize="10.5" TextWrapping="Wrap" Margin="2,2" />
+                      <Button Grid.Column="1" Classes="tool" Content="Locate" Command="{Binding LocateCommand}" IsVisible="{Binding CanLocate}" Padding="5,1" VerticalAlignment="Top" ToolTip.Tip="Open the owning definition and select the instance or net named by this message" />
+                    </Grid>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
               </ListBox>
             </Grid>
           </TabItem>
 
+          <TabItem Header="Sweep">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Margin="10,8,12,10">
+              <TextBlock
+                Text="Drives every combination of the current definition's input pins and reads its outputs after settling. Each row restarts from power-on state, so sequential circuits are not chained between rows."
+                Classes="muted"
+                FontSize="9.5"
+                TextWrapping="Wrap" />
+              <Grid Grid.Row="1" ColumnDefinitions="Auto,58,Auto,64,Auto,Auto" ColumnSpacing="6" Margin="0,6,0,4">
+                <TextBlock Text="Settle ticks" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" />
+                <TextBox Grid.Column="1" Text="{Binding SweepSettleTicksText, Mode=TwoWay}" ToolTip.Tip="Ticks advanced after each combination is driven; enough to cover the circuit's delays" />
+                <TextBlock Grid.Column="2" Text="Max rows" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" />
+                <TextBox Grid.Column="3" Text="{Binding SweepMaxRowsText, Mode=TwoWay}" ToolTip.Tip="Refuse sweeps larger than this instead of freezing the workbench" />
+                <Button Grid.Column="4" Content="Run sweep" Command="{Binding RunSweepCommand}" VerticalAlignment="Center" />
+                <Button Grid.Column="5" Classes="tool" Content="Clear" Command="{Binding ClearSweepResultCommand}" IsVisible="{Binding HasSweepResult}" VerticalAlignment="Center" />
+              </Grid>
+              <TextBlock
+                Grid.Row="2"
+                Text="{Binding SweepSummary}"
+                Classes="diag"
+                Classes.error="{Binding HasSweepError}"
+                FontSize="10"
+                TextWrapping="Wrap"
+                Margin="0,0,0,5" />
+              <Border
+                Grid.Row="3"
+                IsVisible="{Binding IsSweepRunning}"
+                Background="{DynamicResource App.AccentSoft}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="8,6"
+                Margin="0,0,0,6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Sweeping…" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
+                    <ProgressBar
+                      Minimum="0"
+                      Maximum="100"
+                      Value="{Binding SweepProgressValue}"
+                      Height="6"
+                      Foreground="{DynamicResource App.Accent}"
+                      Background="{DynamicResource App.SubtleBackground}" />
+                    <TextBlock Text="{Binding SweepProgressText}" FontSize="9.5" Foreground="{DynamicResource App.TextSecondary}" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="tool" Content="Cancel" Command="{Binding CancelSweepCommand}" VerticalAlignment="Center" />
+                </Grid>
+              </Border>
+              <Border Grid.Row="4" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
+                <Grid>
+                  <TextBlock
+                    Text="No sweep yet. Set the settle window and run it to see every input combination."
+                    Classes="muted"
+                    FontSize="10"
+                    TextWrapping="Wrap"
+                    Margin="8,6"
+                    IsVisible="{Binding !HasSweepResult}" />
+                  <ScrollViewer
+                    HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto"
+                    IsVisible="{Binding HasSweepResult}">
+                    <TextBlock
+                      Text="{Binding SweepResultText}"
+                      FontFamily="monospace"
+                      FontSize="10"
+                      Foreground="{DynamicResource App.TextSecondary}"
+                      Margin="8,6" />
+                  </ScrollViewer>
+                </Grid>
+              </Border>
+            </Grid>
+          </TabItem>
+
           <TabItem Header="Waveform">
             <Grid RowDefinitions="Auto,*" Margin="8,6,8,8">
-              <StackPanel>
-                <TextBlock Text="Recorded net transitions" FontWeight="SemiBold" FontSize="11.5" Foreground="#294257" />
-                <TextBlock Text="Advance or step the simulator to collect history. Up to 16 current-definition nets are shown." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,5" />
-              </StackPanel>
-              <Border Grid.Row="1" BorderBrush="#E3E9EF" BorderThickness="1" CornerRadius="4">
-                <controls:WaveformView Snapshot="{Binding Waveform}" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <StackPanel>
+                  <TextBlock Text="Recorded net transitions" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource App.TextPrimary}" />
+                  <TextBlock Text="{Binding WaveformPinSummary}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,2" />
+                  <TextBlock Text="Wheel zooms · drag pans · double-click fits and clears markers." Classes="muted" FontSize="9" Margin="0,0,0,1" />
+                  <TextBlock Text="Click pins A · Shift+click pins B · right-click clears · hover reads every net at that tick." Classes="muted" FontSize="9" Margin="0,0,0,5" TextWrapping="Wrap" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Clear pins" Command="{Binding ClearWaveformPinsCommand}" IsVisible="{Binding HasWaveformPins}" VerticalAlignment="Top" Margin="0,0,0,5" ToolTip.Tip="Remove every waveform pin for this definition; the net set returns to declaration order" />
+              </Grid>
+              <Border Grid.Row="1" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="4">
+                <controls:WaveformView Snapshot="{Binding Waveform}" ToolTip.Tip="Wheel zooms; drag pans; click pins marker A, Shift+click pins B, right-click clears; hover reads values at a tick" />
               </Border>
             </Grid>
           </TabItem>
@@ -312,10 +899,10 @@
           <TabItem Header="Trace">
             <Grid RowDefinitions="Auto,*" Margin="10,8,12,10">
               <TextBlock Text="Most recent net changes, newest first." Classes="muted" FontSize="9.5" />
-              <ListBox Grid.Row="1" ItemsSource="{Binding RecentTransitions}" Background="#FBFCFD" BorderBrush="#E3E9EF" BorderThickness="1" Margin="0,5,0,0">
+              <ListBox Grid.Row="1" ItemsSource="{Binding RecentTransitions}" Background="{DynamicResource App.PanelAltBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" Margin="0,5,0,0">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="x:String" x:CompileBindings="False">
-                    <TextBlock Text="{Binding}" FontFamily="monospace" FontSize="10" Foreground="#314A60" />
+                    <TextBlock Text="{Binding}" FontFamily="monospace" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" />
                   </DataTemplate>
                 </ListBox.ItemTemplate>
               </ListBox>
@@ -326,15 +913,119 @@
     </Grid>
 
     <!-- Status bar -->
-    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#D9E1E8" BorderThickness="0,1,0,0" Padding="12,4">
+    <Border Grid.Row="2" Background="{DynamicResource App.ToolbarBackground}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="12,4">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="{Binding StatusText}" FontSize="10.5" Foreground="#475F76" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding StatusText}" FontSize="10.5" Foreground="{DynamicResource App.TextSecondary}" TextTrimming="CharacterEllipsis" />
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14">
-          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" FontSize="10.5" Foreground="#2B6CB0" />
-          <TextBlock Text="{Binding SimStatusText}" FontSize="10.5" Foreground="#6F8092" />
-          <TextBlock Text="{Binding DiagnosticSummary}" FontSize="10.5" Foreground="#6F8092" />
+          <TextBlock Text="{Binding SimTimeText}" FontFamily="monospace" FontSize="10.5" Foreground="{DynamicResource App.Accent}" />
+          <TextBlock Text="{Binding SimStatusText}" FontSize="10.5" Foreground="{DynamicResource App.TextMuted}" />
+          <TextBlock Text="{Binding DiagnosticSummary}" FontSize="10.5" Foreground="{DynamicResource App.TextMuted}" />
         </StackPanel>
       </Grid>
+    </Border>
+
+    <!-- Project-wide find palette -->
+    <Border
+        Grid.Row="0"
+        Grid.RowSpan="3"
+        ZIndex="100"
+        IsVisible="{Binding IsSearchOpen}"
+        Background="#66000000"
+        PointerPressed="SearchBackdrop_PointerPressed">
+      <Border
+          Width="700"
+          MaxHeight="540"
+          HorizontalAlignment="Center"
+          VerticalAlignment="Top"
+          Margin="0,78,0,0"
+          Background="{DynamicResource App.PanelBackground}"
+          BorderBrush="{DynamicResource App.Border}"
+          BorderThickness="1"
+          CornerRadius="8"
+          BoxShadow="0 18 48 0 #55000000">
+        <Grid RowDefinitions="Auto,Auto,*,Auto">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="12,10,12,4">
+            <TextBox
+                x:Name="SearchBox"
+                Watermark="Search definitions, parts, nets, pins, and lanes…"
+                Text="{Binding SearchQuery, Mode=TwoWay}"
+                FontSize="14"
+                Padding="8,6"
+                ToolTip.Tip="Every whitespace-separated term must match; Enter opens the selected result" />
+            <Button
+                Grid.Column="1"
+                Classes="tool"
+                Content="×"
+                Command="{Binding CloseSearchCommand}"
+                FontSize="16"
+                Padding="9,4"
+                ToolTip.Tip="Close search (Esc)" />
+          </Grid>
+          <TextBlock
+              Grid.Row="1"
+              Text="{Binding SearchSummary}"
+              Classes="muted"
+              FontSize="10"
+              Margin="14,0,14,6" />
+          <Grid Grid.Row="2" Margin="8,0" MinHeight="80">
+            <ListBox
+                x:Name="SearchResultsList"
+                ItemsSource="{Binding SearchResults}"
+                SelectedItem="{Binding SelectedSearchItem, Mode=TwoWay}"
+                Background="{DynamicResource App.PanelAltBackground}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1"
+                CornerRadius="5"
+                MaxHeight="390"
+                DoubleTapped="SearchResults_DoubleTapped">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProjectSearchItem">
+                  <Grid ColumnDefinitions="46,*,Auto" ColumnSpacing="8" Margin="2,3">
+                    <TextBlock
+                        Text="{Binding KindLabel}"
+                        FontSize="9"
+                        FontWeight="Bold"
+                        Foreground="{DynamicResource App.Accent}"
+                        VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="1">
+                      <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="9.5" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock
+                        Grid.Column="2"
+                        Text="{Binding Context}"
+                        FontFamily="monospace"
+                        FontSize="9.5"
+                        Foreground="{DynamicResource App.TextMuted}"
+                        VerticalAlignment="Center"
+                        MaxWidth="190"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip.Tip="{Binding Context}" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock
+                Text="No definition, part, net, pin, or lane matches these terms."
+                Classes="muted"
+                FontSize="10.5"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                IsVisible="{Binding !HasSearchResults}" />
+          </Grid>
+          <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="14,7,14,9">
+            <TextBlock
+                Text="↑ ↓ navigate · Enter open · Esc close · double-click a row"
+                Classes="muted"
+                FontSize="9.5" />
+            <TextBlock
+                Grid.Column="1"
+                Text="DEF definition · PART instance · NET wire"
+                Classes="muted"
+                FontSize="9.5" />
+          </Grid>
+        </Grid>
+      </Border>
     </Border>
   </Grid>
 </Window>

@@ -4,6 +4,7 @@ using Radix.Core;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
+using Radix.Editor.Services;
 
 namespace Radix.Editor.ViewModels;
 
@@ -28,7 +29,9 @@ public sealed class DefinitionListItem
         bool isRoot,
         bool isCurrent,
         ICommand openCommand,
-        ICommand placeCommand)
+        ICommand placeCommand,
+        ICommand duplicateCommand,
+        int usageCount)
     {
         Id = definition.Id;
         Name = definition.Name;
@@ -36,7 +39,9 @@ public sealed class DefinitionListItem
         IsCurrent = isCurrent;
         OpenCommand = openCommand;
         PlaceCommand = placeCommand;
-        Subtitle = $"{(isRoot ? "root · " : string.Empty)}{definition.Pins.Count} pins · {definition.Instances.Count} instances";
+        DuplicateCommand = duplicateCommand;
+        Subtitle = $"{(isRoot ? "root · " : string.Empty)}{definition.Pins.Count} pins · {definition.Instances.Count} instances" +
+            (usageCount > 0 ? $" · used ×{usageCount}" : string.Empty);
         Prefix = isCurrent ? "▸ " : "  ";
     }
 
@@ -55,6 +60,79 @@ public sealed class DefinitionListItem
     public ICommand OpenCommand { get; }
 
     public ICommand PlaceCommand { get; }
+
+    public ICommand DuplicateCommand { get; }
+}
+
+/// <summary>One quick-choice swatch for the selected net's authored wire color.</summary>
+public sealed class WireColorChoice
+{
+    public WireColorChoice(string label, string? color, string tip, ICommand applyCommand)
+    {
+        Label = label;
+        Color = color;
+        Tip = tip;
+        ApplyCommand = applyCommand;
+    }
+
+    public string Label { get; }
+
+    /// <summary>Normalized six-digit color, or null for automatic domain coloring.</summary>
+    public string? Color { get; }
+
+    public string Tip { get; }
+
+    public ICommand ApplyCommand { get; }
+}
+
+/// <summary>One instance pin on the currently selected net.</summary>
+public sealed class NetEndpointItem
+{
+    public NetEndpointItem(string instanceId, string label, string detail, ICommand selectCommand)
+    {
+        InstanceId = instanceId;
+        Label = label;
+        Detail = detail;
+        SelectCommand = selectCommand;
+    }
+
+    public string InstanceId { get; }
+
+    public string Label { get; }
+
+    public string Detail { get; }
+
+    public ICommand SelectCommand { get; }
+}
+
+/// <summary>
+/// One parent definition that instantiates the definition being edited. Selecting
+/// the row opens that parent and selects every matching instance there.
+/// </summary>
+public sealed class DefinitionUsageItem
+{
+    public DefinitionUsageItem(
+        CircuitDefinition parent,
+        IReadOnlyList<string> instanceIds,
+        ICommand openCommand)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        ArgumentNullException.ThrowIfNull(instanceIds);
+        ParentId = parent.Id;
+        ParentName = parent.Name;
+        Detail = instanceIds.Count == 1
+            ? $"instance {instanceIds[0]}"
+            : $"{instanceIds.Count} instances · {string.Join(", ", instanceIds.Take(8))}{(instanceIds.Count > 8 ? "…" : string.Empty)}";
+        OpenCommand = openCommand;
+    }
+
+    public string ParentId { get; }
+
+    public string ParentName { get; }
+
+    public string Detail { get; }
+
+    public ICommand OpenCommand { get; }
 }
 
 public sealed class PaletteItem
@@ -74,6 +152,33 @@ public sealed class PaletteItem
     public string Description { get; }
 
     public ICommand PlaceCommand { get; }
+}
+
+/// <summary>
+/// One project-wide search row. It wraps an immutable navigation target with the
+/// command that opens it, so the list can be rebound without retaining stale model
+/// objects.
+/// </summary>
+public sealed class ProjectSearchItem
+{
+    public ProjectSearchItem(ProjectSearchResult result, Action activate)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        Result = result;
+        ActivateCommand = new RelayCommand(activate);
+    }
+
+    public ProjectSearchResult Result { get; }
+
+    public string KindLabel => Result.KindLabel;
+
+    public string Title => Result.Title;
+
+    public string Detail => Result.Detail;
+
+    public string Context => Result.Context;
+
+    public ICommand ActivateCommand { get; }
 }
 
 public sealed class IoValueOption
@@ -163,24 +268,28 @@ public sealed class SpeedOption
 
 public sealed class DiagnosticItem
 {
-    public DiagnosticItem(Diagnostic diagnostic)
+    public DiagnosticItem(Diagnostic diagnostic, ICommand locateCommand)
     {
+        Diagnostic = diagnostic;
         Severity = diagnostic.Severity;
         Code = diagnostic.Code;
         Message = diagnostic.Message;
         Location = diagnostic.Location;
         Display = diagnostic.ToString();
-        Color = diagnostic.Severity switch
-        {
-            DiagnosticSeverity.Error => "#B3261E",
-            DiagnosticSeverity.Warning => "#8A5A00",
-            _ => "#44576A",
-        };
+        LocateCommand = locateCommand;
+        CanLocate = diagnostic.DefinitionId is not null ||
+            diagnostic.InstanceId is not null ||
+            diagnostic.NetId is not null ||
+            diagnostic.PinId is not null;
     }
+
+    public Diagnostic Diagnostic { get; }
 
     public DiagnosticSeverity Severity { get; }
 
-    public string Color { get; }
+    public bool IsError => Severity == DiagnosticSeverity.Error;
+
+    public bool IsWarning => Severity == DiagnosticSeverity.Warning;
 
     public string Code { get; }
 
@@ -189,6 +298,11 @@ public sealed class DiagnosticItem
     public string Location { get; }
 
     public string Display { get; }
+
+    public ICommand LocateCommand { get; }
+
+    /// <summary>True when the diagnostic names something in the circuit.</summary>
+    public bool CanLocate { get; }
 }
 
 public readonly record struct WaveValueChange(long Time, int Value);
@@ -210,6 +324,32 @@ public sealed class WaveformRow
     public int StartValue { get; }
 
     public IReadOnlyList<WaveValueChange> Changes { get; }
+
+    /// <summary>
+    /// Value held at an absolute tick. Changes are ordered, so this binary-searches
+    /// instead of replaying the row on every cursor render.
+    /// </summary>
+    public int ValueAt(long time)
+    {
+        int low = 0;
+        int high = Changes.Count - 1;
+        int value = StartValue;
+        while (low <= high)
+        {
+            int middle = low + ((high - low) / 2);
+            if (Changes[middle].Time <= time)
+            {
+                value = Changes[middle].Value;
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+
+        return value;
+    }
 }
 
 public sealed class WaveformSnapshot
@@ -241,6 +381,29 @@ public sealed class InspectorField
     public string Label { get; }
 
     public string Value { get; }
+}
+
+/// <summary>One entry in the Recent projects flyout.</summary>
+public sealed class RecentProjectItem
+{
+    public RecentProjectItem(string path, Action<string> open)
+    {
+        Path = path;
+        Header = System.IO.Path.GetFileName(path) is { Length: > 0 } name ? name : path;
+        Directory = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
+        OpenCommand = new RelayCommand(() => open(path));
+    }
+
+    /// <summary>Full path; also the tooltip so long names stay discoverable.</summary>
+    public string Path { get; }
+
+    /// <summary>File name shown in the menu.</summary>
+    public string Header { get; }
+
+    /// <summary>Containing directory, shown as a second line.</summary>
+    public string Directory { get; }
+
+    public ICommand OpenCommand { get; }
 }
 
 public sealed class NumericDisplayOption

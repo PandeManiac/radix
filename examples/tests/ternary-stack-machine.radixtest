@@ -1,0 +1,43 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Ternary stack machine computes, outputs, and restores its stack",
+  "description": "The program pushes 2 and 3, swaps and adds them to 5, duplicates then pops the copy, outputs 5, pops the saved value, and jumps back to instruction 0.",
+  "definition": "demo.t-stack",
+  "steps": [
+    {
+      "at": 0,
+      "set": { "clk": 0 },
+      "expectLane": { "pc": 0, "top": 0, "sp": 0, "out": 0 }
+    },
+    { "at": 120, "expectLane": { "opcode": 1, "argument": 2 } },
+    { "at": 240, "set": { "clk": 2 } },
+    { "at": 360, "set": { "clk": 0 } },
+    { "at": 480, "expectLane": { "pc": 1, "top": 2, "sp": 1, "read": 0 } },
+    { "at": 600, "set": { "clk": 2 } },
+    { "at": 720, "set": { "clk": 0 } },
+    { "at": 840, "expectLane": { "pc": 2, "top": 3, "sp": 2, "read": 2 } },
+    { "at": 960, "set": { "clk": 2 } },
+    { "at": 1080, "set": { "clk": 0 } },
+    { "at": 1200, "expectLane": { "pc": 3, "top": 2, "sp": 2, "read": 3 }, "description": "SWAP moved 3 below TOS" },
+    { "at": 1320, "set": { "clk": 2 } },
+    { "at": 1440, "set": { "clk": 0 } },
+    { "at": 1560, "expectLane": { "pc": 4, "top": 5, "sp": 1, "read": 3 }, "description": "ADD produced 5" },
+    { "at": 1680, "set": { "clk": 2 } },
+    { "at": 1800, "set": { "clk": 0 } },
+    { "at": 1920, "expectLane": { "pc": 5, "top": 5, "sp": 2, "read": 5 }, "description": "DUP pushed 5" },
+    { "at": 2040, "set": { "clk": 2 } },
+    { "at": 2160, "set": { "clk": 0 } },
+    { "at": 2280, "expectLane": { "pc": 6, "top": 5, "sp": 1, "read": 0 }, "description": "POP discarded the copy" },
+    { "at": 2400, "set": { "clk": 2 } },
+    { "at": 2520, "set": { "clk": 0 } },
+    { "at": 2640, "expectLane": { "pc": 7, "top": 5, "sp": 1, "out": 5 }, "description": "OUT latched 5" },
+    { "at": 2760, "set": { "clk": 2 } },
+    { "at": 2880, "set": { "clk": 0 } },
+    { "at": 3000, "expectLane": { "pc": 8, "top": 0, "sp": 0, "out": 5 }, "description": "POP restored the saved 0" },
+    { "at": 3120, "set": { "clk": 2 } },
+    { "at": 3240, "set": { "clk": 0 } },
+    { "at": 3360, "expectLane": { "pc": 0, "top": 0, "sp": 0, "out": 5 } },
+    { "at": 3480, "expectLane": { "opcode": 1, "argument": 2 } }
+  ]
+}

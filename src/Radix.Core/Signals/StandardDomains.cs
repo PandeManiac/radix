@@ -8,6 +8,7 @@ public static class StandardDomains
 {
     public const string BinaryId = "binary";
     public const string TernaryId = "ternary";
+    public const string QuaternaryId = "quaternary";
     public const string BalancedTernaryId = "balanced-ternary";
     public const string FourStateId = "four-state";
 
@@ -26,6 +27,14 @@ public static class StandardDomains
         ["0", "1", "2"],
         new SingleDriverResolution(),
         "Three-state domain. No balanced or positional interpretation is implied.");
+
+    /// <summary>Four discrete values labelled 0, 1, 2, 3 (radix-4 symbols).</summary>
+    public static SignalDomain Quaternary() => new(
+        QuaternaryId,
+        "Quaternary",
+        ["0", "1", "2", "3"],
+        new SingleDriverResolution(),
+        "Four-state digit domain with no implied arithmetic. Unsigned radix-4 interpretation lives in the numeric format catalog.");
 
     /// <summary>Three values labelled -, 0, + for balanced-ternary experiments.</summary>
     public static SignalDomain BalancedTernary() => new(
@@ -47,5 +56,5 @@ public static class StandardDomains
         "Four-state domain with high impedance (Z) and unknown/conflict (X).");
 
     public static IReadOnlyList<SignalDomain> All() =>
-        [Binary(), Ternary(), BalancedTernary(), FourState()];
+        [Binary(), Ternary(), Quaternary(), BalancedTernary(), FourState()];
 }

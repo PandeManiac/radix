@@ -2,22 +2,31 @@
     x:Class="Radix.Editor.App"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    RequestedThemeVariant="Light">
+    RequestedThemeVariant="Default">
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Radix.Editor/Themes/ThemeTokens.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
 
   <Application.Styles>
     <FluentTheme />
     <Style Selector="Window">
       <Setter Property="FontSize" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource App.WindowBackground}" />
     </Style>
     <Style Selector="Button">
       <Setter Property="CornerRadius" Value="5" />
       <Setter Property="Padding" Value="10,5" />
-      <Setter Property="Background" Value="#F4F6F8" />
-      <Setter Property="BorderBrush" Value="#D5DCE3" />
+      <Setter Property="Background" Value="{DynamicResource App.SubtleBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource App.BorderStrong}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style Selector="Button:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="#E7EDF3" />
+      <Setter Property="Background" Value="{DynamicResource App.HoverBackground}" />
     </Style>
     <Style Selector="Button.tool">
       <Setter Property="Padding" Value="8,5" />
@@ -37,8 +46,8 @@
       <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="Padding" Value="8,5" />
       <Setter Property="Margin" Value="0,2" />
-      <Setter Property="Background" Value="#FBFCFD" />
-      <Setter Property="BorderBrush" Value="#E0E6EC" />
+      <Setter Property="Background" Value="{DynamicResource App.PanelAltBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
     </Style>
     <Style Selector="Button.value">
       <Setter Property="Padding" Value="8,2" />
@@ -47,17 +56,26 @@
       <Setter Property="Margin" Value="0,0,4,0" />
     </Style>
     <Style Selector="Button.danger">
-      <Setter Property="Background" Value="#FBEDEC" />
-      <Setter Property="BorderBrush" Value="#E5B9B5" />
+      <Setter Property="Background" Value="{DynamicResource App.DangerBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource App.DangerBorder}" />
     </Style>
     <Style Selector="TextBlock.section">
       <Setter Property="FontSize" Value="10" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="#728396" />
+      <Setter Property="Foreground" Value="{DynamicResource App.TextMuted}" />
       <Setter Property="Margin" Value="4,12,4,4" />
     </Style>
     <Style Selector="TextBlock.muted">
-      <Setter Property="Foreground" Value="#6F8092" />
+      <Setter Property="Foreground" Value="{DynamicResource App.TextMuted}" />
+    </Style>
+    <Style Selector="TextBlock.diag">
+      <Setter Property="Foreground" Value="{DynamicResource App.DiagnosticInfo}" />
+    </Style>
+    <Style Selector="TextBlock.diag.error">
+      <Setter Property="Foreground" Value="{DynamicResource App.DiagnosticError}" />
+    </Style>
+    <Style Selector="TextBlock.diag.warning">
+      <Setter Property="Foreground" Value="{DynamicResource App.DiagnosticWarning}" />
     </Style>
     <Style Selector="TextBox">
       <Setter Property="CornerRadius" Value="4" />

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Radix.Core.Interpretation;
 using Radix.Core.Signals;
 
 namespace Radix.Core.Model;
@@ -74,6 +75,18 @@ public sealed class Net
     /// </summary>
     public int? InitialValue { get; set; }
 
+    /// <summary>
+    /// Optional author color for this net's wire. Presentation only; signal values
+    /// remain the primary state indicator.
+    /// </summary>
+    public string? WireColor { get; set; }
+
+    /// <summary>
+    /// Author-placed routing bendpoints. Empty means automatic routing. These are
+    /// editor layout hints and never enter the compiler or simulator.
+    /// </summary>
+    public List<NetWaypoint> RoutePoints { get; } = [];
+
     public List<PinRef> Pins { get; } = [];
 
     public override string ToString() => Id;
@@ -81,6 +94,57 @@ public sealed class Net
 
 /// <summary>Binds an interface pin of a definition to an internal net.</summary>
 public sealed record PortBinding(string PinId, string NetId);
+
+/// <summary>
+/// An ordered group of interface pins displayed as one number. Lanes are pure
+/// presentation: they never merge nets, drive signals, or affect simulation. Pin
+/// order is least-significant-first as declared, matching the built-in formats.
+/// </summary>
+public sealed class NumericLane
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Identifier from <c>NumericFormats</c> used to decode this lane.</summary>
+    public string FormatId { get; set; } = string.Empty;
+
+    /// <summary>Ordered interface-pin IDs. The first pin is the least significant.</summary>
+    public List<string> PinIds { get; } = [];
+
+    public override string ToString() => Id;
+}
+
+/// <summary>
+/// Presentation metadata for reopening a project where the author left it. It does
+/// not affect validation, compilation, or simulation.
+/// </summary>
+public sealed class ProjectView
+{
+    /// <summary>Definition that was open in the editor, when it still exists.</summary>
+    public string? ActiveDefinitionId { get; set; }
+
+    public double? Scale { get; set; }
+
+    public double? OffsetX { get; set; }
+
+    public double? OffsetY { get; set; }
+
+    /// <summary>
+    /// Net IDs pinned to the waveform panel, keyed by definition ID. Pins are
+    /// presentation only and never affect compilation or simulation.
+    /// </summary>
+    public Dictionary<string, List<string>> WaveformPins { get; set; } = new(StringComparer.Ordinal);
+
+    public bool HasViewport =>
+        Scale is double scale &&
+        OffsetX is double x &&
+        OffsetY is double y &&
+        double.IsFinite(scale) &&
+        double.IsFinite(x) &&
+        double.IsFinite(y) &&
+        scale > 0;
+}
 
 /// <summary>Simulation defaults stored with a project.</summary>
 public sealed class ProjectSettings
@@ -122,6 +186,9 @@ public sealed class CircuitDefinition
 
     public List<PortBinding> Ports { get; } = [];
 
+    /// <summary>Presentation-only numeric groupings of interface pins.</summary>
+    public List<NumericLane> NumericLanes { get; } = [];
+
     public IReadOnlyList<PinDescriptor> InterfacePins =>
         Pins.Select(p => p.ToDescriptor()).ToArray();
 
@@ -137,10 +204,90 @@ public sealed class CircuitDefinition
     public PortBinding? FindPort(string pinId) =>
         Ports.FirstOrDefault(p => string.Equals(p.PinId, pinId, StringComparison.Ordinal));
 
+    public NumericLane? FindNumericLane(string laneId) =>
+        NumericLanes.FirstOrDefault(l => string.Equals(l.Id, laneId, StringComparison.Ordinal));
+
     public Net? FindPortNet(string pinId)
     {
         PortBinding? port = FindPort(pinId);
         return port is null ? null : FindNet(port.NetId);
+    }
+
+    /// <summary>
+    /// Deep-copies this definition's body under a new identity. Instance, net, pin, and
+    /// lane IDs are definition-local, so they carry over unchanged and the copy stays a
+    /// structurally independent variant. Child definition references and primitive
+    /// parameters are shared deliberately: both are immutable values of the project.
+    /// Labels, positions, routes, colors, and lane membership are copied.
+    /// </summary>
+    public CircuitDefinition Clone(string id, string name)
+    {
+        if (!Identifiers.IsValid(id))
+        {
+            throw new ArgumentException($"Invalid definition ID '{id}'. {Identifiers.Rule}", nameof(id));
+        }
+
+        var clone = new CircuitDefinition
+        {
+            Id = id,
+            Name = name,
+            Description = Description,
+        };
+
+        foreach (PinDeclaration pin in Pins)
+        {
+            clone.Pins.Add(new PinDeclaration
+            {
+                Id = pin.Id,
+                Name = pin.Name,
+                Direction = pin.Direction,
+                DomainId = pin.DomainId,
+            });
+        }
+
+        foreach (ComponentInstance instance in Instances)
+        {
+            clone.Instances.Add(new ComponentInstance
+            {
+                Id = instance.Id,
+                DefinitionId = instance.DefinitionId,
+                Primitive = instance.Primitive,
+                Label = instance.Label,
+                X = instance.X,
+                Y = instance.Y,
+            });
+        }
+
+        foreach (Net net in Nets)
+        {
+            var copy = new Net
+            {
+                Id = net.Id,
+                DomainId = net.DomainId,
+                Label = net.Label,
+                InitialValue = net.InitialValue,
+                WireColor = net.WireColor,
+            };
+            copy.RoutePoints.AddRange(net.RoutePoints);
+            copy.Pins.AddRange(net.Pins);
+            clone.Nets.Add(copy);
+        }
+
+        clone.Ports.AddRange(Ports);
+
+        foreach (NumericLane lane in NumericLanes)
+        {
+            var copy = new NumericLane
+            {
+                Id = lane.Id,
+                Name = lane.Name,
+                FormatId = lane.FormatId,
+            };
+            copy.PinIds.AddRange(lane.PinIds);
+            clone.NumericLanes.Add(copy);
+        }
+
+        return clone;
     }
 
     public override string ToString() => Id;
@@ -153,7 +300,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 6;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 
@@ -166,12 +313,24 @@ public sealed class CircuitProject
 
     public List<SignalDomain> Domains { get; } = [];
 
+    /// <summary>Project-owned numeric formats used by numeric lanes.</summary>
+    public List<NumericFormatDefinition> CustomNumericFormats { get; } = [];
+
     public List<CircuitDefinition> Definitions { get; } = [];
 
     public ProjectSettings Settings { get; } = new();
 
+    /// <summary>Optional editor position and active definition; ignored by simulation.</summary>
+    public ProjectView View { get; } = new();
+
     public SignalDomain? FindDomain(string? domainId) =>
         domainId is null ? null : Domains.FirstOrDefault(d => string.Equals(d.Id, domainId, StringComparison.Ordinal));
+
+    public NumericFormatDefinition? FindCustomNumericFormat(string? formatId) =>
+        formatId is null
+            ? null
+            : CustomNumericFormats.FirstOrDefault(format =>
+                string.Equals(format.Id, formatId, StringComparison.Ordinal));
 
     public CircuitDefinition? FindDefinition(string? definitionId) =>
         definitionId is null ? null : Definitions.FirstOrDefault(d => string.Equals(d.Id, definitionId, StringComparison.Ordinal));

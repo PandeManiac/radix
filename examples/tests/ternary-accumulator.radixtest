@@ -1,0 +1,26 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Ternary accumulator loads, adds, holds, and wraps",
+  "description": "LOAD captures D, ADD adds D modulo 9, and with both inactive Q holds. Result lane = Q0 + 3*Q1.",
+  "definition": "demo.t-accumulator",
+  "steps": [
+    { "at": 0, "set": { "clk": 0, "load": 0, "add": 0, "d0": 0, "d1": 0 } },
+    { "at": 20, "expectLane": { "result": 0 } },
+    { "at": 30, "set": { "load": 2, "add": 0, "d0": 2, "d1": 1 }, "description": "LOAD 5" },
+    { "at": 60, "set": { "clk": 2 } },
+    { "at": 90, "expect": { "q0": 2, "q1": 1 }, "expectLane": { "data": 5, "result": 5 } },
+    { "at": 100, "set": { "clk": 0, "load": 0, "add": 2, "d0": 0, "d1": 1 } },
+    { "at": 140, "set": { "clk": 2 }, "description": "ADD 3 -> 8" },
+    { "at": 170, "expectLane": { "result": 8 } },
+    { "at": 180, "set": { "clk": 0, "d0": 1, "d1": 1 } },
+    { "at": 220, "set": { "clk": 2 }, "description": "ADD 4 -> 12 wraps to 3" },
+    { "at": 250, "expectLane": { "result": 3 } },
+    { "at": 260, "set": { "clk": 0, "add": 0, "d0": 2, "d1": 2 } },
+    { "at": 300, "set": { "clk": 2 }, "description": "both selects 0: D must be ignored" },
+    { "at": 330, "expectLane": { "result": 3 } },
+    { "at": 340, "set": { "clk": 0, "load": 2 } },
+    { "at": 380, "set": { "clk": 2 }, "description": "LOAD 8" },
+    { "at": 410, "expect": { "q0": 2, "q1": 2 }, "expectLane": { "result": 8 } }
+  ]
+}

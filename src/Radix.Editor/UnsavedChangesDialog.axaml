@@ -1,0 +1,36 @@
+<Window
+    x:Class="Radix.Editor.UnsavedChangesDialog"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Unsaved changes"
+    Width="460"
+    SizeToContent="Height"
+    CanResize="False"
+    ShowInTaskbar="False"
+    WindowStartupLocation="CenterOwner"
+    Background="{DynamicResource App.PanelBackground}">
+  <Border Padding="20" Background="{DynamicResource App.PanelBackground}">
+    <StackPanel Spacing="12">
+      <TextBlock Text="Unsaved changes" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
+      <TextBlock
+          x:Name="MessageText"
+          TextWrapping="Wrap"
+          FontSize="12"
+          Foreground="{DynamicResource App.TextSecondary}" />
+      <TextBlock
+          Text="Save keeps your work in the current project file. Discard closes without writing."
+          TextWrapping="Wrap"
+          Classes="muted"
+          FontSize="10" />
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,4,0,0">
+        <Button Content="Cancel" Click="Cancel_Click" />
+        <Button Content="Discard" Click="Discard_Click" Classes="danger" />
+        <Button
+            Content="Save"
+            Click="Save_Click"
+            Background="{DynamicResource App.SuccessBackground}"
+            BorderBrush="{DynamicResource App.SuccessBorder}" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

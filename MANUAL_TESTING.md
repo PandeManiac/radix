@@ -10,7 +10,20 @@ dotnet test tests/Radix.Core.Tests/Radix.Core.Tests.csproj
 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj
 ```
 
-The editor tests write offscreen render captures to `artifacts/editor/` (ignored by Git). They do not show a window.
+The editor tests write offscreen captures to `artifacts/editor/` (ignored by Git). They do not show a window:
+
+- `workbench-counter.png` (light);
+- `workbench-counter-dark.png`;
+- `workbench-waveform.png` (light);
+- `workbench-waveform-dark.png`;
+- `workbench-accumulator-lanes.png` (scrolled numeric-lane inspector with a drive control);
+- `workbench-lane-editor.png` (numeric lane loaded into the edit form);
+- `workbench-domain-policy.png` (signal-domain inspector with a priority table);
+- `workbench-diagnostics-locate.png` (Diagnostics tab with a Locate action);
+- `workbench-net-navigator.png` (filtered net list with live values);
+- `workbench-interface-reorder.png` (interface rows with move controls);
+- `workbench-search-palette.png` (project-wide find over the counter, with cross-hierarchy net rows);
+- `workbench-overview.png` (the tiny CPU at fit zoom with the canvas overview and its viewport marker).
 
 Launch the editor only when you are ready to use it:
 
@@ -18,93 +31,590 @@ Launch the editor only when you are ready to use it:
 dotnet run --project src/Radix.Editor
 ```
 
-Expected first screen: a light workbench titled **RADIX — circuit workbench**, the **4-bit binary counter** example, t = 0, 0 errors, 0 warnings, and the Library visible on the left. The default window is 1480×920; it can be resized and has a minimum size of 1040×660.
+Expected first screen: the light workbench (or your saved theme), the **4-bit binary counter** example, t = 0, 0 errors, 0 warnings, and the Library visible on the left. The default window is 1480×920; minimum is 1040×660.
 
-## 1. Baseline: open the counter and advance
+## 1. Baseline simulation
 
-1. Click **Begin**. Expected: simulation compiles, status says reset, t remains 0, and no errors appear.
+1. Click **Begin**. Expected: simulation compiles, t remains 0, and no errors appear.
 2. Set the advance box to `100` and click **Advance**.
-3. Check the right **Inspect → I/O PINS** section:
+3. Check **Inspect → I/O PINS**:
    - `Q0 = 1`
    - `Q1 = 0`
    - `Q2 = 1`
    - `Q3 = 0`
-   - The header shows `t = 100` and zero errors/warnings.
-4. Click the **Waveform** tab. Expected: rows for the root nets (`Q0`…`Q3`, `clk`, constant inputs, adder sums) and a 0–100 tick axis. The clock shows ten 10-tick phases; output rows show their transitions.
-5. Click **Trace**. Expected: recent net changes in reverse chronological order, formatted `t=<time>  <net> → <value>`.
+   - Header shows `t = 100`, zero errors/warnings.
+4. Click **Waveform**. Expected: rows for `Q0`…`Q3`, `clk`, constants and adder sums over a 0–100 tick axis; the clock has 10-tick phases; the header describes up to 16 nets in declaration order.
+5. In **Inspect**, select a late net in **NETS** (for example `sum3` or `carry`) and click **Show in waveform**. Expected: the button becomes **Hide from waveform**, the net row's summary gains `· waveform`, the Waveform tab lists that net first with the header reporting one pinned net, and simulation values are unchanged. Click again to unpin; the rows return to declaration order. Pins belong to the current definition and are saved with the project view: save, close, and reopen the project, and the pinned net is still listed first. Delete that net instead and the pin disappears rather than leaving a phantom row.
+6. Click **Trace**. Expected: recent net changes newest first, formatted `t=<time>  <net> → <value>`.
+7. Return to **Waveform**. Hover across the plot. Expected: a dashed time cursor follows the pointer, the top stamp reads `t=<tick>` for that position, and the right-hand value column shows each net's value at that tick rather than the latest value. Click at a tick: expected a solid blue **A** line and a header summary `A=<tick>`, with values at A. Shift+click another tick: expected an orange **B** line, the summary gains `B=<tick> · Δ=<ticks>`, and each row's right-hand value reads `Avalue/Bvalue`. Move outside the plot: the dashed hover cursor clears while both pinned markers stay. Right-click inside the plot: both lines and the summary disappear; double-click refits the trace and also clears markers. Change a driven input, advance, and hover an earlier tick: the old value must still read correctly because the snapshot holds the recorded changes. Wheel over the plot to zoom around the pointer. Expected: the tick labels narrow to the chosen range (for example `t=60`…`t=120`), the clock edges stay aligned with the narrower labels, and the header hint names the controls. Drag left or right to pan; the range must stop at tick 0 and at the simulation end. Click **Advance** while zoomed: the window must stay where it is. Double-click the plot: the full 0…current trace returns and later advances follow the end again. Click **Begin** (simulation reset) while zoomed: the whole new trace must be shown.
 
-If the counter values differ, record the values and diagnostics; this is a correctness failure, not a cosmetic issue.
+If counter values differ, record the values and diagnostics; this is a correctness failure.
 
-## 2. Definition navigation and subcircuit simulation
+### Project-wide find
 
-1. Click the `D flip-flop` row in **Definitions** (or double-click a D flip-flop on the canvas).
-2. Expected: the canvas changes to the D flip-flop internals, the header identifies a non-root definition, and the Library remains available. Simulation is now rooted at this definition.
-3. Click **Begin**.
-4. In I/O PINS, click `D` value `1`, then `CLK` value `0`.
-5. Set advance to `20` and click **Advance**. Expected: `Q = 0`, `QN = 1` (no rising edge yet).
-6. Click `CLK` value `1`, advance `20`. Expected: `Q = 1`, `QN = 0`.
-7. Click `D` value `0`, advance `20` without changing CLK. Expected: Q remains `1` (level, not edge, does not alter the slave output).
-8. Toggle CLK to `0`, advance `20`; then to `1`, advance `20`. Expected: Q becomes `0`.
-9. Click **Clock** once with a valid D value. Expected: the host advances to the next clock transition over at most a few ticks. It may not settle all logic; follow with **Advance**.
-10. Return to the root counter via Definitions and verify simulation resets for the new root.
+1. Press `Ctrl+P` (or click **Find…** in the toolbar). Expected: a centered search palette covers the workbench, the query box has focus, and the summary reads the project's definition count. `Esc`, the `×` button, or a click on the dimmed backdrop closes it without changing the project.
+2. Type `clk`. Expected: rows from every definition label their kind and name the owning definition on the right; `NET` and `PIN` rows both appear, and equally scored targets in the open definition rank first. The summary reports the full match count. Scroll the list; the panel stays fixed and the rows scroll inside it.
+3. Clear the query and type `carry gate`. Expected: only targets whose combined fields contain both terms remain; ordinary matches show `PART` or `NET`, and a nonsensical query such as `zzzz` shows “No definition, part, net, pin, or lane matches these terms.”
+4. Type `clock input`. Expected: a `PIN` row for the clock interface pin. Activate it: the owning definition opens, its bound net is selected and centered, and the status bar names the pin. Then search `count lane`; activate the `LANE` row and confirm the status bar names the lane and pins while the view frames its wires. A `PIN` row with no bound net opens the definition but cannot select a net.
+5. Type `q0_net`, press `↓` a few times and `↑`, then `Enter`. Expected: the owning definition opens, the target instance or net is selected, the canvas centers on it, the status bar names the target, and the palette closes. Repeat with a definition name and confirm it opens directly without changing the simulation.
+6. Open a net result from another definition, then use `←`/`→` hierarchy navigation. Expected: the normal definition trail records the search jump like any other navigation.
+7. Reopen the palette with `Ctrl+K` and double-click a row. Expected: it behaves like `Enter`; double-clicking outside the panel does not activate a hidden row.
+8. Before and after a search jump, check the simulation time and values. Expected: neither changes. Searching must not dirty the project. Switch to Dark and repeat steps 1–2: the panel, selected row, kind labels, and context text must remain legible.
 
-Notes:
-- The **Clock** command drives a low-to-high sequence when the clock net has no internal source. If the definition contains a waveform clock, it advances to the next transition of that source instead.
-- Navigating definitions clears the running engine. This is intentional: compiled indices are definition-specific.
+### Project settings
 
-## 3. Wiring, editing, and undo
+1. In **Inspect**, scroll to **SIMULATION SETTINGS**. Expected: default advance `10`, zero-delay guard `64`, trace capacity `500000`, and **Record net transitions** checked.
+2. Change default advance to `25` and click **Apply settings**. Expected: status reports the settings were applied, the project is marked modified, and **Trace** and **Waveform** are empty because the simulation was reset.
+3. Save and reopen the project. Expected: default advance is still `25`, and the Advance box starts at `25` for the reopened project. Click **Revert** after typing another value: the field returns to `25` without changing the project.
+4. Set default advance to `0` and click **Apply settings**. Expected: no change is committed; the status bar explains that whole numbers in range are required and names the advance range.
+5. Set trace capacity to `0`, apply, and click **Begin** then **Advance**. Expected: the Trace tab stays empty and the waveform shows no recorded transitions, because recording is disabled. Restore capacity to `500000`, apply, Begin, and Advance; transitions return.
+6. Change a setting, apply, then press `Ctrl+Z`. Expected: the previous settings return in both the project and the fields, as one undo step.
 
-1. Click **New** and confirm the starter project appears (Library, empty Main definition, standard definitions). This discards unsaved work without a prompt; verify only after saving anything important.
-2. In **Interface**, add input pins `A` and `B` and output pin `Y`, all on the `binary` domain.
-3. From the Library, click **AND gate**. Expected: a gate appears near the current canvas center and is selected; Inspect shows its table, delay, label, and position.
-4. Drag from the `A` port dot (right side of the left port pill) to the gate’s first input pin. Expected: a wire appears, and the status bar confirms the connection. Repeat for B to the second input, and the gate output to Y.
-5. Click **Begin**. Drive A=0, B=1, then advance 2 ticks. Expected Y=0. Drive A=1, B=1, advance 2 ticks. Expected Y=1.
-6. Select the gate and change its `Delay` to `0` via Inspect, press Enter/leave the field. Expected the wire value may settle without an extra tick; no project corruption.
-7. Press `Delete`. Expected the gate disappears and its wires are removed. Undo restores it.
-8. Drag the gate to a new position. Undo should restore its previous position in **one** undo step, not one per mouse movement.
-9. Try connecting a binary port to a ternary interface pin. Expected: a status-bar rejection naming the domain mismatch; the circuit is unchanged. This is an editor policy, not a kernel error.
+## 2. Themes
 
-Automatic routing: wires use orthogonal segments and a shared trunk for multi-pin nets. There is no bendpoint editing yet; the routing may look busy on dense circuits. That is a known limitation, not a wiring failure.
+1. Use the toolbar **Auto / Light / Dark** selector.
+2. Expected in Dark: window, toolbars, sidebars, inspectors, tabs, text fields, buttons, menus, canvas grid, component bodies, pin labels, wires, signal badges, waveform, and diagnostic rows all switch together. No light panels or dark-on-dark text should remain.
+3. Expected in Light: the original high-contrast light surfaces return.
+4. Select **Auto** and change the operating system appearance. Expected: the editor follows the system variant while Auto is selected (or after the next window activation, depending on the desktop).
+5. Restart the editor. Expected: the last manual choice is restored from the user application-data directory. The project itself does not store the theme.
+6. Hover a pin and a wire in both themes. Tooltips, selection halos, bendpoint handles, and rubber-band selection should remain legible.
+7. Check that wires are distinguishable without relying on color alone: junction dots appear only at real branches, crossings have visible gaps, and wire labels/selection halos supplement signal color.
 
-## 4. Custom domains and project round trip
+## 3. Wire routing, bendpoints, and readability
 
-1. In Inspect, under **SIGNAL DOMAINS**, enter name `five state` and values `lo mid hi X Z`, then click **Add domain**.
-2. Expected: the domain appears in the list, under the new pin domain picker, and in the net domain selector.
-3. Add an input pin using the new domain. Expected: the port and its net use `five-state`.
-4. Save As `manual-five-state.radix` outside the repository or in a scratch path.
-5. Close and relaunch the editor, then Open the file. Expected: the custom domain, value labels, pin, current root, and instance positions survive.
-6. Expected non-persistence: viewport pan/zoom, selected tab, selection, external drive history, and waveform history.
+1. Open the counter and zoom to ~100%. Expected: orthogonal wires avoid component bodies; crossings are gapped; junction dots appear where three or more endpoints share a net.
+2. Double-click a wire segment. Expected: a bendpoint handle appears near that point and the wire reroutes through it.
+3. Drag the handle. Expected: the wire follows orthogonally; the rest of the net stays connected. Undo restores the previous route.
+4. Alt+click a handle. Expected: that bendpoint is removed.
+5. Select a routed net and click **Reset wire route** in the net inspector. Expected: automatic routing resumes.
+6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, custom numeric formats, waveform pins, and the active definition/viewport survive (project format v6).
+7. In the net inspector, click the sky **WIRE COLOR** swatch, then the other colored swatches in turn. Expected: the wire changes color immediately, each selection is one undo step, and the **Wire color** field shows the matching hex value. Type `#38bdf8` directly, then `auto`: valid hex applies, invalid text is rejected with a status message, and `auto` (or the `A` swatch) returns to domain/signal coloring. Check both light and dark themes: the swatches and their borders must stay visible.
+8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
+9. In the toolbar, change **Wire labels** from `All` to `Named` and then `None`. Expected: `All` shows every net ID or label with its value, `Named` keeps only wires with an authored label, and `None` hides all wire labels at every zoom. Routing, selection, simulation values, and the project's dirty state do not change. Set `Named` and rename a net in the inspector; its label appears immediately. Close and reopen the editor: the mode persists in `workspace.json`, but a saved project still contains no label-visibility setting.
+10. Scroll to **NETS** in the Inspect tab. Expected: every net in the current definition appears with its domain, pin count, and a live value once the simulation has advanced. Type `q` in the filter. Expected: only matching nets remain and the summary reports the match count. Click `q0_net`. Expected: its wire is selected and the net inspector opens, without changing connectivity or simulation state. The inspector lists **CONNECTED PINS** with each part and pin name; click one and its part becomes selected. If the net is bound to the interface, **Ports** names the pin and direction.
+11. Open `examples/tiny-cpu.radix`, zoom to roughly 70%, and drag a large component such as the RAM or ROM. Expected: unchanged wires keep their paths and the drag stays responsive; on release, the moved component's connections have already rerouted into obstacle-free paths, unaffected wires stay put, and there is no long pause. Undo restores the position and the previous routes.
+12. Place a new part in empty space. Expected: existing wires keep their paths, because placement no longer reroutes the whole definition. Place several more without moving the pointer: expected each lands beside the existing bodies rather than on top of one, and no wire cuts through a body. Move a new part over the middle of an existing wire. Expected: that wire reroutes around the body and no segment cuts through it; unrelated wires stay put.
 
-## 5. Hierarchy and malformed projects
+### Canvas overview
 
-1. Open `examples/binary-counter.radix` with **Open**. Expected: no modal error, root counter loaded, definitions visible.
-2. Double-click the ripple-carry adder. Expected: internal full adders and wires render. Double-click a full adder; expected: half adders. Use the breadcrumb/definition list to return.
-3. Open a deliberately malformed file (for example, change `"version": 1` to `99` or remove `root`). Expected: Open fails with a status-bar error and the previously open project remains. The loader must not partially replace the editor state.
-4. Use **Validate** in the CLI on the same file for the full diagnostic text.
+1. Open `examples/tiny-cpu.radix` and fit the view. Expected: an **OVERVIEW** panel sits at the canvas's upper right, below the zoom controls, showing the part/port layout and a blue rectangle around the whole map because the fit view sees all content. It must not cover the bottom-right connection hint or the lower-left lane legend.
+2. Click near the lower-right area inside the overview. Expected: the canvas centers on that part of the circuit, the blue viewport rectangle moves to that area, and the status bar, selection, and simulation state do not change. No wire starts, no bendpoint is added, and no context menu opens.
+3. Drag across the overview. Expected: the viewport follows continuously until release; the pointer stays captured even if it leaves the panel. Resize or fit the canvas and confirm the map scales the circuit without distortion.
+4. Zoom in to about 100% and pan with middle-drag. Expected: the blue rectangle shrinks to the visible fraction of the circuit and follows the pan; the grey part/port map itself stays fixed. Double-click the canvas to fit again; the rectangle encloses the content once more.
+5. Shrink the window toward its minimum size while `tiny-cpu` has its seven lanes visible. Expected: the overview hides rather than overlapping the lane legend; widen the window and it returns. Scroll to hide or remove lanes and verify the map can return at the narrower width once there is room.
+6. Switch to Dark and repeat steps 1–3. Expected: the panel, plot, part/port blocks, and viewport marker remain legible against the dark canvas. The overview is a transient navigation aid: it is not saved in the project, and clicking it must not dirty the project.
 
-## 6. Window and interaction behavior
+## 4. Editing, selection, and clipboard
 
-- Resize the window down to the minimum size: the left rail scrolls, the canvas remains usable, and the right tab content scrolls.
-- Zoom with `Ctrl+wheel`; pan with middle-drag or Alt+drag. Expected cursor-focused zoom; wires and boxes stay aligned.
-- Click empty canvas: selection clears. Press `F`: view fits the circuit.
-- Hover a pin: a tooltip reports pin ID, declared/net domain, and value.
-- Press `Escape` while dragging a wire: the pending wire is cancelled.
-- Keyboard `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Delete`, and arrow-key nudging should operate without moving the mouse.
-- Click New with unsaved changes: expected current behavior is immediate discard. This is listed as a limitation, not a pass criterion.
+1. Click **New**. Expected: a Save/Discard/Cancel prompt appears because the previous project may have edits. Cancel and verify nothing changed.
+2. Add input pins `A` and `B`, output `Y`, and place an **AND gate**.
+3. Wire A and B to the gate inputs, and the output to Y. Begin, drive A=1, B=1, advance 2 ticks. Expected Y=1.
+4. Shift+click two components. Expected: both are selected; the inspector says “2 parts”. Drag one. Expected: the whole group moves in one undo step.
+5. Rubber-band drag across empty canvas. Expected: intersecting parts are selected; Shift adds to the existing selection.
+6. Press `Ctrl+C`, then `Ctrl+V`. Expected: copies appear offset from the originals and remain selected. Press `Ctrl+D`; expected: another duplicate without changing the clipboard.
+7. Delete the duplicates, then undo once. Expected: the whole paste/duplicate returns in one step.
+8. Copy two connected parts (with an internal wire), paste, and verify the pasted pair has its own internal net rather than sharing the original net. Wires to outside pins are intentionally not copied.
+9. Right-click empty canvas, a component, and a wire. Expected: relevant actions (Paste/Select all/Fit, Copy/Duplicate/Open definition/Delete, Add bendpoint/Reset route/Delete wire) and no focus theft.
+10. Type `ternary` in **search parts**. Expected: the Library filters and matching Definitions also filter. Clear the search to restore both lists.
+11. Use arrow keys to nudge a selected part; Shift+arrow moves in 10-unit steps. Press `F` to fit.
+12. Begin and advance to a nonzero time. Drag or nudge a part, change a wire color, and add/remove a bendpoint. Expected: the circuit redraws but simulated time, values, and drives remain; no Begin is needed. On a large example such as `examples/tiny-cpu.radix`, nudge a part with the arrow keys and verify that only wires attached to it visibly reroute while unrelated wires stay put. Add or delete a part: expected the simulation is invalidated and must be begun again.
+13. Select three parts at different positions. Expected: **ARRANGE SELECTION** appears under the Definitions list with four buttons; with exactly two parts only the two Align buttons are enabled. Click **Align left**: the parts share the leftmost X, the selection stays intact, and the status line reports the count. `Ctrl+Z` restores the previous positions in one step while keeping the running simulation.
+14. With the same three parts at uneven X positions, click **Space ↔**. Expected: the outermost parts do not move and the middle part sits exactly halfway between their left edges; **Space ↕** behaves the same for Y. Re-running the command does not move anything.
+15. With the simulation running, click **Auto arrange** under the Definitions list. Expected: parts are placed in left-to-right wiring layers with no overlapping bodies; sequential feedback such as the counter stays grouped in contiguous blocks instead of being split arbitrarily, and two crossing chains such as an A/B source pair feeding inverted sink pairs are reordered so the wires cross as little as the layering allows. The status line reports the part and column count, the view fits, `Ctrl+Z` restores the previous positions in one step, and simulated time and values are unchanged. Click it again without editing: expected "already arranged" and no undo entry.
+16. Select a lookup primitive (for example the AND gate from step 2). Expected: a **LOOKUP TABLE** panel appears below the fields with four rows whose addresses read `0 · 0,0`, `1 · 0,1`, `2 · 1,0`, and `3 · 1,1`, and whose values read `0 0 0 1`. The first input is outermost.
+17. Change the last entry to `0` and press Enter. Expected: the status line confirms the update, `Ctrl+Z` restores the original table in one step, and the running simulation is invalidated because behavior changed. Begin, drive A=1 B=1, and advance: expected Y=0; undo and restart to get Y=1 again.
+18. Enter `2` in a cell and commit. Expected: the status line reports that the entry must be between 0 and 1; the model and summary keep the old value. Enter `-1`: expected a non-negative-integer message. Correct the cell and commit successfully.
+19. Select a net. Expected: the lookup panel disappears. Select the lookup again, edit its `Table (raw)` or `Delay` field, and commit; expected: the grid rebuilds from the new parameters.
 
-## 7. Known limitations to verify as *limitations*
+## 5. Extract a reusable component
+
+1. New project. Add input `A`, output `Y`, and two **NOT gate** parts.
+2. Wire `A → NOT1.in0`, `NOT1.out → NOT2.in0`, `NOT2.out → Y`.
+3. Select both NOT gates. In **Reusable part**, enter `Double inverter`, click **Extract selection**.
+4. Expected:
+   - the two gates disappear from the root and are replaced by one `Double inverter` instance;
+   - the A and Y port wires now terminate on that instance;
+   - Definitions shows a new `custom.double-inverter` part with 2 pins;
+   - the new definition contains both gates and one internal net;
+   - undo restores the two gates in one step.
+5. Begin, drive A=1, advance 20. Expected Y=1 (double inversion).
+6. Double-click the new instance. Expected: its internal schematic opens with `A`/`Y` port pills; edit a gate position and return to the parent. The instance and simulation wiring remain valid.
+7. Try extracting one of two gates whose outputs are wired together. Expected: extraction is refused with a message about drivers on both sides; the project is unchanged.
+
+## 6. Promote nets and interface organization
+
+1. In a definition, place two NOT gates and wire the first output to the second input.
+2. Select that connecting wire. In **Expose as interface pin**, leave the name blank or enter `MID`, then click **Output**.
+3. Expected: `MID` appears in Interface/I/O PINS, a port pill becomes draggable on the canvas, and the net is bound to it. The promote buttons then disable because the net is already bound.
+4. Undo. Expected: pin, binding, and generated net label are removed together.
+5. In the Interface list, edit a pin's name and press Enter. Expected: the name updates, its bound net label follows when the net was using the old name, and one undo restores both.
+6. Click `⇄` on a pin. Expected: its direction flips in the Interface list, I/O PINS, and any instance of this definition. Change its domain with the picker. Expected: the pin's port net adopts the same domain and an incompatible existing connection is reported in Diagnostics rather than silently rewritten.
+7. Move a pin with `↑`/`↓`. Expected: it changes position in the Interface list and on every instance; its bound net and lane pin lists are unchanged, `↑` is disabled on the first pin and `↓` on the last, and one undo restores the previous order. Add a numeric lane afterward and verify the default pin order follows the new declaration order.
+8. Remove a pin, then undo. Expected: the pin, binding, generated net, and its wire all return in one step. If the definition has instances elsewhere, their nets lose references to that pin (and empty unbound nets disappear); the status bar reports how many dangling connections were pruned, and undo restores everything.
+
+## 7. Numeric lanes
+
+1. Open `examples/binary-counter.radix`. In **NUMERIC LANES**, expected: `Count · Unsigned binary` with pins `Q0 · Q1 · Q2 · Q3`.
+2. Begin, then advance 100 ticks. Expected: the lane value tracks the four Q outputs as an unsigned binary number (`5` at t=100), and the value changes when you advance again. A fixed **NUMERIC LANES** legend at the lower-left of the canvas mirrors the value; it stays readable while zooming and panning.
+3. Expected: the output-only `Count` lane has no drive box. Attempting to drive it through code reports that every pin must be an input.
+4. Delete the lane, then undo. Expected: it returns, one undo step.
+5. Add a lane: select `Unsigned binary`, tick `Q0`..`Q3` in a different order check sequence, enter a name, click **Add numeric lane**. Expected: the lane uses declaration order (Q0 first, least significant) regardless of tick order, and the card explains the grouping. Move a pin with `↑`/`↓` before adding another lane to verify the new default order; existing lanes keep the order saved with them.
+6. Edit a lane: click **Edit** on a lane card. Expected: the form shows that lane's name, format, and ticked pins, the button changes to **Update numeric lane**, and **Cancel lane edit** appears. Change the name, choose another format, untick one pin, and click **Update numeric lane**. Expected: the same card updates in place, keeps its lane, and all three changes land as one undo step. Undo restores the name, format, and pin set together. Repeat, change fields, then click **Cancel lane edit**. Expected: the lane and project are unchanged, the form returns to add mode, and the button reads **Add numeric lane**. Before saving an edit, clear every pin and click **Update numeric lane**. Expected: refused with a message, and the form stays in edit mode so the draft is not lost. Remove the lane while editing it. Expected: the lane disappears and the form exits edit mode.
+7. Add a lane with mixed domains (one binary and one ternary pin). Expected: refused with a message that a lane groups one domain; no lane is created.
+8. Open `examples/accumulator-cpu.radix`. Begin, type `9` in the **Data** lane box, and press Enter. Expected: `D0`/`D3` become 1 and `D1`/`D2` become 0 (9 = 1001 binary, first pin least significant), and the lane reads `9`. Click **Drive** instead of pressing Enter and verify the same result.
+9. Type `2` in **Opcode** and drive it. Expected: `OP1=1`, `OP0=0`. Advance the clock; expected: the accumulator result lane updates according to the documented opcode.
+10. Type `16` for the 4-bit Data lane and drive it. Expected: refused as outside the 0..15 range; no input pin changes; the previous value stays visible. Type a non-integer and verify a clear status message.
+11. Change a lane pin's domain in the Interface picker, then inspect Diagnostics. Expected: a warning explains that the format's nominal domain differs; the lane still decodes signal indices if the values are valid.
+12. Remove a pin used by a lane. Expected: the pin disappears from the lane. If it was the last pin, the lane is removed. Undo restores both.
+13. Save, reopen, and export/import the definition as a `.radixlib`. Expected: lane name, format, pin order, and decoded behavior survive.
+14. Open `examples/8-bit-alu.radix`. Expected: `A`, `B`, and `Y` unsigned-binary lanes, `CARRY` and `ZERO` flags, and lanes decode eight bits with the first pin least significant. Begin, drive `A = 200` and `B = 100`, set `OP1 = 0` and `OP0 = 0`, then settle. Expected: `Y = 44`, `CARRY = 1`, `ZERO = 0` (200 + 100 wraps past 8 bits). Set `OP0 = 1` and settle: expected `Y = 64` (200 AND 100), `CARRY = 0`. Set `OP0 = 0` and `OP1 = 1` and settle: expected `Y = 236` (200 OR 100). Set both op inputs to 1 and settle: expected `Y = 172` (200 XOR 100). Double-click the ALU instance and verify the eight-bit adder, per-bit gates, and mux tree are ordinary definitions.
+15. Expected non-behavior: lanes never merge nets, add wires, affect drivers, or prevent simulation. A lane referencing a missing or unknown format shows `invalid` with a tooltip and a Diagnostics error instead of throwing. Typing a lane value is not undoable; like other external drives, it belongs to the simulation session, and **Clear inputs** resets it.
+
+## 8. Custom numeric formats
+
+1. Open `examples/accumulator-cpu.radix`. Expected: the **CUSTOM NUMERIC FORMATS** list contains `Signed 4-bit` (binary, radix 2, digits 0/1, radix complement), the **Result** lane uses it instead of an unsigned format, and the canvas legend labels that lane `Signed 4-bit`.
+2. Begin, drive **Data** with `15` and **Opcode** with `1` (load), then advance the clock. Expected: Result reads `-1` (two's-complement interpretation of `1111`), while Q0..Q3 are all 1. Then drive **Data** with `1`, **Opcode** with `2` (add), and advance. Expected: Result reads `0` and CARRY is 1 (4-bit wrap), with Q0..Q3 all 0.
+3. In a new project, create four binary input pins and a `Custom unsigned` format: domain `Binary`, digits `0 1`, radix `2`, mode **Standard positional**, LSB first. Expected: it appears in the custom-format list and in the lane format picker.
+4. Add a lane over the four input pins using `Custom unsigned`, begin, and drive `9`. Expected: pins encode 1001 and the lane reads `9`.
+5. Attempt to remove `Custom unsigned` while the lane uses it. Expected: refused with the number of dependent lanes; the format remains. Remove the lane, remove the format, then undo. Expected: the format returns in one step; undo again restores the lane.
+6. Enter invalid format data: duplicate digits (`0 0 1`), radix `1`, or a sign index outside the digit list. Expected: a clear status message, no format added, project unchanged.
+7. Save, reopen, and export/import the part as a `.radixlib`. Expected: used custom formats travel with the library. If the target has a different custom format with the same ID, the imported format is renamed and the lane still resolves; the local format is not overwritten.
+8. Expected non-behavior: custom formats are not signal domains. Removing an unused format never changes net values, compilation, or simulation results.
+9. Click **Edit** on `Custom unsigned`, change its name and digits, and click **Update numeric format**. Expected: the form enters edit mode, the preview line decodes the lane's live value, the format keeps its ID, the lane still resolves, and one undo restores the previous format. Repeat, change fields, then click **Cancel edit**. Expected: the project is unchanged and the form returns to add mode.
+
+## 9. Library export and import
+
+1. Create the `Double inverter` part from section 5. Click **Export part…**.
+2. Save `double-inverter.radixlib` in a scratch directory.
+3. New project, then **Import library…** and choose that file.
+4. Expected:
+   - the imported definition appears under Definitions and opens automatically;
+   - standard definitions referenced by the library are reused, not duplicated;
+   - the project becomes dirty and one undo restores the pre-import state.
+5. Import the same library again. Expected: no additional definition appears.
+6. Create a different local definition with the same ID but different internals, then import. Expected: the existing definition is not overwritten; the imported one gets a renamed ID such as `custom.name2`, and the status message reports the import.
+7. Attempt to import a library whose domain ID exists locally with different values or driver policy. Expected: import is refused with a domain message and the project is completely unchanged.
+8. Export a definition that instantiates other definitions. Expected: the `.radixlib` contains the dependency closure and imports successfully into a project that does not have those dependencies.
+
+### Generated parts
+
+**In-editor check.** In a new project, find **GENERATE PART** under the Library panel. Choose `Register`, enter width `12`, and click **Generate into project**. Expected: `gen.reg-12` opens, the inspector lists 12-bit **Data** and **Q** lanes, the status line reports the generated root, and the library is ordinary editable definitions. One undo restores the previous project and active definition. Choose `RAM`, width `6`, words `8`, and generate. Expected: `gen.ram-8x6` opens with **Address**, **Data**, and **Read** lanes and a generated word-register dependency. `Mux` and `Comparator` are also offered and generate whole-word parts with **A**/**B** and **Y** or **EQ**/**LT**/**GT**. Choose `ROM`, width `4`, words `4`, contents `3, 0xC`, and generate. Expected: `gen.rom-4x4` opens with **Address** and **Data** lanes, four lookup tables, and no flip-flops; addresses 0 and 1 read 3 and 12, addresses 2 and 3 read 0. Clear the contents and generate another ROM; expected: every word reads 0. Enter `1 2 3 4 5` or `zz` in contents; expected: the button disables and no definitions are added. Set width `0` or words `6`; expected: the button disables.
+
+1. In a terminal, run `dotnet run --project src/Radix.Cli -- generate register --width 16 --out scratch/reg-16.radixlib`. Expected: the command reports `gen.reg-16`, a small definition count containing only the root and its standard-library dependencies, and writes the file. `--out` without an extension appends `.radixlib`.
+2. Run `dotnet run --project src/Radix.Cli -- validate scratch/reg-16.radixlib`. Expected: `OK`, with a compiled component count and no errors.
+3. Import `reg-16.radixlib` into a new project. Expected: `gen.reg-16` opens with 16 **D** pins, 16 **Q** pins, **LOAD**, **CLR**, and **CLK**; the inspector lists 16-bit **Data** and **Q** lanes over `unsigned-binary`; `std.dff` and `std.mux2` are reused rather than duplicated.
+4. Click **Begin**, drive `CLK = 0`, set `D` to `0x1234`, `LOAD = 1`, `CLR = 0`, and pulse `CLK`. Expected: **Q** reads `0x1234` in the lane. Set `LOAD = 0`, change `D`, pulse again, and expect Q to hold. Set `LOAD = CLR = 1`, pulse, and expect Q = 0 (CLR wins).
+5. Run `generate adder --width 32 --out scratch/adder-32.radixlib`, import it, drive `A = 0xFFFFFFFF`, `B = 1`, `CIN = 0`, and settle. Expected: **A**, **B**, and **SUM** lanes; SUM reads `0` and `COUT` is 1 after the carry chain has settled.
+6. Run `generate alu --width 16 --out scratch/alu-16.radixlib`, import it, and drive `OP1:OP0 = 00`, `A = 0xFFFF`, `B = 1`, and settle. Expected: **A**, **B**, and **Y** lanes, Y = 0, CARRY = 1, ZERO = 1. Set `OP0 = 1`, `OP1 = 0` (AND) and settle. Expected: Y = 1, CARRY = 0. Set `OP1 = 1` (XOR) with equal operands and expect ZERO = 1.
+7. Run `generate counter --width 8 --out scratch/counter-8.radixlib`, import it, and drive `CLK = 0`, `CLR = 0`, `LOAD = 0`, `EN = 0`, settle. Expected: **Data** and **Count** lanes, Count = 0. Set `EN = 1` and pulse `CLK` twice; Count becomes 2. Set `LOAD = 1`, `EN = 0`, `D = 0xFE`, pulse; Count = 254. Set `LOAD = 1`, `EN = 1`, settle; CARRY stays 0 because LOAD takes priority. Set `LOAD = 0`, `EN = 1`, settle; CARRY = 1. Pulse; Count wraps to 0 and CARRY clears. Set `CLR = LOAD = EN = 1`, pulse; Count stays 0 because CLR wins.
+8. Run `generate mux --width 12 --out scratch/mux-12.radixlib`, import it, drive `A = 0x123`, `B = 0xABC`, `S = 0`; settle and expect Y = `0x123`. Set `S = 1`; expect Y = `0xABC`. Run `generate comparator --width 8 --out scratch/cmp-8.radixlib`, import it, drive `A = 0x20`, `B = 0x21`; settle and expect LT = 1, EQ = GT = 0. Swap A and B; expect GT = 1. Set both to `0x7F`; expect EQ = 1. Reset the inputs and check no warnings.
+9. Run `generate ram --words 16 --width 8 --out scratch/ram-16x8.radixlib`, import it, write `0xA5` to address 3, then read addresses 0..15. Expected: **Address**, **Data**, and **Read** lanes; only address 3 returns `0xA5`, and the other words remain 0. Set `WE = 0`, change `Data`, and pulse `CLK`; the word must hold.
+10. Create `scratch/program.hex` with `05`, `03`, `# comment`, and `0x0F` on separate lines. Run `generate rom --words 4 --width 8 --contents scratch/program.hex --out scratch/rom-4x8.radixlib`, import it, and drive addresses 0 through 3. Expected: **Address** and **Data** lanes and no sequential state; the reads are 0x05, 0x03, 0x00, and 0x0F. Generate a 4×8 ROM without `--contents` and expect every address to read 0. Try `--words 3`, `--width 65`, or a 512-word ROM; each is refused.
+11. Run the same `generate` command again with an existing output path and no `--force`. Expected: exit code 2 and no file change. Add `--force`; expected: it overwrites. Try `--width 0`, `--words 6`, and a 128×64 RAM; each is refused with the documented range.
+
+## 10. Domains and project round trip
+
+1. In Inspect, under **SIGNAL DOMAINS**, enter `five state` and values `lo mid hi X Z`, leave **Single driver** selected, and click **Add domain**.
+2. Expected: the domain appears in the list with its values and `single driver` policy, in the pin domain picker, and in the net domain selector.
+3. Create a priority domain: name `wired`, values `0 1 X Z`, policy **Priority table**, priorities `1 1 3 0`, conflict index `2`; click **Add domain**. Expected: the list summary reads `0 1 X Z · priority [0:1, 1:1, 2:3, 3:0] (ties resolve to 2)`, and the new domain appears in both pickers. With two constants on one net of this domain, compile/run Diagnostics should show no single-driver warning; if equal-priority drivers disagree, the net settles to `X` and a conflict warning names the net.
+4. Validation: set policy **Priority table** and try priorities `1 1 3` (wrong count), `1 1 3 nope`, and conflict index `4`. Expected: each is refused with a specific message, no domain is added, and the form keeps the entered draft.
+5. Add an input pin and choose `five state` as its domain. Expected: the port and its net use `five-state`.
+6. Save As in a scratch path. Close and relaunch, then Open. Expected: domain values and driver policy, pin, current root, instance positions, wire colors, numeric lanes, bendpoints, active definition, viewport zoom, and pan survive.
+7. Open a child definition, zoom to a distinctive level, and pan away from center. Save, close, and reopen. Expected: the same definition is active and the canvas returns to the same scale and offset instead of fitting to content.
+8. Pan and zoom without changing the circuit. Expected: the title does not gain an unsaved-changes marker.
+9. Change an existing domain's policy: click **Policy** on the row for `wired`. Expected: the form loads the domain's name, values, policy, priorities, and conflict index; name and values fields are disabled; the button reads **Update domain policy**; **Cancel policy edit** appears; a hint explains that labels and count stay fixed.
+10. Set priorities `1 2 3 0` and click **Update domain policy**. Expected: the edit ends and the form returns to add mode, the list summary shows `priority [0:1, 1:2, 2:3, 3:0]`, no new domain ID appears, pin/net domain pickers still show the same entry, and undo restores the previous table.
+11. Click **Policy** again and enter a wrong priority count (`1 1 3`) with **Update domain policy**. Expected: the update is refused with a specific message, the edit stays active, and the stored policy is unchanged. **Cancel policy edit** returns to the add-domain form without changing the domain.
+12. Expected non-persistence: selection, external drive history, and waveform history.
+
+## 11. Hierarchy and malformed projects
+
+1. Open `examples/binary-counter.radix`. Expected: root counter loads without a modal error.
+2. Double-click the ripple-carry adder, then a full adder, then a half adder. Expected: nested internals render and the definition header identifies the current simulation root.
+3. Click `←` in the canvas top-right control cluster twice. Expected: the full adder and then the ripple-carry adder reopen in reverse order, `→` becomes enabled, and `←` disables at the root. Click `→` once and verify it returns to the full adder. Open a different definition after backing up: `→` disables, so the forward trail was dropped. The simulation root and its reset behavior follow each switch exactly as a double-click navigation does.
+4. Navigate into a part that is instantiated more than once, such as a full adder inside the ripple-carry adder. Expected: the inspector's **USED BY** list names the parent and its instance IDs, and the parent's Definitions entry shows `used ×2`. Click the usage row. Expected: the parent opens and both matching instances are selected together. A part that nothing uses has no **USED BY** section.
+5. Return to the root and verify simulation resets for the new root.
+6. Open a deliberately malformed file (change `"version": 6` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
+7. Trigger a located diagnostic (for example, drive one single-driver net from two outputs, or reopen a project whose Diagnostics lists a located error), switch to **Diagnostics**, and click **Locate** on the message. Expected: the status bar names the code, the owning definition opens when needed, the named instance or net is selected, and the canvas centers on it without changing the circuit. A project-wide message has no **Locate** button.
+8. Save a project and inspect the JSON. Expected: `"version": 6`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
+9. Load a version 1, 2, 3, 4, or 5 project. Expected: it opens normally, missing metadata (including waveform pins) is empty, and the next save writes version 6.
+10. Duplicate a definition: select a part and click `⧉` in the Definitions list. Expected: a new entry appears directly below with an ID ending `-copy` and a name ending ` copy`; it opens automatically with the same pins, instances, nets, lane, and layout. Edit the copy's wiring or move a part; the original and every existing instance of it must stay unchanged.
+11. Duplicate the copy. Expected: the ID counts up (`part-copy2`, not `part-copy-copy`) and the name counts up (`… copy 2`). Undo once to remove only the second copy, and again to remove the first; the original remains throughout.
+
+## 12. Unsaved changes and window behavior
+
+1. Modify a project (move a part). Click **New**, **Open…**, and close the window.
+2. Expected each time: a themed Save/Discard/Cancel dialog.
+   - Cancel leaves the project and window untouched.
+   - Discard proceeds without writing.
+   - Save writes to the current path, or opens Save As if untitled; cancelling Save As aborts the New/Open/close action.
+3. Confirm `Ctrl+N`, `Ctrl+O`, and the window close button use the same prompt.
+4. Resize to minimum size: left rail and inspector scroll, canvas remains usable.
+5. Zoom/pan, clear selection on empty click, press Escape during a pending wire, and hover pins for tooltips.
+6. `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`, `Ctrl+C/V/D/A`, `Delete`, arrow nudging, and `Ctrl+S/Shift+S` should work without moving the mouse. Shortcuts must not hijack typing in a TextBox.
+7. Resize to about 1200×800, select the **Waveform** tab, and close the app. Relaunch. Expected: the window reopens at the same size with **Waveform** active. Maximize, close, and relaunch; expected: maximized again. Restore the window; expected: it returns to the last normal size.
+8. Preferences live outside projects: `%APPDATA%\Radix\workspace.json` on Windows or `~/.config/Radix/workspace.json` on Linux; the theme remains in `theme.txt` beside it. Delete `workspace.json` and relaunch. Expected: the default 1480×920 window on the **Inspect** tab.
+9. Resize the window or switch tabs, then save a project. Expected: the project JSON and its `view` metadata are unchanged by these preferences, and reopening the project does not alter the window layout.
+10. Open two different projects with **Open…**, then check **Recent ▾**. Expected: both appear newest first; choosing one opens it, and an unsaved project prompts Save/Discard/Cancel first.
+11. Close and relaunch the editor. Expected: **Recent ▾** still lists both projects. Delete one of the files outside the editor, relaunch again, and reopen the menu: the deleted entry is gone and the other remains.
+12. Launch with a path, for example `dotnet run --project src/Radix.Editor -- examples/tiny-cpu.radix`. Expected: the tiny CPU opens instead of the counter demo, its saved viewport is restored, and it appears in **Recent ▾**. Launching with a missing path opens the counter demo.
+
+## 13. Scripted CLI tests
+
+These steps use a terminal only; they never open a window. Run from the repository root.
+
+1. Run `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix examples/tests/dff-captures.radixtest`. Expected: `PASS: 4 step(s) through t=50`, exit code 0. The capture is asserted with `"within": { "ticks": 10, ... }`, so the script waits for the transport delay instead of pinning one tick; the rising edge also has `"setup": { "ticks": 5, ... }`, which checks CLK=0 and D=1 at ticks 15 through 19 before the drive; the held low phase is asserted with `"stable": { "ticks": 10, ... }`, which checks every tick from 40 through 50. Relation entries also require `q != qn` and `q == net:ff/q_net`, so they pass without naming either value.
+2. Run `dotnet run --project src/Radix.Cli -- test examples/accumulator-cpu.radix examples/tests/accumulator.radixtest`. Expected: PASS; the signed `Result` lane is `-1` after LOAD 15 and `0` after adding 1, with `CARRY=1`.
+3. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-adder-2.radix examples/tests/balanced-ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0. The step expectations cover sums 8, −8, 0, 2, and 1 through the three-trit `A + B` lane.
+4. Run `dotnet run --project src/Radix.Cli -- simulate examples/balanced-ternary-adder-2.radix --set a0=2 --set a1=2 --set b0=2 --set b1=2 --ticks 30 --bus s0,s1,cout --format balanced-ternary`. Expected: the decoded bus prints `8`.
+5. Run `dotnet run --project src/Radix.Cli -- inspect examples/balanced-ternary-adder-2.radix`. Expected: `std.bt-full-adder` and `std.bt-adder-2` appear as definitions, and the project root is `demo.bt-adder-2`.
+6. Run `dotnet run --project src/Radix.Cli -- test examples/tiny-cpu.radix examples/tests/tiny-cpu.radixtest`. Expected: `PASS: 37 step(s) through t=1180`, exit code 0.
+7. Copy the DFF script to a scratch file and change its window to `"ticks": 0` while keeping `"q": 1`. Expected: `FAIL`, one line naming `step 3 (t=20)` with `no tick up to t=20 satisfied the window` and the last observed `q`; exit code 1. This shows a window is a settle-time bound, not an immediate guarantee.
+8. Change a script field name (for example `expect` to `expected`). Expected: `test script error`, exit code 2, and no partial run output beyond the error.
+9. Confirm the project files are untouched by any passing or failing script. Expected: no writes; scripts only drive external inputs in memory.
+10. Run `RADIX_LAYOUT_BENCH=1 dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --filter FullyQualifiedName~LayoutBenchmarkTests --logger "console;verbosity=detailed"`. Expected: one passing test and one line per size (`200`, `500`, `1,000` gates) in the form `1000 gates: construct … ms, canonical frames … ms, reused frames … ms, final rebuild … ms, 10 canonical placements … ms, 10 incremental placements … ms`. Reused frames and incremental placements must be far below their canonical comparisons; exact milliseconds depend on the machine. With the variable unset, the test passes without printing.
+11. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-counter.radix examples/tests/ternary-counter.radixtest`. Expected: `PASS: 28 step(s) through t=700`, exit code 0; the script walks all nine counts, checks the wrap to 0, and requires exactly one CLK, T0, and T1 change on the wrap edge.
+12. Run `dotnet run --project src/Radix.Cli -- simulate examples/ternary-counter.radix --ticks 100 --schedule 0:clk=0 --schedule 20:clk=2 --schedule 60:clk=0 --bus t0,t1 --format unsigned-ternary`. Expected: the decoded bus prints `1`; the two flip-flops sample the increment only on the 0→2 clock edge.
+13. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-adder-2.radix examples/tests/ternary-adder-2.radixtest`. Expected: `PASS: 10 step(s) through t=140`, exit code 0, covering sums 16, 9, 8, and 0.
+14. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-accumulator.radix examples/tests/ternary-accumulator.radixtest`. Expected: `PASS: 17 step(s) through t=410`, exit code 0; the `Result` lane goes 5 → 8 → 3 (wrap) → 3 (hold) → 8.
+15. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-machine.radix examples/tests/ternary-machine.radixtest`. Expected: `PASS: 32 step(s) through t=2260`, exit code 0; PC walks 0..8, ACC follows 1, 3, 5, 5, 2, 4, 5, 5, 5, then restarts with 1.
+16. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-branch-machine.radix examples/tests/ternary-branch-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; MEM1 becomes 4, a BZ falls through, a later BZ jumps to PC 8, LOADM reads 4 back into ACC, and PC wraps to 0.
+17. Run `dotnet run --project src/Radix.Cli -- test examples/balanced-ternary-accumulator.radix examples/tests/balanced-ternary-accumulator.radixtest`. Expected: `PASS: 21 step(s) through t=1220`, exit code 0; the `Result` lane goes 0 → 4 → 4 (hold) → −1 (wrap) → 1 → 1.
+18. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-call-machine.radix examples/tests/ternary-call-machine.radixtest`. Expected: `PASS: 28 step(s) through t=2040`, exit code 0; SP walks 0 → 1 → 2 → 1 → 0 and both RETs return to the instruction after their CALL.
+19. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-memory.radix examples/tests/ternary-memory.radixtest`. Expected: `PASS: 10 step(s) through t=680`, exit code 0; word 5 holds 8, word 0 holds 3, and WE=1 leaves word 5 intact while D changes.
+20. Run `dotnet run --project src/Radix.Cli -- test examples/ternary-stack-machine.radix examples/tests/ternary-stack-machine.radixtest`. Expected: `PASS: 30 step(s) through t=3480`, exit code 0; TOS goes 0 → 2 → 3 → 2 → 5 → 5 → 5 → 5 → 0, SP returns to 0, and OUT becomes 5.
+21. Run `dotnet run --project src/Radix.Cli -- test examples/four-state-bus.radix examples/tests/four-state-bus.radixtest`. Expected: `PASS: 14 step(s) through t=122`, exit code 0, plus one `WARNING RAD101` for the bus net on the first run; the warning does not fail the script.
+22. Copy the DFF script to a scratch file and change its final `stable` expectation to `"q": 0`. Expected: `FAIL`, one line naming `step 4 (t=40)` with `stable assertion failed at t=40` and `pin 'q': expected 0 (0), got 1 (1)`; exit code 1. This shows a stability window checks its starting tick and every tick through its deadline, not only the end.
+23. Copy the ternary counter script to a scratch file and change `"t0": 1` in its `transitions` block to `"t0": 0`. Expected: `FAIL`, one line naming `step 27 (t=700)` with `pin 't0': expected 0 transition(s) between t=670 and t=700, observed 1`; exit code 1. This shows transition counts cover the whole interval, including the drive at its start.
+24. Run `dotnet run --project src/Radix.Cli -- test examples/8-bit-alu.radix examples/tests/eight-bit-alu.radixtest`. Expected: `PASS: 5 step(s) through t=329`, exit code 0; the script checks ADD with carry (200 + 100 = 44), AND (64), OR (236), XOR (172), and the zero flag when both operands are 0.
+25. Copy `examples/tests/ternary-counter.radixtest` to a scratch file and change the `"clk"` filter in the `edges` block from `"count": 1` to `"count": 0`. Expected: `FAIL`, one line at `step 9 (t=220)` reading `pin 'clk': expected 0 edge(s) 0 (0) -> 2 (2) between t=190 and t=220, observed 1.`; exit code 1. Restore the file and rerun for a pass. This shows filters count only the named direction.
+26. Copy the script again and change the `t0` item in the `sequence` block from `"from": 0` to `"from": 2`, leaving `"to": 1`. Expected: `FAIL`, one line at `step 12 (t=300)` reading `sequence item 2 (pin 't0': 2 (2) -> 1 (1)) was not observed in order between t=270 and t=300.`; exit code 1. Restore and rerun. This shows a sequence requires each filtered edge, not only the first one.
+27. Run `dotnet run --project src/Radix.Cli -- sweep examples/full-adder.radix`. Expected: exit code 0, `rows: 8 (settle 10 tick(s))`, and a table with inputs `a b cin` and outputs `s cout`; the last row is `1 1 1 -> 1 1` and every row has a driven value (no `-`). Add `--ticks 0` and verify the outputs become `-` for this delay-built example, showing that settle time is explicit.
+28. Run `dotnet run --project src/Radix.Cli -- sweep examples/full-adder.radix --max-rows 4`. Expected: stderr `sweep error: Sweep needs at least 8 rows, above the limit of 4. Reduce the input set or raise --max-rows.` and exit code 1. Run with `--definition missing`; expected `unknown definition 'missing'.` and exit code 2.
+29. Run `dotnet run --project src/Radix.Cli -- validate examples/tiny-cpu.radix --all`. Expected: exit code 0 and `OK: 46 definitions compile as roots.` Plain `validate` only compiles the project root, so a deliberately broken but unused part is caught by `--all` and not by the default run; the all-definition path reports each diagnostic once.
+30. Copy `examples/tests/dff-captures.radixtest` to a scratch file and change the setup expectation at t=20 from `"d": 1` to `"d": 0`. Expected: `FAIL`, one line at `step 3 (t=15)` reading `setup assertion failed at t=15: pin 'd': expected 0 (0), got 1 (1).`; exit code 1. This shows a setup window checks every pre-edge tick, not only the last one.
+31. Run `dotnet run --project src/Radix.Cli -- test examples/binary-counter.radix examples/tests/counter-counts.radixtest`. Expected: `PASS: 3 step(s) through t=320`, exit code 0. At t=100 the script checks the nested ripple-adder carry nets `adder/c1 = 1` and `adder/c2 = 0` through `expectNet`, and at t=320 both are 0. This shows an assertion can target authored wiring below the instance boundary without widening the counter's interface.
+32. Copy the counter script to a scratch file and change the t=100 `"adder/c1"` expectation from `1` to `0`. Expected: `FAIL`, one line at `step 2 (t=100)` reading `net 'adder/c1': expected 0 (0), got 1 (1).`; exit code 1. Change the key to `"adder/nope"` instead and rerun: expected one line at `step 2 (t=100)` reading `unknown internal net 'adder/nope'. Authored nets available: ...`, exit code 1. Restore the shipped script afterward.
+33. Copy the counter script again and add `"transitions": { "ticks": 20, "expectNet": { "adder/c1": 1 } }` to the t=100 step. Expected: `PASS`, because the carry makes exactly one transition on the next counter edge. Change that count to `0` and rerun: expected `FAIL`, one line at `step 2 (t=120)` reading `net 'adder/c1': expected 0 transition(s) between t=100 and t=120, observed 1.`; exit code 1. This shows transition, filtered-edge, and sequence windows accept the same hierarchy-relative net references as `expectNet`.
+34. Copy `examples/tests/dff-captures.radixtest` to a scratch file and change the t=10 relation from `"op": "ne"` to `"op": "eq"`. Expected: `FAIL`, one line at `step 2 (t=10)` reading `relation 1 (eq): left pin 'q' is 0 (0), right pin 'qn' is 1 (1); the relation does not hold.`; exit code 1. This shows a relation compares the two resolved values without requiring a value assertion for either one.
+35. Change the same scratch relation to `{ "left": "net:ff/q_net", "right": "q", "op": "eq" }`. Expected: `PASS`, because the authored net and the interface pin resolve to the same compiled net value. Change `"left"` to `"missing"` instead: expected `FAIL` naming `relation 1 (eq)` and `unknown interface pin 'missing'`; exit code 1. Restore the shipped script afterward.
+36. Run `mkdir .tmp-suite && cp examples/tests/dff-captures.radixtest .tmp-suite/a.radixtest && cp examples/tests/dff-captures.radixtest .tmp-suite/b.radixtest`, then `dotnet run --project src/Radix.Cli -- test examples/dff-demo.radix .tmp-suite`. Expected: `scripts: 2`, two numbered blocks with `PASS` lines, and final `PASS: 2 script(s), 8 step(s), 164 events.`; exit code 0. Delete `.tmp-suite` afterward.
+37. Recreate `.tmp-suite` with the same two passing scripts and add `bad.radixtest` containing `{ "format": "radix-test", "version": 1, "steps": [ { "at": 0, "set": { "d": true } } ] }`. Run the same command. Expected: `[3/3] .../bad.radixtest` followed by `ERROR: Step 1 'set.d' must be a number, a string, or null.`, both good scripts still run and pass, and the final line is `SUITE ERROR: 1 script(s) could not run, 0 failed, 2 passed.`; exit code 2. This shows one malformed file does not hide the rest of the suite. Delete `.tmp-suite` afterward.
+38. Run `dotnet run --project src/Radix.Cli -- test examples/binary-counter.radix examples/tests/counter-counts.radixtest --json`. Expected: no human `PASS` prose, one JSON object with `"format": "radix-test-report"`, `"version": 1`, `"passed": true`, `"passedCount": 1`, `"failedCount": 0`, and one `scripts` entry naming the script, its `definitionId`, `finalTime: 320`, and empty `failures`/`diagnostics`; exit code 0. Change a scratch copy's assertion to fail and rerun with `--json`: expected `"passed": false`, `"failedCount": 1`, a failures entry with `step`, `at`, and `message`, and exit code 1. Add a malformed script path to the same command: expected `"errorCount": 1` and exit code 2. This report is stable enough for CI and contains no project source.
+39. Run `dotnet run --project src/Radix.Cli -- validate examples/tiny-cpu.radix --all --json`. Expected: stdout contains one JSON object with `"format": "radix-validation-report"`, `"version": 1`, `"scope": "all"`, `"passed": true`, `"definitions": 46`, and an empty `diagnostics` array; `compiled` is absent because no single flat circuit exists; exit code 0 and no stderr. Then run the same command without `--all`: expected `"scope": "root"`, a `compiled` object with numeric `components`, `nets`, and `pins`, and exit code 0. Run the human `validate` command on the same project: expected its existing prose exactly as before, with no JSON.
+40. Copy `examples/full-adder.radix` to a scratch file and change one reachable `"kind": "constant"` instance's `"value"` to `99` (or change a reachable lookup table entry out of range). Run `validate <scratch> --all --json`. Expected: exit code 1, no stderr, one JSON object with `"passed": false`, a nonzero `errorCount`, and diagnostic entries carrying `severity`, `code`, `message`, `definitionId`, `instanceId`, `netId`, `pinId`, and a `location` that contains no empty `path ''` fragment. Omitted location fields are absent rather than empty strings. Confirm the scratch file is unchanged by validation.
+
+### Editor script runner
+
+1. Start the workbench with `dotnet run --project src/Radix.Editor` and open `examples/dff-demo.radix`. Select the **Diagnostics** tab. Expected: a **Run script…** button sits at the upper right of the tab.
+2. Click **Run script…** and choose `examples/tests/dff-captures.radixtest`. Expected: a result panel appears with a `PASS` summary naming the script and `4 step(s) · t=50`; it has no failure rows, and the live simulation time and canvas are unchanged.
+3. Copy the script to a scratch file, change the final `stable` expectation to `"q": 0`, and run that file. Expected: the panel shows `FAIL`, one row reading `step 4 (t=40): pin 'q': expected 0 (0), got 1 (1).`, and the status bar reports the failure.
+4. Change the t=10 relation's `"op": "ne"` to `"eq"` and run the same file. Expected: the panel shows `FAIL` with one row `step 2 (t=10): relation 1 (eq): left pin 'q' is 0 (0), right pin 'qn' is 1 (1); the relation does not hold.`
+5. Click **Clear**. Expected: the result panel disappears while the ordinary diagnostics remain.
+6. Run the passing script again, then open another project. Expected: the result panel clears because it described the previous project.
+7. Run the passing script, then nudge the `ff` part with an arrow key. Expected: the result remains current and no stale notice appears, because position is presentation only. Delete the `ff` part instead. Expected: the result stays visible with a warning-coloured line `STALE · the circuit changed after this run; rerun for a current verdict`. Click **Clear** and verify both the result and the notice disappear.
+8. Create a scratch folder with two copies of `examples/tests/dff-captures.radixtest`, for example `mkdir .tmp-suite && cp examples/tests/dff-captures.radixtest .tmp-suite/a.radixtest && cp examples/tests/dff-captures.radixtest .tmp-suite/b.radixtest`. Click **Run folder…** and choose `.tmp-suite`. Expected: the result panel summary reads `PASS · 2 script(s) · 8 step(s) · 164 events`, with no failure rows; the status bar reports the suite passed. Delete the folder afterward.
+9. Recreate the folder with the two passing scripts plus `bad.radixtest` containing `{ not json`, and run **Run folder…** again. Expected: the summary reads `SUITE ERROR · 3 script(s) · 2 passed · 0 failed · 1 error(s) · 8 step(s)`, one failure row begins `[bad.radixtest] error:`, and the status bar reports `Test script suite failed: 0 failed, 1 error(s)`. This shows one malformed script does not hide the passing scripts. Delete the folder afterward.
+10. Create a scratch script with one step, `{ "at": 0, "stable": { "ticks": 200000000, "expect": { "q": 0 } } }`, and run it. Expected: a progress row titled `Running script…` appears with an indeterminate bar and the file name; the canvas stays responsive. Click **Cancel**. Expected: the run stops promptly with `Test script cancelled.`, the live simulation time is unchanged, and **Run script…** becomes enabled again. This works inside the long stability window, not only between steps.
+
+### Editor sweep panel
+
+1. Start the workbench and open `examples/full-adder.radix`. Select the **Sweep** tab. Expected: settle ticks `10`, max rows `4096`, and a **Run sweep** button; no table is shown yet.
+2. Click **Run sweep**. Expected: the summary reads `demo.full-adder · 3 input(s) → 2 output(s) · 8 row(s) · settle 10 tick(s)` and a monospaced table headed `a | b | cin | s | cout`. The last row is `1 | 1 | 1 | 1 | 1`, every cell is a value label rather than blank, and the live simulation clock does not move.
+3. Set settle ticks to `0` and run again. Expected: the output columns show `-` because this example builds the adder from delayed primitives; this shows settle time is explicit rather than implied.
+4. Set settle ticks back to `10` and max rows to `4`, then run. Expected: `Sweep error: Sweep needs at least 8 rows, above the limit of 4. Reduce the input set or raise --max-rows.` in the error colour, with no table. **Clear** removes the message.
+5. Run a sweep, then drag a part to a new position. Expected: the table remains, because position is presentation only. Delete a part instead: the table disappears as soon as the edit commits, so it never describes stale wiring.
+6. Open a definition with ternary input pins and run a sweep. Expected: rows enumerate that pin's own domain labels (for example `-`, `0`, `+`) in declaration order, with no assumption that inputs are binary.
+7. Open `examples/8-bit-alu.radix`, set max rows to `262144`, and click **Run sweep**. Expected: a progress panel appears with **Cancel**, the progress bar and `x / 262144 rows` update, and **Run sweep** is disabled while the canvas remains interactive. Click **Cancel**. Expected: the run stops promptly, the panel reports `Sweep cancelled.`, no partial table appears, and **Run sweep** becomes enabled again. This requires enough input pins that the sweep does not finish instantly; adjust max rows only to exceed the product of the input domain sizes.
+8. Start the same large sweep again, then drag a part during the run. Expected: the drag remains responsive and the sweep continues, because placement is presentation-only. Delete a part instead: the run is cancelled immediately and no table appears. Structural edits invalidate the snapshot; presentation edits do not.
+
+## 14. Ternary multi-trit addition
+
+This check uses the GUI and the examples from the previous section.
+
+1. Open `examples/balanced-ternary-adder-2.radix`. Expected: the canvas shows one `adder` instance wired to A0/A1, B0/B1, S0/S1, and COUT; the inspector lists lanes **A**, **B**, and **A + B**.
+2. Click **Begin**. Set `A0 = +`, `A1 = +` (`A = 4`), `B0 = +`, `B1 = +` (`B = 4`), then **Settle**. Expected: `S0 = −`, `S1 = 0`, `COUT = +`, and the `A + B` lane reads `8`.
+3. Set `A0 = −`, `A1 = −`, `B0 = −`, `B1 = −` (`A = B = −4`) and settle. Expected: `S0 = +`, `S1 = 0`, `COUT = −`, lane `−8`.
+4. Set `A0 = −`, `A1 = +` (`A = 2`) and `B0 = +`, `B1 = −` (`B = −2`) and settle. Expected: every sum trit is `0` and the lane reads `0`.
+5. Double-click the `adder` instance. Expected: two `std.bt-full-adder` instances and a constant zero are visible, with the low adder's carry wired into the high adder. Double-click one full adder. Expected: separate sum and carry lookup primitives with a shared `sum`/`carry` table layout.
+6. Return to the root and use **Locate** diagnostics if any appear. Expected: no errors or warnings for the shipped example.
+7. Open `examples/ternary-adder-2.radix`. Expected: lanes **A**, **B**, and **A + B** over `unsigned-ternary`. Set `A0 = A1 = B0 = B1 = 2` (A = B = 8) and settle. Expected: `S0 = 1`, `S1 = 2`, `COUT = 1`, and `A + B` reads `16`.
+8. Set `A0 = A1 = 1` (A = 4), `B0 = 2`, `B1 = 1` (B = 5), and settle. Expected: `S0 = S1 = 0`, `COUT = 1`, and the lane reads `9`.
+
+## 15. Sequential counters (ternary and quaternary)
+
+This uses the GUI.
+
+### Ternary counter
+
+1. Open `examples/ternary-counter.radix`. Expected: one `inc`, one `carry_out`, one `add_high`, and two `ff` instances; the inspector lists a single **Count** lane over T0/T1.
+2. Click **Begin**. With `CLK = 0`, settle, then set `CLK = 2` and settle. Expected: `T0 = 1`, `T1 = 0`, **Count** = `1`; setting `CLK` back to `0` does not change the count.
+3. Repeat the 0→2 edge. Expected: `T0 = 2`, count `2`; next edge: `T0 = 0`, `T1 = 1`, count `3` (the low trit wraps and carries).
+4. Continue to count `8` (`T0 = 2`, `T1 = 2`), then pulse once more. Expected: `T0 = 0`, `T1 = 0`, count `0`.
+5. Double-click `ff0`, then its `slave` latch. Expected: two `std.t-latch` instances, a Kleene NOT for the clock, and inside the latch two cross-coupled NOT/min pairs. The definitions use `std.t-lognot`, not the mod-3 `std.t-not`.
+6. Check **Trace**: the clock, `next T0`, `T0 carry`, `next T1`, and both stored trits should transition only around edges; no warnings or errors appear.
+
+### Quaternary counter
+
+1. Open `examples/quaternary-counter.radix`. Expected: `inc`, `carry_out`, `add_high`, and two quaternary flip-flops; one **Count** lane over Q0/Q1. Double-click `ff0` and then `master`. Expected: two `std.q4-latch` instances, two one-input clock-phase lookups, and inside a latch a single three-input lookup whose third input is Q feedback.
+2. Click **Begin** and drive `CLK = 0`, then settle. Expected: `Q0 = Q1 = 0` and **Count** = `0`.
+3. Set `CLK = 3` and settle. Expected: count `1`; returning `CLK` to `0` holds it. Repeat until count `3`. Expected: `Q0 = 3`, `Q1 = 0`.
+4. Pulse `CLK` again. Expected: `Q0 = 0`, `Q1 = 1`, count `4`. This is the radix-4 carry: both digits change once on the same edge, unlike a binary counter's longer ripple.
+5. Continue through count `15` (`Q0 = 3`, `Q1 = 3`), then pulse once more. Expected: count `0` and no warnings or errors. The quaternary latch captures only when its enable is exactly `1`; other enable values hold.
+
+### Quaternary accumulator
+
+1. Open `examples/quaternary-accumulator.radix`. Expected: an `adder`, two `data_mux` instances, a `write_enable` lookup, and one `reg`; the inspector lists **Data** and **Result** lanes over D0/D1 and Q0/Q1, plus a `CARRY` output.
+2. Double-click `reg`. Expected: two `std.q4-dff` instances and a `std.q4-load-mux` per digit. Double-click `adder`. Expected: two `std.q4-full-adder` instances, a constant zero on the low carry input, and the low carry wired to the high digit.
+3. Click **Begin**, drive `CLK = 0`, `LOAD = 0`, `ADD = 0`, and `D0 = D1 = 0`; settle. Expected: `Q0 = Q1 = 0`, `Result = 0`.
+4. Set `D0 = 1`, `D1 = 2` (`Data = 9`), `LOAD = 3`, settle, then raise `CLK` to `3` and settle. Expected: `Q0 = 1`, `Q1 = 2`, `Result = 9`; lower `CLK` to `0`.
+5. Set `LOAD = 0`, `ADD = 3`, `D0 = D1 = 3` (`Data = 15`); settle. Expected: `CARRY = 1` from the combinational `ACC + D` adder while `Result` is still `9`. Raise `CLK` and settle. Expected: `Result = 8` and `Q = 2,0` because 9 + 15 wraps modulo 16. The carry remains the third digit of the current sum.
+6. Lower `CLK`, set `ADD = 0` and `D0 = D1 = 0`; settle. Expected: `Result` stays `8`, proving the register holds when neither control is active.
+7. Set `LOAD = 3` and `ADD = 3` together with `Data = 5`; settle, then raise `CLK`. Expected: `Result = 5`; LOAD takes priority over ADD. Lower `CLK` and check that no warnings or errors appear.
+
+### Quaternary memory
+
+1. Open `examples/quaternary-memory.radix`. Expected: one `memory` instance, **Address**, **Data**, and **Read** lanes over `unsigned-quaternary`, plus `WE` and `CLK` inputs.
+2. Double-click `memory`. Expected: four `std.q4-reg-2` word registers, one write-decode lookup per word, and two `std.q4-mux4` read selectors. Each decoder drives one register's LOAD; both read selectors share ADDR.
+3. Click **Begin**, drive `CLK = 0`, `WE = 0`, `ADDR = 0`, `Data = 0`; settle. Expected: `Read = 0`.
+4. Set `ADDR = 0`, `WE = 3`, `Data = 10`; settle, raise `CLK` to `3`, settle, then lower `CLK`. Expected: `Read = 10`. Repeat for words 1, 2, and 3 with data 3, 15, and 7; each write should land only in the addressed word.
+5. Set `WE = 0` and step `ADDR` through 0, 1, 2, 3, allowing each address change to settle. Expected: `Read` returns 10, 3, 15, 7 in that order.
+6. Set `WE = 1` or `2`, drive different `Data`, and pulse `CLK`. Expected: the addressed word and every other word keep their previous values; only `WE = 3` writes.
+7. Check Diagnostics. Expected: no errors or warnings.
+
+### Quaternary program machine
+
+1. Open `examples/quaternary-machine.radix`. Expected: `CLK` as the only input; **PC**, **ACC**, **Opcode**, **Operand**, and **RAM read** lanes over `unsigned-quaternary`; `pc_adder`, `alu`, two `pc_mux` and two `acc_add`/`acc_mem` pairs, four ROM lookups, four opcode decoders, `decode_write`, one `memory`, and the `pc_reg`/`acc_reg` registers.
+2. Double-click `pc_reg`. Expected: two `std.q4-dff` instances with always-enabled load muxes. Double-click `alu`. Expected: two `std.q4-full-adder` instances with the low carry tied to zero. Double-click `memory`. Expected: four `std.q4-reg-2` word registers and two `std.q4-mux4` read selectors.
+3. Click **Begin**, drive `CLK = 0`, and settle. Expected: **PC** = 0, **ACC** = 0, **Opcode** = 1, **Operand** = 5, **RAM read** = 0 — the first instruction is LOAD 5. The ROM and decoder chains need a few ticks after reset before those lanes settle.
+4. Set `CLK = 3`, settle, then return `CLK` to 0. Expected: **PC** = 1, **ACC** = 5, **Opcode** = 2, **Operand** = 3 (ADD 3).
+5. Pulse `CLK` again. Expected: **PC** = 2, **ACC** = 8, **Opcode** = 4, **Operand** = 0 (STORE 0).
+6. Pulse `CLK` again. Expected: **PC** = 3, **ACC** = 8, **Opcode** = 5, **Operand** = 0, **RAM read** = 8 — STORE wrote `ACC` into RAM[0] on the same edge that advanced the PC.
+7. Pulse `CLK` again. Expected: **PC** = 4, **ACC** = 8, **Opcode** = 3, **Operand** = 0 — LOADM read RAM[0] back.
+8. Pulse `CLK` again. Expected: **PC** = 0, **ACC** = 8, **Opcode** = 1, **Operand** = 5 — JMP 0 wrapped the PC and left ACC alone.
+9. Pulse `CLK` once more. Expected: **PC** = 1, **ACC** = 5, **Opcode** = 2, **Operand** = 3; the program is running its second pass. Check Diagnostics for no errors or warnings.
+
+## 16. Ternary accumulator
+
+This uses the GUI. The accumulator is two trit flip-flops plus a ternary adder and four trit muxes; `LOAD` and `ADD` use the trit value 2 as active, 0 as inactive.
+
+1. Open `examples/ternary-accumulator.radix`, click **Begin**, and drive `CLK = 0`, `LOAD = 0`, `ADD = 0`. Expected: the inspector lists **Data** and **Result** lanes, `Q0 = Q1 = 0`, `Result = 0`.
+2. Set `D0 = 2`, `D1 = 1` (`Data = 5`), set `LOAD = 2`, click **Settle**, then set `CLK = 2` and settle. Expected: `Q0 = 2`, `Q1 = 1`, `Result = 5`. Lower `CLK` to 0.
+3. Set `LOAD = 0`, `ADD = 2`, `D0 = 0`, `D1 = 1` (`Data = 3`), settle, then raise `CLK`. Expected: `Result = 8`.
+4. Change `Data` to 4 and pulse `CLK` again. Expected: `Result = 3`, because 8 + 4 wraps modulo 9.
+5. Set `ADD = 0`, leave `LOAD = 0`, set `Data = 8`, and pulse `CLK`. Expected: `Result` stays 3; the data lane shows 8 but the register holds.
+6. Set `LOAD = 2` and pulse `CLK`. Expected: `Result = 8`.
+7. Double-click `register`, then `mux0`, then `ff0` and its `slave` latch. Expected: the register contains two mux/flip-flop trit slices, the mux is a single lookup primitive, and the latch/flip-flop structure matches section 15. Double-click `mux_add0` at the root. Expected: one lookup primitive selecting data or the adder result. No errors or warnings appear.
+
+## 17. Crash recovery
+
+Recovery uses a 20-second timer and one snapshot slot. Verify the destructive step with a scratch copy so no real work is at risk.
+
+1. Open `examples/full-adder.radix`, place one extra part on the canvas, and wait at least 25 seconds. Then terminate the editor process without closing the window (for example `kill <pid>` on Linux or Task Manager on Windows).
+2. Relaunch. Expected: the project opens immediately, the title is marked dirty (`*`), the status line says `Recovered unsaved changes from full-adder.radix`, and the extra part is present.
+3. Press `Ctrl+S`. Expected: it writes to the original `examples/full-adder.radix` path (no Save As dialog), the dirty marker clears, and `recovery.radix`/`recovery.json` disappear from `%APPDATA%\Radix` or `~/.config/Radix`.
+4. Relaunch. Expected: the normal full-adder example opens clean; **Recent ▾** lists it first.
+5. Repeat step 1 with another scratch edit, then close the window and choose **Discard**. Relaunch. Expected: no recovery opens and the snapshot files are gone.
+6. Repeat step 1 but kill the process within a few seconds of the edit. Expected, per the limitation below: the previous or no snapshot is restored, showing that at most 20 seconds of edits are protected.
+
+## 18. Ternary program machine
+
+This uses the GUI. The machine fetches a two-trit instruction from lookup ROMs and executes it on each rising clock edge; the program is data in the two ROM tables.
+
+1. Open `examples/ternary-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: lanes **PC** = 0, **ACC** = 0, **Opcode** = 1, **Operand** = 1. The status is clean.
+2. Set `CLK = 2`, settle, then set `CLK = 0` and settle. Expected: **PC** = 1, **ACC** = 1, opcode 2, operand 2 (ADD 2 is next).
+3. Repeat the 0 → 2 → 0 pulse seven more times. Expected pairs (PC, ACC): (2,3), (3,5), (4,5), (5,2), (6,4), (7,5), (8,5). Opcode/operand follow the program: ADD 2, NOP 0, LOAD 2, ADD 2, ADD 1, NOP 0, NOP 0.
+4. Pulse once more. Expected: **PC** returns to 0, ACC stays 5, opcode/operand read LOAD 1. Pulse again: ACC becomes 1, showing the program restarted.
+5. Select the `rom_op` instance and edit its table in the inspector. Change entry 0 (PC 0) from 1 to 2 and commit. Expected: one undo step, a diagnostic-free project, and PC 0 now executes ADD instead of LOAD (ACC becomes 1+1=2 on the next pass). Undo restores LOAD.
+6. Double-click `pc_reg` and `acc_reg`. Expected: each contains two mux/flip-flop slices; the PC register's `LOAD` input is tied to a constant 2, while the accumulator's comes from the decoder and a ternary max gate. No errors or warnings appear.
+
+## 19. Ternary branch machine
+
+This uses the GUI. The machine has a 2-trit opcode, a 2-trit argument, three words of writable trit memory, and branch control.
+
+1. Open `examples/ternary-branch-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: **PC** = 0, **ACC** = 0, **Memory read** = 0, **Opcode** = 1, **Argument** = 2 (LOAD 2).
+2. Set `CLK = 2`, settle, then set `CLK = 0`. Expected: **PC** = 1, **ACC** = 2, opcode 2, argument 2 (ADD 2 is next).
+3. Pulse three more times. Expected after each pulse: (PC 2, ACC 4), (PC 3, ACC 4), (PC 4, ACC 4). The third pulse executed `STORE 1`, and the fourth fetched `BZ 8` and did **not** branch because ACC is 4. `Memory read` still shows 0 because the address pins carry the next instruction's argument, not the store address.
+4. Pulse twice more. Expected: (PC 5, ACC 0) and (PC 6, ACC 0). Then pulse again: **PC** jumps straight to 8, skipping the `LOAD 1` at PC 7, because `BZ 8` sees ACC = 0. Opcode/argument read 4 and 1 (LOADM 1), and **Memory read** becomes 4 — word 1 now drives the read port.
+5. Pulse twice more. Expected: **PC** = 0 and **ACC** = 4 — `LOADM 1` captured the stored word — then **PC** = 1 with ACC = 2 as the program restarts, and `Memory read` returns to 0.
+6. Double-click `memory`. Expected: the `std.t-ram-3x2` body with three `word` registers, three write-decode lookups, and two 4-input read lookups. Double-click `word1` and then `mux0`. Expected: a `std.t-reg-2` body with two mux/flip-flop slices; `word1` holds 4 after the STORE. Select `decode_write1`, find the entry for `(WE = 2, ADDR = 1)` in the **LOOKUP TABLE** grid (its address shows the two values in input order), and change it from 2 to 0. Committing is one undo step and produces no diagnostics; the next `STORE 1` leaves word 1 unchanged. Undo restores the write.
+7. With `memory` open as the current definition, click **Begin** to run the part standalone (this starts a fresh simulation, so it does not inherit the machine's word 1). Expected: lanes **Address** over `ADDR`, **Data** over `D0/D1`, and **Read** over `Q0/Q1`; **Read** = 0. Drive `WE = 0`, `ADDR = 1`; set `D0 = 1`, `D1 = 1` (Data = 4) and `WE = 2`; pulse `CLK` 0 → 2 → 0. Expected: **Read** = 4. Set `WE = 0` and step `ADDR` through 0, 1, and 2: expected **Read** = 0, 4, 0. No errors or warnings appear.
+
+## 20. Ternary call machine
+
+This uses the GUI. CALL/RET use the `std.t-ram-9x2` part as a nine-word return stack, and SP is a two-trit counter. CALL at SP=8 writes the last word and raises the latched fault; nesting up to eight levels is safe.
+
+1. Open `examples/ternary-call-machine.radix` and click **Begin**. Drive `CLK = 0` and settle. Expected: **PC** = 0, **ACC** = 0, **SP** = 0, **Stack read** = 0, **Opcode** = 5, **Argument** = 4 (CALL 4).
+2. Pulse `CLK` 0 → 2 → 0. Expected: **PC** = 4, **SP** = 1, ACC stays 0; opcode 5, argument 7 (the routine's own CALL).
+3. Pulse again. Expected: **PC** = 7, **SP** = 2; opcode 1, argument 0 (LOAD 0). **Stack read** is 0 because ADDR now points past the saved words.
+4. Pulse again. Expected: **PC** = 8, ACC = 0, SP = 2; **Stack read** = 5 and opcode 6 (RET). The inner return address is already visible below SP.
+5. Pulse again. Expected: **PC** = 5, **SP** = 1; opcode 1, argument 2. The inner RET popped 5, so execution resumed after the inner CALL.
+6. Pulse again. Expected: **PC** = 6, ACC = 2, SP = 1; **Stack read** = 1 and opcode 6 (RET).
+7. Pulse again. Expected: **PC** = 1, ACC = 2, **SP** = 0; opcode 1, argument 1. The outer RET popped 1, returning to the instruction after CALL 4.
+8. Pulse twice. Expected: (PC 2, ACC 1), then (PC 3, ACC 3, opcode 3, argument 3). Pulse again: PC stays 3 because `JMP 3` loops with the stack empty.
+9. Double-click `stack`. Expected: the `std.t-ram-9x2` body with nine word registers, nine write-decode lookups, and a two-level read tree of `std.t-mux3` selectors per lane. Double-click `sp_reg` and `sp_mux_hold0`: the two-trit SP is a `std.t-reg-2` fed by hold muxes, so it changes only on CALL and RET. No errors or warnings appear.
+10. Drive `STACK ERROR` behavior with the core test `TernaryCallMachineLatchesStackOverflowAndUnderflow`, which rewrites the instruction ROMs to make the machine recurse: the ninth CALL at SP=8 latches `STACK ERROR = 2` and wraps SP to 0, a RET with SP = 0 latches it and wraps SP to 8, and the latch survives later CALLs until the simulation restarts. In the editor the shipped program never faults, so `STACK ERROR` stays 0; it appears in the inspector's pin values and the waveform, not as a numeric lane.
+11. Expected limitation: the pointer wraps on overflow and underflow, so a fault is reported but not prevented; the ninth push overwrites the oldest saved address, and recovery requires restarting the simulation. The flag also ignores a software stack colliding with data, which belongs to a future memory model.
+
+## 21. Ternary 9 × 2 memory
+
+This uses the GUI. The example is a wrapper around `std.t-ram-9x2`, which has a two-trit address selecting nine 2-trit words.
+
+1. Open `examples/ternary-memory.radix` and click **Begin**. Expected: **Address** = 0, **Data** = 0, **Read** = 0; the project is clean and the canvas shows one `memory` instance with five inputs and two outputs.
+2. Set `ADDR0 = 2`, `ADDR1 = 1` (Address 5), `D0 = 2`, `D1 = 2` (Data 8), `WE = 2`. Pulse `CLK` 0 → 2 → 0. Expected: **Read** = 8.
+3. Set `WE = 0`, `ADDR0 = 0`, `ADDR1 = 0`, `D0 = 0`, `D1 = 1` (Data 3). Pulse `CLK`. Expected: **Address** = 0 and **Read** = 3; word 5 still holds 8.
+4. Set `ADDR0 = 2`, `ADDR1 = 1` again and change `D0`/`D1` while `WE` stays 0 or 1. Expected: **Read** stays 8 in both cases; only `WE = 2` writes.
+5. Double-click `memory`. Expected: the `std.t-ram-9x2` body with nine `std.t-reg-2` word instances, nine write-decode lookups, six low `std.t-mux3` selectors inside the read tree, and two high selectors. Double-click `read0_low1` and confirm its 81-entry table selects A/B/C for select 0/1/2. No errors or warnings appear.
+6. Expected limitation: the part is fixed at nine 2-trit words; there is no runtime-sized memory, byte-lane view, or collision checking between a program and its data.
+
+## 22. Ternary stack machine
+
+This uses the GUI. A 2-trit TOS register sits over a 9-word stack RAM; SP counts the words below it.
+
+1. Open `examples/ternary-stack-machine.radix` and click **Begin**. Expected: **PC** = 0, **TOS** = 0, **SP** = 0, **Output** = 0, **Opcode** = 1, **Argument** = 2; the project is clean.
+2. Pulse `CLK` 0 → 2 → 0. Expected: **PC** = 1, **TOS** = 2, **SP** = 1. The pushed old TOS (0) is now at stack word 0.
+3. Pulse again. Expected: **PC** = 2, **TOS** = 3, **SP** = 2, **Stack read** = 2.
+4. Pulse again. Expected: **PC** = 3, **TOS** = 2, **SP** = 2, **Stack read** = 3; SWAP exchanged TOS with the word below it without moving SP.
+5. Pulse again. Expected: **PC** = 4, **TOS** = 5, **SP** = 1; ADD consumed the second operand.
+6. Pulse again. Expected: **PC** = 5, **TOS** = 5, **SP** = 2; DUP pushed a copy.
+7. Pulse again. Expected: **PC** = 6, **TOS** = 5, **SP** = 1; POP discarded the copy.
+8. Pulse again. Expected: **PC** = 7, **Output** = 5, TOS and SP unchanged.
+9. Pulse twice. Expected: PC 8 with TOS = 0, SP = 0, then PC 0 with **Output** still 5; the program loops through JMP 0.
+10. Double-click `stack`. Expected: `std.t-ram-9x2` with nine word registers and a selector read tree. Double-click `top_reg`, `sp_reg`, and `out_reg`: each is a `std.t-reg-2`. No errors or warnings appear.
+11. Expected limitation: ADD drops the 2-trit adder carry, so results wrap modulo 9; a push at SP=8 or an operation on an empty stack latches `STACK ERROR` but the pointer still wraps, so recovery requires restarting the simulation.
+
+## 23. Balanced ternary accumulator
+
+This uses the GUI. Control, data, and clock are all balanced trits, so a pin value of `0` means `−`, `1` means `0`, and `2` means `+`.
+
+1. Open `examples/balanced-ternary-accumulator.radix` and click **Begin**. Drive `CLK = 0`, `LOAD = 0`, `ADD = 0`, `D0 = 1`, `D1 = 1`. Expected: the **Data** and **Result** lanes both read `0`, and the project is clean.
+2. Set `D0 = 2`, `D1 = 2` (Data lane reads `4`), then `LOAD = 2`. Pulse `CLK` to `2`, settle, then back to `0`. Expected: **Result** = `4`.
+3. Set `LOAD = 0`, `D0 = 0`, `D1 = 0` (Data lane reads `−4`). Pulse `CLK`. Expected: **Result** stays `4`, showing the register holds while LOAD is inactive.
+4. Set `ADD = 2` with `D0 = D1 = 2` (`+4`) and pulse `CLK`. Expected: **Result** = `−1`; the 2-trit sum wraps modulo 9 instead of saturating.
+5. Set `D0 = 0`, `D1 = 2` (Data lane reads `2`) and pulse `CLK`. Expected: **Result** = `1`.
+6. Set `ADD = 0`, `D0 = 1`, `D1 = 1`, and pulse `CLK`. Expected: **Result** stays `1`; ADD took precedence while it was active, and now both controls hold.
+7. Double-click `register`. Expected: a `std.bt-reg-2` body with two `mux` slices and two `ff` slices, and **Data**/**Result** lanes that decode as balanced ternary. Double-click `ff0`, then `slave`: the balanced latch is the same Kleene cross-coupled structure as the 0/1/2 latch, wired from `std.bt-not` and `std.bt-min` rather than `std.t-lognot`/`std.t-min`. No errors or warnings appear.
+
+## 24. Tiny program-driven CPU
+
+This uses the GUI, so run it yourself. The machine is built entirely from library parts and lookup tables; there is no CPU code in the kernel.
+
+1. Open `examples/tiny-cpu.radix`. Expected: the canvas shows the ROM, decoder, program counter, accumulator, RAM, stack pointer, and a fixed lane legend; **OPCODE**, **OPERAND**, **INSTRUCTION**, **PC**, **ACC**, **SP**, and **MEM** appear in the inspector.
+2. Click **Begin**, then drive `CLK = 0` and `RESET = 0`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `MEM = 0`, `STACK_ERROR = 0`, `ZERO = 1`, `IR = 21` (0x15), opcode 1, operand 5.
+3. For each rising edge, set `CLK = 1`, click **Settle**, check the row below, then set `CLK = 0`. Expected sequence:
+
+| Edge | PC | IR | Op | Operand | ACC | SP | MEM | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 56 (0x38) | 3 | 8 | 5 | 0 | 0 | LDA 5 done; STA 8 fetched |
+| 2 | 2 | 25 (0x19) | 1 | 9 | 5 | 0 | 0 | STA 8 stored 5 |
+| 3 | 3 | 160 (0xA0) | 10 | 0 | 9 | 0 | 0 | LDA 9 done; PUSH fetched |
+| 4 | 4 | 16 (0x10) | 1 | 0 | 9 | 1 | 9 | PUSH wrote 9; SP advanced |
+| 5 | 5 | 176 (0xB0) | 11 | 0 | 0 | 1 | 9 | LDA 0 done; stack top visible |
+| 6 | 6 | 57 (0x39) | 3 | 9 | 9 | 0 | 0 | POP restored 9; SP rewound |
+| 7 | 7 | 204 (0xCC) | 12 | 12 | 9 | 0 | 9 | STA 9 stored 9; CALL fetched |
+| 8 | 12 | 232 (0xE8) | 14 | 8 | 9 | 1 | 5 | CALL pushed return address 8 |
+| 9 | 13 | 153 (0x99) | 9 | 9 | 5 | 1 | 9 | LDA 8 direct loaded 5 |
+| 10 | 14 | 208 (0xD0) | 13 | 0 | 14 | 1 | 8 | ADD@ 9 made 14; stack top is 8 |
+| 11 | 8 | 104 (0x68) | 6 | 8 | 14 | 0 | 5 | RET returned to PC 8 |
+| 12 | 8 | 104 (0x68) | 6 | 8 | 14 | 0 | 5 | JMP 8 halt loop holds state |
+
+4. Drive `RESET = 1`, raise `CLK`, then lower `CLK`. Expected: `PC = 0`, `ACC = 0`, `SP = 0`, `CARRY = 0`, `STACK_ERROR = 0`; RAM contents are retained, and the machine restarts at instruction 0. Drive `RESET = 0` before continuing.
+5. Check the **Trace** and **Waveform** tabs. Expected: transitions are recorded for the clock, PC bits, accumulator bits, SP bits, RAM write enables, IR bits, carry, zero, and the stack-error latch; no errors or warnings appear.
+6. `STACK_ERROR` stays `0` for the shipped program. The output latches if `PUSH`/`CALL` occurs at `SP = 15` or `POP`/`RET` at `SP = 0`, and reset clears it. It detects pointer wrap only, not a software stack overlapping data in RAM; the core tests cover both fault directions with generated 16-instruction programs.
+
+## 25. 8-bit generated-memory machine
+
+This uses the GUI. The program ROM and data RAM are generated definitions, not kernel features.
+
+1. Open `examples/byte-machine.radix`. Expected: the canvas shows `gen.rom-16x12`, `gen.ram-16x8`, the ALU, PC and accumulator registers, and decoder lookups; the Definition list contains both generated roots. The lane legend shows **ACC**, **MEM**, **PC**, **INSTRUCTION**, **OPCODE**, **OPERAND**, and **ADDRESS**.
+2. Click **Begin**, drive `CLK = 0`, `RESET = 0`, and settle. Expected: `PC = 0`, `ACC = 0`, `MEM = 0`, `ZERO = 1`, `HALTED = 0`, instruction `274` (0x112), opcode `1`, operand `18` — LDA #0x12.
+3. Pulse `CLK` (0 → 1 → settle → 0) and check each row:
+
+| Edge | PC | ACC | MEM | Instruction | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 18 | 0 | 564 (0x234) | LDA #0x12 done; ADD #0x34 fetched |
+| 2 | 2 | 70 | 0 | 768 (0x300) | 0x12 + 0x34 = 0x46 |
+| 3 | 3 | 70 | 70 | 256 (0x100) | STA 0 wrote 0x46 |
+| 4 | 4 | 0 | 70 | 2560 (0xA00) | LDA #0 |
+| 5 | 5 | 70 | 0 | 769 (0x301) | ADD@ 0 read 0x46 back |
+| 6 | 6 | 70 | 0 | 1791 (0x6FF) | STA 1 stored it |
+| 7 | 7 | 185 | 0 | 2060 (0x80C) | XOR #0xFF produced 0xB9 |
+| 8 | 8 | 185 | 70 | 256 (0x100) | JZ 12 not taken; LDA #0 fetched |
+| 9 | 9 | 0 | 0 | 2060 (0x80C) | zero flag set |
+| 10 | 12 | 0 | 0 | 383 (0x17F) | JZ 12 skipped two words |
+| 11 | 13 | 127 | 0 | 770 (0x302) | LDA #0x7F |
+| 12 | 14 | 127 | 127 | 2306 (0x902) | STA 2 wrote 0x7F |
+| 13 | 15 | 127 | 70 | 1792 (0x700) | LDA@ 2 read 0x7F back; MEM shows address 0 now |
+| 14 | 0 | 127 | 127 | 274 (0x112) | JMP 0; MEM shows stored word 2 |
+
+4. Drive `RESET = 1`, settle, pulse `CLK`, then return `RESET = 0`. Expected: `PC = 0` and `ACC = 0`; RAM still holds 0x46 at words 0 and 1 and 0x7F at word 2, visible by stepping to the relevant `LDA@` instruction. No errors or warnings appear.
+5. Check **Trace** and **Waveform**: clock, PC, accumulator, instruction, RAM read, and write-enable transitions are recorded. `HLT` (opcode 11) is covered by the core tests with a custom program; it holds PC and ACC while `HALTED` is 1 until reset.
+
+## 26. Four-state bus resolution
+
+This uses the GUI. Both data inputs and the bus are on the four-state domain; indices 0 and 1 are logic values, 2 is X, and 3 is Z. The enable pins are binary.
+
+1. Open `examples/four-state-bus.radix` and click **Begin**. Set `EN A = 0`, `EN B = 0`. Expected: **BUS** = Z and **CONFLICT** = 0; no RAD101 diagnostic appears.
+2. Set `EN A = 1`, `A = 0`. Expected: **BUS** = 0; the disabled B driver's Z yields.
+3. Set `EN B = 1`, `B = 1`. Expected: **BUS** = X and **CONFLICT** = 1; the Diagnostics tab shows exactly one `RAD101` warning for the bus net, even if you keep changing disagreeing values.
+4. Set `B = 0`. Expected: **BUS** = 0 and **CONFLICT** = 0; agreement is not a conflict, and the earlier warning remains in the diagnostic list.
+5. Set `EN B = 0`, `B = 2` (X). Expected: **BUS** stays 0 because the disabled driver outputs Z, not X.
+6. Set `EN A = 0`, `EN B = 1`, `B = 1`. Expected: **BUS** = 1 and **CONFLICT** = 0.
+7. Set `EN A = 1`, `A = 2`. Expected: **BUS** = X and **CONFLICT** = 1; X has higher priority than 1 in this domain.
+8. Expected limitation: the resolution policy is the domain's one priority table; there is no wired-AND/open-drain option, and the diagnostic reports a conflict per net once, not per transition.
+
+## 27. 4 × 4 multiplier
+
+This uses the GUI and a terminal. The multiplier wraps `std.mult-4`, an array multiplier built from sixteen AND gates and three 8-bit adders.
+
+1. Open `examples/multiplier.radix` and click **Begin**. Expected: numeric lanes **A**, **B**, and **P**, all reading 0; interface pins `A0`…`A3`, `B0`…`B3`, and `P0`…`P7`.
+2. Type `9` in the **A** lane and click **Drive**; type `7` in **B** and drive it; click **Settle**. Expected: **P** reads `63`, and `P0`…`P5` are 1 while `P6` and `P7` are 0.
+3. Drive `A = 15` and `B = 15`, then settle. Expected: **P** reads `225`; `P0 = 1`, `P1`…`P4 = 0`, and `P5`…`P7 = 1`. No diagnostics appear.
+4. Drive `A = 0`, `B = 5`; settle. Expected: **P** = 0. Drive `A = 5`, `B = 0`; settle. Expected: **P** = 0 as well.
+5. Double-click the `mult` instance. Expected: a 4 × 4 AND array feeding three `std.adder-8` instances (`add_low`, `add_mid`, `add_high`) plus a constant-zero source. Double-click `add_high`; expected: eight full adders in a carry chain.
+6. Run `dotnet run --project src/Radix.Cli -- sweep examples/multiplier.radix --ticks 80 --max-rows 256`. Expected: `rows: 256 (settle 80 tick(s))`, columns `a0 a1 a2 a3 b0 b1 b2 b3 p0 … p7`, and a final row `1 1 1 1 | 1 1 1 1 | 1 0 0 0 0 1 1 1` (15 × 15 = 225).
+7. Expected limitation: the part is fixed at four bits per operand and an eight-bit product; there is no parameterized width, and the example does not chain multipliers into a wider array.
+
+## 28. Hierarchy graph
+
+This uses a terminal.
+
+1. Run `dotnet run --project src/Radix.Cli -- graph examples/tiny-cpu.radix --depth 3`. Expected: project, root, and definition/reference counts, followed by the CPU definition and its child parts with pin/part/net/lane counts. Reused parts show `×N`; a child already expanded elsewhere ends with `(shown above)`, and children at the depth boundary end with `(depth limit)`.
+2. Run the same command with `--definition std.dff --depth 1`. Expected: the tree starts at `D flip-flop`, not at the project root, while the summary still describes the whole project.
+3. Run `graph examples/quaternary-counter.radix --json`. Expected: one `radix-hierarchy-report` object with `format`, `version`, `project`, `rootDefinitionId`, `definitions`, `references`, a node per definition (counts plus `usedBy`/`instanceUses`), and grouped edges carrying their instance IDs. Parse it with a JSON tool to confirm it is valid.
+4. Run `graph examples/quaternary-counter.radix --dot > q4.dot`, then render it with Graphviz if available. Expected: a directed graph with one box per definition, `peripheries=2` on the selected root, labels naming each definition's counts, and `×N` edge labels. Missing child definitions would appear as dashed nodes rather than disappearing.
+5. Pass both `--json` and `--dot`, an unknown `--definition`, or a depth of `65`. Expected: each is refused with exit code `2` and a usage or validation message; no partial report is printed.
+6. Expected limitations: the graph is a structural projection, not a compiled or scheduled view. It does not lay out a schematic, does not show nets or lane values, and its tree prints each definition's children only once when the same part is reused in several branches.
+
+## 29. Known limitations to verify as *limitations*
 
 Do not file these as new failures until they change in the README:
 
-- no bendpoint editing, multi-select, copy/paste, or rubber-band selection;
-- no prompt before discarding unsaved New/Open/close;
-- viewport/selection not saved;
-- no assertion or regression mode in the CLI; timed drives exist, but checking expected values is manual;
-- no analog solver, JIT, parallel engine, or first-class buses;
-- editor-created domains use single-driver resolution only;
+- auto-routing is heuristic; dense circuits may need bendpoints, and components are not collision-moved automatically;
+- extraction refuses nets with drivers on both sides because there is no inout pin direction;
+- library equivalence ignores labels/layout and numeric-lane presentation; conflicting IDs are renamed rather than offering a merge dialog;
+- generated libraries are fixed definitions, not live templates: changing a width means generating and importing another part. The generator covers binary registers, ripple adders, ALUs, counters, muxes, comparators, RAMs, and ROMs only, caps registers/adders/ALUs/counters/muxes/comparators at 256 bits, RAMs at 128 power-of-two words / 64-bit words / 4096 stored bits, and ROMs at 256 power-of-two words / 64-bit words / 16384 cells. Generated RAMs use per-word address lookups plus a binary read mux tree, and generated ROMs are combinational lookup tables with no write port. Generated counters wrap modulo 2^width and have no up/down or preset-to-max control;
+- selection, external drive history, waveform history, and the waveform time range are not saved; viewport, active definition, and waveform pins are saved;
+- no analog solver, JIT, parallel engine, or first-class bus/vector type;
+- the tiny CPU's stack-error output detects pointer wrap only, not a software stack colliding with data;
+- the 8-bit machine has a 16-word program ROM, 16 data words, a 4-bit PC, and no stack, subroutine, interrupt, or branch beyond JZ; JMP/JZ targets wrap at 16, HLT holds PC and ACC until reset, and memory instructions use only the low operand nibble as an address. Its generated ROM and RAM are fixed definitions, not runtime-sized memories;
+- the ternary machines have 9-word program memories and 2-trit data words: the branch machine has no halt instruction, and both it and the call machine drop the adder carry on ADD, so their 0..8 accumulators wrap rather than overflow; the call machine's stack holds nine returns with a two-trit pointer and latches a stack-error flag for call overflow or return underflow, but still overwrites the oldest return address on overflow and does not detect collisions with data;
+- the ternary RAMs are fixed at 3×2 and 9×2 words; there is no runtime-sized memory, byte-lane view, or protection between program and data;
+- the ternary stack machine has a 9-word stack and a 2-trit pointer: eight pushes are safe, a ninth wraps and latches the fault; ADD is modulo 9 because the 2-trit adder carry is dropped, and BZ does not pop its condition;
+- the four-state bus uses only the domain's single priority table: there is no open-drain/wired-AND policy, and RAD101 is reported once per net per run rather than per transition;
+- the balanced accumulator is also 2 trits wide and drops the adder carry, so it wraps in −4..4 instead of overflowing; its third trit is not stored;
+- in-place domain-policy editing keeps a domain's ID, labels, and value count; changing the value set requires creating a new domain;
+- layout is not fully incremental: drag frames, committed drags, and structural edits keep every route still proven valid and reroute only affected nets, but every edit still rebuilds all component boxes and ports, so opening or undoing a very large definition may pause briefly;
+- the canvas overview is a transient screen-space aid: it samples at most 500 parts and 100 ports, omits wires, labels, and values, hides below 480×300 pixels or when the lane legend overlaps it, and is not saved with the project;
 - waveform tail is bounded and may omit old transitions;
-- numeric display formats are CLI-only in this build;
-- undo snapshots whole projects and is capped at 80 entries.
+- the format preview decodes only the first lane that uses the edited format; the canvas lane legend is fixed at the lower-left, caps at seven rows, and the remaining lanes stay in the inspector;
+- a workbench sweep runs on a background thread and checks cancellation between rows and inside long settle advances; a single primitive evaluation cannot be interrupted, and very large permitted sweeps still consume CPU until stopped. Drag and presentation edits leave a run alone; structural edits cancel it because its snapshot is then obsolete;
+- `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; filtered `edges` and ordered `sequence` blocks cover direction and order; `expectRelation` compares two pins or nets with one typed operator and requires a shared domain; value assertions, `expectRelation`, `transitions.expectNet`, `edges.expectNet`, and sequence `net` items all read authored internal nets as well as interface pins. The CLI can run a folder as a suite, and the editor can run one script or a folder; both editor paths run against a snapshot on a background thread and check cancellation inside long windows as well as between scripts. The suite result lists only failing or errored scripts individually. The editor's result panel is transient, and a structural or behaviour-affecting edit marks it stale; presentation-only moves, labels, colors, and routes do not. Rerun after any stale notice for a current verdict;
+- undo snapshots whole projects and is capped at 80 entries;
+- crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
+- quaternary support covers a latch, flip-flop, 2-digit register, increment/carry/adder lookups, full adder, 2-digit adder, counter, accumulator, a fixed 4-word × 2-digit RAM, and a stored-program machine; the machine has a fixed 16-entry program ROM, four data words, no conditional branch or halt instruction, a 2-digit accumulator whose ADD wraps modulo 16, and an unconditional JMP; the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level. Register LOAD, accumulator ADD, and RAM WE are active at 3; when LOAD and ADD are both 3, LOAD wins; only WE=3 writes, and RAM addresses and words have fixed widths;
+- project-wide find is literal substring matching over definitions, instances, nets, interface pins, and numeric lanes; it is not fuzzy, does not index signal values, instance pin names, or files on disk, caps its visible list at 60 rows, and has no recent-search history. The open definition only breaks ties and never narrows the search. Pin rows navigate to the bound net when there is one; lane rows frame their pins but do not select a lane because the editor has no lane-selection state;
+- the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.
 
 ## Isolation statement
 

@@ -1,3 +1,4 @@
+using Radix.Core.Interpretation;
 using Radix.Core.Signals;
 
 namespace Radix.Core.Model;
@@ -25,6 +26,7 @@ public static class CircuitValidator
 
         ValidateFormat(project, diagnostics);
         ValidateDomains(project, diagnostics);
+        ValidateCustomNumericFormats(project, diagnostics);
         ValidateDefinitionIdentities(project, diagnostics);
         ValidateRoot(project, rootId, diagnostics);
         ValidateHierarchy(project, diagnostics);
@@ -92,6 +94,48 @@ public static class CircuitValidator
             if (names.Distinct(StringComparer.Ordinal).Count() != names.Count)
             {
                 diagnostics.Warning("RAD014", $"Domain '{domain.Id}' has duplicate value labels.");
+            }
+        }
+    }
+
+    private static void ValidateCustomNumericFormats(CircuitProject project, DiagnosticBag diagnostics)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (NumericFormatDefinition format in project.CustomNumericFormats)
+        {
+            if (!Identifiers.IsValid(format.Id))
+            {
+                diagnostics.Error(
+                    "RAD102",
+                    $"Custom numeric format has an invalid ID. {Identifiers.Rule}");
+            }
+            else if (NumericFormatCatalog.IsBuiltInId(format.Id))
+            {
+                diagnostics.Error(
+                    "RAD103",
+                    $"Custom numeric format ID '{format.Id}' is reserved by the built-in catalog.");
+            }
+            else if (!seen.Add(format.Id))
+            {
+                diagnostics.Error("RAD104", $"Duplicate custom numeric format ID '{format.Id}'.");
+            }
+
+            if (project.FindDomain(format.DomainId) is null)
+            {
+                diagnostics.Error(
+                    "RAD105",
+                    $"Custom numeric format '{format.Id}' refers to unknown domain '{format.DomainId}'.");
+            }
+
+            try
+            {
+                _ = format.ToFormat();
+            }
+            catch (ArgumentException exception)
+            {
+                diagnostics.Error(
+                    "RAD106",
+                    $"Custom numeric format '{format.Id}' is invalid: {exception.Message}");
             }
         }
     }
@@ -198,6 +242,77 @@ public static class CircuitValidator
         ValidateInstances(project, definition, diagnostics);
         ValidateNets(project, definition, diagnostics);
         ValidatePorts(project, definition, diagnostics);
+        ValidateNumericLanes(project, definition, diagnostics);
+    }
+
+    private static void ValidateNumericLanes(
+        CircuitProject project,
+        CircuitDefinition definition,
+        DiagnosticBag diagnostics)
+    {
+        var laneIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (NumericLane lane in definition.NumericLanes)
+        {
+            if (!Identifiers.IsValid(lane.Id))
+            {
+                diagnostics.Error("RAD095", $"Numeric lane has an invalid ID. {Identifiers.Rule}", definition.Id);
+            }
+            else if (!laneIds.Add(lane.Id))
+            {
+                diagnostics.Error("RAD096", $"Duplicate numeric lane ID '{lane.Id}'.", definition.Id);
+            }
+
+            INumericFormat? format = NumericFormatCatalog.Find(project, lane.FormatId);
+            if (format is null)
+            {
+                diagnostics.Error(
+                    "RAD097",
+                    $"Numeric lane '{lane.Id}' uses unknown format '{lane.FormatId}'.",
+                    definition.Id);
+            }
+
+            if (lane.PinIds.Count == 0)
+            {
+                diagnostics.Warning("RAD098", $"Numeric lane '{lane.Id}' has no pins.", definition.Id);
+                continue;
+            }
+
+            var seenPins = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string pinId in lane.PinIds)
+            {
+                if (!seenPins.Add(pinId))
+                {
+                    diagnostics.Error(
+                        "RAD099",
+                        $"Numeric lane '{lane.Id}' repeats pin '{pinId}'.",
+                        definition.Id,
+                        pinId: pinId);
+                    continue;
+                }
+
+                PinDeclaration? pin = definition.FindPin(pinId);
+                if (pin is null)
+                {
+                    diagnostics.Error(
+                        "RAD100",
+                        $"Numeric lane '{lane.Id}' refers to unknown interface pin '{pinId}'.",
+                        definition.Id,
+                        pinId: pinId);
+                    continue;
+                }
+
+                if (format is not null &&
+                    !string.Equals(pin.DomainId, format.DomainId, StringComparison.Ordinal))
+                {
+                    diagnostics.Warning(
+                        "RAD101",
+                        $"Numeric lane '{lane.Id}' pin '{pinId}' uses domain '{pin.DomainId}', but format '{format.Id}' is defined for '{format.DomainId}'.",
+                        definition.Id,
+                        pinId: pinId);
+                }
+            }
+        }
     }
 
     private static void ValidateInterface(CircuitProject project, CircuitDefinition definition, DiagnosticBag diagnostics)
@@ -342,6 +457,14 @@ public static class CircuitValidator
         var pinOwner = new Dictionary<PinRef, string>();
         var connectedPins = new HashSet<PinRef>();
 
+        // Index instances once. Resolving each pin reference with a linear scan would
+        // make validation quadratic on designs with many gates and nets.
+        var instancesById = new Dictionary<string, ComponentInstance>(definition.Instances.Count, StringComparer.Ordinal);
+        foreach (ComponentInstance instance in definition.Instances)
+        {
+            instancesById.TryAdd(instance.Id, instance);
+        }
+
         foreach (Net net in definition.Nets)
         {
             if (!Identifiers.IsValid(net.Id))
@@ -370,6 +493,32 @@ public static class CircuitValidator
             if (net.Pins.Count == 0)
             {
                 diagnostics.Warning("RAD074", "Net has no connected pins.", definition.Id, netId: net.Id);
+            }
+
+            if (!WireAnnotation.TryNormalizeColor(net.WireColor, out _))
+            {
+                diagnostics.Error(
+                    "RAD078",
+                    $"Net wire color '{net.WireColor}' is invalid; use #RRGGBB or 'auto'.",
+                    definition.Id,
+                    netId: net.Id);
+            }
+
+            if (net.RoutePoints.Count > WireAnnotation.MaxRoutePoints)
+            {
+                diagnostics.Error(
+                    "RAD079",
+                    $"Net has {net.RoutePoints.Count} wire bendpoints; the maximum is {WireAnnotation.MaxRoutePoints}.",
+                    definition.Id,
+                    netId: net.Id);
+            }
+            else if (net.RoutePoints.Any(point => !point.IsFinite))
+            {
+                diagnostics.Error(
+                    "RAD080",
+                    "Net has a non-finite or out-of-range wire bendpoint.",
+                    definition.Id,
+                    netId: net.Id);
             }
 
             var pinsInNet = new HashSet<PinRef>();
@@ -402,7 +551,7 @@ public static class CircuitValidator
                 pinOwner[pinRef] = net.Id;
                 connectedPins.Add(pinRef);
 
-                ComponentInstance? instance = definition.FindInstance(pinRef.InstanceId);
+                instancesById.TryGetValue(pinRef.InstanceId, out ComponentInstance? instance);
                 if (instance is null)
                 {
                     diagnostics.Error(
@@ -448,7 +597,7 @@ public static class CircuitValidator
 
             if (domain is not null)
             {
-                WarnOnMultipleDrivers(project, definition, net, domain, diagnostics);
+                WarnOnMultipleDrivers(project, definition, net, domain, instancesById, diagnostics);
             }
         }
 
@@ -475,13 +624,18 @@ public static class CircuitValidator
         CircuitDefinition definition,
         Net net,
         SignalDomain domain,
+        IReadOnlyDictionary<string, ComponentInstance> instancesById,
         DiagnosticBag diagnostics)
     {
+        if (net.Pins.Count < 2)
+        {
+            return;
+        }
+
         int drivers = 0;
         foreach (PinRef pinRef in net.Pins)
         {
-            ComponentInstance? instance = definition.FindInstance(pinRef.InstanceId);
-            if (instance is null)
+            if (!instancesById.TryGetValue(pinRef.InstanceId, out ComponentInstance? instance))
             {
                 continue;
             }

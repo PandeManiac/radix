@@ -75,6 +75,22 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void NetChangedReportsEachResolvedTransitionInOrder()
+    {
+        SimulationEngine engine = Engine(TestCircuits.ClockRoot([5, 5], [0, 1]));
+        var changes = new List<NetChange>();
+        engine.NetChanged += changes.Add;
+
+        engine.AdvanceTo(10);
+
+        Assert.Equal(3, changes.Count);
+        Assert.Equal(engine.NetTransitions, changes.Count);
+        Assert.Equal([0L, 5L, 10L], changes.Select(change => change.Time).ToArray());
+        Assert.Equal([-1, 0, 1], changes.Select(change => change.OldValue).ToArray());
+        Assert.Equal([0, 1, 0], changes.Select(change => change.NewValue).ToArray());
+    }
+
+    [Fact]
     public void PriorityDomainCombinesDrivers()
     {
         var builder = new ProjectBuilder("multi driver");
@@ -108,6 +124,28 @@ public sealed class EngineTests
 
         Assert.Equal(0, engine.Read("y"));
         Assert.Single(engine.RuntimeDiagnostics, d => d.Code == SimulationEngine.DriverConflictCode);
+    }
+
+    [Fact]
+    public void SingleDriverPolicyReportsDuplicateEqualDriversAsContention()
+    {
+        var builder = new ProjectBuilder("equal drivers");
+        var root = builder.Define("root", "Root");
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("first", new ConstantSpec(1));
+        root.AddPrimitive("second", new ConstantSpec(1));
+        root.Connect(y, root.Pin("first", "out"), root.Pin("second", "out"));
+
+        SimulationEngine engine = Engine(builder.Build("root"));
+        engine.AdvanceTo(0);
+
+        Assert.Equal(1, engine.Read("y"));
+        Diagnostic conflict = Assert.Single(
+            engine.RuntimeDiagnostics,
+            diagnostic => diagnostic.Code == SimulationEngine.DriverConflictCode);
+        Assert.Contains("active drivers", conflict.Message, StringComparison.Ordinal);
+        Assert.Contains("single", conflict.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("disagree", conflict.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -210,6 +210,33 @@ public sealed class DefinitionBuilder
         return new PinRef(instanceId, pinId);
     }
 
+    /// <summary>
+    /// Adds a presentation-only numeric lane over existing interface pins. The first
+    /// pin is the least significant. The format id is validated by the project
+    /// validator, so builders can also produce intentionally invalid fixtures.
+    /// </summary>
+    public NumericLane AddNumericLane(string id, string name, string formatId, params string[] pinIds)
+    {
+        if (Definition.FindNumericLane(id) is not null)
+        {
+            throw new InvalidOperationException($"Definition '{Definition.Id}' already has numeric lane '{id}'.");
+        }
+
+        var lane = new NumericLane { Id = id, Name = name, FormatId = formatId };
+        foreach (string pinId in pinIds)
+        {
+            if (Definition.FindPin(pinId) is null)
+            {
+                throw new InvalidOperationException($"Definition '{Definition.Id}' has no pin '{pinId}' for numeric lane '{id}'.");
+            }
+
+            lane.PinIds.Add(pinId);
+        }
+
+        Definition.NumericLanes.Add(lane);
+        return lane;
+    }
+
     public Net SetInitial(Net net, int? value)
     {
         ArgumentNullException.ThrowIfNull(net);

@@ -334,7 +334,52 @@ public sealed class SimulatorHost
         return true;
     }
 
-    public bool DrivePort(string pinId, int value) => Drive(EditorPin.ForPort(pinId), value);
+    public bool DrivePort(string pinId, int value) => DrivePorts([(pinId, value)]);
+
+    /// <summary>
+    /// Applies several external input drives at the current simulated time as one
+    /// replay. All pins are validated before any drive is recorded, so a lane drive
+    /// cannot leave a half-applied value.
+    /// </summary>
+    public bool DrivePorts(IReadOnlyList<(string PinId, int Value)> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        if (values.Count == 0)
+        {
+            return true;
+        }
+
+        var resolved = new List<(string NetId, int Value)>(values.Count);
+        foreach ((string pinId, int value) in values)
+        {
+            EditorPin pin = EditorPin.ForPort(pinId);
+            if (!IsInput(pin) || NetFor(pin) is not Net net)
+            {
+                return false;
+            }
+
+            if (!EnsureCompiled() || !TryNetIndex(net.Id, out _, out SignalDomain? domain))
+            {
+                return false;
+            }
+
+            if (domain is not null && !domain.IsValidValue(value))
+            {
+                return false;
+            }
+
+            resolved.Add((net.Id, value));
+        }
+
+        foreach ((string netId, int value) in resolved)
+        {
+            _drives.RemoveAll(d => string.Equals(d.NetId, netId, StringComparison.Ordinal) && d.Time == _time);
+            _drives.Add(new DriveRecord(netId, value, _time));
+        }
+
+        ResetTo(_time);
+        return true;
+    }
 
     public bool TryNetIndex(EditorPin pin, out int netIndex, out SignalDomain? domain)
     {

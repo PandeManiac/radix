@@ -1,4 +1,4 @@
-# RADIX project format, version 1
+# RADIX project format, version 6
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,25 +9,29 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 1,
+  "version": 5,
   "name": "Example",
   "description": "optional",
   "root": "main",
   "settings": { "...": "..." },
+  "view": { "...": "..." },
   "domains": [ "...": "..." ],
+  "customNumericFormats": [ "...": "..." ],
   "definitions": [ "...": "..." ]
 }
 ```
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `format` | yes | Must be exactly `"radix-project"` |
-| `version` | yes | Currently `1`; newer versions are rejected, not guessed |
+| `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
+| `version` | yes | Currently `6`. Versions 1–6 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
-| `root` | yes | Definition opened by default and simulated by the CLI unless overridden |
+| `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
 | `settings` | no | Simulation defaults; omitted fields use defaults |
+| `view` | no | Presentation-only saved viewport, active definition, and waveform pins |
 | `domains` | yes | At least one domain required for a valid project |
+| `customNumericFormats` | no | Project-owned display formats; omitted when none exist |
 | `definitions` | yes | One or more definitions; root must be present |
 
 Property names are camelCase. JSON comments and trailing commas are accepted when loading.
@@ -47,6 +51,24 @@ Property names are camelCase. JSON comments and trailing commas are accepted whe
 - `maxRecordedNetChanges`: capacity of the trace ring buffer; `0` disables trace storage.
 - `defaultAdvanceTicks`: editor default for an Advance action.
 - `traceAllNets`: whether net transitions are recorded at all.
+
+## View metadata
+
+```json
+"view": {
+  "definition": "main",
+  "scale": 0.75,
+  "offsetX": 132.5,
+  "offsetY": -48,
+  "waveformPins": { "main": ["q0", "clk"] }
+}
+```
+
+- `definition`: definition that was open in the editor. It is ignored if it no longer exists, and never changes the simulation root.
+- `scale`, `offsetX`, `offsetY`: canvas zoom and pan. The editor clamps the scale to its supported range and ignores non-finite values.
+- `waveformPins`: net IDs pinned to the waveform panel, keyed by definition ID. Order is significant and is preserved. Blank or duplicate IDs are dropped on load; a definition with no pins is omitted when saving. Stale definitions or nets are ignored and pruned by the editor, so a pin can never create a phantom waveform row.
+- All fields are optional. A project without usable viewport fields opens with the usual fit-to-content view.
+- View metadata is presentation only. It does not affect validation, compilation, simulation, or dirty-state checks; panning, zooming, and changing waveform pins never mark a project as modified.
 
 ## Domains
 
@@ -86,6 +108,32 @@ Multiple active drivers resolve deterministically to the first active driver in 
 
 `priorities` must have exactly one entry per domain value. Higher priority wins. Disagreeing drivers at equal priority resolve to `conflictValue`, which must be a valid domain index.
 
+## Custom numeric formats
+
+```json
+"customNumericFormats": [
+  {
+    "id": "signed-4bit",
+    "name": "Signed 4-bit",
+    "domain": "binary",
+    "digits": [0, 1],
+    "radix": 2,
+    "weighting": "radix-complement",
+    "leastSignificantFirst": true,
+    "description": "optional"
+  }
+]
+```
+
+- A format is **display metadata** used by numeric lanes. It is not a signal domain and never changes simulation values.
+- `digits` maps signal indices to digit values by position. `radix` must be at least 2.
+- `weighting` is `standard`, `radix-complement` (top position contributes `−(radix^(width−1))`), or `diminished-radix-complement` (top position contributes `−(radix^(width−1)−1)`).
+- `negativeSignValue` selects sign-magnitude instead: the top position is a sign indicator with that digit index. `weighting` is then omitted or `standard`.
+- `leastSignificantFirst` follows the same convention as the built-in formats and should usually be `true` for editor lanes.
+- `id` must be a valid identifier, unique in the project, and must not collide with a built-in format ID (`unsigned-binary`, `twos-complement`, `ones-complement`, `sign-magnitude`, `unsigned-ternary`, `unsigned-quaternary`, `ternary-top-negative`, `balanced-ternary`).
+- `domain` must name a project domain. It is nominal: lanes warn when their pins use a different domain, but still decode signal indices.
+- Non-contiguous digit values are accepted for decoding; encoding (driving a lane) refuses them because the mapping is not invertible by position.
+
 ## Definitions
 
 ```json
@@ -96,11 +144,12 @@ Multiple active drivers resolve deterministically to the first active driver in 
   "pins": [],
   "instances": [],
   "nets": [],
-  "ports": []
+  "ports": [],
+  "numericLanes": []
 }
 ```
 
-A definition is a reusable circuit: its interface (`pins`), its body (`instances`, `nets`), and the bindings from interface pins to internal nets (`ports`). Definitions may instantiate other definitions. Cycles are rejected; maximum instantiation depth is 64.
+A definition is a reusable circuit: its interface (`pins`), its body (`instances`, `nets`), the bindings from interface pins to internal nets (`ports`), and optional presentation-only numeric groupings (`numericLanes`). Definitions may instantiate other definitions. Cycles are rejected; maximum instantiation depth is 64.
 
 ### Pins
 
@@ -165,6 +214,8 @@ Instance pins are derived from the referenced definition's interface or from the
   "domain": "binary",
   "label": "Q0",
   "initial": 0,
+  "color": "#38BDF8",
+  "route": [{ "x": 420, "y": 96 }, { "x": 460, "y": 96 }],
   "pins": [
     { "instance": "ff0", "pin": "q" },
     { "instance": "u1", "pin": "in0" }
@@ -178,6 +229,10 @@ Instance pins are derived from the referenced definition's interface or from the
 - `pins` may be empty, but validation warns.
 - Multiple output pins are permitted and resolved by the domain's driver policy.
 
+- `color` is optional editor metadata: `#RRGGBB` (normalized to upper case) or `"auto"`. Omit it for signal-derived coloring. Invalid colors fail the load.
+- `route` is optional editor metadata: up to 64 author bendpoints in world coordinates, in order. Empty or omitted means automatic orthogonal routing. Bendpoints never enter compilation or simulation.
+- Version 1 files have neither field and load unchanged. Saving always writes the current version (3).
+
 ### Port bindings
 
 ```json
@@ -189,6 +244,24 @@ Instance pins are derived from the referenced definition's interface or from the
 
 Every interface pin needs exactly one binding. The pin's declared domain must match the bound net's domain. Only root ports are exposed to the CLI/testbench; nested definition ports are resolved by the compiler into flattened nets.
 
+### Numeric lanes
+
+```json
+"numericLanes": [
+  {
+    "id": "count",
+    "name": "Count",
+    "format": "unsigned-binary",
+    "pins": ["q0", "q1", "q2", "q3"]
+  }
+]
+```
+
+- A lane is an ordered group of interface pins shown as one number. The first pin is least significant.
+- `format` is a built-in format ID or the ID of an entry in `customNumericFormats`.
+- Lanes are **presentation only**. They do not merge nets, add drivers, change values, or enter compilation. Unknown formats, unknown pins, duplicate pins, and duplicate lane IDs are validation errors; mismatched pin domains are warnings.
+- Removing an interface pin also removes it from any lane; a lane left with no pins is removed. The editor saves lanes with the definition and library export/import preserves them.
+
 ## Complete minimal example
 
 This project has one definition, one input port, one lookup inverter, and one output port:
@@ -196,7 +269,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 ```json
 {
   "format": "radix-project",
-  "version": 1,
+  "version": 5,
   "name": "Inverter",
   "root": "main",
   "domains": [
@@ -256,7 +329,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 
 ## Versioning and migration
 
-Version 1 is the only implemented format. Rules for future revisions:
+Versions 1 through 6 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.
@@ -264,6 +337,18 @@ Version 1 is the only implemented format. Rules for future revisions:
 4. Keep optional display metadata additive within a version only if old builds can still reject unknown properties without data loss; because unknown properties are currently rejected, additive fields still require a version decision.
 5. Preserve domain and definition IDs across migrations where possible so editor selections and external tooling remain meaningful.
 6. Add round-trip and old-file fixtures before changing the current version.
+
+## Component libraries (`.radixlib`)
+
+A `.radixlib` file uses **exactly this project format**. It is a project containing one exported root definition plus its transitive dependency closure and the domains those definitions use. The extension is a hint for file pickers, not a separate schema.
+
+- Exporting a definition writes the closure so the library is self-contained.
+- Importing validates the library first, merges compatible domains by ID, and reuses definitions that are electrically equivalent (ignoring labels, positions, wire colors, routes, and numeric-lane presentation).
+- A library definition whose ID collides with a structurally different local definition is imported under a fresh unique ID; existing definitions are never overwritten.
+- Custom numeric formats used by imported lanes travel with the library. Equivalent local formats are reused; a conflicting format ID is renamed and the imported lanes are rewritten to the new ID.
+- Import aborts without partial changes if a domain conflicts or if the merge would introduce new validation errors.
+
+Because libraries are ordinary projects, they can also be opened directly as projects, inspected with the CLI, and validated with the same rules. There is no executable code in a library.
 
 ## Security model
 
@@ -274,11 +359,10 @@ Version 1 is the only implemented format. Rules for future revisions:
 - There is currently no maximum file size or maximum table count beyond the per-table 1,048,576-entry limit. Treat untrusted projects as a potential resource-exhaustion vector until a configurable size limit is added.
 - `ProjectSerializer.Save` writes via a temporary file and atomic move, but callers are responsible for choosing a safe destination. The editor uses the platform file picker.
 
-## What is not persisted yet
+## What is not persisted
 
-- viewport pan/zoom, active tab, and selection;
-- chosen numeric display formats;
+- active inspector/waveform tab and selection (workspace preferences, not document state);
 - external input event history;
 - simulation runtime state (projects save topology and initial configuration only).
 
-Instance `x`/`y` coordinates are persisted. Editor viewport state is intentionally a future addition; adding it should not change circuit semantics.
+Instance `x`/`y` coordinates, the active definition, viewport pan/zoom, and waveform pin sets are persisted. The `view` object is presentation only and never changes circuit semantics.

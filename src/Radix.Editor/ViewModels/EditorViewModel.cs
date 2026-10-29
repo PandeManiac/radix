@@ -1,13 +1,17 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Numerics;
 using System.Windows.Input;
 using Avalonia;
 using Radix.Core;
+using Radix.Core.Analysis;
 using Radix.Core.Compilation;
+using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Radix.Core.Signals;
 using Radix.Core.Simulation;
+using Radix.Core.Testing;
 using Radix.Editor.Rendering;
 using Radix.Editor.Services;
 using Radix.StdLib;
@@ -24,6 +28,23 @@ public sealed class EditorViewModel : ObservableObject
     private readonly Stack<EditorSnapshot> _redo = new();
     private readonly RelayCommand _undoCommand;
     private readonly RelayCommand _redoCommand;
+    private readonly RelayCommand _deleteCommand;
+    private readonly RelayCommand _copyCommand;
+    private readonly RelayCommand _pasteCommand;
+    private readonly RelayCommand _duplicateCommand;
+    private readonly RelayCommand _selectAllCommand;
+    private readonly RelayCommand _extractCommand;
+    private readonly RelayCommand _backCommand;
+    private readonly RelayCommand _forwardCommand;
+    private readonly RelayCommand _alignLeftCommand;
+    private readonly RelayCommand _alignTopCommand;
+    private readonly RelayCommand _distributeHorizontallyCommand;
+    private readonly RelayCommand _distributeVerticallyCommand;
+    private readonly RelayCommand _promoteInputCommand;
+    private readonly RelayCommand _promoteOutputCommand;
+    private readonly HashSet<string> _selectedInstanceIds = new(StringComparer.Ordinal);
+    private readonly List<string> _definitionHistory = [];
+    private int _definitionHistoryIndex = -1;
     private CircuitProject _project;
     private string _definitionId = string.Empty;
     private ComponentInstance? _selectedInstance;
@@ -31,6 +52,8 @@ public sealed class EditorViewModel : ObservableObject
     private string? _projectPath;
     private bool _dirty;
     private bool _pendingDragUndo;
+    private bool _dragActive;
+    private bool _dragReusedRoutes;
     private bool _refreshingDomainSelection;
     private Point _placementPoint = new(260, 160);
     private double _placementCascade;
@@ -42,17 +65,95 @@ public sealed class EditorViewModel : ObservableObject
     private string _newPinName = string.Empty;
     private bool _newPinIsInput = true;
     private string _advanceTicksText = "10";
+    private string _wireLabelMode = WireLabelModes.All;
+    private string _defaultAdvanceTicksText = "10";
+    private string _evaluationGuardText = "64";
+    private string _traceCapacityText = "500000";
+    private bool _recordNetTransitions = true;
     private string _newDomainName = string.Empty;
     private string _newDomainValues = "0 1 2";
+    private string _newDomainPriorities = "1 1 1";
+    private string _newDomainConflictValue = "0";
+    private DriverPolicyChoice? _selectedDriverPolicy;
+    private string? _editingDomainId;
+
+    private readonly List<string> _recentProjectPaths = [];
+    private readonly RelayCommand _generatePartCommand;
+    private string _generatedPartKind = "Register";
+    private string _generatedPartWidthText = "8";
+    private string _generatedPartWordsText = "16";
+    private string _generatedPartContentsText = string.Empty;
+    private string _librarySearch = string.Empty;
+    private string _netSearch = string.Empty;
+    private string _netListSummary = string.Empty;
+    private bool _isSearchOpen;
+    private string _searchQuery = string.Empty;
+    private ProjectSearchItem? _selectedSearchItem;
+    private string _searchSummary = string.Empty;
+    private ClipboardPayload? _clipboard;
+    private int _pasteOffset;
+    private string? _savedProjectJson;
+    private string _newComponentName = "Component";
+    private string _promoteNetName = string.Empty;
+    private string _newLaneName = string.Empty;
+    private NumericDisplayOption? _selectedLaneFormat;
+    private string _newFormatName = string.Empty;
+    private string _newFormatDigits = "0 1 2";
+    private string _newFormatRadix = "3";
+    private DomainChoice? _newFormatDomain;
+    private NumericFormatModeChoice? _selectedFormatMode;
+    private bool _newFormatLeastSignificantFirst = true;
+    private string _newFormatNegativeSign = "1";
+    private string? _editingFormatId;
+    private string? _editingLaneId;
+    private string _formatPreviewText = string.Empty;
+    private bool _refreshingFormatForm;
+    private bool _hasTestScriptResult;
+    private bool _isTestScriptResultStale;
+    private bool _testScriptPassed;
+    private string _testScriptSummary = string.Empty;
+    private string _testScriptPath = string.Empty;
+    private bool _isTestScriptRunning;
+    private string _testScriptRunTitle = string.Empty;
+    private bool _testScriptProgressIndeterminate;
+    private string _testScriptProgressText = string.Empty;
+    private double _testScriptProgressValue;
+    private int _testScriptGeneration;
+    private int _semanticRevision;
+    private CancellationTokenSource? _testScriptCancellation;
+    private readonly RelayCommand _cancelTestScriptCommand;
+    private string _sweepSettleTicksText = "10";
+    private string _sweepMaxRowsText = "4096";
+    private string _sweepResultText = string.Empty;
+    private string _sweepSummary = string.Empty;
+    private bool _hasSweepResult;
+    private bool _hasSweepError;
+    private bool _isSweepRunning;
+    private string _sweepProgressText = string.Empty;
+    private double _sweepProgressValue;
+    private int _sweepGeneration;
+    private CancellationTokenSource? _sweepCancellation;
+    private readonly RelayCommand _runSweepCommand;
+    private readonly RelayCommand _cancelSweepCommand;
+    private bool _hasLookupTable;
+    private string _lookupTableSummary = string.Empty;
+    private string? _lookupTableInstanceId;
+    private readonly List<int> _lookupTableModel = [];
 
 
     public EditorViewModel(CircuitProject project)
     {
         _project = project ?? throw new ArgumentNullException(nameof(project));
         EnsureProjectShape();
-        _definitionId = _project.RootDefinitionId;
+        _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
+        _definitionId = _project.FindDefinition(_project.View.ActiveDefinitionId)?.Id ?? _project.RootDefinitionId;
         Simulator = new SimulatorHost(_project, Definition);
         _advanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
+        RefreshFormatChoices();
+        _selectedFormatMode = FormatModes[0];
+        _selectedLaneFormat = FormatChoices.FirstOrDefault(option => option.Format.Id == NumericFormats.UnsignedBinary.Id) ??
+            FormatChoices.FirstOrDefault();
+        _selectedDriverPolicy = DriverPolicies[0];
 
         _undoCommand = new RelayCommand(Undo, () => _undo.Count > 0);
         _redoCommand = new RelayCommand(Redo, () => _redo.Count > 0);
@@ -64,24 +165,130 @@ public sealed class EditorViewModel : ObservableObject
         RemoveDefinitionCommand = new RelayCommand(RemoveDefinition);
         AddPinCommand = new RelayCommand(AddPin);
         AddDomainCommand = new RelayCommand(AddDomain);
-        DeleteSelectionCommand = new RelayCommand(DeleteSelection, () => _selectedInstance is not null || _selectedNet is not null);
+        CancelDomainEditCommand = new RelayCommand(CancelDomainEdit);
+        ToggleWaveformPinCommand = new RelayCommand(ToggleSelectedNetWaveformPin);
+        ClearWaveformPinsCommand = new RelayCommand(ClearWaveformPins);
+        _deleteCommand = new RelayCommand(DeleteSelection, () => _selectedInstanceIds.Count > 0 || _selectedNet is not null);
+        DeleteSelectionCommand = _deleteCommand;
+        _copyCommand = new RelayCommand(() => CopySelection(), () => _selectedInstanceIds.Count > 0);
+        CopyCommand = _copyCommand;
+        _pasteCommand = new RelayCommand(Paste, () => _clipboard is not null);
+        PasteCommand = _pasteCommand;
+        _duplicateCommand = new RelayCommand(DuplicateSelection, () => _selectedInstanceIds.Count > 0);
+        DuplicateCommand = _duplicateCommand;
+        _selectAllCommand = new RelayCommand(SelectAllInstances, () => Definition.Instances.Count > 0);
+        SelectAllCommand = _selectAllCommand;
+        _extractCommand = new RelayCommand(ExtractSelectionToComponent, () => _selectedInstanceIds.Count > 0);
+        ExtractSelectionCommand = _extractCommand;
+        _backCommand = new RelayCommand(NavigateBack, () => CanNavigateBack);
+        BackCommand = _backCommand;
+        _forwardCommand = new RelayCommand(NavigateForward, () => CanNavigateForward);
+        ForwardCommand = _forwardCommand;
+        _alignLeftCommand = new RelayCommand(AlignSelectionLeft, () => _selectedInstanceIds.Count > 1);
+        AlignLeftCommand = _alignLeftCommand;
+        _alignTopCommand = new RelayCommand(AlignSelectionTop, () => _selectedInstanceIds.Count > 1);
+        AlignTopCommand = _alignTopCommand;
+        _distributeHorizontallyCommand = new RelayCommand(
+            DistributeSelectionHorizontally,
+            () => _selectedInstanceIds.Count > 2);
+        DistributeHorizontallyCommand = _distributeHorizontallyCommand;
+        _distributeVerticallyCommand = new RelayCommand(
+            DistributeSelectionVertically,
+            () => _selectedInstanceIds.Count > 2);
+        DistributeVerticallyCommand = _distributeVerticallyCommand;
+        AutoArrangeCommand = new RelayCommand(AutoArrange);
+        _promoteInputCommand = new RelayCommand(
+            () => PromoteSelectedNet(PinDirection.Input),
+            () => CanPromoteSelectedNet);
+        PromoteInputCommand = _promoteInputCommand;
+        _promoteOutputCommand = new RelayCommand(
+            () => PromoteSelectedNet(PinDirection.Output),
+            () => CanPromoteSelectedNet);
+        PromoteOutputCommand = _promoteOutputCommand;
+        ClearNetRouteCommand = new RelayCommand(ClearSelectedNetRoute, () => _selectedNet is not null);
+        WireColorChoices =
+        [
+            WireColorChoice("A", null, "Automatic domain/signal color"),
+            WireColorChoice(string.Empty, "#38BDF8", "Sky"),
+            WireColorChoice(string.Empty, "#22C55E", "Green"),
+            WireColorChoice(string.Empty, "#F59E0B", "Amber"),
+            WireColorChoice(string.Empty, "#EF4444", "Red"),
+            WireColorChoice(string.Empty, "#A855F7", "Purple"),
+            WireColorChoice(string.Empty, "#94A3B8", "Slate"),
+        ];
         BeginCommand = new RelayCommand(BeginSimulation);
         AdvanceCommand = new RelayCommand(AdvanceSimulation);
         StepEventCommand = new RelayCommand(StepEvent);
         StepClockCommand = new RelayCommand(StepClock);
         SettleCommand = new RelayCommand(Settle);
         ClearDrivesCommand = new RelayCommand(ClearDrives);
+        ClearTestScriptResultCommand = new RelayCommand(ClearTestScriptResult);
+        _cancelTestScriptCommand = new RelayCommand(CancelTestScript, () => IsTestScriptRunning);
+        CancelTestScriptCommand = _cancelTestScriptCommand;
+        _runSweepCommand = new RelayCommand(
+            () => _ = RunSweepAsync(),
+            () => !IsSweepRunning);
+        RunSweepCommand = _runSweepCommand;
+        _cancelSweepCommand = new RelayCommand(CancelSweep, () => IsSweepRunning);
+        CancelSweepCommand = _cancelSweepCommand;
+        ClearSweepResultCommand = new RelayCommand(ClearSweepResult);
+        _generatePartCommand = new RelayCommand(() => GeneratePart(), CanGeneratePart);
+        GeneratePartCommand = _generatePartCommand;
+        ApplyProjectSettingsCommand = new RelayCommand(() => ApplyProjectSettings());
+        ReloadProjectSettingsCommand = new RelayCommand(ReloadProjectSettings);
         FitCommand = new RelayCommand(() => FitRequested?.Invoke());
         CloseDefinitionCommand = new RelayCommand(() => OpenDefinition(_project.RootDefinitionId));
+        AddNumericLaneCommand = new RelayCommand(AddNumericLane);
+        CancelLaneEditCommand = new RelayCommand(CancelNumericLaneEdit);
+        AddNumericFormatCommand = new RelayCommand(AddCustomNumericFormat);
+        CancelFormatEditCommand = new RelayCommand(CancelCustomNumericFormatEdit);
+        OpenSearchCommand = new RelayCommand(OpenSearch);
+        CloseSearchCommand = new RelayCommand(CloseSearch);
 
         RefreshAll(fit: false);
+        ResetDefinitionHistory();
     }
 
     public event Action? VisualInvalidated;
 
     public event Action? FitRequested;
 
+    /// <summary>Raised after loading a project that has a saved viewport.</summary>
+    public event Action? ViewRestoreRequested;
+
+    /// <summary>Raised with world bounds that should be centered after navigation.</summary>
+    public event Action<Rect>? FocusRequested;
+
+    /// <summary>
+    /// Raised when a recent-project entry is chosen. The window handles it so the
+    /// same unsaved-changes prompt as the Open button is used.
+    /// </summary>
+    public event Action<string>? RecentProjectOpenRequested;
+
+    /// <summary>Raised after the find palette opens so the window can focus its query box.</summary>
+    public event Action? SearchOpened;
+
+    /// <summary>Raised after a project is written successfully, so recovery can be cleared.</summary>
+    public event Action? ProjectSaved;
+
     public CircuitProject Project => _project;
+
+    /// <summary>
+    /// Stores the canvas viewport with the project without marking the project dirty.
+    /// Presentation state is saved on the next explicit save, not on every pan.
+    /// </summary>
+    public void SyncViewport(double scale, double offsetX, double offsetY)
+    {
+        if (!double.IsFinite(scale) || scale <= 0 ||
+            !double.IsFinite(offsetX) || !double.IsFinite(offsetY))
+        {
+            return;
+        }
+
+        _project.View.Scale = scale;
+        _project.View.OffsetX = offsetX;
+        _project.View.OffsetY = offsetY;
+    }
 
     public CircuitDefinition Definition =>
         _project.FindDefinition(_definitionId) ?? _project.Definitions[0];
@@ -100,19 +307,70 @@ public sealed class EditorViewModel : ObservableObject
 
     public ObservableCollection<DefinitionListItem> Definitions { get; } = [];
 
+    /// <summary>Parents that instantiate the definition being edited.</summary>
+    public ObservableCollection<DefinitionUsageItem> DefinitionUsages { get; } = [];
+
+    public bool HasDefinitionUsages => DefinitionUsages.Count > 0;
+
+    /// <summary>Instance pins on the selected net, in authored pin order.</summary>
+    public ObservableCollection<NetEndpointItem> NetEndpoints { get; } = [];
+
+    public bool HasNetEndpoints => NetEndpoints.Count > 0;
+
+    /// <summary>Quick wire-color swatches, always applied to the selected net.</summary>
+    public ObservableCollection<WireColorChoice> WireColorChoices { get; }
+
     public ObservableCollection<PaletteItem> Palette { get; } = [];
 
     public ObservableCollection<PinListItem> Pins { get; } = [];
 
     public ObservableCollection<IoPinViewModel> IoPins { get; } = [];
 
+    public ObservableCollection<NetListItem> NetList { get; } = [];
+
+    public ObservableCollection<ProjectSearchItem> SearchResults { get; } = [];
+
+    public ObservableCollection<NumericLaneListItem> NumericLanes { get; } = [];
+
+    public ObservableCollection<LanePinChoice> LanePinChoices { get; } = [];
+
+    public ObservableCollection<NumericDisplayOption> FormatChoices { get; } = [];
+
+    public ObservableCollection<CustomNumericFormatListItem> CustomNumericFormats { get; } = [];
+
+    public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
+    [
+        new("standard", "Standard positional"),
+        new("radix-complement", "Radix complement (top digit negative)"),
+        new("diminished-radix-complement", "Diminished complement"),
+        new("sign-magnitude", "Sign-magnitude"),
+    ];
+
     public ObservableCollection<DiagnosticItem> Diagnostics { get; } = [];
+
+    public ObservableCollection<TestScriptFailureItem> TestScriptFailures { get; } = [];
+
+    public ObservableCollection<LookupTableCell> LookupCells { get; } = [];
 
     public ObservableCollection<EditableField> Fields { get; } = [];
 
     public ObservableCollection<string> RecentTransitions { get; } = [];
 
+    /// <summary>Recently opened or saved projects, newest first; missing files are dropped on load.</summary>
+    public ObservableCollection<RecentProjectItem> RecentProjects { get; } = [];
+
+    public bool HasRecentProjects => RecentProjects.Count > 0;
+
+    /// <summary>Paths captured into workspace settings when the window closes.</summary>
+    public IReadOnlyList<string> RecentProjectPaths => _recentProjectPaths;
+
     public ObservableCollection<DomainChoice> Domains { get; } = [];
+
+    public ObservableCollection<DriverPolicyChoice> DriverPolicies { get; } =
+    [
+        new("single", "Single driver", "Multiple active drivers are a conflict; the first compiled driver wins."),
+        new("priority", "Priority table", "The highest-priority active driver wins; ties resolve to a conflict value."),
+    ];
 
     public ObservableCollection<string> Events { get; } = [];
 
@@ -130,7 +388,77 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand AddDomainCommand { get; }
 
+    public ICommand GeneratePartCommand { get; }
+
+    public ICommand CancelDomainEditCommand { get; }
+
+    public bool IsEditingDomainPolicy => _editingDomainId is not null;
+
+    public string DomainSaveButtonText => IsEditingDomainPolicy ? "Update domain policy" : "Add domain";
+
+    /// <summary>Value labels and count stay fixed during a policy edit.</summary>
+    public bool IsDomainValueFieldsEnabled => !IsEditingDomainPolicy;
+
+    /// <summary>Maximum waveform rows; pinned nets are shown first.</summary>
+    public const int MaxWaveformRows = 16;
+
+    public ICommand ToggleWaveformPinCommand { get; }
+
+    public ICommand ClearWaveformPinsCommand { get; }
+
+    public bool SelectedNetOnWaveform =>
+        _selectedNet is not null && IsWaveformPinned(_selectedNet.Id);
+
+    public string WaveformPinButtonText => SelectedNetOnWaveform
+        ? "Hide from waveform"
+        : "Show in waveform";
+
+    public int WaveformPinCount => PinnedWaveformNetIds().Count;
+
+    public bool HasWaveformPins => WaveformPinCount > 0;
+
+    public string WaveformPinSummary
+    {
+        get
+        {
+            int pinned = WaveformPinCount;
+            return pinned == 0
+                ? $"Up to {MaxWaveformRows} nets, in declaration order. Pin a net from its inspector to show it first."
+                : $"{pinned} pinned net(s) shown first, {MaxWaveformRows} rows max.";
+        }
+    }
+
     public ICommand DeleteSelectionCommand { get; }
+
+    public ICommand CopyCommand { get; }
+
+    public ICommand PasteCommand { get; }
+
+    public ICommand DuplicateCommand { get; }
+
+    public ICommand SelectAllCommand { get; }
+
+    public ICommand ExtractSelectionCommand { get; }
+
+    public ICommand BackCommand { get; }
+
+    public ICommand ForwardCommand { get; }
+
+    public ICommand AlignLeftCommand { get; }
+
+    public ICommand AlignTopCommand { get; }
+
+    public ICommand DistributeHorizontallyCommand { get; }
+
+    public ICommand DistributeVerticallyCommand { get; }
+
+    public ICommand AutoArrangeCommand { get; }
+
+    public ICommand PromoteInputCommand { get; }
+
+    public ICommand PromoteOutputCommand { get; }
+
+    public ICommand ClearNetRouteCommand { get; }
 
     public ICommand BeginCommand { get; }
 
@@ -143,6 +471,23 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand SettleCommand { get; }
 
     public ICommand ClearDrivesCommand { get; }
+
+    public ICommand ClearTestScriptResultCommand { get; }
+
+    public ICommand CancelTestScriptCommand { get; }
+
+    /// <summary>False while a script or folder suite runs; script pickers are disabled.</summary>
+    public bool CanRunTestScripts => !IsTestScriptRunning;
+
+    public ICommand RunSweepCommand { get; }
+
+    public ICommand ClearSweepResultCommand { get; }
+
+    public ICommand CancelSweepCommand { get; }
+
+    public ICommand ApplyProjectSettingsCommand { get; }
+
+    public ICommand ReloadProjectSettingsCommand { get; }
 
     public ICommand FitCommand { get; }
 
@@ -169,6 +514,9 @@ public sealed class EditorViewModel : ObservableObject
         get => _projectPath;
         private set => SetField(ref _projectPath, value);
     }
+
+    /// <summary>True when this session was restored from a crash snapshot and has not been saved.</summary>
+    public bool IsRecoveredProject { get; private set; }
 
     public bool IsDirty
     {
@@ -220,22 +568,210 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
+    public bool HasTestScriptResult
+    {
+        get => _hasTestScriptResult;
+        private set => SetField(ref _hasTestScriptResult, value);
+    }
+
+    /// <summary>
+    /// True when the circuit, its interface, or its interpretation changed after the
+    /// displayed result ran. The result stays visible for reference but must not be
+    /// mistaken for a current verdict.
+    /// </summary>
+    public bool IsTestScriptResultStale
+    {
+        get => _isTestScriptResultStale;
+        private set => SetField(ref _isTestScriptResultStale, value);
+    }
+
+    /// <summary>True while a single script or folder suite runs against a snapshot.</summary>
+    public bool IsTestScriptRunning
+    {
+        get => _isTestScriptRunning;
+        private set
+        {
+            if (!SetField(ref _isTestScriptRunning, value))
+            {
+                return;
+            }
+
+            RaisePropertyChanged(nameof(CanRunTestScripts));
+            _cancelTestScriptCommand?.RaiseCanExecuteChanged();
+        }
+    }
+
+    public string TestScriptRunTitle
+    {
+        get => _testScriptRunTitle;
+        private set => SetField(ref _testScriptRunTitle, value);
+    }
+
+    /// <summary>True for a single-script run, whose duration cannot be predicted.</summary>
+    public bool TestScriptProgressIndeterminate
+    {
+        get => _testScriptProgressIndeterminate;
+        private set => SetField(ref _testScriptProgressIndeterminate, value);
+    }
+
+    public string TestScriptProgressText
+    {
+        get => _testScriptProgressText;
+        private set => SetField(ref _testScriptProgressText, value);
+    }
+
+    public double TestScriptProgressValue
+    {
+        get => _testScriptProgressValue;
+        private set => SetField(ref _testScriptProgressValue, value);
+    }
+
+    public bool TestScriptPassed
+    {
+        get => _testScriptPassed;
+        private set => SetField(ref _testScriptPassed, value);
+    }
+
+    public bool HasTestScriptFailures => TestScriptFailures.Count > 0;
+
+    /// <summary>True while a single lookup primitive is selected.</summary>
+    public bool HasLookupTable => _hasLookupTable;
+
+    public string LookupTableSummary => _lookupTableSummary;
+
+    public string TestScriptSummary
+    {
+        get => _testScriptSummary;
+        private set => SetField(ref _testScriptSummary, value);
+    }
+
+    public string TestScriptPath
+    {
+        get => _testScriptPath;
+        private set => SetField(ref _testScriptPath, value);
+    }
+
+    /// <summary>Ticks advanced after driving each sweep row.</summary>
+    public string SweepSettleTicksText
+    {
+        get => _sweepSettleTicksText;
+        set => SetField(ref _sweepSettleTicksText, value);
+    }
+
+    /// <summary>Upper bound on input combinations, guarding the UI from huge sweeps.</summary>
+    public string SweepMaxRowsText
+    {
+        get => _sweepMaxRowsText;
+        set => SetField(ref _sweepMaxRowsText, value);
+    }
+
+    public string SweepResultText
+    {
+        get => _sweepResultText;
+        private set => SetField(ref _sweepResultText, value);
+    }
+
+    public string SweepSummary
+    {
+        get => _sweepSummary;
+        private set => SetField(ref _sweepSummary, value);
+    }
+
+    public bool HasSweepResult
+    {
+        get => _hasSweepResult;
+        private set => SetField(ref _hasSweepResult, value);
+    }
+
+    public bool HasSweepError
+    {
+        get => _hasSweepError;
+        private set => SetField(ref _hasSweepError, value);
+    }
+
+    /// <summary>True while a sweep runs on a background thread.</summary>
+    public bool IsSweepRunning
+    {
+        get => _isSweepRunning;
+        private set
+        {
+            if (!SetField(ref _isSweepRunning, value))
+            {
+                return;
+            }
+
+            _runSweepCommand?.RaiseCanExecuteChanged();
+            _cancelSweepCommand?.RaiseCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Completed and total sweep rows while a run is in progress.</summary>
+    public string SweepProgressText
+    {
+        get => _sweepProgressText;
+        private set => SetField(ref _sweepProgressText, value);
+    }
+
+    /// <summary>Progress as a percentage from 0 to 100 for the progress bar.</summary>
+    public double SweepProgressValue
+    {
+        get => _sweepProgressValue;
+        private set => SetField(ref _sweepProgressValue, value);
+    }
+
     public string ZoomText => "100%";
 
-    public bool HasSelection => _selectedInstance is not null || _selectedNet is not null;
+    /// <summary>Per-window wire label detail; never saved into the project.</summary>
+    public string WireLabelMode
+    {
+        get => _wireLabelMode;
+        set
+        {
+            if (SetField(ref _wireLabelMode, WireLabelModes.Normalize(value)))
+            {
+                VisualInvalidated?.Invoke();
+            }
+        }
+    }
 
-    public bool HasSelectedInstance => _selectedInstance is not null;
+    public IReadOnlyList<string> WireLabelModeOptions => WireLabelModes.Options;
+
+    public bool HasSelection => _selectedInstanceIds.Count > 0 || _selectedNet is not null;
+
+    /// <summary>True when an earlier definition is still on the navigation trail.</summary>
+    public bool CanNavigateBack => _definitionHistoryIndex > 0;
+
+    /// <summary>True when navigating forward would not revisit the current definition.</summary>
+    public bool CanNavigateForward =>
+        _definitionHistoryIndex >= 0 && _definitionHistoryIndex < _definitionHistory.Count - 1;
+
+    public bool HasSelectedInstance => _selectedInstanceIds.Count > 0;
 
     public bool HasSelectedNet => _selectedNet is not null;
+
+    public bool HasMultipleSelection => _selectedInstanceIds.Count > 1;
+
+    public int SelectionCount => _selectedInstanceIds.Count + (_selectedNet is null ? 0 : 1);
+
+    public IReadOnlyCollection<string> SelectedInstanceIds => _selectedInstanceIds;
 
     public string SelectedInstanceId => _selectedInstance?.Id ?? string.Empty;
 
     public string SelectedNetId => _selectedNet?.Id ?? string.Empty;
 
+    public bool IsRootDefinition => Definition.Id == _project.RootDefinitionId;
+
+    public bool SelectedNetHasRoute => _selectedNet?.RoutePoints.Count > 0;
+
     public string SelectionTitle
     {
         get
         {
+            if (_selectedInstanceIds.Count > 1)
+            {
+                return string.Create(CultureInfo.InvariantCulture, $"{_selectedInstanceIds.Count} parts");
+            }
+
             if (_selectedInstance is not null)
             {
                 return _selectedInstance.Label ?? TypeName(_selectedInstance);
@@ -254,6 +790,11 @@ public sealed class EditorViewModel : ObservableObject
     {
         get
         {
+            if (_selectedInstanceIds.Count > 1)
+            {
+                return "multi-selection · drag any selected part to move the group";
+            }
+
             if (_selectedInstance is not null)
             {
                 return $"instance · {_selectedInstance.Id}";
@@ -267,6 +808,276 @@ public sealed class EditorViewModel : ObservableObject
             return "definition · " + Definition.Id;
         }
     }
+
+    public IReadOnlyList<string> GeneratedPartKinds { get; } =
+        ["Register", "Adder", "ALU", "Counter", "Mux", "Comparator", "RAM", "ROM"];
+
+    public string SelectedGeneratedPartKind
+    {
+        get => _generatedPartKind;
+        set
+        {
+            if (value is null)
+            {
+                return;
+            }
+
+            if (SetField(ref _generatedPartKind, value))
+            {
+                RaisePropertyChanged(nameof(IsRamGenerator));
+                RaisePropertyChanged(nameof(IsRomGenerator));
+                RaisePropertyChanged(nameof(NeedsGeneratedWordCount));
+                RaisePropertyChanged(nameof(NeedsGeneratedContents));
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string GeneratedPartWidthText
+    {
+        get => _generatedPartWidthText;
+        set
+        {
+            if (SetField(ref _generatedPartWidthText, value))
+            {
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string GeneratedPartWordsText
+    {
+        get => _generatedPartWordsText;
+        set
+        {
+            if (SetField(ref _generatedPartWordsText, value))
+            {
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string GeneratedPartContentsText
+    {
+        get => _generatedPartContentsText;
+        set
+        {
+            if (SetField(ref _generatedPartContentsText, value))
+            {
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsRamGenerator =>
+        string.Equals(_generatedPartKind, "RAM", StringComparison.Ordinal);
+
+    public bool IsRomGenerator =>
+        string.Equals(_generatedPartKind, "ROM", StringComparison.Ordinal);
+
+    public bool NeedsGeneratedWordCount => IsRamGenerator || IsRomGenerator;
+
+    public bool NeedsGeneratedContents => IsRomGenerator;
+
+    public string LibrarySearch
+    {
+        get => _librarySearch;
+        set
+        {
+            if (SetField(ref _librarySearch, value))
+            {
+                RefreshPalette();
+                RefreshDefinitions();
+            }
+        }
+    }
+
+    public bool HasPaletteResults => Palette.Count > 0;
+
+    public string NetSearch
+    {
+        get => _netSearch;
+        set
+        {
+            if (SetField(ref _netSearch, value))
+            {
+                RefreshNetList();
+            }
+        }
+    }
+
+    public string NetListSummary => _netListSummary;
+
+    public bool HasNetList => NetList.Count > 0;
+
+    /// <summary>True while the project-wide find palette is showing.</summary>
+    public bool IsSearchOpen => _isSearchOpen;
+
+    /// <summary>Find query; every whitespace-separated term must match a target.</summary>
+    public string SearchQuery
+    {
+        get => _searchQuery;
+        set
+        {
+            if (SetField(ref _searchQuery, value))
+            {
+                RefreshSearchResults();
+            }
+        }
+    }
+
+    public ProjectSearchItem? SelectedSearchItem
+    {
+        get => _selectedSearchItem;
+        set => SetField(ref _selectedSearchItem, value);
+    }
+
+    public string SearchSummary => _searchSummary;
+
+    public bool HasSearchResults => SearchResults.Count > 0;
+
+    public ICommand OpenSearchCommand { get; }
+
+    public ICommand CloseSearchCommand { get; }
+
+    public bool HasNumericLanes => NumericLanes.Count > 0;
+
+    public string NewLaneName
+    {
+        get => _newLaneName;
+        set => SetField(ref _newLaneName, value);
+    }
+
+    public NumericDisplayOption? SelectedLaneFormat
+    {
+        get => _selectedLaneFormat;
+        set => SetField(ref _selectedLaneFormat, value);
+    }
+
+    public ICommand AddNumericLaneCommand { get; }
+
+    public ICommand CancelLaneEditCommand { get; }
+
+    public bool IsEditingLane => _editingLaneId is not null;
+
+    public string LaneSaveButtonText => IsEditingLane ? "Update numeric lane" : "Add numeric lane";
+
+    public ICommand AddNumericFormatCommand { get; }
+
+    public ICommand CancelFormatEditCommand { get; }
+
+    public bool IsEditingFormat => _editingFormatId is not null;
+
+    public string FormatSaveButtonText => IsEditingFormat ? "Update numeric format" : "Add numeric format";
+
+    public string FormatPreviewText
+    {
+        get => _formatPreviewText;
+        private set => SetField(ref _formatPreviewText, value);
+    }
+
+    public bool HasCustomNumericFormats => CustomNumericFormats.Count > 0;
+
+    public string NewFormatName
+    {
+        get => _newFormatName;
+        set
+        {
+            if (SetField(ref _newFormatName, value))
+            {
+                RefreshFormatPreview();
+            }
+        }
+    }
+
+    public string NewFormatDigits
+    {
+        get => _newFormatDigits;
+        set
+        {
+            if (SetField(ref _newFormatDigits, value))
+            {
+                RefreshFormatPreview();
+            }
+        }
+    }
+
+    public string NewFormatRadix
+    {
+        get => _newFormatRadix;
+        set
+        {
+            if (SetField(ref _newFormatRadix, value))
+            {
+                RefreshFormatPreview();
+            }
+        }
+    }
+
+    public DomainChoice? NewFormatDomain
+    {
+        get => _newFormatDomain;
+        set
+        {
+            if (SetField(ref _newFormatDomain, value))
+            {
+                RefreshFormatPreview();
+            }
+        }
+    }
+
+    public NumericFormatModeChoice? SelectedFormatMode
+    {
+        get => _selectedFormatMode;
+        set
+        {
+            if (SetField(ref _selectedFormatMode, value))
+            {
+                RefreshFormatPreview();
+            }
+        }
+    }
+
+    public bool NewFormatLeastSignificantFirst
+    {
+        get => _newFormatLeastSignificantFirst;
+        set
+        {
+            if (SetField(ref _newFormatLeastSignificantFirst, value))
+            {
+                RefreshFormatPreview();
+            }
+        }
+    }
+
+    public string NewFormatNegativeSign
+    {
+        get => _newFormatNegativeSign;
+        set
+        {
+            if (SetField(ref _newFormatNegativeSign, value))
+            {
+                RefreshFormatPreview();
+            }
+        }
+    }
+
+    public string NewComponentName
+    {
+        get => _newComponentName;
+        set => SetField(ref _newComponentName, value);
+    }
+
+    public string PromoteNetName
+    {
+        get => _promoteNetName;
+        set => SetField(ref _promoteNetName, value);
+    }
+
+    public bool CanPromoteSelectedNet =>
+        _selectedNet is not null &&
+        _selectedNet.Pins.Count > 0 &&
+        !Definition.Ports.Any(port => string.Equals(port.NetId, _selectedNet.Id, StringComparison.Ordinal));
 
     public string NewPinName
     {
@@ -304,6 +1115,33 @@ public sealed class EditorViewModel : ObservableObject
         set => SetField(ref _advanceTicksText, value);
     }
 
+    /// <summary>Saved default for the editor's Advance action, in ticks.</summary>
+    public string DefaultAdvanceTicksText
+    {
+        get => _defaultAdvanceTicksText;
+        set => SetField(ref _defaultAdvanceTicksText, value);
+    }
+
+    /// <summary>Zero-delay convergence guard: evaluations per component per tick.</summary>
+    public string EvaluationGuardText
+    {
+        get => _evaluationGuardText;
+        set => SetField(ref _evaluationGuardText, value);
+    }
+
+    /// <summary>Waveform trace ring capacity; zero disables recording.</summary>
+    public string TraceCapacityText
+    {
+        get => _traceCapacityText;
+        set => SetField(ref _traceCapacityText, value);
+    }
+
+    public bool RecordNetTransitions
+    {
+        get => _recordNetTransitions;
+        set => SetField(ref _recordNetTransitions, value);
+    }
+
     public string NewDomainName
     {
         get => _newDomainName;
@@ -316,36 +1154,410 @@ public sealed class EditorViewModel : ObservableObject
         set => SetField(ref _newDomainValues, value);
     }
 
+    public string NewDomainPriorities
+    {
+        get => _newDomainPriorities;
+        set => SetField(ref _newDomainPriorities, value);
+    }
+
+    public string NewDomainConflictValue
+    {
+        get => _newDomainConflictValue;
+        set => SetField(ref _newDomainConflictValue, value);
+    }
+
+    public DriverPolicyChoice? SelectedDriverPolicy
+    {
+        get => _selectedDriverPolicy;
+        set
+        {
+            if (SetField(ref _selectedDriverPolicy, value))
+            {
+                RaisePropertyChanged(nameof(IsPriorityDriverPolicy));
+                RaisePropertyChanged(nameof(DriverPolicyHint));
+            }
+        }
+    }
+
+    public bool IsPriorityDriverPolicy => _selectedDriverPolicy?.Id == "priority";
+
+    public string DriverPolicyHint => _selectedDriverPolicy?.Description ?? string.Empty;
+
     public void SetPlacementPoint(Point world)
     {
         _placementPoint = world;
     }
 
-    public void SelectInstance(string? instanceId)
+    public void SelectInstance(string? instanceId, bool additive = false)
     {
-        _selectedInstance = instanceId is null ? null : Definition.FindInstance(instanceId);
         _selectedNet = null;
+        if (instanceId is null)
+        {
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+        }
+        else if (additive)
+        {
+            if (!_selectedInstanceIds.Add(instanceId))
+            {
+                _selectedInstanceIds.Remove(instanceId);
+            }
+
+            _selectedInstance = _selectedInstanceIds.Count == 0
+                ? null
+                : Definition.FindInstance(instanceId) ?? FindSelectedInstance();
+        }
+        else
+        {
+            _selectedInstanceIds.Clear();
+            _selectedInstanceIds.Add(instanceId);
+            _selectedInstance = Definition.FindInstance(instanceId);
+            if (_selectedInstance is null)
+            {
+                _selectedInstanceIds.Clear();
+            }
+        }
+
         RaiseSelectionChanged();
         RefreshInspector();
         VisualInvalidated?.Invoke();
+    }
+
+    public void SelectInstances(IEnumerable<string> instanceIds, bool additive = false)
+    {
+        _selectedNet = null;
+        if (!additive)
+        {
+            _selectedInstanceIds.Clear();
+        }
+
+        foreach (string id in instanceIds)
+        {
+            if (Definition.FindInstance(id) is not null)
+            {
+                _selectedInstanceIds.Add(id);
+            }
+        }
+
+        _selectedInstance = FindSelectedInstance();
+        RaiseSelectionChanged();
+        RefreshInspector();
+        VisualInvalidated?.Invoke();
+    }
+
+    public void SelectAllInstances()
+    {
+        SelectInstances(Definition.Instances.Select(i => i.Id));
+        StatusText = string.Create(CultureInfo.InvariantCulture, $"Selected {_selectedInstanceIds.Count} parts");
     }
 
     public void SelectNet(string? netId)
     {
         _selectedNet = netId is null ? null : Definition.FindNet(netId);
         _selectedInstance = null;
+        _selectedInstanceIds.Clear();
         RaiseSelectionChanged();
         RefreshInspector();
         VisualInvalidated?.Invoke();
     }
 
+    /// <summary>
+    /// Opens the project-wide find palette with a fresh query. Results are computed
+    /// from the current project only; opening the palette never mutates it.
+    /// </summary>
+    public void OpenSearch()
+    {
+        if (!_isSearchOpen)
+        {
+            _isSearchOpen = true;
+            RaisePropertyChanged(nameof(IsSearchOpen));
+        }
+
+        _searchQuery = string.Empty;
+        RaisePropertyChanged(nameof(SearchQuery));
+        RefreshSearchResults();
+        SearchOpened?.Invoke();
+    }
+
+    public void CloseSearch()
+    {
+        if (!_isSearchOpen)
+        {
+            return;
+        }
+
+        _isSearchOpen = false;
+        RaisePropertyChanged(nameof(IsSearchOpen));
+        SelectedSearchItem = null;
+    }
+
+    /// <summary>Moves the palette selection by one row, clamped at both ends.</summary>
+    public void MoveSearchSelection(int delta)
+    {
+        if (SearchResults.Count == 0)
+        {
+            return;
+        }
+
+        int current = SelectedSearchItem is null ? -1 : SearchResults.IndexOf(SelectedSearchItem);
+        int next = Math.Clamp(current + delta, 0, SearchResults.Count - 1);
+        SelectedSearchItem = SearchResults[next];
+    }
+
+    public void ActivateSelectedSearch()
+    {
+        if (SelectedSearchItem is { } item)
+        {
+            ActivateSearchResult(item.Result);
+        }
+    }
+
+    /// <summary>
+    /// Opens and selects the target named by a search row. Missing targets are
+    /// reported instead of guessed, matching diagnostic navigation. Presentation
+    /// only: no connectivity or simulation state changes.
+    /// </summary>
+    public bool ActivateSearchResult(ProjectSearchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (_project.FindDefinition(result.DefinitionId) is null)
+        {
+            CloseSearch();
+            StatusText = $"Search target '{result.DefinitionId}' no longer exists.";
+            return false;
+        }
+
+        CloseSearch();
+        OpenDefinition(result.DefinitionId);
+
+        if (result.Kind == ProjectSearchKind.Definition)
+        {
+            StatusText = $"Found definition '{Definition.Name}' ({Definition.Id})";
+            return true;
+        }
+
+        if (result.InstanceId is string instanceId)
+        {
+            ComponentInstance? instance = Definition.FindInstance(instanceId);
+            if (instance is null)
+            {
+                StatusText = $"Search target instance '{instanceId}' no longer exists.";
+                return false;
+            }
+
+            Rect? bounds = Layout?.Components.FirstOrDefault(box =>
+                string.Equals(box.Instance.Id, instanceId, StringComparison.Ordinal))?.Bounds;
+            SelectInstance(instanceId);
+            FocusBounds(bounds);
+            StatusText = $"Found instance '{instanceId}' in {Definition.Name}";
+            return true;
+        }
+
+        if (result.NetId is string netId)
+        {
+            Net? net = Definition.FindNet(netId);
+            if (net is null)
+            {
+                StatusText = $"Search target net '{netId}' no longer exists.";
+                return false;
+            }
+
+            SelectNet(netId);
+            FocusBounds(BoundsOfNet(netId));
+            StatusText = $"Found net '{netId}' in {Definition.Name}";
+            return true;
+        }
+
+        if (result.PinId is string pinId)
+        {
+            PinDeclaration? pin = Definition.FindPin(pinId);
+            if (pin is null)
+            {
+                StatusText = $"Search target pin '{pinId}' no longer exists.";
+                return false;
+            }
+
+            StatusText = pin.Direction == PinDirection.Input
+                ? $"Found interface pin '{pin.Name}' (input)"
+                : $"Found interface pin '{pin.Name}' (output)";
+            if (Definition.FindPortNet(pinId) is Net portNet)
+            {
+                SelectNet(portNet.Id);
+                FocusBounds(BoundsOfNet(portNet.Id));
+            }
+
+            return true;
+        }
+
+        if (result.LaneId is string laneId)
+        {
+            NumericLane? lane = Definition.FindNumericLane(laneId);
+            if (lane is null)
+            {
+                StatusText = $"Search target numeric lane '{laneId}' no longer exists.";
+                return false;
+            }
+
+            IEnumerable<string> boundNets = lane.PinIds
+                .Select(id => Definition.FindPortNet(id)?.Id)
+                .OfType<string>();
+            FocusBounds(BoundsOfNets(boundNets));
+            StatusText = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Found numeric lane '{lane.Name}' ({lane.PinIds.Count} pins) in {Definition.Name}");
+            return true;
+        }
+
+        StatusText = "Search target has no circuit location.";
+        return false;
+    }
+
+    private void RefreshSearchResults()
+    {
+        ProjectSearchResults found = ProjectSearch.Search(_project, Definition.Id, _searchQuery);
+        SearchResults.Clear();
+        foreach (ProjectSearchResult result in found.Items)
+        {
+            SearchResults.Add(new ProjectSearchItem(result, () => ActivateSearchResult(result)));
+        }
+
+        SelectedSearchItem = SearchResults.FirstOrDefault();
+        RaisePropertyChanged(nameof(HasSearchResults));
+        _searchSummary = _searchQuery.Trim().Length == 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{found.TotalMatches} definitions")
+            : found.TotalMatches == 0
+                ? "No matches"
+                : found.IsTruncated
+                    ? string.Create(CultureInfo.InvariantCulture, $"{found.Items.Count} of {found.TotalMatches} matches")
+                    : string.Create(CultureInfo.InvariantCulture, $"{found.TotalMatches} match{(found.TotalMatches == 1 ? string.Empty : "es")}");
+        RaisePropertyChanged(nameof(SearchSummary));
+    }
+
     public void ClearSelection()
     {
         _selectedInstance = null;
+        _selectedInstanceIds.Clear();
         _selectedNet = null;
         RaiseSelectionChanged();
         RefreshInspector();
         VisualInvalidated?.Invoke();
+    }
+
+    /// <summary>
+    /// Opens the diagnostic's definition and selects the instance or net it names.
+    /// Presentation focus only: no project structure or simulation state is changed.
+    /// </summary>
+    public bool NavigateToDiagnostic(Diagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+        if (diagnostic.DefinitionId is string definitionId)
+        {
+            if (_project.FindDefinition(definitionId) is null)
+            {
+                StatusText = $"Definition '{definitionId}' from {diagnostic.Code} no longer exists.";
+                return false;
+            }
+
+            OpenDefinition(definitionId);
+        }
+
+        if (diagnostic.InstanceId is string instanceId &&
+            Definition.FindInstance(instanceId) is ComponentInstance instance)
+        {
+            Rect? bounds = Layout?.Components
+                .FirstOrDefault(box => string.Equals(box.Instance.Id, instance.Id, StringComparison.Ordinal))
+                ?.Bounds;
+            SelectInstance(instance.Id);
+            FocusBounds(bounds);
+            StatusText = $"Located instance '{instance.Id}' ({diagnostic.Code})";
+            return true;
+        }
+
+        if (diagnostic.NetId is string netId && Definition.FindNet(netId) is Net net)
+        {
+            SelectNet(net.Id);
+            FocusBounds(BoundsOfNet(net.Id));
+            StatusText = $"Located net '{net.Id}' ({diagnostic.Code})";
+            return true;
+        }
+
+        if (diagnostic.PinId is string pinId)
+        {
+            if (Definition.FindPortNet(pinId) is Net portNet)
+            {
+                SelectNet(portNet.Id);
+                FocusBounds(BoundsOfNet(portNet.Id));
+                StatusText = $"Located interface pin '{pinId}' ({diagnostic.Code})";
+                return true;
+            }
+
+            if (Definition.FindPin(pinId) is PinDeclaration pin)
+            {
+                StatusText = $"Interface pin '{pin.Name}' has no net to select.";
+                return false;
+            }
+        }
+
+        if (diagnostic.DefinitionId is not null)
+        {
+            StatusText = $"Opened definition '{Definition.Name}' for {diagnostic.Code}; its target is gone.";
+            return true;
+        }
+
+        StatusText = $"{diagnostic.Code} has no circuit location.";
+        return false;
+    }
+
+    private void FocusBounds(Rect? bounds)
+    {
+        if (bounds is Rect rect)
+        {
+            FocusRequested?.Invoke(rect);
+        }
+    }
+
+    private Rect? BoundsOfNet(string netId)
+    {
+        NetWire? wire = Layout?.FindWire(netId);
+        if (wire is null || wire.Points.Count == 0)
+        {
+            return null;
+        }
+
+        double minX = wire.Points.Min(point => point.X);
+        double minY = wire.Points.Min(point => point.Y);
+        double maxX = wire.Points.Max(point => point.X);
+        double maxY = wire.Points.Max(point => point.Y);
+        return new Rect(minX, minY, maxX - minX, maxY - minY);
+    }
+
+    private Rect? BoundsOfNets(IEnumerable<string> netIds)
+    {
+        Rect? bounds = null;
+        foreach (string netId in netIds)
+        {
+            if (BoundsOfNet(netId) is not Rect rect)
+            {
+                continue;
+            }
+
+            bounds = bounds is Rect current ? current.Union(rect) : rect;
+        }
+
+        return bounds;
+    }
+
+    private ComponentInstance? FindSelectedInstance()
+    {
+        for (int i = Definition.Instances.Count - 1; i >= 0; i--)
+        {
+            if (_selectedInstanceIds.Contains(Definition.Instances[i].Id))
+            {
+                return Definition.Instances[i];
+            }
+        }
+
+        return null;
     }
 
     public void OpenDefinition(string definitionId)
@@ -355,12 +1567,105 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
+        SwitchDefinition(definitionId);
+        RecordDefinitionVisit(definitionId);
+        StatusText = $"Editing {Definition.Name}";
+    }
+
+    /// <summary>Returns to the previously edited definition, if any.</summary>
+    public void NavigateBack()
+    {
+        for (int i = _definitionHistoryIndex - 1; i >= 0; i--)
+        {
+            string candidate = _definitionHistory[i];
+            if (_project.FindDefinition(candidate) is null)
+            {
+                continue;
+            }
+
+            _definitionHistoryIndex = i;
+            if (!string.Equals(candidate, _definitionId, StringComparison.Ordinal))
+            {
+                SwitchDefinition(candidate);
+            }
+
+            RaiseDefinitionHistoryChanged();
+            StatusText = $"Editing {Definition.Name}";
+            return;
+        }
+    }
+
+    /// <summary>Re-enters a definition left by <see cref="NavigateBack"/>.</summary>
+    public void NavigateForward()
+    {
+        for (int i = _definitionHistoryIndex + 1; i < _definitionHistory.Count; i++)
+        {
+            string candidate = _definitionHistory[i];
+            if (_project.FindDefinition(candidate) is null)
+            {
+                continue;
+            }
+
+            _definitionHistoryIndex = i;
+            if (!string.Equals(candidate, _definitionId, StringComparison.Ordinal))
+            {
+                SwitchDefinition(candidate);
+            }
+
+            RaiseDefinitionHistoryChanged();
+            StatusText = $"Editing {Definition.Name}";
+            return;
+        }
+    }
+
+    private void SwitchDefinition(string definitionId)
+    {
         _definitionId = definitionId;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
         RefreshAll(fit: true);
-        StatusText = $"Editing {Definition.Name}";
+    }
+
+    private void RecordDefinitionVisit(string definitionId)
+    {
+        if (_definitionHistoryIndex < 0)
+        {
+            _definitionHistory.Clear();
+            _definitionHistory.Add(definitionId);
+            _definitionHistoryIndex = 0;
+            RaiseDefinitionHistoryChanged();
+            return;
+        }
+
+        if (string.Equals(_definitionHistory[_definitionHistoryIndex], definitionId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _definitionHistory.RemoveRange(
+            _definitionHistoryIndex + 1,
+            _definitionHistory.Count - _definitionHistoryIndex - 1);
+        _definitionHistory.Add(definitionId);
+        _definitionHistoryIndex = _definitionHistory.Count - 1;
+        RaiseDefinitionHistoryChanged();
+    }
+
+    private void ResetDefinitionHistory()
+    {
+        _definitionHistory.Clear();
+        _definitionHistory.Add(Definition.Id);
+        _definitionHistoryIndex = 0;
+        RaiseDefinitionHistoryChanged();
+    }
+
+    private void RaiseDefinitionHistoryChanged()
+    {
+        RaisePropertyChanged(nameof(CanNavigateBack));
+        RaisePropertyChanged(nameof(CanNavigateForward));
+        _backCommand.RaiseCanExecuteChanged();
+        _forwardCommand.RaiseCanExecuteChanged();
     }
 
     public void RenameProject(string name)
@@ -373,11 +1678,14 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         _project.Name = trimmed;
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
     }
 
     public void NewProject()
     {
+        CloseSearch();
+        CancelDomainEdit();
+        ClearTestScriptResult();
         var project = CircuitProject.CreateEmpty("Untitled");
         var root = new CircuitDefinition { Id = "main", Name = "Main", Description = "Root circuit" };
         project.Definitions.Add(root);
@@ -387,12 +1695,18 @@ public sealed class EditorViewModel : ObservableObject
         _project = project;
         _definitionId = root.Id;
         _projectPath = null;
+        _savedProjectJson = null;
+        IsRecoveredProject = false;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
+        _clipboard = null;
+        _pasteOffset = 0;
         _undo.Clear();
         _redo.Clear();
         Simulator = new SimulatorHost(_project, Definition);
         RefreshAll(fit: true);
+        ResetDefinitionHistory();
         AdvanceTicksText = project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         IsDirty = true;
         StatusText = "New project";
@@ -403,18 +1717,29 @@ public sealed class EditorViewModel : ObservableObject
         try
         {
             CircuitProject loaded = ProjectSerializer.Load(path);
+            CloseSearch();
+            CancelDomainEdit();
+            ClearTestScriptResult();
             _project = loaded;
             EnsureProjectShape();
-            _definitionId = loaded.RootDefinitionId;
+            _definitionId = loaded.FindDefinition(loaded.View.ActiveDefinitionId)?.Id ?? loaded.RootDefinitionId;
             _projectPath = path;
+            _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            IsRecoveredProject = false;
+            _selectedInstanceIds.Clear();
             _selectedInstance = null;
             _selectedNet = null;
+            _clipboard = null;
+            _pasteOffset = 0;
             _undo.Clear();
             _redo.Clear();
             Simulator = new SimulatorHost(_project, Definition);
             RefreshAll(fit: true);
+            ResetDefinitionHistory();
+            ViewRestoreRequested?.Invoke();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
             IsDirty = false;
+            AddRecentProject(path);
             StatusText = $"Opened {Path.GetFileName(path)}";
             return true;
         }
@@ -425,14 +1750,921 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Seeds the recent list from workspace settings. Entries whose files no longer
+    /// exist are skipped so the flyout never offers a guaranteed failure.
+    /// </summary>
+    public void SetRecentProjects(IEnumerable<string>? paths)
+    {
+        _recentProjectPaths.Clear();
+        if (paths is not null)
+        {
+            foreach (string path in paths)
+            {
+                if (_recentProjectPaths.Count == WorkspacePreferences.MaxRecentProjects)
+                {
+                    break;
+                }
+
+                string? normalized = TryNormalizeProjectPath(path);
+                if (normalized is null || !File.Exists(normalized) ||
+                    _recentProjectPaths.Contains(normalized, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                _recentProjectPaths.Add(normalized);
+            }
+        }
+
+        RefreshRecentProjects();
+    }
+
+    /// <summary>
+    /// Loads and runs a <c>.radixtest</c> script against the current in-memory project.
+    /// The run never mutates the project or the editor's live simulation.
+    /// </summary>
+    public bool RunTestScript(string path)
+    {
+        ClearTestScriptResult();
+        try
+        {
+            SimulationScript script = SimulationScript.Load(path);
+            SimulationScriptResult result = SimulationScriptRunner.Run(_project, script);
+            return ApplyTestScriptResult(path, script, result);
+        }
+        catch (Exception exception) when (
+            exception is SimulationScriptException or IOException or UnauthorizedAccessException or
+            CircuitValidationException or ArgumentException)
+        {
+            return FailTestScript(path, exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs one <c>.radixtest</c> against a serialized snapshot on a background
+    /// thread. Cancellation reaches the script runner and the engine advance loop, so
+    /// a long stability or settle window stops promptly instead of freezing the UI.
+    /// </summary>
+    public async Task<bool> RunTestScriptAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsTestScriptRunning)
+        {
+            return false;
+        }
+
+        ClearTestScriptResult();
+        TestScriptPath = path;
+
+        SimulationScript script;
+        try
+        {
+            script = SimulationScript.Load(path);
+        }
+        catch (Exception exception) when (
+            exception is SimulationScriptException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return FailTestScript(path, exception.Message);
+        }
+
+        int generation = _testScriptGeneration;
+        int startRevision = _semanticRevision;
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _testScriptCancellation = linked;
+        IsTestScriptRunning = true;
+        TestScriptRunTitle = "Running script…";
+        TestScriptProgressIndeterminate = true;
+        TestScriptProgressText = Path.GetFileName(path);
+        TestScriptProgressValue = 0;
+        try
+        {
+            string snapshotJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            SimulationScriptResult result = await Task.Run(
+                () =>
+                {
+                    CircuitProject snapshot = ProjectSerializer.LoadFromString(snapshotJson, validate: false);
+                    return SimulationScriptRunner.Run(snapshot, script, cancellationToken: linked.Token);
+                },
+                linked.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            if (generation != _testScriptGeneration)
+            {
+                return false;
+            }
+
+            bool passed = ApplyTestScriptResult(path, script, result);
+            if (startRevision != _semanticRevision)
+            {
+                IsTestScriptResultStale = true;
+            }
+
+            return passed;
+        }
+        catch (OperationCanceledException)
+        {
+            if (generation == _testScriptGeneration && IsTestScriptRunning)
+            {
+                TestScriptPassed = false;
+                TestScriptSummary = "Test script cancelled.";
+                HasTestScriptResult = true;
+                StatusText = "Test script cancelled.";
+            }
+
+            return false;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException or
+            ProjectFormatException or CircuitValidationException or SimulationScriptException)
+        {
+            return generation == _testScriptGeneration && FailTestScript(path, exception.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_testScriptCancellation, linked))
+            {
+                _testScriptCancellation = null;
+            }
+
+            if (generation == _testScriptGeneration)
+            {
+                IsTestScriptRunning = false;
+                TestScriptRunTitle = string.Empty;
+                TestScriptProgressIndeterminate = false;
+                TestScriptProgressText = string.Empty;
+                TestScriptProgressValue = 0;
+            }
+        }
+    }
+
+    private bool ApplyTestScriptResult(string path, SimulationScript script, SimulationScriptResult result)
+    {
+        TestScriptPath = path;
+        TestScriptPassed = result.Passed;
+        TestScriptSummary = result.Passed
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"PASS · {script.Name} · {result.StepsExecuted} step(s) · t={result.FinalTime} · {result.EventsProcessed} events")
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"FAIL · {script.Name} · {result.Failures.Count} failure(s) after {result.StepsExecuted} step(s)");
+        foreach (ScriptFailure failure in result.Failures)
+        {
+            TestScriptFailures.Add(new TestScriptFailureItem(failure));
+        }
+
+        HasTestScriptResult = true;
+        RaisePropertyChanged(nameof(HasTestScriptFailures));
+        StatusText = result.Passed
+            ? $"Test script passed: {script.Name}"
+            : $"Test script failed: {result.Failures.Count} failure(s)";
+        return result.Passed;
+    }
+
+    private bool FailTestScript(string path, string message)
+    {
+        TestScriptPath = path;
+        TestScriptPassed = false;
+        TestScriptSummary = "Test script error: " + message;
+        HasTestScriptResult = true;
+        StatusText = "Test script error: " + message;
+        return false;
+    }
+
+    /// <summary>
+    /// Discovers and runs every <c>.radixtest</c> below a directory against the
+    /// current in-memory project. The suite uses the same runner as the CLI and
+    /// leaves the project, undo history, and live simulation untouched.
+    /// </summary>
+    public bool RunTestScriptSuite(string directory)
+    {
+        ClearTestScriptResult();
+        TestScriptPath = directory;
+        try
+        {
+            IReadOnlyList<string> paths = SimulationScriptSuiteRunner.Discover(directory);
+            if (paths.Count == 0)
+            {
+                return FailTestScriptSuite("no .radixtest scripts found", suiteError: true);
+            }
+
+            return ApplyTestScriptSuiteResult(SimulationScriptSuiteRunner.RunFiles(_project, paths));
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return FailTestScriptSuite(exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs a folder suite on a background thread against a serialized project
+    /// snapshot, so the canvas stays responsive and edits cannot race the run.
+    /// Progress is reported once per completed script; cancellation reaches the
+    /// current script's runner and engine loop as well as the next script. The live
+    /// simulation is never touched.
+    /// </summary>
+    public async Task<bool> RunTestScriptSuiteAsync(
+        string directory,
+        IProgress<SimulationScriptSuiteProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsTestScriptRunning)
+        {
+            return false;
+        }
+
+        ClearTestScriptResult();
+        TestScriptPath = directory;
+
+        IReadOnlyList<string> paths;
+        try
+        {
+            paths = SimulationScriptSuiteRunner.Discover(directory);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return FailTestScriptSuite(exception.Message);
+        }
+
+        if (paths.Count == 0)
+        {
+            return FailTestScriptSuite("no .radixtest scripts found", suiteError: true);
+        }
+
+        int generation = _testScriptGeneration;
+        int startRevision = _semanticRevision;
+        SynchronizationContext? progressContext = SynchronizationContext.Current;
+        var sink = new InlineProgress<SimulationScriptSuiteProgress>(report =>
+        {
+            progress?.Report(report);
+            if (progressContext is null)
+            {
+                UpdateTestScriptProgress(generation, report);
+            }
+            else
+            {
+                progressContext.Post(_ => UpdateTestScriptProgress(generation, report), null);
+            }
+        });
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _testScriptCancellation = linked;
+        IsTestScriptRunning = true;
+        TestScriptRunTitle = "Running script suite…";
+        TestScriptProgressIndeterminate = false;
+        TestScriptProgressText = "Preparing suite…";
+        TestScriptProgressValue = 0;
+        try
+        {
+            // Snapshot on the UI thread before yielding, so every script in the suite
+            // sees the same project even if the user keeps editing the live one.
+            string snapshotJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            SimulationScriptSuiteResult suite = await Task.Run(
+                () =>
+                {
+                    CircuitProject snapshot = ProjectSerializer.LoadFromString(snapshotJson, validate: false);
+                    return SimulationScriptSuiteRunner.RunFiles(
+                        snapshot,
+                        paths,
+                        progress: sink,
+                        cancellationToken: linked.Token);
+                },
+                linked.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            if (generation != _testScriptGeneration)
+            {
+                return false;
+            }
+
+            bool passed = ApplyTestScriptSuiteResult(suite);
+            if (startRevision != _semanticRevision)
+            {
+                // The suite ran against a consistent snapshot, but the live project
+                // changed while it was running. Keep the result and flag it so a PASS
+                // is not mistaken for a verdict on the edited project.
+                IsTestScriptResultStale = true;
+            }
+
+            return passed;
+        }
+        catch (OperationCanceledException)
+        {
+            if (generation == _testScriptGeneration && IsTestScriptRunning)
+            {
+                TestScriptPassed = false;
+                TestScriptSummary = "Test script suite cancelled.";
+                HasTestScriptResult = true;
+                StatusText = "Test script suite cancelled.";
+            }
+
+            return false;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException or
+            ProjectFormatException or CircuitValidationException or SimulationScriptException)
+        {
+            return generation == _testScriptGeneration && FailTestScriptSuite(exception.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_testScriptCancellation, linked))
+            {
+                _testScriptCancellation = null;
+            }
+
+            if (generation == _testScriptGeneration)
+            {
+                IsTestScriptRunning = false;
+                TestScriptRunTitle = string.Empty;
+                TestScriptProgressIndeterminate = false;
+                TestScriptProgressText = string.Empty;
+                TestScriptProgressValue = 0;
+            }
+        }
+    }
+
+    private bool ApplyTestScriptSuiteResult(SimulationScriptSuiteResult suite)
+    {
+        TestScriptPassed = suite.Passed;
+        TestScriptSummary = suite.HasErrors
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"SUITE ERROR · {suite.Entries.Count} script(s) · {suite.PassedCount} passed · " +
+                $"{suite.FailedCount} failed · {suite.ErrorCount} error(s) · {suite.StepsExecuted} step(s)")
+            : suite.Passed
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"PASS · {suite.Entries.Count} script(s) · {suite.StepsExecuted} step(s) · " +
+                    $"{suite.EventsProcessed} events")
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"FAIL · {suite.Entries.Count} script(s) · {suite.FailedCount} failed · " +
+                    $"{suite.PassedCount} passed · {suite.StepsExecuted} step(s)");
+
+        foreach (SimulationScriptSuiteEntry entry in suite.Entries)
+        {
+            if (entry.Error is not null)
+            {
+                TestScriptFailures.Add(new TestScriptFailureItem(entry.Path, entry.Error));
+                continue;
+            }
+
+            string source = Path.GetFileName(entry.Path);
+            foreach (ScriptFailure failure in entry.Result!.Failures)
+            {
+                TestScriptFailures.Add(new TestScriptFailureItem(failure, source));
+            }
+        }
+
+        HasTestScriptResult = true;
+        RaisePropertyChanged(nameof(HasTestScriptFailures));
+        StatusText = suite.Passed
+            ? $"Test script suite passed: {suite.Entries.Count} script(s)"
+            : $"Test script suite failed: {suite.FailedCount} failed, {suite.ErrorCount} error(s)";
+        return suite.Passed;
+    }
+
+    private bool FailTestScriptSuite(string message, bool suiteError = false)
+    {
+        TestScriptPassed = false;
+        TestScriptSummary = suiteError ? "SUITE ERROR · " + message : "Test script suite error: " + message;
+        HasTestScriptResult = true;
+        StatusText = "Test script suite error: " + message;
+        return false;
+    }
+
+    private void UpdateTestScriptProgress(int generation, SimulationScriptSuiteProgress report)
+    {
+        if (generation != _testScriptGeneration || !IsTestScriptRunning)
+        {
+            return;
+        }
+
+        TestScriptProgressText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.Completed} / {report.Total} scripts · {Path.GetFileName(report.CurrentPath)}");
+        TestScriptProgressValue = report.Fraction * 100;
+    }
+
+    public void CancelTestScript()
+    {
+        if (!IsTestScriptRunning)
+        {
+            return;
+        }
+
+        _testScriptCancellation?.Cancel();
+        StatusText = "Cancelling test script run…";
+    }
+
+    public void ClearTestScriptResult()
+    {
+        _testScriptGeneration++;
+        _testScriptCancellation?.Cancel();
+        _testScriptCancellation = null;
+        IsTestScriptRunning = false;
+        TestScriptRunTitle = string.Empty;
+        TestScriptProgressIndeterminate = false;
+        TestScriptProgressText = string.Empty;
+        TestScriptProgressValue = 0;
+        IsTestScriptResultStale = false;
+        TestScriptFailures.Clear();
+        TestScriptPath = string.Empty;
+        TestScriptSummary = string.Empty;
+        TestScriptPassed = false;
+        HasTestScriptResult = false;
+        RaisePropertyChanged(nameof(HasTestScriptFailures));
+    }
+
+    /// <summary>
+    /// Sweeps every interface-input combination of the current definition in an
+    /// isolated engine, leaving the live simulation untouched. The sweep runs on a
+    /// background thread against a serialized snapshot, so editing the live project
+    /// cannot race it; results are cleared whenever the project changes so a table can
+    /// never describe stale structure.
+    /// </summary>
+    public async Task<bool> RunSweepAsync(
+        IProgress<SweepProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsSweepRunning)
+        {
+            return false;
+        }
+
+        ClearSweepResult();
+        if (!int.TryParse(SweepSettleTicksText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int settle) ||
+            settle < 0)
+        {
+            return FailSweep("settle ticks must be a non-negative integer.");
+        }
+
+        if (!int.TryParse(SweepMaxRowsText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int maxRows) ||
+            maxRows < 1)
+        {
+            return FailSweep("max rows must be a positive integer.");
+        }
+
+        int generation = _sweepGeneration;
+        string definitionId = Definition.Id;
+        string definitionName = Definition.Name;
+        SynchronizationContext? progressContext = SynchronizationContext.Current;
+        var sink = new InlineProgress<SweepProgress>(report =>
+        {
+            progress?.Report(report);
+            if (progressContext is null)
+            {
+                UpdateSweepProgress(generation, report);
+            }
+            else
+            {
+                progressContext.Post(_ => UpdateSweepProgress(generation, report), null);
+            }
+        });
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _sweepCancellation = linked;
+        IsSweepRunning = true;
+        SweepProgressText = "Preparing sweep…";
+        SweepProgressValue = 0;
+        try
+        {
+            // Snapshot on the UI thread before yielding, so the background sweep sees a
+            // consistent project even if the user keeps editing the live one.
+            string snapshotJson = ProjectSerializer.SaveToString(_project, includeView: false);
+            InputSweepResult result = await Task.Run(
+                () =>
+                {
+                    CircuitProject snapshot = ProjectSerializer.LoadFromString(snapshotJson, validate: false);
+                    return InputSweep.Run(snapshot, definitionId, settle, maxRows, sink, linked.Token);
+                },
+                linked.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            if (generation != _sweepGeneration)
+            {
+                return false;
+            }
+
+            SweepResultText = InputSweepTable.Format(result);
+            SweepSummary = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{result.DefinitionId} · {result.Inputs.Count} input(s) → {result.Outputs.Count} output(s) · " +
+                $"{result.Rows.Count} row(s) · settle {result.SettleTicks} tick(s)");
+            HasSweepResult = true;
+            StatusText = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Sweep: {result.Rows.Count} row(s) on {definitionName}");
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            if (generation == _sweepGeneration && IsSweepRunning)
+            {
+                SweepSummary = "Sweep cancelled.";
+                HasSweepResult = false;
+                HasSweepError = false;
+                StatusText = "Sweep cancelled.";
+            }
+
+            return false;
+        }
+        catch (InputSweepException exception)
+        {
+            return generation == _sweepGeneration && FailSweep(exception.Message);
+        }
+        catch (CircuitValidationException exception)
+        {
+            Diagnostic? first = exception.Diagnostics.FirstOrDefault(d =>
+                d.Severity == DiagnosticSeverity.Error);
+            return generation == _sweepGeneration && FailSweep(first?.Message ?? exception.Message);
+        }
+        catch (ProjectFormatException exception)
+        {
+            return generation == _sweepGeneration && FailSweep(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return generation == _sweepGeneration && FailSweep(exception.Message);
+        }
+        catch (Exception exception)
+        {
+            return generation == _sweepGeneration && FailSweep(exception.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_sweepCancellation, linked))
+            {
+                _sweepCancellation = null;
+            }
+
+            if (generation == _sweepGeneration)
+            {
+                IsSweepRunning = false;
+                SweepProgressText = string.Empty;
+                SweepProgressValue = 0;
+            }
+        }
+    }
+
+    private void UpdateSweepProgress(int generation, SweepProgress report)
+    {
+        if (generation != _sweepGeneration || !IsSweepRunning)
+        {
+            return;
+        }
+
+        SweepProgressText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.CompletedRows} / {report.TotalRows} rows");
+        SweepProgressValue = report.Fraction * 100;
+    }
+
+    /// <summary>Requests cancellation of a running sweep; the result panel reports it.</summary>
+    public void CancelSweep()
+    {
+        if (!IsSweepRunning)
+        {
+            return;
+        }
+
+        _sweepCancellation?.Cancel();
+        StatusText = "Cancelling sweep…";
+    }
+
+    public void ClearSweepResult()
+    {
+        _sweepGeneration++;
+        _sweepCancellation?.Cancel();
+        _sweepCancellation = null;
+        IsSweepRunning = false;
+        SweepProgressText = string.Empty;
+        SweepProgressValue = 0;
+        SweepResultText = string.Empty;
+        SweepSummary = string.Empty;
+        HasSweepResult = false;
+        HasSweepError = false;
+    }
+
+    private bool FailSweep(string message)
+    {
+        SweepSummary = "Sweep error: " + message;
+        HasSweepResult = true;
+        HasSweepError = true;
+        StatusText = "Sweep failed: " + message;
+        return false;
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
+
+    public void OpenRecentProject(string path) => RecentProjectOpenRequested?.Invoke(path);
+
+    private void AddRecentProject(string path)
+    {
+        string? normalized = TryNormalizeProjectPath(path);
+        if (normalized is null)
+        {
+            return;
+        }
+
+        _recentProjectPaths.RemoveAll(candidate =>
+            string.Equals(candidate, normalized, StringComparison.OrdinalIgnoreCase));
+        _recentProjectPaths.Insert(0, normalized);
+        if (_recentProjectPaths.Count > WorkspacePreferences.MaxRecentProjects)
+        {
+            _recentProjectPaths.RemoveRange(
+                WorkspacePreferences.MaxRecentProjects,
+                _recentProjectPaths.Count - WorkspacePreferences.MaxRecentProjects);
+        }
+
+        RefreshRecentProjects();
+    }
+
+    private void RefreshRecentProjects()
+    {
+        RecentProjects.Clear();
+        foreach (string path in _recentProjectPaths)
+        {
+            RecentProjects.Add(new RecentProjectItem(path, OpenRecentProject));
+        }
+
+        RaisePropertyChanged(nameof(HasRecentProjects));
+    }
+
+    private static string? TryNormalizeProjectPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path.Trim());
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Restores a crash-recovery snapshot as an unsaved project. The snapshot already
+    /// passed through the serializer when it was written, so a project left in an
+    /// intermediate state still opens and can be repaired with diagnostics.
+    /// </summary>
+    public bool LoadRecoveredProject(RecoverySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        try
+        {
+            CancelDomainEdit();
+            ClearTestScriptResult();
+            _project = snapshot.Project;
+            EnsureProjectShape();
+            _definitionId = _project.FindDefinition(_project.View.ActiveDefinitionId)?.Id ?? _project.RootDefinitionId;
+            _projectPath = snapshot.ProjectPath;
+            _savedProjectJson = null;
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+            _selectedNet = null;
+            _clipboard = null;
+            _pasteOffset = 0;
+            _undo.Clear();
+            _redo.Clear();
+            Simulator = new SimulatorHost(_project, Definition);
+            RefreshAll(fit: true);
+            ResetDefinitionHistory();
+            ViewRestoreRequested?.Invoke();
+            AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
+            if (snapshot.ProjectPath is { Length: > 0 } recoveredPath && File.Exists(recoveredPath))
+            {
+                AddRecentProject(recoveredPath);
+            }
+
+            IsRecoveredProject = true;
+            IsDirty = true;
+            StatusText = snapshot.ProjectPath is { Length: > 0 } path
+                ? $"Recovered unsaved changes from {Path.GetFileName(path)}"
+                : "Recovered an unsaved project";
+            return true;
+        }
+        catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException)
+        {
+            StatusText = "Recovery failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    /// <summary>Exports one definition and its dependency closure as a portable library.</summary>
+    public bool ExportDefinition(string path, string definitionId)
+    {
+        try
+        {
+            string json = ComponentLibraryService.Export(_project, definitionId);
+            File.WriteAllText(path, json);
+            string exportedName = _project.FindDefinition(definitionId)?.Name ?? definitionId;
+            StatusText = $"Exported '{exportedName}' to {Path.GetFileName(path)}";
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProjectFormatException or InvalidOperationException)
+        {
+            StatusText = "Export failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Merges a library into the current project. Domain conflicts, dependency gaps,
+    /// and new validation errors abort without leaving partial definitions behind.
+    /// </summary>
+    public bool ImportLibrary(string path)
+    {
+        try
+        {
+            string json = File.ReadAllText(path);
+            EditorSnapshot before = Capture();
+            LibraryImportResult result = ComponentLibraryService.Import(_project, json);
+            if (!result.Success || result.RootDefinitionId is not string rootId)
+            {
+                StatusText = result.Message;
+                return false;
+            }
+
+            PushUndo(before);
+            _definitionId = rootId;
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+            _selectedNet = null;
+            Simulator.Retarget(_project, Definition);
+            RefreshAll(fit: true);
+            ResetDefinitionHistory();
+            IsDirty = true;
+            StatusText = result.Message;
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProjectFormatException or CircuitValidationException)
+        {
+            StatusText = "Import failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Generates an ordinary part at the requested shape and merges it through the
+    /// same validated library path as a file import. The operation is one undo step.
+    /// </summary>
+    public bool GeneratePart()
+    {
+        if (!TryGetGeneratedPartShape(out int width, out int words, out _) ||
+            !TryGetGeneratedContents(words, width, out IReadOnlyList<ulong>? contents))
+        {
+            StatusText = "Generated part shape is invalid.";
+            return false;
+        }
+
+        try
+        {
+            GeneratedPart part = _generatedPartKind switch
+            {
+                "Register" => PartGenerator.CreateRegister(width),
+                "Adder" => PartGenerator.CreateAdder(width),
+                "ALU" => PartGenerator.CreateAlu(width),
+                "Counter" => PartGenerator.CreateCounter(width),
+                "Mux" => PartGenerator.CreateMux(width),
+                "Comparator" => PartGenerator.CreateComparator(width),
+                "RAM" => PartGenerator.CreateRam(words, width),
+                "ROM" => PartGenerator.CreateRom(words, width, contents),
+                _ => throw new InvalidOperationException($"Unknown generated part kind '{_generatedPartKind}'."),
+            };
+
+            string json = ProjectLibrary.Export(part.Project, part.RootDefinitionId);
+            EditorSnapshot before = Capture();
+            LibraryImportResult result = ComponentLibraryService.Import(_project, json);
+            if (!result.Success || result.RootDefinitionId is not string rootId)
+            {
+                StatusText = result.Message;
+                return false;
+            }
+
+            PushUndo(before);
+            _definitionId = rootId;
+            _selectedInstanceIds.Clear();
+            _selectedInstance = null;
+            _selectedNet = null;
+            Simulator.Retarget(_project, Definition);
+            RefreshAll(fit: true);
+            ResetDefinitionHistory();
+            IsDirty = true;
+            StatusText = $"Generated {part.RootDefinitionId} — {result.Message}";
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or ProjectFormatException or CircuitValidationException)
+        {
+            StatusText = "Generate failed: " + exception.Message;
+            return false;
+        }
+    }
+
+    private bool CanGeneratePart() =>
+        TryGetGeneratedPartShape(out int width, out int words, out _) &&
+        TryGetGeneratedContents(words, width, out _);
+
+    /// <summary>
+    /// Parses an optional whitespace- or comma-separated list of hexadecimal ROM
+    /// words. An empty list means an all-zero ROM; omitted trailing words are zero.
+    /// </summary>
+    private bool TryGetGeneratedContents(int words, int width, out IReadOnlyList<ulong>? contents)
+    {
+        contents = null;
+        if (!IsRomGenerator || string.IsNullOrWhiteSpace(_generatedPartContentsText))
+        {
+            return true;
+        }
+
+        string[] tokens = _generatedPartContentsText.Split(
+            [',', ' ', '\t', '\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length > words)
+        {
+            return false;
+        }
+
+        ulong limit = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
+        var values = new List<ulong>(tokens.Length);
+        foreach (string token in tokens)
+        {
+            string text = token.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? token[2..] : token;
+            if (!ulong.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong value) ||
+                value > limit)
+            {
+                return false;
+            }
+
+            values.Add(value);
+        }
+
+        contents = values;
+        return true;
+    }
+
+    private bool TryGetGeneratedPartShape(out int width, out int words, out bool isRam)
+    {
+        width = 0;
+        words = 0;
+        isRam = IsRamGenerator;
+        bool isRom = IsRomGenerator;
+        if (!int.TryParse(
+                _generatedPartWidthText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out width))
+        {
+            return false;
+        }
+
+        if (!isRam && !isRom)
+        {
+            return width is >= PartGenerator.MinWidth and <= PartGenerator.MaxWidth;
+        }
+
+        if (!int.TryParse(
+                _generatedPartWordsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out words) ||
+            (words & (words - 1)) != 0)
+        {
+            return false;
+        }
+
+        return isRam
+            ? width is >= PartGenerator.MinWidth and <= PartGenerator.MaxRamWidth &&
+              words is >= PartGenerator.MinRamWords and <= PartGenerator.MaxRamWords &&
+              (long)words * width <= PartGenerator.MaxRamBits
+            : width is >= PartGenerator.MinWidth and <= PartGenerator.MaxRomWidth &&
+              words is >= PartGenerator.MinRamWords and <= PartGenerator.MaxRomWords &&
+              (long)words * width <= PartGenerator.MaxRomCells;
+    }
+
     public bool SaveProject(string path)
     {
         try
         {
             ProjectSerializer.Save(path, _project);
             _projectPath = path;
+            _savedProjectJson = ProjectSerializer.SaveToString(_project, includeView: false);
             IsDirty = false;
+            IsRecoveredProject = false;
+            AddRecentProject(path);
             StatusText = $"Saved {Path.GetFileName(path)}";
+            ProjectSaved?.Invoke();
             return true;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProjectFormatException)
@@ -445,16 +2677,28 @@ public sealed class EditorViewModel : ObservableObject
     public void BeginDrag()
     {
         _pendingDragUndo = true;
+        _dragActive = true;
     }
 
     public void EndDrag()
     {
+        bool needsCanonicalLayout = _dragReusedRoutes;
+        _dragActive = false;
+        _dragReusedRoutes = false;
         if (!_pendingDragUndo)
         {
             RefreshInspector();
         }
 
         _pendingDragUndo = false;
+        if (needsCanonicalLayout)
+        {
+            // Drag frames reuse unchanged routes for responsiveness. The committed
+            // frame keeps a route only when its terminals, bendpoints, and changed
+            // obstacles are unchanged; every affected net is still routed afresh, so
+            // the saved layout never keeps a route that a moved body now blocks.
+            RebuildLayout(reuseRoutes: true);
+        }
     }
 
     public void MoveInstance(string instanceId, double x, double y)
@@ -474,14 +2718,20 @@ public sealed class EditorViewModel : ObservableObject
         instance.X = Math.Round(x, 1);
         instance.Y = Math.Round(y, 1);
         IsDirty = true;
-        Simulator.Invalidate();
-        RebuildLayout();
+        RebuildLayout(reuseRoutes: _dragActive);
+        _dragReusedRoutes |= _dragActive;
         RefreshSimStatus();
         RefreshInspectorPosition(instance);
     }
 
     public void NudgeInstance(string instanceId, double dx, double dy)
     {
+        if (_selectedInstanceIds.Count > 1)
+        {
+            NudgeSelection(dx, dy);
+            return;
+        }
+
         ComponentInstance? instance = Definition.FindInstance(instanceId);
         if (instance is null)
         {
@@ -491,25 +2741,226 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         instance.X += dx;
         instance.Y += dy;
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+    }
+
+    public void NudgeSelection(double dx, double dy)
+    {
+        if (_selectedInstanceIds.Count == 0)
+        {
+            return;
+        }
+
+        PushUndo();
+        foreach (string id in _selectedInstanceIds)
+        {
+            ComponentInstance? instance = Definition.FindInstance(id);
+            if (instance is not null)
+            {
+                instance.X += dx;
+                instance.Y += dy;
+            }
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+    }
+
+    /// <summary>
+    /// Re-lays the whole current definition from its wiring graph. Strongly
+    /// connected components keep sequential feedback together; the condensation is
+    /// placed in left-to-right layers and each layer is stacked in authored order.
+    /// This is presentation only, so a running simulation keeps its time and values.
+    /// </summary>
+    public void AutoArrange()
+    {
+        if (Definition.Instances.Count == 0)
+        {
+            StatusText = "Auto arrange: this definition has no parts.";
+            return;
+        }
+
+        AutoLayoutResult result = CircuitAutoLayout.Arrange(_project, Definition);
+        bool changed = result.Positions.Any(pair =>
+            Definition.FindInstance(pair.Key) is ComponentInstance instance &&
+            (Math.Abs(instance.X - pair.Value.X) > 0.01 || Math.Abs(instance.Y - pair.Value.Y) > 0.01));
+        if (!changed)
+        {
+            StatusText = "Auto arrange: the definition is already arranged.";
+            return;
+        }
+
+        PushUndo();
+        foreach ((string id, Point point) in result.Positions)
+        {
+            if (Definition.FindInstance(id) is ComponentInstance instance)
+            {
+                instance.X = Math.Round(point.X, 1);
+                instance.Y = Math.Round(point.Y, 1);
+            }
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = $"Auto arranged {Definition.Instances.Count} parts in {result.Layers} column(s)";
+        FitRequested?.Invoke();
+    }
+
+    /// <summary>
+    /// Arranges the selected parts without touching connectivity or the running
+    /// simulation: presentation-only edits keep the compiled engine and its time.
+    /// </summary>
+    public void AlignSelectionLeft()
+    {
+        List<ComponentInstance> instances = SelectedInstances();
+        if (instances.Count < 2)
+        {
+            return;
+        }
+
+        PushUndo();
+        double left = instances.Min(instance => instance.X);
+        foreach (ComponentInstance instance in instances)
+        {
+            instance.X = Math.Round(left, 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = $"Aligned {instances.Count} parts to the left";
+    }
+
+    public void AlignSelectionTop()
+    {
+        List<ComponentInstance> instances = SelectedInstances();
+        if (instances.Count < 2)
+        {
+            return;
+        }
+
+        PushUndo();
+        double top = instances.Min(instance => instance.Y);
+        foreach (ComponentInstance instance in instances)
+        {
+            instance.Y = Math.Round(top, 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = $"Aligned {instances.Count} parts to the top";
+    }
+
+    /// <summary>
+    /// Spaces the selected parts evenly between the outermost left edges. The two
+    /// extremes stay where they are, so repeated distribution is stable.
+    /// </summary>
+    public void DistributeSelectionHorizontally()
+    {
+        List<ComponentInstance> instances = SelectedInstances()
+            .OrderBy(instance => instance.X)
+            .ThenBy(instance => instance.Y)
+            .ThenBy(instance => instance.Id, StringComparer.Ordinal)
+            .ToList();
+        if (instances.Count < 3)
+        {
+            return;
+        }
+
+        PushUndo();
+        double first = instances[0].X;
+        double step = (instances[^1].X - first) / (instances.Count - 1);
+        for (int i = 1; i < instances.Count - 1; i++)
+        {
+            instances[i].X = Math.Round(first + (step * i), 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = $"Spread {instances.Count} parts horizontally";
+    }
+
+    public void DistributeSelectionVertically()
+    {
+        List<ComponentInstance> instances = SelectedInstances()
+            .OrderBy(instance => instance.Y)
+            .ThenBy(instance => instance.X)
+            .ThenBy(instance => instance.Id, StringComparer.Ordinal)
+            .ToList();
+        if (instances.Count < 3)
+        {
+            return;
+        }
+
+        PushUndo();
+        double first = instances[0].Y;
+        double step = (instances[^1].Y - first) / (instances.Count - 1);
+        for (int i = 1; i < instances.Count - 1; i++)
+        {
+            instances[i].Y = Math.Round(first + (step * i), 1);
+        }
+
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = $"Spread {instances.Count} parts vertically";
+    }
+
+    private List<ComponentInstance> SelectedInstances()
+    {
+        var instances = new List<ComponentInstance>(_selectedInstanceIds.Count);
+        foreach (string id in _selectedInstanceIds)
+        {
+            if (Definition.FindInstance(id) is ComponentInstance instance)
+            {
+                instances.Add(instance);
+            }
+        }
+
+        return instances;
+    }
+
+    public void SetInstanceState(string instanceId, double x, double y)
+    {
+        ComponentInstance? instance = Definition.FindInstance(instanceId);
+        if (instance is null)
+        {
+            return;
+        }
+
+        if (_pendingDragUndo)
+        {
+            PushUndo();
+            _pendingDragUndo = false;
+        }
+
+        instance.X = Math.Round(x, 1);
+        instance.Y = Math.Round(y, 1);
+        IsDirty = true;
+        RebuildLayout();
+        RefreshSimStatus();
     }
 
     public void DeleteSelection()
     {
-        if (_selectedInstance is not null)
+        if (_selectedInstanceIds.Count > 0)
         {
-            string id = _selectedInstance.Id;
+            var ids = _selectedInstanceIds.ToArray();
             PushUndo();
-            Definition.Instances.Remove(_selectedInstance);
-            foreach (Net net in Definition.Nets)
+            foreach (string id in ids)
             {
-                net.Pins.RemoveAll(p => string.Equals(p.InstanceId, id, StringComparison.Ordinal));
+                ComponentInstance? instance = Definition.FindInstance(id);
+                if (instance is null)
+                {
+                    continue;
+                }
+
+                Definition.Instances.Remove(instance);
+                foreach (Net net in Definition.Nets)
+                {
+                    net.Pins.RemoveAll(p => string.Equals(p.InstanceId, id, StringComparison.Ordinal));
+                }
             }
 
             CleanEmptyNets();
+            _selectedInstanceIds.Clear();
             _selectedInstance = null;
             AfterMutation(structural: true);
-            StatusText = $"Deleted instance {id}";
+            StatusText = ids.Length == 1
+                ? $"Deleted instance {ids[0]}"
+                : string.Create(CultureInfo.InvariantCulture, $"Deleted {ids.Length} instances");
             return;
         }
 
@@ -544,12 +2995,86 @@ public sealed class EditorViewModel : ObservableObject
         };
         _project.Definitions.Add(definition);
         _definitionId = id;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
         RefreshAll(fit: true);
+        ResetDefinitionHistory();
         IsDirty = true;
         StatusText = $"Created component {id}";
+    }
+
+    /// <summary>
+    /// Copies the active definition into a new variant. The copy keeps definition-local
+    /// IDs, so it is an independent body that still reuses the same child parts.
+    /// </summary>
+    public void DuplicateDefinition() => DuplicateDefinitionOf(Definition.Id);
+
+    private void DuplicateDefinitionOf(string definitionId)
+    {
+        if (_project.FindDefinition(definitionId) is not CircuitDefinition source)
+        {
+            StatusText = $"Definition '{definitionId}' no longer exists.";
+            return;
+        }
+
+        string id = NextDefinitionCopyId(source);
+        string name = UniqueDefinitionName(source.Name + " copy");
+
+        PushUndo();
+        CircuitDefinition copy = source.Clone(id, name);
+        int index = _project.Definitions.IndexOf(source);
+        _project.Definitions.Insert(index < 0 ? _project.Definitions.Count : index + 1, copy);
+        _definitionId = id;
+        _selectedInstanceIds.Clear();
+        _selectedInstance = null;
+        _selectedNet = null;
+        IsDirty = true;
+        RefreshAll(fit: true);
+        ResetDefinitionHistory();
+        StatusText = $"Duplicated {source.Name} as {copy.Name} ({id})";
+    }
+
+    /// <summary>
+    /// Builds a readable copy ID such as <c>part-copy</c>, reusing the base stem when a
+    /// copy is duplicated again so repeated copies count up instead of nesting suffixes.
+    /// </summary>
+    private string NextDefinitionCopyId(CircuitDefinition source)
+    {
+        int copyIndex = source.Id.IndexOf("-copy", StringComparison.Ordinal);
+        string stem = copyIndex > 0 ? source.Id[..copyIndex] : source.Id;
+        if (stem.Length == 0)
+        {
+            stem = "part";
+        }
+
+        return DefinitionEditor.UniqueId(
+            stem + "-copy",
+            candidate => _project.FindDefinition(candidate) is not null);
+    }
+
+    private string UniqueDefinitionName(string name)
+    {
+        // Reuse the base name when copying a copy, so names count up ("Part copy 2")
+        // instead of nesting ("Part copy copy").
+        const string suffix = " copy";
+        string stem = name;
+        int copyIndex = name.IndexOf(suffix, StringComparison.Ordinal);
+        if (copyIndex > 0)
+        {
+            stem = name[..copyIndex];
+        }
+
+        string candidate = stem + suffix;
+        int index = 1;
+        while (_project.Definitions.Any(definition =>
+            string.Equals(definition.Name, candidate, StringComparison.Ordinal)))
+        {
+            candidate = stem + suffix + " " + (++index).ToString(CultureInfo.InvariantCulture);
+        }
+
+        return candidate;
     }
 
     public void RemoveDefinition()
@@ -577,16 +3102,24 @@ public sealed class EditorViewModel : ObservableObject
         string removed = Definition.Id;
         _project.Definitions.Remove(Definition);
         _definitionId = _project.RootDefinitionId;
+        _selectedInstanceIds.Clear();
         _selectedInstance = null;
         _selectedNet = null;
         Simulator.Retarget(_project, Definition);
         RefreshAll(fit: true);
+        ResetDefinitionHistory();
         IsDirty = true;
         StatusText = $"Removed {removed}";
     }
 
     public void AddDomain()
     {
+        if (_editingDomainId is string editingId)
+        {
+            UpdateDomainPolicy(editingId);
+            return;
+        }
+
         string name = NewDomainName.Trim();
         if (name.Length == 0)
         {
@@ -607,6 +3140,12 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
+        if (!TryBuildDriverPolicy(values.Length, out IDriverResolution drivers, out string policyError))
+        {
+            StatusText = policyError;
+            return;
+        }
+
         string stem = Slug(name);
         string id = DefinitionEditor.UniqueId(stem, candidate => _project.FindDomain(candidate) is not null);
         SignalDomain domain;
@@ -616,7 +3155,7 @@ public sealed class EditorViewModel : ObservableObject
                 id,
                 name,
                 values,
-                new SingleDriverResolution(),
+                drivers,
                 "User-defined discrete domain. Values are symbols, not arithmetic digits.");
         }
         catch (ArgumentException exception)
@@ -630,7 +3169,166 @@ public sealed class EditorViewModel : ObservableObject
         NewDomainName = string.Empty;
         AfterMutation(structural: true);
         NewPinDomain = Domains.FirstOrDefault(d => d.Id == id) ?? NewPinDomain;
-        StatusText = $"Added domain {domain.Name} ({domain.ValueCount} values)";
+        StatusText = domain.IsMultipleDriverPolicy
+            ? $"Added domain {domain.Name} ({domain.ValueCount} values · priority resolution)"
+            : $"Added domain {domain.Name} ({domain.ValueCount} values)";
+    }
+
+    /// <summary>
+    /// Loads a domain's driver policy into the form. Value labels and count stay fixed
+    /// so existing signals and pin domains remain valid.
+    /// </summary>
+    public void BeginEditDomainPolicy(string domainId)
+    {
+        if (_project.FindDomain(domainId) is not SignalDomain domain)
+        {
+            StatusText = $"Domain '{domainId}' no longer exists.";
+            return;
+        }
+
+        _editingDomainId = domain.Id;
+        NewDomainName = domain.Name;
+        NewDomainValues = string.Join(" ", domain.ValueNames);
+        if (domain.Drivers is PriorityDriverResolution priority)
+        {
+            SelectedDriverPolicy = DriverPolicies.Single(choice => choice.Id == "priority");
+            NewDomainPriorities = string.Join(" ", priority.Priorities);
+            NewDomainConflictValue = priority.ConflictValue.ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            SelectedDriverPolicy = DriverPolicies.Single(choice => choice.Id == "single");
+            NewDomainPriorities = string.Join(" ", Enumerable.Repeat(1, domain.ValueCount));
+            NewDomainConflictValue = "0";
+        }
+
+        RaiseDomainEditChanged();
+        StatusText = $"Editing driver policy for domain '{domain.Name}'";
+    }
+
+    public void CancelDomainEdit()
+    {
+        if (_editingDomainId is null)
+        {
+            return;
+        }
+
+        _editingDomainId = null;
+        ResetDomainForm();
+        RaiseDomainEditChanged();
+        StatusText = "Domain policy edit cancelled";
+    }
+
+    private void UpdateDomainPolicy(string domainId)
+    {
+        if (_project.FindDomain(domainId) is not SignalDomain existing)
+        {
+            CancelDomainEdit();
+            StatusText = $"Domain '{domainId}' no longer exists.";
+            return;
+        }
+
+        if (!TryBuildDriverPolicy(existing.ValueCount, out IDriverResolution drivers, out string error))
+        {
+            StatusText = error;
+            return;
+        }
+
+        SignalDomain updated;
+        try
+        {
+            updated = new SignalDomain(
+                existing.Id,
+                existing.Name,
+                existing.ValueNames,
+                drivers,
+                existing.Description);
+        }
+        catch (ArgumentException exception)
+        {
+            StatusText = "Invalid driver policy: " + exception.Message;
+            return;
+        }
+
+        int index = _project.Domains.FindIndex(candidate =>
+            string.Equals(candidate.Id, domainId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            CancelDomainEdit();
+            return;
+        }
+
+        PushUndo();
+        _project.Domains[index] = updated;
+        _editingDomainId = null;
+        ResetDomainForm();
+        RaiseDomainEditChanged();
+        AfterMutation(structural: true);
+        StatusText = $"Updated driver policy for domain {updated.Name}: {updated.Drivers.Describe()}";
+    }
+
+    private void ResetDomainForm()
+    {
+        NewDomainName = string.Empty;
+        NewDomainValues = "0 1 2";
+        SelectedDriverPolicy = DriverPolicies[0];
+        NewDomainPriorities = "1 1 1";
+        NewDomainConflictValue = "0";
+    }
+
+    private void RaiseDomainEditChanged()
+    {
+        RaisePropertyChanged(nameof(IsEditingDomainPolicy));
+        RaisePropertyChanged(nameof(DomainSaveButtonText));
+        RaisePropertyChanged(nameof(IsDomainValueFieldsEnabled));
+    }
+
+    private bool TryBuildDriverPolicy(int valueCount, out IDriverResolution drivers, out string error)
+    {
+        drivers = new SingleDriverResolution();
+        error = string.Empty;
+        if (!IsPriorityDriverPolicy)
+        {
+            return true;
+        }
+
+        string[] priorityTokens = NewDomainPriorities.Split(
+            [' ', ',', ';', '\t'],
+            StringSplitOptions.RemoveEmptyEntries);
+        if (priorityTokens.Length != valueCount)
+        {
+            error = $"Enter exactly {valueCount} priority value(s), one per domain value.";
+            return false;
+        }
+
+        var priorities = new int[priorityTokens.Length];
+        for (int i = 0; i < priorityTokens.Length; i++)
+        {
+            if (!int.TryParse(priorityTokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out priorities[i]) ||
+                priorities[i] < 0)
+            {
+                error = "Priorities must be non-negative whole numbers.";
+                return false;
+            }
+        }
+
+        if (!int.TryParse(NewDomainConflictValue.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int conflictValue) ||
+            conflictValue < 0 || conflictValue >= valueCount)
+        {
+            error = $"Conflict value must be a value index between 0 and {valueCount - 1}.";
+            return false;
+        }
+
+        try
+        {
+            drivers = new PriorityDriverResolution(priorities, conflictValue);
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            error = "Invalid priority policy: " + exception.Message;
+            return false;
+        }
     }
 
     public void AddPin()
@@ -654,14 +3352,639 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = pin is null ? "Could not add pin." : $"Added pin {pin.Name}";
     }
 
-    public void RemovePin(string pinId)
+    public void RenamePin(string pinId, string name)
     {
+        PinDeclaration? pin = Definition.FindPin(pinId);
+        string trimmed = name.Trim();
+        if (pin is null || trimmed.Length == 0 || string.Equals(pin.Name, trimmed, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         PushUndo();
-        if (DefinitionEditor.RemovePin(Definition, pinId))
+        if (DefinitionEditor.SetPinName(Definition, pinId, trimmed))
         {
             AfterMutation(structural: true);
-            StatusText = $"Removed pin {pinId}";
+            StatusText = $"Renamed pin to '{trimmed}'";
         }
+    }
+
+    public void ChangePinDomain(string pinId, string domainId)
+    {
+        PinDeclaration? pin = Definition.FindPin(pinId);
+        if (pin is null ||
+            string.Equals(pin.DomainId, domainId, StringComparison.Ordinal) ||
+            _project.FindDomain(domainId) is null)
+        {
+            return;
+        }
+
+        PushUndo();
+        if (DefinitionEditor.SetPinDomain(_project, Definition, pinId, domainId))
+        {
+            AfterMutation(structural: true);
+            StatusText = $"Pin '{pin.Name}' now uses {domainId}";
+        }
+    }
+
+    public void TogglePinDirection(string pinId)
+    {
+        PinDeclaration? pin = Definition.FindPin(pinId);
+        if (pin is null)
+        {
+            return;
+        }
+
+        PinDirection direction = pin.Direction == PinDirection.Input ? PinDirection.Output : PinDirection.Input;
+        PushUndo();
+        DefinitionEditor.SetPinDirection(Definition, pinId, direction);
+        AfterMutation(structural: true);
+        StatusText = $"Pin '{pin.Name}' is now {(direction == PinDirection.Input ? "an input" : "an output")}";
+    }
+
+    public void AddCustomNumericFormat()
+    {
+        string name = NewFormatName.Trim();
+        if (name.Length == 0)
+        {
+            StatusText = "Give the numeric format a name.";
+            return;
+        }
+
+        string id;
+        bool editing = _editingFormatId is not null;
+        if (_editingFormatId is string editingId)
+        {
+            if (_project.FindCustomNumericFormat(editingId) is null)
+            {
+                CancelCustomNumericFormatEdit();
+                StatusText = $"Numeric format '{editingId}' is no longer available.";
+                return;
+            }
+
+            id = editingId;
+        }
+        else
+        {
+            id = DefinitionEditor.UniqueId(Slug(name), candidate =>
+                NumericFormatCatalog.IsBuiltInId(candidate) || _project.FindCustomNumericFormat(candidate) is not null);
+        }
+
+        if (!TryBuildFormatDraft(id, out NumericFormatDefinition? format, out string error) || format is null)
+        {
+            StatusText = error;
+            return;
+        }
+
+        PushUndo();
+        if (editing)
+        {
+            int index = _project.CustomNumericFormats.FindIndex(candidate =>
+                string.Equals(candidate.Id, id, StringComparison.Ordinal));
+            _project.CustomNumericFormats[index] = format;
+            _editingFormatId = null;
+            ResetFormatForm();
+            RaisePropertyChanged(nameof(IsEditingFormat));
+            RaisePropertyChanged(nameof(FormatSaveButtonText));
+        }
+        else
+        {
+            _project.CustomNumericFormats.Add(format);
+            ResetFormatForm();
+        }
+
+        AfterMutation(structural: true, invalidateSimulation: false);
+        StatusText = editing
+            ? $"Updated numeric format '{format.Name}' ({format.Id})"
+            : $"Added numeric format '{format.Name}' ({format.Id})";
+    }
+
+    public void BeginEditCustomNumericFormat(string formatId)
+    {
+        if (_project.FindCustomNumericFormat(formatId) is not NumericFormatDefinition format)
+        {
+            StatusText = $"Numeric format '{formatId}' no longer exists.";
+            return;
+        }
+
+        _editingFormatId = format.Id;
+        _refreshingFormatForm = true;
+        try
+        {
+            NewFormatName = format.Name;
+            NewFormatDomain = Domains.FirstOrDefault(domain =>
+                string.Equals(domain.Id, format.DomainId, StringComparison.Ordinal)) ?? Domains.FirstOrDefault();
+            NewFormatDigits = string.Join(" ", format.DigitValues);
+            NewFormatRadix = format.Radix.ToString(CultureInfo.InvariantCulture);
+            SelectedFormatMode = FormatModes.FirstOrDefault(mode =>
+                string.Equals(mode.Id, FormatModeId(format), StringComparison.Ordinal)) ?? FormatModes[0];
+            NewFormatLeastSignificantFirst = format.LeastSignificantFirst;
+            NewFormatNegativeSign = (format.NegativeSignValue ?? 1).ToString(CultureInfo.InvariantCulture);
+        }
+        finally
+        {
+            _refreshingFormatForm = false;
+        }
+
+        RaisePropertyChanged(nameof(IsEditingFormat));
+        RaisePropertyChanged(nameof(FormatSaveButtonText));
+        RefreshFormatPreview();
+        StatusText = $"Editing numeric format '{format.Name}'";
+    }
+
+    public void CancelCustomNumericFormatEdit()
+    {
+        if (_editingFormatId is null)
+        {
+            return;
+        }
+
+        _editingFormatId = null;
+        ResetFormatForm();
+        RaisePropertyChanged(nameof(IsEditingFormat));
+        RaisePropertyChanged(nameof(FormatSaveButtonText));
+        StatusText = "Format edit cancelled";
+    }
+
+    private void ResetFormatForm()
+    {
+        _refreshingFormatForm = true;
+        try
+        {
+            NewFormatName = string.Empty;
+            NewFormatDigits = "0 1 2";
+            NewFormatRadix = "3";
+            NewFormatDomain = Domains.FirstOrDefault();
+            SelectedFormatMode = FormatModes[0];
+            NewFormatLeastSignificantFirst = true;
+            NewFormatNegativeSign = "1";
+        }
+        finally
+        {
+            _refreshingFormatForm = false;
+        }
+
+        RefreshFormatPreview();
+    }
+
+    private bool TryBuildFormatDraft(
+        string id,
+        out NumericFormatDefinition? format,
+        out string error)
+    {
+        format = null;
+        if (NewFormatDomain is null)
+        {
+            error = "Choose a signal domain for the numeric format.";
+            return false;
+        }
+
+        string name = NewFormatName.Trim();
+        if (name.Length == 0)
+        {
+            error = "Give the numeric format a name.";
+            return false;
+        }
+
+        string[] digitTexts = NewFormatDigits.Split(
+            [' ', ',', ';', '\t'],
+            StringSplitOptions.RemoveEmptyEntries);
+        var digits = new List<long>();
+        foreach (string digitText in digitTexts)
+        {
+            if (!long.TryParse(digitText, NumberStyles.Integer, CultureInfo.InvariantCulture, out long digit))
+            {
+                error = $"Digit value '{digitText}' is not a whole number.";
+                return false;
+            }
+
+            digits.Add(digit);
+        }
+
+        if (digits.Count == 0)
+        {
+            error = "A numeric format needs at least one digit value.";
+            return false;
+        }
+
+        if (digits.Distinct().Count() != digits.Count)
+        {
+            error = "Numeric format digit values must be distinct.";
+            return false;
+        }
+
+        if (!long.TryParse(NewFormatRadix.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long radix) ||
+            radix < 2)
+        {
+            error = "Radix must be a whole number of at least 2.";
+            return false;
+        }
+
+        string mode = SelectedFormatMode?.Id ?? "standard";
+        WeightingMode weighting = mode switch
+        {
+            "radix-complement" => WeightingMode.RadixComplement,
+            "diminished-radix-complement" => WeightingMode.DiminishedRadixComplement,
+            _ => WeightingMode.Standard,
+        };
+        int? negativeSign = null;
+        if (mode == "sign-magnitude")
+        {
+            if (!int.TryParse(NewFormatNegativeSign.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int sign) ||
+                sign < 0 ||
+                sign >= digits.Count)
+            {
+                error = "Sign-magnitude needs a negative sign index inside the digit list.";
+                return false;
+            }
+
+            negativeSign = sign;
+        }
+
+        try
+        {
+            format = new NumericFormatDefinition(
+                id,
+                name,
+                NewFormatDomain.Id,
+                digits,
+                radix,
+                weighting,
+                NewFormatLeastSignificantFirst,
+                negativeSign);
+            error = string.Empty;
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            error = "Invalid numeric format: " + exception.Message;
+            return false;
+        }
+    }
+
+    private static string FormatModeId(NumericFormatDefinition format)
+    {
+        if (format.IsSignMagnitude)
+        {
+            return "sign-magnitude";
+        }
+
+        return format.Weighting switch
+        {
+            WeightingMode.RadixComplement => "radix-complement",
+            WeightingMode.DiminishedRadixComplement => "diminished-radix-complement",
+            _ => "standard",
+        };
+    }
+
+    private void RefreshFormatPreview()
+    {
+        if (_refreshingFormatForm)
+        {
+            return;
+        }
+
+        string id = _editingFormatId ?? "preview";
+        if (!TryBuildFormatDraft(id, out NumericFormatDefinition? draft, out string error) || draft is null)
+        {
+            FormatPreviewText = "Preview: " + error;
+            return;
+        }
+
+        INumericFormat previewFormat = draft.ToFormat();
+        if (_editingFormatId is string editingId)
+        {
+            NumericLane? lane = Definition.NumericLanes.FirstOrDefault(candidate =>
+                string.Equals(candidate.FormatId, editingId, StringComparison.Ordinal));
+            if (lane is not null)
+            {
+                if (lane.PinIds.Count == 0)
+                {
+                    FormatPreviewText = $"Preview · {lane.Name}: this lane has no pins.";
+                    return;
+                }
+
+                if (Simulator.Engine is null)
+                {
+                    FormatPreviewText = $"Preview · {previewFormat.Describe(lane.PinIds.Count)} · start the simulation to decode live values.";
+                    return;
+                }
+
+                int[] values = new int[lane.PinIds.Count];
+                for (int i = 0; i < lane.PinIds.Count; i++)
+                {
+                    if (!Simulator.TryRead(EditorPin.ForPort(lane.PinIds[i]), out int value, out _))
+                    {
+                        FormatPreviewText = $"Preview · {lane.Name}: pin values are not available.";
+                        return;
+                    }
+
+                    values[i] = value;
+                }
+
+                if (!previewFormat.LeastSignificantFirst)
+                {
+                    Array.Reverse(values);
+                }
+
+                NumericDecodeResult decoded = previewFormat.Decode(values);
+                FormatPreviewText = decoded.IsValid
+                    ? $"Preview · {lane.Name} = {decoded.Value.ToString(CultureInfo.InvariantCulture)}"
+                    : $"Preview · {lane.Name}: {decoded.Error}";
+                return;
+            }
+        }
+
+        FormatPreviewText = $"Preview · {previewFormat.Describe(Math.Max(1, draft.DigitValues.Count))}";
+    }
+
+    public void RemoveCustomNumericFormat(string formatId)
+    {
+        if (_project.FindCustomNumericFormat(formatId) is not NumericFormatDefinition format)
+        {
+            return;
+        }
+
+        int uses = _project.Definitions.Sum(definition =>
+            definition.NumericLanes.Count(lane => string.Equals(lane.FormatId, formatId, StringComparison.Ordinal)));
+        if (uses > 0)
+        {
+            StatusText = $"Format '{format.Name}' is used by {uses} numeric lane(s); remove those lanes first.";
+            return;
+        }
+
+        bool wasEditing = string.Equals(_editingFormatId, formatId, StringComparison.Ordinal);
+        PushUndo();
+        _project.CustomNumericFormats.Remove(format);
+        if (wasEditing)
+        {
+            _editingFormatId = null;
+            ResetFormatForm();
+            RaisePropertyChanged(nameof(IsEditingFormat));
+            RaisePropertyChanged(nameof(FormatSaveButtonText));
+        }
+
+        AfterMutation(structural: true, invalidateSimulation: false);
+        StatusText = $"Removed numeric format '{format.Name}'";
+    }
+
+    /// <summary>
+    /// Adds a lane, or updates the one currently being edited. Both paths validate the
+    /// full draft first and commit it as a single undo step.
+    /// </summary>
+    public void AddNumericLane()
+    {
+        NumericLane? editingLane = _editingLaneId is string editingId
+            ? Definition.FindNumericLane(editingId)
+            : null;
+        if (_editingLaneId is not null && editingLane is null)
+        {
+            CancelNumericLaneEdit();
+        }
+
+        List<PinDeclaration> selected = Definition.Pins
+            .Where(pin => LanePinChoices.Any(choice =>
+                choice.IsSelected && string.Equals(choice.PinId, pin.Id, StringComparison.Ordinal)))
+            .ToList();
+        if (selected.Count == 0)
+        {
+            StatusText = "Select at least one interface pin for the numeric lane.";
+            return;
+        }
+
+        if (selected.Select(pin => pin.DomainId).Distinct(StringComparer.Ordinal).Count() > 1)
+        {
+            StatusText = "A numeric lane can only group pins from one signal domain.";
+            return;
+        }
+
+        INumericFormat? chosenFormat = SelectedLaneFormat?.Format;
+        string formatId = chosenFormat?.Id ?? editingLane?.FormatId ?? NumericFormats.UnsignedBinary.Id;
+        bool updating = editingLane is not null;
+        PushUndo();
+        NumericLane? lane = updating
+            ? (DefinitionEditor.UpdateNumericLane(
+                Definition,
+                editingLane!.Id,
+                NewLaneName,
+                formatId,
+                selected.Select(pin => pin.Id))
+                ? editingLane
+                : null)
+            : DefinitionEditor.AddNumericLane(Definition, NewLaneName, formatId, selected.Select(pin => pin.Id));
+        if (lane is null)
+        {
+            _undo.Pop();
+            StatusText = updating
+                ? "Could not update the numeric lane."
+                : "Could not add the numeric lane.";
+            return;
+        }
+
+        if (updating)
+        {
+            _editingLaneId = null;
+            ResetLaneForm();
+            RaisePropertyChanged(nameof(IsEditingLane));
+            RaisePropertyChanged(nameof(LaneSaveButtonText));
+        }
+        else
+        {
+            NewLaneName = string.Empty;
+        }
+
+        AfterMutation(structural: true, invalidateSimulation: false);
+        string note = chosenFormat is null ||
+            string.Equals(selected[0].DomainId, chosenFormat.DomainId, StringComparison.Ordinal)
+            ? string.Empty
+            : $" · note: {chosenFormat.Name} is intended for domain '{chosenFormat.DomainId}'.";
+        StatusText = updating
+            ? $"Updated numeric lane '{lane.Name}' ({lane.PinIds.Count} pins).{note}"
+            : $"Added numeric lane '{lane.Name}' ({lane.PinIds.Count} pins).{note}";
+    }
+
+    public void BeginEditNumericLane(string laneId)
+    {
+        if (Definition.FindNumericLane(laneId) is not NumericLane lane)
+        {
+            StatusText = $"Numeric lane '{laneId}' no longer exists.";
+            return;
+        }
+
+        _editingLaneId = lane.Id;
+        NewLaneName = lane.Name;
+        NumericDisplayOption? match = FormatChoices.FirstOrDefault(option =>
+            string.Equals(option.Format.Id, lane.FormatId, StringComparison.Ordinal));
+        SelectedLaneFormat = match;
+        foreach (LanePinChoice choice in LanePinChoices)
+        {
+            choice.IsSelected = lane.PinIds.Contains(choice.PinId, StringComparer.Ordinal);
+        }
+
+        RaisePropertyChanged(nameof(IsEditingLane));
+        RaisePropertyChanged(nameof(LaneSaveButtonText));
+        StatusText = match is null
+            ? $"Editing numeric lane '{lane.Name}' · format '{lane.FormatId}' is unknown; pick a known format to replace it."
+            : $"Editing numeric lane '{lane.Name}'";
+    }
+
+    public void CancelNumericLaneEdit()
+    {
+        if (_editingLaneId is null)
+        {
+            return;
+        }
+
+        _editingLaneId = null;
+        ResetLaneForm();
+        RaisePropertyChanged(nameof(IsEditingLane));
+        RaisePropertyChanged(nameof(LaneSaveButtonText));
+        StatusText = "Lane edit cancelled";
+    }
+
+    private void ResetLaneForm()
+    {
+        NewLaneName = string.Empty;
+        SelectedLaneFormat = FormatChoices.FirstOrDefault(option =>
+            option.Format.Id == NumericFormats.UnsignedBinary.Id) ?? FormatChoices.FirstOrDefault();
+        foreach (LanePinChoice choice in LanePinChoices)
+        {
+            choice.IsSelected = false;
+        }
+    }
+
+    public void RemoveNumericLane(string laneId)
+    {
+        if (Definition.FindNumericLane(laneId) is not NumericLane lane)
+        {
+            return;
+        }
+
+        bool wasEditing = string.Equals(_editingLaneId, laneId, StringComparison.Ordinal);
+        PushUndo();
+        if (!DefinitionEditor.RemoveNumericLane(Definition, laneId))
+        {
+            _undo.Pop();
+            return;
+        }
+
+        if (wasEditing)
+        {
+            _editingLaneId = null;
+            ResetLaneForm();
+            RaisePropertyChanged(nameof(IsEditingLane));
+            RaisePropertyChanged(nameof(LaneSaveButtonText));
+        }
+
+        AfterMutation(structural: true, invalidateSimulation: false);
+        StatusText = $"Removed numeric lane '{lane.Name}'";
+    }
+
+    public void RemovePin(string pinId)
+    {
+        string name = Definition.FindPin(pinId)?.Name ?? pinId;
+        PushUndo();
+        if (!DefinitionEditor.RemovePin(Definition, pinId))
+        {
+            _undo.Pop();
+            return;
+        }
+
+        (int references, int nets) = DefinitionEditor.PruneInstancePinReferences(_project, Definition.Id, pinId);
+        AfterMutation(structural: true);
+        string extra = references == 0
+            ? string.Empty
+            : $" · removed {references} dangling connection(s)" + (nets > 0 ? $" and {nets} empty net(s)" : string.Empty);
+        StatusText = $"Removed pin {name}{extra}";
+    }
+
+    /// <summary>
+    /// Changes interface declaration order. Pin refs are stable IDs, so existing
+    /// connections and lane pin lists are untouched; new lanes read the new order.
+    /// </summary>
+    public void MovePin(string pinId, int offset)
+    {
+        if (Definition.FindPin(pinId) is not PinDeclaration pin)
+        {
+            return;
+        }
+
+        PushUndo();
+        if (!DefinitionEditor.MovePin(Definition, pinId, offset))
+        {
+            _undo.Pop();
+            return;
+        }
+
+        AfterMutation(structural: true);
+        StatusText = $"Moved interface pin '{pin.Name}' {(offset < 0 ? "up" : "down")}";
+    }
+
+    /// <summary>Pins or unpins the selected net for the waveform panel.</summary>
+    public void ToggleSelectedNetWaveformPin()
+    {
+        if (_selectedNet is null)
+        {
+            return;
+        }
+
+        Net net = _selectedNet;
+        List<string> pins = PinnedWaveformNetIds();
+        if (pins.Remove(net.Id))
+        {
+            StatusText = $"Removed {(string.IsNullOrWhiteSpace(net.Label) ? net.Id : net.Label)} from the waveform";
+        }
+        else
+        {
+            pins.Add(net.Id);
+            StatusText = $"Pinned {(string.IsNullOrWhiteSpace(net.Label) ? net.Id : net.Label)} to the waveform";
+        }
+
+        WaveformPinsChanged();
+    }
+
+    public void ClearWaveformPins()
+    {
+        if (!_project.View.WaveformPins.TryGetValue(Definition.Id, out List<string>? pins) || pins.Count == 0)
+        {
+            return;
+        }
+
+        int count = pins.Count;
+        pins.Clear();
+        StatusText = $"Cleared {count} waveform pin(s) for {Definition.Name}";
+        WaveformPinsChanged();
+    }
+
+    public bool IsWaveformPinned(string netId) =>
+        _project.View.WaveformPins.TryGetValue(Definition.Id, out List<string>? pins) && pins.Contains(netId);
+
+    /// <summary>
+    /// Pinned nets that still exist in the current definition, in pin order. Stale IDs
+    /// are dropped so removing a net cannot leave a phantom waveform row.
+    /// </summary>
+    private List<string> PinnedWaveformNetIds()
+    {
+        if (!_project.View.WaveformPins.TryGetValue(Definition.Id, out List<string>? pins))
+        {
+            pins = [];
+            _project.View.WaveformPins[Definition.Id] = pins;
+        }
+
+        pins.RemoveAll(id => Definition.FindNet(id) is null);
+        return pins;
+    }
+
+    private void WaveformPinsChanged()
+    {
+        RaisePropertyChanged(nameof(SelectedNetOnWaveform));
+        RaisePropertyChanged(nameof(WaveformPinButtonText));
+        RaisePropertyChanged(nameof(WaveformPinCount));
+        RaisePropertyChanged(nameof(HasWaveformPins));
+        RaisePropertyChanged(nameof(WaveformPinSummary));
+        RefreshNetList();
+        RefreshWaveform();
+        VisualInvalidated?.Invoke();
     }
 
     public void ChangeNetDomain(string domainId)
@@ -677,6 +4000,114 @@ public sealed class EditorViewModel : ObservableObject
         AfterMutation(structural: false);
     }
 
+    public void SetNetWireColor(string netId, string? color)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null)
+        {
+            return;
+        }
+
+        if (!WireAnnotation.TryNormalizeColor(color, out string? normalized))
+        {
+            StatusText = "Wire color must be #RRGGBB or auto.";
+            return;
+        }
+
+        PushUndo();
+        net.WireColor = normalized;
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
+        StatusText = normalized is null ? "Wire color set to automatic" : $"Wire color set to {normalized}";
+    }
+
+    public void SetSelectedNetWireColor(string? color)
+    {
+        if (_selectedNet is not null)
+        {
+            SetNetWireColor(_selectedNet.Id, color);
+        }
+    }
+
+    private WireColorChoice WireColorChoice(string label, string? color, string tip) =>
+        new(label, color, tip, new RelayCommand(() => SetSelectedNetWireColor(color)));
+
+    public void AddNetWaypoint(string netId, Point point)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null)
+        {
+            return;
+        }
+
+        if (net.RoutePoints.Count >= WireAnnotation.MaxRoutePoints)
+        {
+            StatusText = $"A wire can have at most {WireAnnotation.MaxRoutePoints} bendpoints.";
+            return;
+        }
+
+        PushUndo();
+        net.RoutePoints.Add(new NetWaypoint(Math.Round(point.X, 1), Math.Round(point.Y, 1)));
+        SelectNet(net.Id);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = "Added wire bendpoint";
+    }
+
+    public void MoveNetWaypoint(string netId, int index, Point point)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null || index < 0 || index >= net.RoutePoints.Count)
+        {
+            return;
+        }
+
+        if (_pendingDragUndo)
+        {
+            PushUndo();
+            _pendingDragUndo = false;
+        }
+
+        net.RoutePoints[index] = new NetWaypoint(Math.Round(point.X, 1), Math.Round(point.Y, 1));
+        IsDirty = true;
+        RebuildLayout(reuseRoutes: true);
+        VisualInvalidated?.Invoke();
+    }
+
+    public void RemoveNetWaypoint(string netId, int index)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null || index < 0 || index >= net.RoutePoints.Count)
+        {
+            return;
+        }
+
+        PushUndo();
+        net.RoutePoints.RemoveAt(index);
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = "Removed wire bendpoint";
+    }
+
+    public void ClearNetRoute(string netId)
+    {
+        Net? net = Definition.FindNet(netId);
+        if (net is null || net.RoutePoints.Count == 0)
+        {
+            return;
+        }
+
+        PushUndo();
+        net.RoutePoints.Clear();
+        AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.Reuse);
+        StatusText = "Wire route reset to automatic";
+    }
+
+    public void ClearSelectedNetRoute()
+    {
+        if (_selectedNet is not null)
+        {
+            ClearNetRoute(_selectedNet.Id);
+        }
+    }
+
     public void PlaceLibraryComponent(LibraryComponent component)
     {
         PushUndo();
@@ -686,11 +4117,14 @@ public sealed class EditorViewModel : ObservableObject
             Id = id,
             Primitive = component.Spec,
             Label = component.Name,
-            X = NextPlacementX(),
-            Y = NextPlacementY(),
         };
+        Point spot = FindFreePlacement(_project.GetInstancePins(instance));
+        instance.X = spot.X;
+        instance.Y = spot.Y;
         Definition.Instances.Add(instance);
         _selectedInstance = instance;
+        _selectedInstanceIds.Clear();
+        _selectedInstanceIds.Add(instance.Id);
         _selectedNet = null;
         AfterMutation(structural: true);
         FormatPlacement();
@@ -699,15 +4133,15 @@ public sealed class EditorViewModel : ObservableObject
 
     public void PlaceDefinition(string definitionId)
     {
-        if (string.Equals(definitionId, Definition.Id, StringComparison.Ordinal))
-        {
-            StatusText = "A definition cannot contain itself directly.";
-            return;
-        }
-
         CircuitDefinition? target = _project.FindDefinition(definitionId);
         if (target is null)
         {
+            return;
+        }
+
+        if (HierarchyEditor.WouldCreateCycle(_project, Definition.Id, target.Id))
+        {
+            StatusText = $"Placing '{target.Name}' here would create a recursive hierarchy.";
             return;
         }
 
@@ -718,15 +4152,244 @@ public sealed class EditorViewModel : ObservableObject
             Id = id,
             DefinitionId = target.Id,
             Label = target.Name,
-            X = NextPlacementX(),
-            Y = NextPlacementY(),
         };
+        Point spot = FindFreePlacement(_project.GetInstancePins(instance));
+        instance.X = spot.X;
+        instance.Y = spot.Y;
         Definition.Instances.Add(instance);
         _selectedInstance = instance;
+        _selectedInstanceIds.Clear();
+        _selectedInstanceIds.Add(instance.Id);
         _selectedNet = null;
         AfterMutation(structural: true);
         FormatPlacement();
         StatusText = $"Placed {target.Name}";
+    }
+
+    /// <summary>
+    /// Copies the selected parts plus every unbound net whose pins are all inside
+    /// the selection. Wires to the outside are intentionally not copied, so a paste
+    /// cannot silently join unrelated circuitry.
+    /// </summary>
+    public bool CopySelection()
+    {
+        ClipboardPayload? payload = CaptureSelection();
+        if (payload is null)
+        {
+            StatusText = "Select one or more parts to copy.";
+            return false;
+        }
+
+        _clipboard = payload;
+        _pasteOffset = 0;
+        _pasteCommand.RaiseCanExecuteChanged();
+        StatusText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Copied {payload.Instances.Count} parts and {payload.Nets.Count} internal nets");
+        return true;
+    }
+
+    public void Paste()
+    {
+        if (_clipboard is null)
+        {
+            StatusText = "Clipboard is empty.";
+            return;
+        }
+
+        PastePayload(_clipboard, "Pasted");
+    }
+
+    /// <summary>
+    /// Replaces the selected parts with one instance of a newly created definition.
+    /// The undo snapshot is captured before the structural service runs, but only
+    /// pushed after it succeeds, so a refused extraction does not disturb redo.
+    /// </summary>
+    public void ExtractSelectionToComponent()
+    {
+        if (_selectedInstanceIds.Count == 0)
+        {
+            StatusText = "Select one or more parts to extract.";
+            return;
+        }
+
+        string[] ids = _selectedInstanceIds.ToArray();
+        EditorSnapshot before = Capture();
+        HierarchyExtractResult result = HierarchyEditor.ExtractSelection(
+            _project,
+            Definition,
+            ids,
+            NewComponentName);
+        if (!result.Success || result.Instance is null)
+        {
+            StatusText = result.Message;
+            return;
+        }
+
+        PushUndo(before);
+        AfterMutation(structural: true);
+        SelectInstance(result.Instance.Id);
+        NewComponentName = "Component";
+        StatusText = result.Message;
+    }
+
+    public void PromoteSelectedNet(PinDirection direction)
+    {
+        Net? net = _selectedNet;
+        if (net is null || !CanPromoteSelectedNet)
+        {
+            StatusText = "Select an unbound net with at least one pin to expose it.";
+            return;
+        }
+
+        PushUndo();
+        PinDeclaration? pin = HierarchyEditor.PromoteNet(
+            _project,
+            Definition,
+            net,
+            direction,
+            PromoteNetName);
+        if (pin is null)
+        {
+            Undo();
+            StatusText = "That net is already bound to an interface pin.";
+            return;
+        }
+
+        AfterMutation(structural: true);
+        SelectNet(net.Id);
+        PromoteNetName = string.Empty;
+        StatusText = $"Exposed '{net.Label ?? net.Id}' as {(pin.Direction == PinDirection.Input ? "input" : "output")} pin '{pin.Name}'";
+    }
+
+    public void DuplicateSelection()
+    {
+        ClipboardPayload? payload = CaptureSelection();
+        if (payload is null)
+        {
+            StatusText = "Select one or more parts to duplicate.";
+            return;
+        }
+
+        PastePayload(payload, "Duplicated");
+    }
+
+    private ClipboardPayload? CaptureSelection()
+    {
+        if (_selectedInstanceIds.Count == 0)
+        {
+            return null;
+        }
+
+        var instances = Definition.Instances
+            .Where(instance => _selectedInstanceIds.Contains(instance.Id))
+            .Select(CloneInstance)
+            .ToList();
+
+        HashSet<string> boundNets = Definition.Ports
+            .Select(port => port.NetId)
+            .ToHashSet(StringComparer.Ordinal);
+        var nets = Definition.Nets
+            .Where(net =>
+                !boundNets.Contains(net.Id) &&
+                net.Pins.Count > 0 &&
+                net.Pins.All(pin => _selectedInstanceIds.Contains(pin.InstanceId)))
+            .Select(CloneNet)
+            .ToList();
+
+        return new ClipboardPayload(instances, nets);
+    }
+
+    private void PastePayload(ClipboardPayload payload, string verb)
+    {
+        List<ComponentInstance> instances = payload.Instances
+            .Where(instance => instance.DefinitionId is null || _project.FindDefinition(instance.DefinitionId) is not null)
+            .ToList();
+        if (instances.Count == 0)
+        {
+            StatusText = "Copied parts refer to definitions that are not in this project.";
+            return;
+        }
+
+        PushUndo();
+        double offset = 32 + (_pasteOffset * 24);
+        _pasteOffset++;
+        var idMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pastedIds = new List<string>(instances.Count);
+        foreach (ComponentInstance source in instances)
+        {
+            string id = UniquePlacementId(source.Label ?? source.DefinitionId ?? "part");
+            idMap[source.Id] = id;
+            pastedIds.Add(id);
+
+            ComponentInstance clone = CloneInstance(source);
+            clone.Id = id;
+            clone.X += offset;
+            clone.Y += offset;
+            Definition.Instances.Add(clone);
+        }
+
+        int pastedNets = 0;
+        foreach (Net source in payload.Nets)
+        {
+            if (_project.FindDomain(source.DomainId) is null)
+            {
+                continue;
+            }
+
+            var pins = source.Pins
+                .Where(pin => idMap.ContainsKey(pin.InstanceId))
+                .Select(pin => new PinRef(idMap[pin.InstanceId], pin.PinId))
+                .ToList();
+            if (pins.Count == 0)
+            {
+                continue;
+            }
+
+            Net net = CloneNet(source);
+            net.Id = DefinitionEditor.UniqueNetId(Definition, Slug(source.Id));
+            net.Pins.Clear();
+            net.Pins.AddRange(pins);
+            net.RoutePoints.Clear();
+            foreach (NetWaypoint point in source.RoutePoints)
+            {
+                net.RoutePoints.Add(new NetWaypoint(point.X + offset, point.Y + offset));
+            }
+
+            Definition.Nets.Add(net);
+            pastedNets++;
+        }
+
+        AfterMutation(structural: true);
+        SelectInstances(pastedIds);
+        StatusText = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{verb} {pastedIds.Count} parts and {pastedNets} internal nets");
+    }
+
+    private static ComponentInstance CloneInstance(ComponentInstance source) => new()
+    {
+        Id = source.Id,
+        DefinitionId = source.DefinitionId,
+        Primitive = source.Primitive,
+        Label = source.Label,
+        X = source.X,
+        Y = source.Y,
+    };
+
+    private static Net CloneNet(Net source)
+    {
+        var net = new Net
+        {
+            Id = source.Id,
+            DomainId = source.DomainId,
+            Label = source.Label,
+            InitialValue = source.InitialValue,
+            WireColor = source.WireColor,
+        };
+        net.RoutePoints.AddRange(source.RoutePoints);
+        net.Pins.AddRange(source.Pins);
+        return net;
     }
 
     public void Connect(EditorPin start, EditorPin end)
@@ -874,6 +4537,62 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = $"Simulation reset to t=0 · {Simulator.EventsProcessed} events";
     }
 
+    /// <summary>
+    /// Commits the project's simulation settings as one undo step. Ranges are
+    /// validated here rather than clamped silently, so a typo cannot change the
+    /// convergence guard without the author noticing. The running engine is dropped
+    /// because its options were fixed when it was created.
+    /// </summary>
+    public bool ApplyProjectSettings()
+    {
+        if (!TryParseSetting(DefaultAdvanceTicksText, 1, 1_000_000, out long advance) ||
+            !TryParseSetting(EvaluationGuardText, 1, 1_000_000, out long guard) ||
+            !TryParseSetting(TraceCapacityText, 0, 100_000_000, out long capacity))
+        {
+            StatusText = "Project settings not applied: enter whole numbers in range " +
+                "(advance 1..1,000,000; guard 1..1,000,000; trace capacity 0..100,000,000).";
+            return false;
+        }
+
+        ProjectSettings settings = _project.Settings;
+        if (settings.DefaultAdvanceTicks == advance &&
+            settings.MaxEvaluationsPerComponentPerTimestamp == (int)guard &&
+            settings.MaxRecordedNetChanges == (int)capacity &&
+            settings.TraceAllNets == RecordNetTransitions)
+        {
+            StatusText = "Project settings unchanged";
+            return true;
+        }
+
+        PushUndo();
+        settings.DefaultAdvanceTicks = advance;
+        settings.MaxEvaluationsPerComponentPerTimestamp = (int)guard;
+        settings.MaxRecordedNetChanges = (int)capacity;
+        settings.TraceAllNets = RecordNetTransitions;
+        AfterMutation(structural: false, invalidateSimulation: true, LayoutRefreshMode.None);
+        StatusText = "Project settings applied";
+        return true;
+    }
+
+    public void ReloadProjectSettings()
+    {
+        RefreshProjectSettingsFields();
+        StatusText = "Project settings reloaded";
+    }
+
+    private void RefreshProjectSettingsFields()
+    {
+        DefaultAdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
+        EvaluationGuardText = _project.Settings.MaxEvaluationsPerComponentPerTimestamp.ToString(CultureInfo.InvariantCulture);
+        TraceCapacityText = _project.Settings.MaxRecordedNetChanges.ToString(CultureInfo.InvariantCulture);
+        RecordNetTransitions = _project.Settings.TraceAllNets;
+    }
+
+    private static bool TryParseSetting(string text, long min, long max, out long value) =>
+        long.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value) &&
+        value >= min &&
+        value <= max;
+
     public void AdvanceSimulation()
     {
         if (!EnsureSimulation())
@@ -964,6 +4683,27 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = "Cleared external drives";
     }
 
+    /// <summary>
+    /// Rebuilds presentation that cannot use DynamicResource directly (diagnostic
+    /// rows and waveform colours) after a theme change.
+    /// </summary>
+    public void RefreshTheme()
+    {
+        RefreshInspector();
+        if (Simulator.Engine is null)
+        {
+            RefreshDiagnosticsFromValidator();
+        }
+        else
+        {
+            RefreshDiagnosticsFromSimulator();
+        }
+
+        RefreshWaveform();
+        RefreshRecentTransitions();
+        VisualInvalidated?.Invoke();
+    }
+
     public void RunEvent(string description)
     {
         if (!EnsureSimulation())
@@ -1004,9 +4744,11 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = "Redo";
     }
 
-    public void PushUndo()
+    public void PushUndo() => PushUndo(Capture());
+
+    private void PushUndo(EditorSnapshot snapshot)
     {
-        _undo.Push(Capture());
+        _undo.Push(snapshot);
         while (_undo.Count > 80)
         {
             EditorSnapshot[] items = _undo.ToArray();
@@ -1039,22 +4781,34 @@ public sealed class EditorViewModel : ObservableObject
         {
             _project.Domains.Add(StandardDomains.Binary());
         }
+
+        _project.View.WaveformPins.Keys
+            .Where(definitionId => _project.FindDefinition(definitionId) is null)
+            .ToList()
+            .ForEach(definitionId => _project.View.WaveformPins.Remove(definitionId));
     }
 
     private void RefreshAll(bool fit)
     {
+        ClearSweepResult();
         EnsureProjectShape();
+        RefreshProjectSettingsFields();
         if (_project.FindDefinition(_definitionId) is null)
         {
             _definitionId = _project.RootDefinitionId;
         }
 
+        _project.View.ActiveDefinitionId = _definitionId;
         Simulator.Retarget(_project, Definition);
         RefreshDefinitions();
         RefreshPalette();
         RefreshDomains();
+        RefreshCustomNumericFormats();
+        RefreshFormatChoices();
         RefreshPins();
         RefreshIoPins();
+        RefreshNumericLanes();
+        RefreshNetList();
         RebuildLayout();
         RefreshInspector();
         RefreshDiagnosticsFromValidator();
@@ -1063,6 +4817,10 @@ public sealed class EditorViewModel : ObservableObject
         RefreshSimStatus();
         RefreshEvents();
         UpdateCommandStates();
+        if (_isSearchOpen)
+        {
+            RefreshSearchResults();
+        }
         RaisePropertyChanged(nameof(DefinitionTitle));
         RaisePropertyChanged(nameof(ProjectSubtitle));
         RaisePropertyChanged(nameof(ProjectTitle));
@@ -1076,23 +4834,114 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshDefinitions()
     {
         Definitions.Clear();
+        string query = _librarySearch.Trim();
         foreach (CircuitDefinition definition in _project.Definitions)
         {
+            if (query.Length > 0 &&
+                !definition.Name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !definition.Id.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !(definition.Description?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                continue;
+            }
+
             string id = definition.Id;
+            int usageCount = _project.Definitions.Sum(parent => parent.Instances.Count(instance =>
+                string.Equals(instance.DefinitionId, id, StringComparison.Ordinal)));
             Definitions.Add(new DefinitionListItem(
                 definition,
                 definition.Id == _project.RootDefinitionId,
                 definition.Id == Definition.Id,
                 new RelayCommand(() => OpenDefinition(id)),
-                new RelayCommand(() => PlaceDefinition(id))));
+                new RelayCommand(() => PlaceDefinition(id)),
+                new RelayCommand(() => DuplicateDefinitionOf(id)),
+                usageCount));
         }
+    }
+
+    /// <summary>
+    /// Projects the selected net's instance pins into a navigable list. Selecting a
+    /// row opens that part's inspector, which is the fastest way from a wire to the
+    /// component driving or reading it. Purely a read projection of authored pins.
+    /// </summary>
+    private void RefreshNetEndpoints(Net? net)
+    {
+        NetEndpoints.Clear();
+        if (net is not null)
+        {
+            foreach (PinRef reference in net.Pins)
+            {
+                ComponentInstance? instance = Definition.FindInstance(reference.InstanceId);
+                if (instance is null)
+                {
+                    continue;
+                }
+
+                PinDescriptor? descriptor = _project.FindInstancePin(instance, reference.PinId);
+                string label = instance.Label ?? instance.Id;
+                string detail = descriptor is PinDescriptor pin
+                    ? $"{pin.Name} · {(pin.Direction == PinDirection.Input ? "in" : "out")}"
+                    : reference.PinId;
+                string instanceId = instance.Id;
+                NetEndpoints.Add(new NetEndpointItem(
+                    instanceId,
+                    label,
+                    detail,
+                    new RelayCommand(() => SelectInstance(instanceId))));
+            }
+        }
+
+        RaisePropertyChanged(nameof(HasNetEndpoints));
+    }
+
+    /// <summary>
+    /// Projects direct parent instances of the current definition. A row opens its
+    /// parent and selects every matching instance, so hierarchy navigation is one
+    /// click instead of a manual search. No compilation or simulation is involved.
+    /// </summary>
+    private void RefreshDefinitionUsages()
+    {
+        DefinitionUsages.Clear();
+        string currentId = Definition.Id;
+        foreach (CircuitDefinition parent in _project.Definitions)
+        {
+            string[] instanceIds = parent.Instances
+                .Where(instance => string.Equals(instance.DefinitionId, currentId, StringComparison.Ordinal))
+                .Select(instance => instance.Id)
+                .ToArray();
+            if (instanceIds.Length == 0)
+            {
+                continue;
+            }
+
+            string parentId = parent.Id;
+            DefinitionUsages.Add(new DefinitionUsageItem(
+                parent,
+                instanceIds,
+                new RelayCommand(() =>
+                {
+                    OpenDefinition(parentId);
+                    SelectInstances(instanceIds);
+                })));
+        }
+
+        RaisePropertyChanged(nameof(HasDefinitionUsages));
     }
 
     private void RefreshPalette()
     {
         Palette.Clear();
+        string query = _librarySearch.Trim();
         foreach (LibraryComponent component in ComponentCatalog.Components)
         {
+            if (query.Length > 0 &&
+                !component.Name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !component.Category.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !component.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             Palette.Add(new PaletteItem(
                 component.Name,
                 component.Category,
@@ -1100,6 +4949,7 @@ public sealed class EditorViewModel : ObservableObject
                 () => PlaceLibraryComponent(component)));
         }
 
+        RaisePropertyChanged(nameof(HasPaletteResults));
     }
 
     private void RefreshDomains()
@@ -1108,11 +4958,25 @@ public sealed class EditorViewModel : ObservableObject
         foreach (SignalDomain domain in _project.Domains)
         {
             bool standard = StandardDomains.All().Any(d => string.Equals(d.Id, domain.Id, StringComparison.Ordinal));
-            var choice = new DomainChoice(domain.Id, domain.Name, standard);
+            string summary = $"{string.Join(" ", domain.ValueNames)} · {domain.Drivers.Describe()}";
+            var choice = new DomainChoice(
+                domain.Id,
+                domain.Name,
+                standard,
+                summary,
+                new RelayCommand(() => BeginEditDomainPolicy(domain.Id)));
             Domains.Add(choice);
         }
 
+        if (_editingDomainId is not null && _project.FindDomain(_editingDomainId) is null)
+        {
+            _editingDomainId = null;
+            ResetDomainForm();
+            RaiseDomainEditChanged();
+        }
+
         NewPinDomain = Domains.FirstOrDefault(d => d.Id == NewPinDomain?.Id) ?? Domains.FirstOrDefault();
+        NewFormatDomain = Domains.FirstOrDefault(d => d.Id == NewFormatDomain?.Id) ?? Domains.FirstOrDefault();
         if (_selectedNet is not null)
         {
             _refreshingDomainSelection = true;
@@ -1124,11 +4988,20 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshPins()
     {
         Pins.Clear();
-        foreach (PinDeclaration pin in Definition.Pins)
+        for (int i = 0; i < Definition.Pins.Count; i++)
         {
+            PinDeclaration pin = Definition.Pins[i];
             string pinId = pin.Id;
+            bool canMoveUp = i > 0;
+            bool canMoveDown = i < Definition.Pins.Count - 1;
             Net? net = Definition.FindPortNet(pinId);
-            Pins.Add(new PinListItem(pin, net?.Label ?? net?.Id ?? "unbound", new RelayCommand(() => RemovePin(pinId))));
+            Pins.Add(new PinListItem(
+                pin,
+                net?.Label ?? net?.Id ?? "unbound",
+                Domains,
+                new RelayCommand(() => MovePin(pinId, -1), () => canMoveUp),
+                new RelayCommand(() => MovePin(pinId, 1), () => canMoveDown),
+                new RelayCommand(() => RemovePin(pinId))));
         }
     }
 
@@ -1165,6 +5038,337 @@ public sealed class EditorViewModel : ObservableObject
         {
             view.ValueText = Simulator.Format(EditorPin.ForPort(view.PinId));
         }
+
+        RefreshNumericLaneValues();
+        RefreshFormatPreview();
+    }
+
+    private void RefreshFormatChoices()
+    {
+        string? selectedId = _selectedLaneFormat?.Format.Id;
+        FormatChoices.Clear();
+        foreach (INumericFormat format in NumericFormatCatalog.All(_project))
+        {
+            FormatChoices.Add(new NumericDisplayOption(format));
+        }
+
+        SelectedLaneFormat = FormatChoices.FirstOrDefault(option =>
+            string.Equals(option.Format.Id, selectedId, StringComparison.Ordinal)) ??
+            FormatChoices.FirstOrDefault(option => option.Format.Id == NumericFormats.UnsignedBinary.Id) ??
+            FormatChoices.FirstOrDefault();
+    }
+
+    private void RefreshCustomNumericFormats()
+    {
+        CustomNumericFormats.Clear();
+        foreach (NumericFormatDefinition format in _project.CustomNumericFormats)
+        {
+            string formatId = format.Id;
+            string weighting = format.IsSignMagnitude
+                ? $"sign-magnitude, negative={format.NegativeSignValue}"
+                : format.Weighting switch
+                {
+                    WeightingMode.RadixComplement => "radix complement",
+                    WeightingMode.DiminishedRadixComplement => "diminished complement",
+                    _ => "standard",
+                };
+            string summary = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{format.DomainId} · radix {format.Radix} · digits [{string.Join(",", format.DigitValues)}] · {weighting}");
+            CustomNumericFormats.Add(new CustomNumericFormatListItem(
+                format,
+                summary,
+                new RelayCommand(() => BeginEditCustomNumericFormat(formatId)),
+                new RelayCommand(() => RemoveCustomNumericFormat(formatId))));
+        }
+
+        if (_editingFormatId is string editingId &&
+            _project.FindCustomNumericFormat(editingId) is null)
+        {
+            _editingFormatId = null;
+            ResetFormatForm();
+            RaisePropertyChanged(nameof(IsEditingFormat));
+            RaisePropertyChanged(nameof(FormatSaveButtonText));
+        }
+
+        RaisePropertyChanged(nameof(HasCustomNumericFormats));
+        RefreshFormatPreview();
+    }
+
+    private const int MaxNetListRows = 200;
+
+    /// <summary>
+    /// Projects Definition.Nets into a filtered, read-only navigator. Selection only
+    /// changes the editor's current net; connectivity and simulation are untouched.
+    /// </summary>
+    private void RefreshNetList()
+    {
+        NetList.Clear();
+        string query = _netSearch.Trim();
+        int matched = 0;
+        foreach (Net net in Definition.Nets)
+        {
+            SignalDomain? domain = _project.FindDomain(net.DomainId);
+            string name = string.IsNullOrWhiteSpace(net.Label) ? net.Id : net.Label;
+            string summary = string.IsNullOrWhiteSpace(net.Label)
+                ? $"{domain?.Name ?? net.DomainId} · {net.Pins.Count} pin(s)"
+                : $"{net.Id} · {domain?.Name ?? net.DomainId} · {net.Pins.Count} pin(s)";
+            if (IsWaveformPinned(net.Id))
+            {
+                summary += " · waveform";
+            }
+            if (query.Length > 0 &&
+                !name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !net.Id.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !net.DomainId.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                !(domain?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                continue;
+            }
+
+            matched++;
+            if (NetList.Count >= MaxNetListRows)
+            {
+                continue;
+            }
+
+            string netId = net.Id;
+            NetList.Add(new NetListItem(
+                net,
+                name,
+                summary,
+                new RelayCommand(() => SelectNet(netId))));
+        }
+
+        _netListSummary = query.Length == 0
+            ? (matched > MaxNetListRows
+                ? $"Showing first {MaxNetListRows} of {matched} nets"
+                : $"{matched} net(s)")
+            : $"{NetList.Count} of {matched} matching net(s)";
+        RaisePropertyChanged(nameof(NetListSummary));
+        RaisePropertyChanged(nameof(HasNetList));
+        RefreshNetListValues();
+    }
+
+    private void RefreshNetListValues()
+    {
+        foreach (NetListItem item in NetList)
+        {
+            if (Simulator.Circuit is null || Simulator.Engine is null)
+            {
+                item.ValueText = "—";
+                item.ValueHint = "Start or advance the simulation to read this net.";
+                continue;
+            }
+
+            if (!Simulator.TryNetIndex(item.Id, out int netIndex, out SignalDomain? domain) || domain is null)
+            {
+                item.ValueText = "?";
+                item.ValueHint = "This net is not part of the compiled circuit.";
+                continue;
+            }
+
+            int value = Simulator.Engine.GetNetValue(netIndex);
+            item.ValueText = value < 0 ? "z" : domain.ValueName(value);
+            item.ValueHint = value < 0
+                ? $"Net '{item.Name}' · domain {domain.Name} · undriven"
+                : $"Net '{item.Name}' · domain {domain.Name} · value {domain.ValueName(value)}";
+        }
+    }
+
+    private void RefreshNumericLanes()
+    {
+        NumericLanes.Clear();
+        foreach (NumericLane lane in Definition.NumericLanes)
+        {
+            string laneId = lane.Id;
+            INumericFormat? format = NumericFormatCatalog.Find(_project, lane.FormatId);
+            string pins = string.Join(
+                " · ",
+                lane.PinIds.Select(pinId => Definition.FindPin(pinId)?.Name ?? $"{pinId} (missing)"));
+            bool canDrive = lane.PinIds.Count > 0 && lane.PinIds.All(pinId =>
+                Definition.FindPin(pinId)?.Direction == PinDirection.Input);
+            NumericLanes.Add(new NumericLaneListItem(
+                lane,
+                format?.Name ?? $"{lane.FormatId} (unknown)",
+                pins.Length == 0 ? "no pins" : pins,
+                canDrive,
+                new RelayCommand(() => BeginEditNumericLane(laneId)),
+                new RelayCommand(() => RemoveNumericLane(laneId)),
+                new RelayCommand(() => DriveNumericLane(laneId))));
+        }
+
+        LanePinChoices.Clear();
+        NumericLane? editingLane = _editingLaneId is string editingId
+            ? Definition.FindNumericLane(editingId)
+            : null;
+        var selectedPins = editingLane is null
+            ? null
+            : new HashSet<string>(editingLane.PinIds, StringComparer.Ordinal);
+        foreach (PinDeclaration pin in Definition.Pins)
+        {
+            LanePinChoices.Add(new LanePinChoice(pin)
+            {
+                IsSelected = selectedPins?.Contains(pin.Id) ?? false,
+            });
+        }
+
+        if (_editingLaneId is not null && editingLane is null)
+        {
+            _editingLaneId = null;
+            ResetLaneForm();
+            RaisePropertyChanged(nameof(IsEditingLane));
+            RaisePropertyChanged(nameof(LaneSaveButtonText));
+        }
+
+        RaisePropertyChanged(nameof(HasNumericLanes));
+        RefreshNumericLaneValues();
+    }
+
+    /// <summary>
+    /// Encodes a typed number with the lane's format and applies every resulting
+    /// digit as an external drive. All validation happens before any drive is applied.
+    /// </summary>
+    public void DriveNumericLane(string laneId)
+    {
+        NumericLane? lane = Definition.FindNumericLane(laneId);
+        NumericLaneListItem? view = NumericLanes.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, laneId, StringComparison.Ordinal));
+        if (lane is null || view is null)
+        {
+            return;
+        }
+
+        string text = view.DriveText.Trim();
+        if (!BigInteger.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out BigInteger value))
+        {
+            StatusText = $"Enter a whole number to drive lane '{lane.Name}'.";
+            return;
+        }
+
+        INumericFormat? format = NumericFormatCatalog.Find(_project, lane.FormatId);
+        if (format is null)
+        {
+            StatusText = $"Lane '{lane.Name}' uses unknown format '{lane.FormatId}'.";
+            return;
+        }
+
+        int[] signals = new int[lane.PinIds.Count];
+        if (!format.TryEncode(value, signals, out string? encodeError))
+        {
+            StatusText = encodeError ?? $"Value {value} cannot be encoded for lane '{lane.Name}'.";
+            return;
+        }
+
+        if (!format.LeastSignificantFirst)
+        {
+            Array.Reverse(signals);
+        }
+
+        var drives = new List<(string PinId, int Value)>(signals.Length);
+        string? domainId = null;
+        for (int i = 0; i < lane.PinIds.Count; i++)
+        {
+            PinDeclaration? pin = Definition.FindPin(lane.PinIds[i]);
+            if (pin is null || pin.Direction != PinDirection.Input)
+            {
+                StatusText = $"Lane '{lane.Name}' can only be driven when every pin is an input.";
+                return;
+            }
+
+            if (domainId is null)
+            {
+                domainId = pin.DomainId;
+            }
+            else if (!string.Equals(domainId, pin.DomainId, StringComparison.Ordinal))
+            {
+                StatusText = $"Lane '{lane.Name}' contains pins from more than one domain.";
+                return;
+            }
+
+            SignalDomain? domain = _project.FindDomain(pin.DomainId);
+            if (domain is null || !domain.IsValidValue(signals[i]))
+            {
+                StatusText = $"Value {value} needs a digit outside domain '{pin.DomainId}' for lane '{lane.Name}'.";
+                return;
+            }
+
+            drives.Add((pin.Id, signals[i]));
+        }
+
+        if (!EnsureSimulation())
+        {
+            return;
+        }
+
+        if (!Simulator.DrivePorts(drives))
+        {
+            StatusText = $"Could not drive lane '{lane.Name}' on the compiled circuit.";
+            return;
+        }
+
+        RefreshSimulationPresentation();
+        StatusText = $"Drove lane '{lane.Name}' with {value.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private void RefreshNumericLaneValues()
+    {
+        foreach (NumericLaneListItem view in NumericLanes)
+        {
+            if (Definition.FindNumericLane(view.Id) is not NumericLane lane)
+            {
+                view.ValueText = "—";
+                view.ValueHint = "This lane no longer exists.";
+                continue;
+            }
+
+            (string text, string hint) = DecodeNumericLane(lane, view.FormatId);
+            view.ValueText = text;
+            view.ValueHint = hint;
+        }
+    }
+
+    private (string Text, string Hint) DecodeNumericLane(NumericLane lane, string formatId)
+    {
+        if (Simulator.Circuit is null || Simulator.Engine is null)
+        {
+            return ("—", "Start or advance the simulation to decode this lane.");
+        }
+
+        INumericFormat? format = NumericFormatCatalog.Find(_project, formatId);
+        if (format is null)
+        {
+            return ("invalid", $"Unknown numeric format '{formatId}'.");
+        }
+
+        if (lane.PinIds.Count == 0)
+        {
+            return ("invalid", "This lane has no interface pins.");
+        }
+
+        int[] values = new int[lane.PinIds.Count];
+        for (int i = 0; i < lane.PinIds.Count; i++)
+        {
+            string pinId = lane.PinIds[i];
+            if (!Simulator.TryRead(EditorPin.ForPort(pinId), out int value, out _))
+            {
+                return ("missing", $"Pin '{pinId}' is not available in the compiled circuit.");
+            }
+
+            values[i] = value;
+        }
+
+        // Lanes are declared least-significant first by contract. Formats that read
+        // most-significant first need the sequence reversed before decoding.
+        if (!format.LeastSignificantFirst)
+        {
+            Array.Reverse(values);
+        }
+
+        NumericDecodeResult result = format.Decode(values);
+        return result.IsValid
+            ? (result.Value.ToString(CultureInfo.InvariantCulture), format.Describe(values.Length))
+            : ("invalid", result.Error ?? "The pin values cannot be decoded.");
     }
 
     private void RefreshEvents()
@@ -1192,8 +5396,23 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshInspector()
     {
         Fields.Clear();
+        RefreshLookupTable(_selectedInstanceIds.Count == 1 ? _selectedInstance : null);
+        RefreshDefinitionUsages();
+        RefreshNetEndpoints(_selectedNet);
 
-        if (_selectedInstance is not null)
+        if (_selectedInstanceIds.Count > 1)
+        {
+            Fields.Add(new EditableField(
+                "Selection",
+                string.Create(CultureInfo.InvariantCulture, $"{_selectedInstanceIds.Count} parts"),
+                isReadOnly: true));
+            Fields.Add(new EditableField("Instances", string.Join(", ", _selectedInstanceIds.Order(StringComparer.Ordinal)), isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Extract",
+                "Use Create from selection in the Definitions panel to turn this group into a reusable component.",
+                isReadOnly: true));
+        }
+        else if (_selectedInstance is not null)
         {
             ComponentInstance instance = _selectedInstance;
             string instanceId = instance.Id;
@@ -1244,9 +5463,43 @@ public sealed class EditorViewModel : ObservableObject
                            MutateNet(netId, n => n.InitialValue = parsed, "initial value");
                 }));
             Fields.Add(new EditableField(
+                "Wire color",
+                net.WireColor ?? WireAnnotation.AutoColor,
+                hint: "#RRGGBB, or auto for domain-derived colors",
+                apply: value =>
+                {
+                    if (!WireAnnotation.TryNormalizeColor(value, out string? normalized))
+                    {
+                        return false;
+                    }
+
+                    PushUndo();
+                    net.WireColor = normalized;
+                    AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
+                    return true;
+                }));
+            Fields.Add(new EditableField(
+                "Bendpoints",
+                net.RoutePoints.Count == 0 ? "automatic" : net.RoutePoints.Count.ToString(CultureInfo.InvariantCulture),
+                isReadOnly: true));
+            Fields.Add(new EditableField(
                 "Pins",
                 net.Pins.Count == 0 ? "none" : string.Join(", ", net.Pins.Select(p => p.ToString())),
                 isReadOnly: true));
+            var portNames = new List<string>();
+            foreach (PortBinding binding in Definition.Ports)
+            {
+                if (string.Equals(binding.NetId, net.Id, StringComparison.Ordinal) &&
+                    Definition.FindPin(binding.PinId) is PinDeclaration pin)
+                {
+                    portNames.Add($"{pin.Name} ({(pin.Direction == PinDirection.Input ? "in" : "out")})");
+                }
+            }
+
+            if (portNames.Count > 0)
+            {
+                Fields.Add(new EditableField("Ports", string.Join(", ", portNames), isReadOnly: true));
+            }
         }
         else
         {
@@ -1267,7 +5520,7 @@ public sealed class EditorViewModel : ObservableObject
                 {
                     PushUndo();
                     DefinitionEditor.RenameDefinition(Definition, value);
-                    AfterMutation(structural: true);
+                    AfterMutation(structural: true, invalidateSimulation: false);
                     return true;
                 }));
             Fields.Add(new EditableField(
@@ -1277,7 +5530,7 @@ public sealed class EditorViewModel : ObservableObject
                 {
                     PushUndo();
                     Definition.Description = string.IsNullOrWhiteSpace(value) ? null : value;
-                    AfterMutation(structural: false);
+                    AfterMutation(structural: false, invalidateSimulation: false, LayoutRefreshMode.None);
                     return true;
                 }));
             Fields.Add(new EditableField("Instances", Definition.Instances.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
@@ -1292,12 +5545,18 @@ public sealed class EditorViewModel : ObservableObject
         _refreshingDomainSelection = true;
         SelectedNetDomain = _selectedNet is null
             ? null
-            : Domains.FirstOrDefault(d => d.Id == _selectedNet.DomainId);
-        _refreshingDomainSelection = false;
-
+            : Domains.FirstOrDefault(d => d.Id == _selectedNet.DomainId);        _refreshingDomainSelection = false;
         RaisePropertyChanged(nameof(HasSelection));
         RaisePropertyChanged(nameof(HasSelectedInstance));
         RaisePropertyChanged(nameof(HasSelectedNet));
+        RaisePropertyChanged(nameof(HasMultipleSelection));
+        RaisePropertyChanged(nameof(SelectionCount));
+        RaisePropertyChanged(nameof(SelectedInstanceIds));
+        RaisePropertyChanged(nameof(IsRootDefinition));
+        RaisePropertyChanged(nameof(SelectedNetHasRoute));
+        RaisePropertyChanged(nameof(SelectedNetOnWaveform));
+        RaisePropertyChanged(nameof(WaveformPinButtonText));
+        RaisePropertyChanged(nameof(CanPromoteSelectedNet));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));
         RaisePropertyChanged(nameof(SelectionTitle));
@@ -1324,6 +5583,168 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
+    private void RefreshLookupTable(ComponentInstance? instance)
+    {
+        if (instance?.Primitive is not LookupSpec lookup)
+        {
+            LookupCells.Clear();
+            _lookupTableInstanceId = null;
+            _lookupTableModel.Clear();
+            _hasLookupTable = false;
+            _lookupTableSummary = string.Empty;
+            RaisePropertyChanged(nameof(HasLookupTable));
+            RaisePropertyChanged(nameof(LookupTableSummary));
+            return;
+        }
+
+        IReadOnlyList<PinDescriptor> pins = _project.GetInstancePins(instance);
+        var radices = new int[lookup.InputCount];
+        bool addressable = lookup.InputCount > 0;
+        long expectedEntries = 1;
+        for (int i = 0; i < lookup.InputCount; i++)
+        {
+            radices[i] = 0;
+            if (i >= pins.Count)
+            {
+                addressable = false;
+                continue;
+            }
+
+            Net? net = FindConnectedNet(instance.Id, pins[i].Id);
+            SignalDomain? domain = net is null ? null : _project.FindDomain(net.DomainId);
+            if (domain is null)
+            {
+                addressable = false;
+                continue;
+            }
+
+            radices[i] = domain.ValueCount;
+            expectedEntries *= domain.ValueCount;
+        }
+
+        addressable &= expectedEntries == lookup.Table.Count && radices.All(radix => radix > 0);
+        bool reuse = _hasLookupTable &&
+                     string.Equals(_lookupTableInstanceId, instance.Id, StringComparison.Ordinal) &&
+                     LookupCells.Count == lookup.Table.Count &&
+                     _lookupTableModel.Count == lookup.Table.Count;
+        if (!reuse)
+        {
+            LookupCells.Clear();
+        }
+
+        for (int entry = 0; entry < lookup.Table.Count; entry++)
+        {
+            string address = addressable
+                ? string.Create(CultureInfo.InvariantCulture, $"{entry} · {DescribeLookupAddress(entry, radices)}")
+                : entry.ToString(CultureInfo.InvariantCulture);
+            string value = lookup.Table[entry].ToString(CultureInfo.InvariantCulture);
+            if (!reuse)
+            {
+                LookupCells.Add(new LookupTableCell(instance.Id, entry, address, value));
+                continue;
+            }
+
+            LookupTableCell cell = LookupCells[entry];
+            bool unedited = string.Equals(
+                cell.Value,
+                _lookupTableModel[entry].ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+            cell.Address = address;
+            if (unedited)
+            {
+                cell.Value = value;
+            }
+        }
+
+        string outputDomain = pins.Count > 0
+            ? FindConnectedNet(instance.Id, pins[^1].Id) is Net outputNet
+                ? outputNet.DomainId
+                : "unconnected"
+            : "unconnected";
+        _lookupTableInstanceId = instance.Id;
+        _lookupTableModel.Clear();
+        _lookupTableModel.AddRange(lookup.Table);
+        _lookupTableSummary = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{lookup.InputCount} input(s) · {lookup.Table.Count} entries · delay {lookup.DelayTicks} · output {outputDomain}");
+        _hasLookupTable = true;
+        RaisePropertyChanged(nameof(HasLookupTable));
+        RaisePropertyChanged(nameof(LookupTableSummary));
+    }
+
+    private Net? FindConnectedNet(string instanceId, string pinId)
+    {
+        var reference = new PinRef(instanceId, pinId);
+        return Definition.Nets.FirstOrDefault(net => net.Pins.Contains(reference));
+    }
+
+    private static string DescribeLookupAddress(int entry, IReadOnlyList<int> radices)
+    {
+        var digits = new int[radices.Count];
+        int remainder = entry;
+        for (int i = radices.Count - 1; i >= 0; i--)
+        {
+            digits[i] = remainder % radices[i];
+            remainder /= radices[i];
+        }
+
+        return string.Join(",", digits);
+    }
+
+    /// <summary>
+    /// Commits one edited table cell. The whole table is validated before mutation so
+    /// a temporarily invalid neighbouring cell cannot silently enter the project.
+    /// </summary>
+    public bool ApplyLookupCell(LookupTableCell cell)
+    {
+        ArgumentNullException.ThrowIfNull(cell);
+        ComponentInstance? instance = Definition.FindInstance(cell.InstanceId);
+        if (instance?.Primitive is not LookupSpec lookup || cell.Index < 0 || cell.Index >= lookup.Table.Count ||
+            _selectedInstance?.Id != cell.InstanceId)
+        {
+            return false;
+        }
+
+        var table = new int[lookup.Table.Count];
+        foreach (LookupTableCell candidate in LookupCells)
+        {
+            if (candidate.Index < 0 || candidate.Index >= table.Length)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(candidate.Value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) || parsed < 0)
+            {
+                StatusText = $"Lookup entry {candidate.Index} must be a non-negative integer.";
+                return false;
+            }
+
+            table[candidate.Index] = parsed;
+        }
+
+        IReadOnlyList<PinDescriptor> pins = _project.GetInstancePins(instance);
+        if (pins.Count > 0 && FindConnectedNet(instance.Id, pins[^1].Id) is Net outputNet &&
+            _project.FindDomain(outputNet.DomainId) is SignalDomain outputDomain)
+        {
+            int invalid = Array.FindIndex(table, value => !outputDomain.IsValidValue(value));
+            if (invalid >= 0)
+            {
+                StatusText = $"Lookup entry {invalid} must be between 0 and {outputDomain.ValueCount - 1} for domain '{outputDomain.Id}'.";
+                return false;
+            }
+        }
+
+        if (table.SequenceEqual(lookup.Table))
+        {
+            return true;
+        }
+
+        return MutatePrimitive(
+            instance.Id,
+            spec => new LookupSpec(((LookupSpec)spec).InputCount, table, ((LookupSpec)spec).DelayTicks),
+            "lookup table");
+    }
+
     private void AddPrimitiveFields(ComponentInstance instance, string instanceId)
     {
         switch (instance.Primitive)
@@ -1338,9 +5759,9 @@ public sealed class EditorViewModel : ObservableObject
 
             case LookupSpec lookup:
                 Fields.Add(new EditableField(
-                    "Table",
+                    "Table (raw)",
                     string.Join(' ', lookup.Table),
-                    hint: "Mixed-radix truth table, first input most significant",
+                    hint: "Bulk edit: mixed-radix truth table, first input most significant",
                     apply: value => ParseInts(value) is int[] table &&
                                      MutatePrimitive(instanceId, spec => new LookupSpec(((LookupSpec)spec).InputCount, table, ((LookupSpec)spec).DelayTicks), "lookup table")));
                 Fields.Add(new EditableField(
@@ -1398,7 +5819,7 @@ public sealed class EditorViewModel : ObservableObject
 
         PushUndo();
         mutate(instance);
-        AfterMutation(structural: false);
+        AfterMutation(structural: false, invalidateSimulation: false);
         StatusText = $"Updated {what} on {instanceId}";
         return true;
     }
@@ -1442,18 +5863,60 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
-    private void AfterMutation(bool structural)
+    /// <summary>
+    /// Commits an edit to the UI. <paramref name="invalidateSimulation"/> is false for
+    /// presentation-only changes (positions, labels, colors, routes, numeric lanes),
+    /// which must not discard the running engine or its drive history.
+    /// </summary>
+    private void AfterMutation(
+        bool structural,
+        bool invalidateSimulation = true,
+        LayoutRefreshMode layoutRefresh = LayoutRefreshMode.Reuse)
     {
+        // Every mutation defaults to route reuse: the layout builder validates cached
+        // routes against current terminals, authored bendpoints, and every changed
+        // body or port, and reroutes only the nets that fail. A structural edit no
+        // longer throws away hundreds of still-valid routes.
         IsDirty = true;
-        Simulator.Retarget(_project, Definition);
-        RebuildLayout();
+        if (structural || invalidateSimulation)
+        {
+            _semanticRevision++;
+            if (HasTestScriptResult)
+            {
+                // The result remains as a record, but a structural or behaviour-affecting
+                // edit means it no longer describes the current project. Presentation-only
+                // moves, labels, colors, and routes do not invalidate scripted semantics.
+                IsTestScriptResultStale = true;
+            }
+        }
+
+        if (invalidateSimulation)
+        {
+            ClearSweepResult();
+            Simulator.Retarget(_project, Definition);
+        }
+
+        switch (layoutRefresh)
+        {
+            case LayoutRefreshMode.Canonical:
+                RebuildLayout();
+                break;
+            case LayoutRefreshMode.Reuse:
+                RebuildLayout(reuseRoutes: true);
+                break;
+        }
+
         if (structural)
         {
             RefreshDefinitions();
             RefreshPalette();
             RefreshDomains();
+            RefreshCustomNumericFormats();
+            RefreshFormatChoices();
             RefreshPins();
             RefreshIoPins();
+            RefreshNumericLanes();
+            RefreshNetList();
             RefreshEvents();
         }
         else
@@ -1473,9 +5936,19 @@ public sealed class EditorViewModel : ObservableObject
         VisualInvalidated?.Invoke();
     }
 
-    private void RebuildLayout()
+    private enum LayoutRefreshMode
     {
-        Layout = CircuitLayout.Build(Definition, _project);
+        Canonical,
+        Reuse,
+        None,
+    }
+
+    private void RebuildLayout(bool reuseRoutes = false)
+    {
+        CircuitLayout? previous = reuseRoutes && ReferenceEquals(Layout?.Definition, Definition)
+            ? Layout
+            : null;
+        Layout = CircuitLayout.Build(Definition, _project, previous);
         RaisePropertyChanged(nameof(ProjectSubtitle));
         VisualInvalidated?.Invoke();
     }
@@ -1486,7 +5959,7 @@ public sealed class EditorViewModel : ObservableObject
         Diagnostics.Clear();
         foreach (Diagnostic diagnostic in bag.Take(250))
         {
-            Diagnostics.Add(new DiagnosticItem(diagnostic));
+            Diagnostics.Add(CreateDiagnosticItem(diagnostic));
         }
 
         RaisePropertyChanged(nameof(DiagnosticSummary));
@@ -1497,16 +5970,58 @@ public sealed class EditorViewModel : ObservableObject
         Diagnostics.Clear();
         foreach (Diagnostic diagnostic in Simulator.AllDiagnostics().Take(250))
         {
-            Diagnostics.Add(new DiagnosticItem(diagnostic));
+            Diagnostics.Add(CreateDiagnosticItem(diagnostic));
         }
 
         RaisePropertyChanged(nameof(DiagnosticSummary));
     }
 
+    private DiagnosticItem CreateDiagnosticItem(Diagnostic diagnostic) =>
+        new(diagnostic, new RelayCommand(() => NavigateToDiagnostic(diagnostic)));
+
     private void RefreshWaveform()
     {
         SimulationEngineSnapshot snapshot = CaptureSimulationSnapshot();
         Waveform = snapshot.Waveform;
+        RaisePropertyChanged(nameof(WaveformPinCount));
+        RaisePropertyChanged(nameof(HasWaveformPins));
+        RaisePropertyChanged(nameof(WaveformPinSummary));
+    }
+
+    /// <summary>
+    /// Waveform rows in display order: pinned nets first (in pin order), then the rest
+    /// of the definition's nets in declaration order, capped at the row limit.
+    /// </summary>
+    private List<Net> OrderedWaveformNets()
+    {
+        var ordered = new List<Net>();
+        foreach (string netId in PinnedWaveformNetIds())
+        {
+            if (ordered.Count >= MaxWaveformRows)
+            {
+                break;
+            }
+
+            if (Definition.FindNet(netId) is Net net && !ordered.Contains(net))
+            {
+                ordered.Add(net);
+            }
+        }
+
+        foreach (Net net in Definition.Nets)
+        {
+            if (ordered.Count >= MaxWaveformRows)
+            {
+                break;
+            }
+
+            if (!ordered.Contains(net))
+            {
+                ordered.Add(net);
+            }
+        }
+
+        return ordered;
     }
 
     private SimulationEngineSnapshot CaptureSimulationSnapshot()
@@ -1518,7 +6033,7 @@ public sealed class EditorViewModel : ObservableObject
 
         var rows = new List<WaveformRow>();
         var targets = new Dictionary<int, (string Label, SignalDomain Domain, int Start, List<WaveValueChange> Changes)>();
-        foreach (Net net in Definition.Nets.Take(16))
+        foreach (Net net in OrderedWaveformNets())
         {
             if (!Simulator.TryNetIndex(net.Id, out int netIndex, out SignalDomain? domain) || domain is null ||
                 targets.ContainsKey(netIndex))
@@ -1584,6 +6099,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         RefreshDiagnosticsFromSimulator();
         RefreshIoValues();
+        RefreshNetListValues();
         RefreshWaveform();
         RefreshRecentTransitions();
         RaisePropertyChanged(nameof(SimTimeText));
@@ -1778,6 +6294,103 @@ public sealed class EditorViewModel : ObservableObject
 
     private double NextPlacementY() => _placementPoint.Y + (_placementCascade * 16);
 
+    /// <summary>
+    /// Picks the nearest free body position around the requested placement point.
+    /// Without this, the default point or a repeated library click could place a part
+    /// inside an existing body; the router then has no legal path and must fall back
+    /// through obstacles. Existing ports count as occupied space as well.
+    /// </summary>
+    private Point FindFreePlacement(IReadOnlyList<PinDescriptor> pins)
+    {
+        double x = NextPlacementX();
+        double y = NextPlacementY();
+        if (Layout is null)
+        {
+            return new Point(x, y);
+        }
+
+        int rows = Math.Max(1, Math.Max(
+            pins.Count(pin => pin.Direction == PinDirection.Input),
+            pins.Count(pin => pin.Direction == PinDirection.Output)));
+        double height = CircuitLayout.HeaderHeight + (rows * CircuitLayout.PinSpacing) + CircuitLayout.BoxBottomPadding;
+        double stepX = CircuitLayout.BoxWidth + 50;
+        double stepY = height + 40;
+
+        for (int radius = 0; radius <= 12; radius++)
+        {
+            foreach ((int dx, int dy) in PlacementRing(radius))
+            {
+                var candidate = new Rect(x + (dx * stepX), y + (dy * stepY), CircuitLayout.BoxWidth, height);
+                if (IsPlacementFree(candidate))
+                {
+                    return candidate.Position;
+                }
+            }
+        }
+
+        // A pathological, densely packed definition: start a new row below the
+        // current content instead of stacking another body on top of it.
+        double fallbackY = Layout.ContentBounds.Bottom + 60;
+        for (int column = 0; column < 32; column++)
+        {
+            var candidate = new Rect(Layout.ContentBounds.Left + (column * stepX), fallbackY, CircuitLayout.BoxWidth, height);
+            if (IsPlacementFree(candidate))
+            {
+                return candidate.Position;
+            }
+        }
+
+        return new Point(x, fallbackY);
+    }
+
+    private bool IsPlacementFree(Rect candidate)
+    {
+        foreach (ComponentBox component in Layout!.Components)
+        {
+            if (component.Bounds.Inflate(12).Intersects(candidate))
+            {
+                return false;
+            }
+        }
+
+        foreach (PortBox port in Layout.Ports)
+        {
+            if (port.Bounds.Inflate(12).Intersects(candidate))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Integer offsets on one square ring, ordered by row for stable placement.</summary>
+    private static IEnumerable<(int DX, int DY)> PlacementRing(int radius)
+    {
+        if (radius == 0)
+        {
+            yield return (0, 0);
+            yield break;
+        }
+
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            bool edgeRow = Math.Abs(dy) == radius;
+            if (edgeRow)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    yield return (dx, dy);
+                }
+            }
+            else
+            {
+                yield return (-radius, dy);
+                yield return (radius, dy);
+            }
+        }
+    }
+
     private void FormatPlacement() => _placementCascade = 0;
 
     private static double? ParseDoubleValue(string text)
@@ -1820,10 +6433,19 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(HasSelection));
         RaisePropertyChanged(nameof(HasSelectedInstance));
         RaisePropertyChanged(nameof(HasSelectedNet));
+        RaisePropertyChanged(nameof(HasMultipleSelection));
+        RaisePropertyChanged(nameof(SelectionCount));
+        RaisePropertyChanged(nameof(SelectedInstanceIds));
+        RaisePropertyChanged(nameof(IsRootDefinition));
+        RaisePropertyChanged(nameof(SelectedNetHasRoute));
+        RaisePropertyChanged(nameof(SelectedNetOnWaveform));
+        RaisePropertyChanged(nameof(WaveformPinButtonText));
+        RaisePropertyChanged(nameof(CanPromoteSelectedNet));
         RaisePropertyChanged(nameof(SelectedInstanceId));
         RaisePropertyChanged(nameof(SelectedNetId));
         RaisePropertyChanged(nameof(SelectionTitle));
         RaisePropertyChanged(nameof(SelectionSubtitle));
+        UpdateCommandStates();
     }
 
     private EditorSnapshot Capture()
@@ -1831,23 +6453,47 @@ public sealed class EditorViewModel : ObservableObject
         return new EditorSnapshot(
             ProjectSerializer.SaveToString(_project),
             Definition.Id,
-            _selectedInstance?.Id,
-            _selectedNet?.Id,
-            IsDirty);
+            _selectedInstanceIds.Order(StringComparer.Ordinal).ToArray(),
+            _selectedNet?.Id);
     }
 
     private void Restore(EditorSnapshot snapshot)
     {
+        CancelNumericLaneEdit();
+        CancelDomainEdit();
         try
         {
+            ClearTestScriptResult();
+            double? savedScale = _project.View.Scale;
+            double? savedOffsetX = _project.View.OffsetX;
+            double? savedOffsetY = _project.View.OffsetY;
+            Dictionary<string, List<string>> savedPins = _project.View.WaveformPins;
             _project = ProjectSerializer.LoadFromString(snapshot.Json, validate: false);
             EnsureProjectShape();
+            _project.View.Scale = savedScale;
+            _project.View.OffsetX = savedOffsetX;
+            _project.View.OffsetY = savedOffsetY;
+            _project.View.WaveformPins = savedPins;
             _definitionId = _project.FindDefinition(snapshot.DefinitionId)?.Id ?? _project.RootDefinitionId;
-            _selectedInstance = _project.FindDefinition(_definitionId)?.FindInstance(snapshot.SelectedInstanceId ?? string.Empty);
+            _selectedInstanceIds.Clear();
+            CircuitDefinition? restored = _project.FindDefinition(_definitionId);
+            if (restored is not null)
+            {
+                foreach (string id in snapshot.SelectedInstanceIds)
+                {
+                    if (restored.FindInstance(id) is not null)
+                    {
+                        _selectedInstanceIds.Add(id);
+                    }
+                }
+            }
+
+            _selectedInstance = FindSelectedInstance();
             _selectedNet = _project.FindDefinition(_definitionId)?.FindNet(snapshot.SelectedNetId ?? string.Empty);
             Simulator = new SimulatorHost(_project, Definition);
-            IsDirty = snapshot.Dirty;
             RefreshAll(fit: false);
+            ResetDefinitionHistory();
+            RefreshDirtyFromSaved();
             AdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         }
         catch (Exception exception) when (exception is ProjectFormatException or CircuitValidationException)
@@ -1860,15 +6506,54 @@ public sealed class EditorViewModel : ObservableObject
     {
         _undoCommand.RaiseCanExecuteChanged();
         _redoCommand.RaiseCanExecuteChanged();
+        _backCommand.RaiseCanExecuteChanged();
+        _forwardCommand.RaiseCanExecuteChanged();
+        _deleteCommand.RaiseCanExecuteChanged();
+        _copyCommand.RaiseCanExecuteChanged();
+        _pasteCommand.RaiseCanExecuteChanged();
+        _duplicateCommand.RaiseCanExecuteChanged();
+        _selectAllCommand.RaiseCanExecuteChanged();
+        _extractCommand.RaiseCanExecuteChanged();
+        _alignLeftCommand.RaiseCanExecuteChanged();
+        _alignTopCommand.RaiseCanExecuteChanged();
+        _distributeHorizontallyCommand.RaiseCanExecuteChanged();
+        _distributeVerticallyCommand.RaiseCanExecuteChanged();
+        _promoteInputCommand.RaiseCanExecuteChanged();
+        _promoteOutputCommand.RaiseCanExecuteChanged();
+        (ClearNetRouteCommand as RelayCommand)?.RaiseCanExecuteChanged();
         RaisePropertyChanged(nameof(ProjectTitle));
+    }
+
+    private sealed record ClipboardPayload(
+        IReadOnlyList<ComponentInstance> Instances,
+        IReadOnlyList<Net> Nets);
+
+    private void RefreshDirtyFromSaved()
+    {
+        if (_savedProjectJson is null)
+        {
+            IsDirty = true;
+            return;
+        }
+
+        try
+        {
+            IsDirty = !string.Equals(
+                ProjectSerializer.SaveToString(_project, includeView: false),
+                _savedProjectJson,
+                StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (exception is ProjectFormatException or InvalidOperationException)
+        {
+            IsDirty = true;
+        }
     }
 
     private sealed record EditorSnapshot(
         string Json,
         string DefinitionId,
-        string? SelectedInstanceId,
-        string? SelectedNetId,
-        bool Dirty);
+        string[] SelectedInstanceIds,
+        string? SelectedNetId);
 
     private readonly record struct SimulationEngineSnapshot(WaveformSnapshot Waveform);
 }

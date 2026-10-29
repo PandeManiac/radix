@@ -1,3 +1,4 @@
+using System.Numerics;
 using Radix.Core.Interpretation;
 using Xunit;
 
@@ -63,6 +64,16 @@ public sealed class InterpretationTests
     }
 
     [Fact]
+    public void UnsignedQuaternaryDecodes()
+    {
+        Assert.Equal(63, (int)NumericFormats.UnsignedQuaternary.Decode([3, 3, 3]).Value);
+        Assert.Equal(15, (int)NumericFormats.UnsignedQuaternary.Decode([3, 3]).Value);
+        Assert.Equal(0, (int)NumericFormats.UnsignedQuaternary.MinimumValue(3));
+        Assert.Equal(63, (int)NumericFormats.UnsignedQuaternary.MaximumValue(3));
+        Assert.Equal(170, NumericFormats.UnsignedQuaternary.Decode([2, 2, 2, 2]).Value);
+    }
+
+    [Fact]
     public void BalancedTernaryDecodes()
     {
         // least significant first: +, +, 0 -> 1 + 3 = 4
@@ -90,6 +101,45 @@ public sealed class InterpretationTests
         Assert.Contains("undriven", NumericFormats.UnsignedBinary.Decode([0, -1]).Error);
     }
 
+    [Theory]
+    [InlineData(4)]
+    [InlineData(1)]
+    public void BuiltInFormatsEncodeAndDecodeEveryValueInRange(int width)
+    {
+        AssertRoundTrips(NumericFormats.UnsignedBinary, width);
+        AssertRoundTrips(NumericFormats.TwosComplement, width);
+        AssertRoundTrips(NumericFormats.OnesComplement, width);
+        AssertRoundTrips(NumericFormats.SignMagnitude, width);
+        AssertRoundTrips(NumericFormats.UnsignedTernary, width);
+        AssertRoundTrips(NumericFormats.UnsignedQuaternary, width);
+        AssertRoundTrips(NumericFormats.TernaryTopNegative, width);
+        AssertRoundTrips(NumericFormats.BalancedTernary, width);
+    }
+
+    [Fact]
+    public void EncodingRejectsOutOfRangeAndUnsupportedDigitSets()
+    {
+        var buffer = new int[3];
+        Assert.False(NumericFormats.UnsignedBinary.TryEncode(-1, buffer, out string? error));
+        Assert.Contains("outside", error);
+        Assert.False(NumericFormats.BalancedTernary.TryEncode(14, buffer, out error));
+        Assert.Contains("outside", error);
+
+        var sparse = new PositionalFormat("sparse", "Sparse", "custom", [0, 2], 3);
+        Assert.False(sparse.TryEncode(1, buffer, out error));
+        Assert.Contains("contiguous", error);
+    }
+
+    [Fact]
+    public void MsbFirstCustomFormatEncodesInTheSameOrderItDecodes()
+    {
+        var format = new PositionalFormat("msb", "MSB first", "binary", [0, 1], 2, leastSignificantFirst: false);
+        var signals = new int[4];
+        Assert.True(format.TryEncode(5, signals, out string? error), error);
+        Assert.Equal([0, 1, 0, 1], signals);
+        Assert.Equal(5, (int)format.Decode(signals).Value);
+    }
+
     [Fact]
     public void MsbFirstCustomFormatReversesSignificance()
     {
@@ -111,6 +161,27 @@ public sealed class InterpretationTests
         string description = NumericFormats.TwosComplement.Describe(8);
         Assert.Contains("-128", description);
         Assert.Contains("127", description);
+    }
+
+    private static void AssertRoundTrips(INumericFormat format, int width)
+    {
+        BigInteger minimum = format.MinimumValue(width);
+        BigInteger maximum = format.MaximumValue(width);
+        for (BigInteger value = minimum; value <= maximum; value++)
+        {
+            var signals = new int[width];
+            Assert.True(format.TryEncode(value, signals, out string? error), $"{format.Id} {value}: {error}");
+            NumericDecodeResult decoded = format.Decode(signals);
+            Assert.True(decoded.IsValid, $"{format.Id} {value}: {decoded.Error}");
+            Assert.Equal(value, decoded.Value);
+            Assert.All(signals, signal => Assert.InRange(signal, 0, format is PositionalFormat positional
+                ? positional.DigitValues.Count - 1
+                : ((SignMagnitudeFormat)format).DigitValues.Count - 1));
+        }
+
+        var buffer = new int[width];
+        Assert.False(format.TryEncode(minimum - 1, buffer, out _));
+        Assert.False(format.TryEncode(maximum + 1, buffer, out _));
     }
 
     [Fact]

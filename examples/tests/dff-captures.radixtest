@@ -1,0 +1,37 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "D flip-flop captures data on the rising edge",
+  "description": "Drives D and CLK, then checks that Q follows only the rising edge, settles within the clock period, and holds for the whole low phase.",
+  "definition": "demo.dff",
+  "steps": [
+    { "at": 0, "set": { "clk": 0, "d": 1 }, "expect": { "q": 0, "qn": 1 } },
+    {
+      "at": 10,
+      "expect": { "q": 0, "qn": 1 },
+      "expectRelation": [ { "left": "q", "right": "qn", "op": "ne" } ]
+    },
+    {
+      "at": 20,
+      "set": { "clk": 1 },
+      "setup": { "ticks": 5, "expect": { "clk": 0, "d": 1 } },
+      "within": {
+        "ticks": 10,
+        "expect": { "q": 1, "qn": 0 },
+        "expectRelation": [
+          { "left": "q", "right": "qn", "op": "ne" },
+          { "left": "q", "right": "net:ff/q_net", "op": "eq" }
+        ]
+      }
+    },
+    {
+      "at": 40,
+      "set": { "clk": 0, "d": 0 },
+      "stable": {
+        "ticks": 10,
+        "expect": { "q": 1, "qn": 0 },
+        "expectRelation": [ { "left": "q", "right": "qn", "op": "ne" } ]
+      }
+    }
+  ]
+}

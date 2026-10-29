@@ -1,0 +1,61 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Balanced ternary 2-trit adder covers the full result range",
+  "description": "Trit indices are -,0,+ mapped to 0,1,2. The three-trit sum lane decodes -8..8 without wrapping.",
+  "definition": "demo.bt-adder-2",
+  "steps": [
+    {
+      "at": 0,
+      "set": { "a0": 2, "a1": 2, "b0": 2, "b1": 2 },
+      "description": "A=+4, B=+4"
+    },
+    {
+      "at": 20,
+      "expect": { "s0": 0, "s1": 1, "cout": 2 },
+      "expectLane": { "a": 4, "b": 4, "sum": 8 },
+      "description": "8 = -1 + 0*3 + 1*9"
+    },
+    {
+      "at": 30,
+      "set": { "a0": 0, "a1": 0, "b0": 0, "b1": 0 },
+      "description": "A=-4, B=-4"
+    },
+    {
+      "at": 50,
+      "expect": { "s0": 2, "s1": 1, "cout": 0 },
+      "expectLane": { "a": -4, "b": -4, "sum": -8 },
+      "description": "-8 = 1 + 0*3 + -1*9"
+    },
+    {
+      "at": 60,
+      "set": { "a0": 0, "a1": 2, "b0": 2, "b1": 0 },
+      "description": "A=+2, B=-2 cancels across the trit boundary"
+    },
+    {
+      "at": 80,
+      "expect": { "s0": 1, "s1": 1, "cout": 1 },
+      "expectLane": { "sum": 0 }
+    },
+    {
+      "at": 90,
+      "set": { "a0": 1, "a1": 2, "b0": 0, "b1": 1 },
+      "description": "A=+3, B=-1"
+    },
+    {
+      "at": 110,
+      "expect": { "s0": 0, "s1": 2, "cout": 1 },
+      "expectLane": { "sum": 2 }
+    },
+    {
+      "at": 120,
+      "set": { "a0": 1, "a1": 0, "b0": 2, "b1": 2 },
+      "description": "A=-3, B=+4 produces a negative low trit and a positive high trit"
+    },
+    {
+      "at": 140,
+      "expect": { "s0": 2, "s1": 1, "cout": 1 },
+      "expectLane": { "sum": 1 }
+    }
+  ]
+}

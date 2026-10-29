@@ -1,0 +1,60 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Unsigned ternary 2-trit adder covers carries and the top of its range",
+  "description": "Trit values are digit indices 0..2. The three-trit sum lane decodes 0..26 so 2+2 digit sums never wrap.",
+  "definition": "demo.t-adder-2",
+  "steps": [
+    {
+      "at": 0,
+      "set": { "a0": 2, "a1": 2, "b0": 2, "b1": 2 },
+      "description": "A=8, B=8"
+    },
+    {
+      "at": 20,
+      "expect": { "s0": 1, "s1": 2, "cout": 1 },
+      "expectLane": { "a": 8, "b": 8, "sum": 16 },
+      "description": "16 = 1 + 2*3 + 1*9"
+    },
+    {
+      "at": 30,
+      "set": { "a0": 1, "a1": 1, "b0": 2, "b1": 1 },
+      "description": "A=4, B=5 crosses a trit boundary"
+    },
+    {
+      "at": 50,
+      "expect": { "s0": 0, "s1": 0, "cout": 1 },
+      "expectLane": { "sum": 9 }
+    },
+    {
+      "at": 60,
+      "set": { "a0": 1, "a1": 1, "b0": 1, "b1": 1 },
+      "description": "A=4, B=4"
+    },
+    {
+      "at": 80,
+      "expect": { "s0": 2, "s1": 2, "cout": 0 },
+      "expectLane": { "sum": 8 }
+    },
+    {
+      "at": 90,
+      "set": { "a0": 2, "a1": 2, "b0": 1, "b1": 0 },
+      "description": "A=8, B=1"
+    },
+    {
+      "at": 110,
+      "expect": { "s0": 0, "s1": 0, "cout": 1 },
+      "expectLane": { "sum": 9 }
+    },
+    {
+      "at": 120,
+      "set": { "a0": 0, "a1": 0, "b0": 0, "b1": 0 },
+      "description": "A=0, B=0"
+    },
+    {
+      "at": 140,
+      "expect": { "s0": 0, "s1": 0, "cout": 0 },
+      "expectLane": { "a": 0, "b": 0, "sum": 0 }
+    }
+  ]
+}

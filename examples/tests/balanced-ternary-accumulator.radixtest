@@ -1,0 +1,50 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Balanced ternary accumulator loads, adds, holds, and wraps",
+  "description": "LOAD +4, HOLD against new data, ADD +4 to wrap to -1, ADD +2 to reach 1, HOLD at 1.",
+  "definition": "demo.bt-accumulator",
+  "steps": [
+    { "at": 0, "set": { "clk": 0, "load": 0, "add": 0, "d0": 1, "d1": 1 } },
+    { "at": 60, "expectLane": { "data": 0, "result": 0 } },
+    { "at": 80, "set": { "d0": 2, "d1": 2, "load": 2 } },
+    { "at": 160, "set": { "clk": 2 } },
+    {
+      "at": 280,
+      "expectLane": { "data": 4, "result": 4 },
+      "description": "LOAD captured +4 on the rising edge"
+    },
+    { "at": 300, "set": { "clk": 0 } },
+    { "at": 320, "set": { "load": 0, "d0": 0, "d1": 0 } },
+    { "at": 380, "set": { "clk": 2 } },
+    {
+      "at": 500,
+      "expectLane": { "data": -4, "result": 4 },
+      "description": "HOLD keeps +4 while the data pins change"
+    },
+    { "at": 520, "set": { "clk": 0 } },
+    { "at": 540, "set": { "add": 2, "d0": 2, "d1": 2 } },
+    { "at": 620, "set": { "clk": 2 } },
+    {
+      "at": 740,
+      "expectLane": { "data": 4, "result": -1 },
+      "description": "+4 plus +4 wraps out of the 2-trit range to -1"
+    },
+    { "at": 760, "set": { "clk": 0 } },
+    { "at": 780, "set": { "d0": 0, "d1": 2 } },
+    { "at": 860, "set": { "clk": 2 } },
+    {
+      "at": 980,
+      "expectLane": { "data": 2, "result": 1 },
+      "description": "-1 plus +2 is 1"
+    },
+    { "at": 1000, "set": { "clk": 0 } },
+    { "at": 1020, "set": { "add": 0, "d0": 1, "d1": 1 } },
+    { "at": 1100, "set": { "clk": 2 } },
+    {
+      "at": 1220,
+      "expectLane": { "data": 0, "result": 1 },
+      "description": "HOLD with the data pins at zero keeps 1"
+    }
+  ]
+}

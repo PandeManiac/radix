@@ -20,6 +20,52 @@ public sealed class CircuitCompiler
         return circuit ?? throw new CircuitCompileException(diagnostics);
     }
 
+    /// <summary>
+    /// Validates every definition as a simulation root, not only the project root or
+    /// the parts reachable from it. This surfaces broken but currently unused library
+    /// parts that would otherwise only fail when someone instantiates them. Global
+    /// structure is validated once; per-definition diagnostics are deduplicated so a
+    /// broken child reached through several roots is reported once.
+    /// </summary>
+    public static bool TryValidateAllDefinitions(CircuitProject project, out DiagnosticBag diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        var all = new DiagnosticBag();
+        CircuitValidator.Validate(project, project.RootDefinitionId, all);
+        if (all.HasErrors)
+        {
+            diagnostics = all;
+            return false;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (CircuitDefinition definition in project.Definitions)
+        {
+            var definitionDiagnostics = new DiagnosticBag();
+            var run = new FlatteningRun(project, definition.Id, definitionDiagnostics);
+            run.Execute();
+            foreach (Diagnostic diagnostic in definitionDiagnostics)
+            {
+                string key = string.Join('|',
+                    diagnostic.Code,
+                    diagnostic.Severity,
+                    diagnostic.DefinitionId,
+                    diagnostic.InstanceId,
+                    diagnostic.NetId,
+                    diagnostic.PinId,
+                    diagnostic.Path,
+                    diagnostic.Message);
+                if (seen.Add(key))
+                {
+                    all.Add(diagnostic);
+                }
+            }
+        }
+
+        diagnostics = all;
+        return !all.HasErrors;
+    }
+
     /// <summary>Attempts compilation, returning diagnostics instead of throwing.</summary>
     public static bool TryCompile(
         CircuitProject project,
