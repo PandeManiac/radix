@@ -18,6 +18,7 @@ public sealed class SimulationScriptTests
         { "quaternary-counter.radix", "quaternary-counter.radixtest" },
         { "quaternary-accumulator.radix", "quaternary-accumulator.radixtest" },
         { "quaternary-memory.radix", "quaternary-memory.radixtest" },
+        { "quaternary-machine.radix", "quaternary-machine.radixtest" },
         { "ternary-adder-2.radix", "ternary-adder-2.radixtest" },
         { "ternary-accumulator.radix", "ternary-accumulator.radixtest" },
         { "ternary-machine.radix", "ternary-machine.radixtest" },

@@ -19,6 +19,7 @@ public static class ExampleProjects
     public const string QuaternaryCounterFile = "quaternary-counter.radix";
     public const string QuaternaryAccumulatorFile = "quaternary-accumulator.radix";
     public const string QuaternaryMemoryFile = "quaternary-memory.radix";
+    public const string QuaternaryMachineFile = "quaternary-machine.radix";
     public const string TernaryAdder2File = "ternary-adder-2.radix";
     public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
     public const string TernaryMachineFile = "ternary-machine.radix";
@@ -44,6 +45,7 @@ public static class ExampleProjects
         new(QuaternaryCounterFile, "Quaternary counter", "A two-digit radix-4 counter: quaternary flip-flops, increment/carry lookups, and a 0..15 count lane.", CreateQuaternaryCounterDemo()),
         new(QuaternaryAccumulatorFile, "Quaternary accumulator", "A two-digit radix-4 register with LOAD/ADD/HOLD control, a 2-digit adder, and a 0..15 result lane.", CreateQuaternaryAccumulatorDemo()),
         new(QuaternaryMemoryFile, "Quaternary 4 × 2 RAM", "A standalone four-word, two-digit radix-4 memory. Drive ADDR, D, WE, and CLK, then read any word from the asynchronous port.", CreateQuaternaryMemoryDemo()),
+        new(QuaternaryMachineFile, "Quaternary program machine", "A stored-program radix-4 machine: 16-word ROM, 2-digit accumulator and PC, 4-word RAM, and LOAD/ADD/STORE/LOADM/JMP control.", CreateQuaternaryMachineDemo()),
         new(TernaryAdder2File, "Ternary 2-trit adder", "Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane.", CreateTernaryAdder2Demo()),
         new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
         new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
@@ -1189,6 +1191,198 @@ public static class ExampleProjects
         root.Connect(output[1], root.Pin("memory", "q1"));
 
         return builder.Build("demo.q4-memory");
+    }
+
+    public static CircuitProject CreateQuaternaryMachineDemo()
+    {
+        var builder = new ProjectBuilder("Quaternary program machine");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.q4-machine", "Radix-4 program machine");
+        root.Definition.Description =
+            "A stored-program radix-4 machine. PC is a two-digit value 0..15 addressing a 16-entry ROM; " +
+            "each instruction has a two-digit opcode and two-digit operand. Opcodes: 0 NOP, 1 LOAD arg, " +
+            "2 ADD arg modulo 16, 3 JMP target, 4 STORE arg0, 5 LOADM arg0. ACC is a 2-digit register, " +
+            "and a 4-word x 2-digit RAM uses the low operand digit as its address. The shipped program " +
+            "loads 5, adds 3, stores 8 to RAM[0], loads it back, and jumps to instruction 0.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.QuaternaryId);
+        var pc = new Net[2];
+        var acc = new Net[2];
+        var opcode = new Net[2];
+        var argument = new Net[2];
+        var read = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            pc[lane] = root.SetInitial(
+                root.AddPin($"pc{lane}", $"PC{lane}", PinDirection.Output, StandardDomains.QuaternaryId), 0);
+            acc[lane] = root.SetInitial(
+                root.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.QuaternaryId), 0);
+            opcode[lane] = root.SetInitial(
+                root.AddPin($"op{lane}", $"OP{lane}", PinDirection.Output, StandardDomains.QuaternaryId), 0);
+            argument[lane] = root.SetInitial(
+                root.AddPin($"arg{lane}", $"ARG{lane}", PinDirection.Output, StandardDomains.QuaternaryId), 0);
+            read[lane] = root.SetInitial(
+                root.AddPin($"read{lane}", $"READ{lane}", PinDirection.Output, StandardDomains.QuaternaryId), 0);
+        }
+
+        root.AddNumericLane("pc", "PC", NumericFormats.UnsignedQuaternary.Id, "pc0", "pc1");
+        root.AddNumericLane("acc", "ACC", NumericFormats.UnsignedQuaternary.Id, "q0", "q1");
+        root.AddNumericLane("opcode", "Opcode", NumericFormats.UnsignedQuaternary.Id, "op0", "op1");
+        root.AddNumericLane("argument", "Operand", NumericFormats.UnsignedQuaternary.Id, "arg0", "arg1");
+        root.AddNumericLane("read", "RAM read", NumericFormats.UnsignedQuaternary.Id, "read0", "read1");
+
+        Net zero = root.Rename(root.AddNet("zero", StandardDomains.QuaternaryId), "zero");
+        Net one = root.Rename(root.AddNet("one", StandardDomains.QuaternaryId), "one");
+        Net always = root.Rename(root.AddNet("always", StandardDomains.QuaternaryId), "always 3");
+        root.AddPrimitive("const0", new ConstantSpec(0), 60, 1180);
+        root.AddPrimitive("const1", new ConstantSpec(1), 60, 1020);
+        root.AddPrimitive("const3", new ConstantSpec(3), 60, 860);
+        root.Connect(zero, root.Pin("const0", PrimitiveShapes.OutputPinId));
+        root.Connect(one, root.Pin("const1", PrimitiveShapes.OutputPinId));
+        root.Connect(always, root.Pin("const3", PrimitiveShapes.OutputPinId));
+
+        var pcSum = new Net[2];
+        var pcNext = new Net[2];
+        var sum = new Net[2];
+        var accStage = new Net[2];
+        var accNext = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            pcSum[lane] = root.Rename(root.AddNet($"pc_sum{lane}", StandardDomains.QuaternaryId), $"PC + 1 lane {lane}");
+            pcNext[lane] = root.Rename(root.AddNet($"pc_next{lane}", StandardDomains.QuaternaryId), $"next PC lane {lane}");
+            sum[lane] = root.Rename(root.AddNet($"sum{lane}", StandardDomains.QuaternaryId), $"ACC + ARG lane {lane}");
+            accStage[lane] = root.Rename(root.AddNet($"acc_stage{lane}", StandardDomains.QuaternaryId), $"ADD or operand lane {lane}");
+            accNext[lane] = root.Rename(root.AddNet($"acc_next{lane}", StandardDomains.QuaternaryId), $"next ACC lane {lane}");
+        }
+
+        Net isAdd = root.Rename(root.AddNet("is_add", StandardDomains.QuaternaryId), "ADD");
+        Net isJump = root.Rename(root.AddNet("is_jump", StandardDomains.QuaternaryId), "JMP");
+        Net isStore = root.Rename(root.AddNet("is_store", StandardDomains.QuaternaryId), "STORE");
+        Net isLoadM = root.Rename(root.AddNet("is_loadm", StandardDomains.QuaternaryId), "LOADM");
+        Net writeAcc = root.Rename(root.AddNet("write_acc", StandardDomains.QuaternaryId), "write ACC");
+
+        root.AddInstance("pc_adder", StandardLibrary.QuaternaryAdder2Id, 280, 40);
+        root.Connect(pc[0], root.Pin("pc_adder", "a0"));
+        root.Connect(pc[1], root.Pin("pc_adder", "a1"));
+        root.Connect(one, root.Pin("pc_adder", "b0"));
+        root.Connect(zero, root.Pin("pc_adder", "b1"));
+        root.Connect(pcSum[0], root.Pin("pc_adder", "s0"));
+        root.Connect(pcSum[1], root.Pin("pc_adder", "s1"));
+
+        root.AddInstance("alu", StandardLibrary.QuaternaryAdder2Id, 280, 300);
+        root.Connect(acc[0], root.Pin("alu", "a0"));
+        root.Connect(acc[1], root.Pin("alu", "a1"));
+        root.Connect(argument[0], root.Pin("alu", "b0"));
+        root.Connect(argument[1], root.Pin("alu", "b1"));
+        root.Connect(sum[0], root.Pin("alu", "s0"));
+        root.Connect(sum[1], root.Pin("alu", "s1"));
+
+        for (int lane = 0; lane < 2; lane++)
+        {
+            root.AddInstance($"pc_mux{lane}", StandardLibrary.QuaternaryLoadMuxId, 600, 40 + (lane * 190));
+            root.Connect(pcSum[lane], root.Pin($"pc_mux{lane}", "a"));
+            root.Connect(argument[lane], root.Pin($"pc_mux{lane}", "b"));
+            root.Connect(isJump, root.Pin($"pc_mux{lane}", "s"));
+            root.Connect(pcNext[lane], root.Pin($"pc_mux{lane}", "y"));
+
+            root.AddInstance($"acc_add{lane}", StandardLibrary.QuaternaryLoadMuxId, 600, 420 + (lane * 190));
+            root.Connect(argument[lane], root.Pin($"acc_add{lane}", "a"));
+            root.Connect(sum[lane], root.Pin($"acc_add{lane}", "b"));
+            root.Connect(isAdd, root.Pin($"acc_add{lane}", "s"));
+            root.Connect(accStage[lane], root.Pin($"acc_add{lane}", "y"));
+
+            root.AddInstance($"acc_mem{lane}", StandardLibrary.QuaternaryLoadMuxId, 860, 420 + (lane * 190));
+            root.Connect(accStage[lane], root.Pin($"acc_mem{lane}", "a"));
+            root.Connect(read[lane], root.Pin($"acc_mem{lane}", "b"));
+            root.Connect(isLoadM, root.Pin($"acc_mem{lane}", "s"));
+            root.Connect(accNext[lane], root.Pin($"acc_mem{lane}", "y"));
+        }
+
+        int[] program = new int[16];
+        int[] operands = new int[16];
+        program[0] = 1;
+        operands[0] = 5;  // LOAD 5
+        program[1] = 2;
+        operands[1] = 3;  // ADD 3 -> 8
+        program[2] = 4;   // STORE 0 -> RAM[0] = 8
+        program[3] = 5;   // LOADM 0 -> ACC = 8
+        program[4] = 3;   // JMP 0
+
+        int[] opcodeLow = new int[16];
+        int[] opcodeHigh = new int[16];
+        int[] argumentLow = new int[16];
+        int[] argumentHigh = new int[16];
+        for (int address = 0; address < 16; address++)
+        {
+            opcodeLow[address] = program[address] % 4;
+            opcodeHigh[address] = program[address] / 4;
+            argumentLow[address] = operands[address] % 4;
+            argumentHigh[address] = operands[address] / 4;
+        }
+
+        void Rom(string id, int[] table, Net output, double y)
+        {
+            root.AddPrimitive(id, new LookupSpec(2, table, 1), 280, y);
+            root.Connect(pc[1], root.Pin(id, "in0"));
+            root.Connect(pc[0], root.Pin(id, "in1"));
+            root.Connect(output, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        Rom("rom_op_low", opcodeLow, opcode[0], 640);
+        Rom("rom_op_high", opcodeHigh, opcode[1], 800);
+        Rom("rom_arg_low", argumentLow, argument[0], 960);
+        Rom("rom_arg_high", argumentHigh, argument[1], 1120);
+
+        void Decode(string id, int value, Net output, double y)
+        {
+            int[] table = new int[16];
+            table[value] = 3;
+            root.AddPrimitive(id, new LookupSpec(2, table, 1), 600, y);
+            root.Connect(opcode[1], root.Pin(id, "in0"));
+            root.Connect(opcode[0], root.Pin(id, "in1"));
+            root.Connect(output, root.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        Decode("decode_add", 2, isAdd, 40);
+        Decode("decode_jump", 3, isJump, 200);
+        Decode("decode_store", 4, isStore, 360);
+        Decode("decode_loadm", 5, isLoadM, 520);
+
+        int[] writeTable = new int[16];
+        writeTable[1] = 3;
+        writeTable[2] = 3;
+        writeTable[5] = 3;
+        root.AddPrimitive("decode_write", new LookupSpec(2, writeTable, 1), 600, 680);
+        root.Connect(opcode[1], root.Pin("decode_write", "in0"));
+        root.Connect(opcode[0], root.Pin("decode_write", "in1"));
+        root.Connect(writeAcc, root.Pin("decode_write", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("memory", StandardLibrary.QuaternaryRam4x2Id, 300, 1360);
+        root.Connect(argument[0], root.Pin("memory", "addr"));
+        root.Connect(acc[0], root.Pin("memory", "d0"));
+        root.Connect(acc[1], root.Pin("memory", "d1"));
+        root.Connect(isStore, root.Pin("memory", "we"));
+        root.Connect(clk, root.Pin("memory", "clk"));
+        root.Connect(read[0], root.Pin("memory", "q0"));
+        root.Connect(read[1], root.Pin("memory", "q1"));
+
+        root.AddInstance("pc_reg", StandardLibrary.QuaternaryRegister2Id, 1180, 40);
+        root.Connect(pc[0], root.Pin("pc_reg", "q0"));
+        root.Connect(pc[1], root.Pin("pc_reg", "q1"));
+        root.Connect(pcNext[0], root.Pin("pc_reg", "d0"));
+        root.Connect(pcNext[1], root.Pin("pc_reg", "d1"));
+        root.Connect(always, root.Pin("pc_reg", "load"));
+        root.Connect(clk, root.Pin("pc_reg", "clk"));
+
+        root.AddInstance("acc_reg", StandardLibrary.QuaternaryRegister2Id, 1180, 420);
+        root.Connect(acc[0], root.Pin("acc_reg", "q0"));
+        root.Connect(acc[1], root.Pin("acc_reg", "q1"));
+        root.Connect(accNext[0], root.Pin("acc_reg", "d0"));
+        root.Connect(accNext[1], root.Pin("acc_reg", "d1"));
+        root.Connect(writeAcc, root.Pin("acc_reg", "load"));
+        root.Connect(clk, root.Pin("acc_reg", "clk"));
+
+        return builder.Build("demo.q4-machine");
     }
 
     public static CircuitProject CreateTernaryAdder2Demo()

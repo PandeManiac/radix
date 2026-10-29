@@ -1,0 +1,62 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Quaternary machine runs LOAD, ADD, STORE, LOADM, and JMP",
+  "description": "Each rising CLK edge executes the instruction selected by the two-digit PC. The program loads 5, adds 3, stores 8 in RAM[0], loads it back, and jumps to instruction 0.",
+  "definition": "demo.q4-machine",
+  "steps": [
+    {
+      "at": 0,
+      "set": { "clk": 0 },
+      "expectLane": { "pc": 0, "acc": 0, "read": 0 },
+      "description": "reset state before the ROM and decoder chains settle"
+    },
+    {
+      "at": 20,
+      "expectLane": { "pc": 0, "acc": 0, "opcode": 1, "argument": 5, "read": 0 },
+      "description": "ROM fetch of LOAD 5 settled"
+    },
+    { "at": 40, "set": { "clk": 3 } },
+    { "at": 80, "set": { "clk": 0 } },
+    {
+      "at": 120,
+      "expectLane": { "pc": 1, "acc": 5, "opcode": 2, "argument": 3 },
+      "description": "LOAD 5 executed"
+    },
+    { "at": 160, "set": { "clk": 3 } },
+    { "at": 200, "set": { "clk": 0 } },
+    {
+      "at": 240,
+      "expectLane": { "pc": 2, "acc": 8, "opcode": 4, "argument": 0, "read": 0 },
+      "description": "ADD 3 executed; STORE 0 is next"
+    },
+    { "at": 280, "set": { "clk": 3 } },
+    { "at": 320, "set": { "clk": 0 } },
+    {
+      "at": 360,
+      "expectLane": { "pc": 3, "acc": 8, "opcode": 5, "argument": 0, "read": 8 },
+      "description": "STORE wrote 8 into RAM[0] on the same edge that advanced PC"
+    },
+    { "at": 400, "set": { "clk": 3 } },
+    { "at": 440, "set": { "clk": 0 } },
+    {
+      "at": 480,
+      "expectLane": { "pc": 4, "acc": 8, "opcode": 3, "argument": 0, "read": 8 },
+      "description": "LOADM read RAM[0] back into ACC"
+    },
+    { "at": 520, "set": { "clk": 3 } },
+    { "at": 560, "set": { "clk": 0 } },
+    {
+      "at": 600,
+      "expectLane": { "pc": 0, "acc": 8, "opcode": 1, "argument": 5, "read": 0 },
+      "description": "JMP 0 wrapped the PC and left ACC at 8"
+    },
+    { "at": 640, "set": { "clk": 3 } },
+    { "at": 680, "set": { "clk": 0 } },
+    {
+      "at": 720,
+      "expectLane": { "pc": 1, "acc": 5, "opcode": 2, "argument": 3 },
+      "description": "the second pass starts with LOAD 5"
+    }
+  ]
+}

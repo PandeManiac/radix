@@ -434,6 +434,58 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void QuaternaryMachineExecutesLoadAddStoreLoadmAndJump()
+    {
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateQuaternaryMachineDemo(), "demo.q4-machine");
+        engine.Drive("clk", 0);
+        engine.Settle(120);
+        Assert.Equal(0, ReadQuaternaryPair(engine, "pc"));
+        Assert.Equal(0, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(1, ReadQuaternaryPair(engine, "op"));
+        Assert.Equal(5, ReadQuaternaryPair(engine, "arg"));
+        Assert.Equal(0, ReadQuaternaryPair(engine, "read"));
+
+        PulseQuaternaryClock(engine);
+        Assert.Equal(1, ReadQuaternaryPair(engine, "pc"));
+        Assert.Equal(5, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(2, ReadQuaternaryPair(engine, "op"));
+        Assert.Equal(3, ReadQuaternaryPair(engine, "arg"));
+
+        PulseQuaternaryClock(engine);
+        Assert.Equal(2, ReadQuaternaryPair(engine, "pc"));
+        Assert.Equal(8, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(4, ReadQuaternaryPair(engine, "op"));
+        Assert.Equal(0, ReadQuaternaryPair(engine, "arg"));
+        Assert.Equal(0, ReadQuaternaryPair(engine, "read"));
+
+        PulseQuaternaryClock(engine);
+        Assert.Equal(3, ReadQuaternaryPair(engine, "pc"));
+        Assert.Equal(8, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(5, ReadQuaternaryPair(engine, "op"));
+        Assert.Equal(8, ReadQuaternaryPair(engine, "read"));
+
+        PulseQuaternaryClock(engine);
+        Assert.Equal(4, ReadQuaternaryPair(engine, "pc"));
+        Assert.Equal(8, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(3, ReadQuaternaryPair(engine, "op"));
+        Assert.Equal(8, ReadQuaternaryPair(engine, "read"));
+
+        PulseQuaternaryClock(engine);
+        Assert.Equal(0, ReadQuaternaryPair(engine, "pc"));
+        Assert.Equal(8, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(1, ReadQuaternaryPair(engine, "op"));
+        Assert.Equal(0, ReadQuaternaryPair(engine, "read"));
+
+        PulseQuaternaryClock(engine);
+        Assert.Equal(1, ReadQuaternaryPair(engine, "pc"));
+        Assert.Equal(5, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(2, ReadQuaternaryPair(engine, "op"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TinyCpuFetchesAndExecutesItsShippedProgram()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(), "demo.tiny-cpu");

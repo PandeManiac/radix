@@ -365,6 +365,18 @@ This uses the GUI.
 6. Set `WE = 1` or `2`, drive different `Data`, and pulse `CLK`. Expected: the addressed word and every other word keep their previous values; only `WE = 3` writes.
 7. Check Diagnostics. Expected: no errors or warnings.
 
+### Quaternary program machine
+
+1. Open `examples/quaternary-machine.radix`. Expected: `CLK` as the only input; **PC**, **ACC**, **Opcode**, **Operand**, and **RAM read** lanes over `unsigned-quaternary`; `pc_adder`, `alu`, two `pc_mux` and two `acc_add`/`acc_mem` pairs, four ROM lookups, four opcode decoders, `decode_write`, one `memory`, and the `pc_reg`/`acc_reg` registers.
+2. Double-click `pc_reg`. Expected: two `std.q4-dff` instances with always-enabled load muxes. Double-click `alu`. Expected: two `std.q4-full-adder` instances with the low carry tied to zero. Double-click `memory`. Expected: four `std.q4-reg-2` word registers and two `std.q4-mux4` read selectors.
+3. Click **Begin**, drive `CLK = 0`, and settle. Expected: **PC** = 0, **ACC** = 0, **Opcode** = 1, **Operand** = 5, **RAM read** = 0 — the first instruction is LOAD 5. The ROM and decoder chains need a few ticks after reset before those lanes settle.
+4. Set `CLK = 3`, settle, then return `CLK` to 0. Expected: **PC** = 1, **ACC** = 5, **Opcode** = 2, **Operand** = 3 (ADD 3).
+5. Pulse `CLK` again. Expected: **PC** = 2, **ACC** = 8, **Opcode** = 4, **Operand** = 0 (STORE 0).
+6. Pulse `CLK` again. Expected: **PC** = 3, **ACC** = 8, **Opcode** = 5, **Operand** = 0, **RAM read** = 8 — STORE wrote `ACC` into RAM[0] on the same edge that advanced the PC.
+7. Pulse `CLK` again. Expected: **PC** = 4, **ACC** = 8, **Opcode** = 3, **Operand** = 0 — LOADM read RAM[0] back.
+8. Pulse `CLK` again. Expected: **PC** = 0, **ACC** = 8, **Opcode** = 1, **Operand** = 5 — JMP 0 wrapped the PC and left ACC alone.
+9. Pulse `CLK` once more. Expected: **PC** = 1, **ACC** = 5, **Opcode** = 2, **Operand** = 3; the program is running its second pass. Check Diagnostics for no errors or warnings.
+
 ## 16. Ternary accumulator
 
 This uses the GUI. The accumulator is two trit flip-flops plus a ternary adder and four trit muxes; `LOAD` and `ADD` use the trit value 2 as active, 0 as inactive.
@@ -553,7 +565,7 @@ Do not file these as new failures until they change in the README:
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; filtered `edges` and ordered `sequence` blocks cover direction and order; `expectRelation` compares two pins or nets with one typed operator and requires a shared domain; value assertions, `expectRelation`, `transitions.expectNet`, `edges.expectNet`, and sequence `net` items all read authored internal nets as well as interface pins. The CLI can run a folder as a suite, and the editor can run one script or a folder; both editor paths run against a snapshot on a background thread and check cancellation inside long windows as well as between scripts. The suite result lists only failing or errored scripts individually. The editor's result panel is transient, and a structural or behaviour-affecting edit marks it stale; presentation-only moves, labels, colors, and routes do not. Rerun after any stale notice for a current verdict;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
-- quaternary support covers a latch, flip-flop, 2-digit register, increment/carry/adder lookups, full adder, 2-digit adder, counter, accumulator, and a fixed 4-word × 2-digit RAM; there is no quaternary programmable machine, and the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level. Register LOAD, accumulator ADD, and RAM WE are active at 3; when LOAD and ADD are both 3, LOAD wins; only WE=3 writes, and RAM addresses and words have fixed widths;
+- quaternary support covers a latch, flip-flop, 2-digit register, increment/carry/adder lookups, full adder, 2-digit adder, counter, accumulator, a fixed 4-word × 2-digit RAM, and a stored-program machine; the machine has a fixed 16-entry program ROM, four data words, no conditional branch or halt instruction, a 2-digit accumulator whose ADD wraps modulo 16, and an unconditional JMP; the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level. Register LOAD, accumulator ADD, and RAM WE are active at 3; when LOAD and ADD are both 3, LOAD wins; only WE=3 writes, and RAM addresses and words have fixed widths;
 - project-wide find is literal substring matching over definitions, instances, nets, interface pins, and numeric lanes; it is not fuzzy, does not index signal values, instance pin names, or files on disk, caps its visible list at 60 rows, and has no recent-search history. The open definition only breaks ties and never narrows the search. Pin rows navigate to the bound net when there is one; lane rows frame their pins but do not select a lane because the editor has no lane-selection state;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.
 
