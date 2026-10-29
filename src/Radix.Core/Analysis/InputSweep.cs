@@ -131,6 +131,7 @@ public static class InputSweep
         {
             MaxEvaluationsPerComponentPerTimestamp =
                 Math.Max(1, project.Settings.MaxEvaluationsPerComponentPerTimestamp),
+            MaxPendingEvents = Math.Max(0, project.Settings.MaxPendingEvents),
             MaxRecordedChanges = 0,
             RecordTrace = false,
         };

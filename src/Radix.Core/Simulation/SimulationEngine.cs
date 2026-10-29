@@ -22,6 +22,12 @@ public sealed class SimulationEngine
     public const string DriverConflictCode = "RAD101";
     public const string RuntimeWarningCode = "RAD140";
 
+    /// <summary>
+    /// Reported when the configured pending-event cap is reached. The run halts rather
+    /// than letting event production outpace draining until memory is exhausted.
+    /// </summary>
+    public const string EventLimitCode = "RAD150";
+
     private readonly CompiledCircuit _circuit;
     private readonly SimulationOptions _options;
     private readonly int[] _pinValues;
@@ -272,6 +278,7 @@ public sealed class SimulationEngine
                 if (++_evaluationCounts[ev.Target] > _options.MaxEvaluationsPerComponentPerTimestamp)
                 {
                     Halt(
+                        NonConvergenceCode,
                         $"Component '{component!.InstanceId}' evaluated more than {_options.MaxEvaluationsPerComponentPerTimestamp} times at time {_now}; zero-delay feedback did not converge.");
                     return;
                 }
@@ -360,13 +367,17 @@ public sealed class SimulationEngine
 
     private void ScheduleEvaluation(int componentIndex)
     {
-        if (_pendingEvaluation[componentIndex])
+        if (_pendingEvaluation[componentIndex] || _halted)
+        {
+            return;
+        }
+
+        if (!TryEnqueue(new SimEvent(_now, _sequence++, SimEventKind.WakeComponent, componentIndex, 0)))
         {
             return;
         }
 
         _pendingEvaluation[componentIndex] = true;
-        _queue.Push(new SimEvent(_now, _sequence++, SimEventKind.WakeComponent, componentIndex, 0));
     }
 
     internal int ReadPinValue(int pinIndex)
@@ -378,13 +389,13 @@ public sealed class SimulationEngine
     internal void ScheduleOutput(int pinIndex, int value, long delayTicks)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(delayTicks);
-        _queue.Push(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.CommitOutput, pinIndex, value));
+        TryEnqueue(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.CommitOutput, pinIndex, value));
     }
 
     internal void ScheduleTimer(int componentIndex, long delayTicks, int payload)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(delayTicks);
-        _queue.Push(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.PrimitiveTimer, componentIndex, payload));
+        TryEnqueue(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.PrimitiveTimer, componentIndex, payload));
     }
 
     internal void ReportRuntimeWarning(string code, string message, CompiledComponent component)
@@ -397,13 +408,36 @@ public sealed class SimulationEngine
             path: component.Path);
     }
 
-    private void Halt(string reason)
+    /// <summary>
+    /// Enqueues one event unless the configured pending-event cap is reached. A circuit
+    /// that keeps producing events turns into a diagnostic instead of unbounded growth.
+    /// </summary>
+    private bool TryEnqueue(SimEvent simEvent)
+    {
+        if (_halted)
+        {
+            return false;
+        }
+
+        if (_options.MaxPendingEvents > 0 && _queue.Count >= _options.MaxPendingEvents)
+        {
+            Halt(
+                EventLimitCode,
+                $"Pending event limit of {_options.MaxPendingEvents} was reached; the circuit is scheduling events faster than they can be processed.");
+            return false;
+        }
+
+        _queue.Push(simEvent);
+        return true;
+    }
+
+    private void Halt(string code, string reason)
     {
         _halted = true;
         _haltReason = reason;
         _queue.Clear();
         _runtimeDiagnostics.Error(
-            NonConvergenceCode,
+            code,
             $"{reason} Simulation halted at time {_now}.");
     }
 

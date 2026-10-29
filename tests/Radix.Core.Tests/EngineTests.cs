@@ -229,6 +229,37 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void PendingEventLimitHaltsWithDiagnosticAndClearsTheQueue()
+    {
+        var options = new SimulationOptions
+        {
+            MaxPendingEvents = 4,
+            MaxRecordedChanges = 0,
+            RecordTrace = false,
+            MaxEvaluationsPerComponentPerTimestamp = 64,
+        };
+
+        var builder = new ProjectBuilder("event cap");
+        var root = builder.Define("root", "Root");
+        for (int i = 0; i < 8; i++)
+        {
+            root.AddPrimitive($"c{i}", new LookupSpec(0, [1]));
+        }
+
+        SimulationEngine engine = Engine(builder.Build("root"), options);
+
+        Assert.True(engine.IsHalted);
+        Assert.Equal(0, engine.PendingEventCount);
+        Assert.Contains(
+            engine.RuntimeDiagnostics,
+            diagnostic => diagnostic.Code == SimulationEngine.EventLimitCode);
+        Assert.Contains(
+            "Pending event limit of 4",
+            engine.HaltReason ?? string.Empty,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ZeroInputLookupActsAsConstant()
     {
         var builder = new ProjectBuilder("zero lookup");

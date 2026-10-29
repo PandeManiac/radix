@@ -362,6 +362,17 @@ public sealed class SerializationTests
     }
 
     [Fact]
+    public void PendingEventLimitRoundTripsWithProjectSettings()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        project.Settings.MaxPendingEvents = 12345;
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project));
+
+        Assert.Equal(12345, loaded.Settings.MaxPendingEvents);
+    }
+
+    [Fact]
     public void CustomNumericFormatValidationRejectsReservedAndMissingDomainIds()
     {
         CircuitProject project = TestCircuits.ValidProject();

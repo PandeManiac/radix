@@ -155,6 +155,7 @@ public static class ProjectSerializer
         if (dto.Settings is SettingsDto settings)
         {
             project.Settings.MaxEvaluationsPerComponentPerTimestamp = settings.MaxEvaluationsPerComponentPerTimestamp;
+            project.Settings.MaxPendingEvents = settings.MaxPendingEvents;
             project.Settings.MaxRecordedNetChanges = settings.MaxRecordedNetChanges;
             project.Settings.DefaultAdvanceTicks = settings.DefaultAdvanceTicks;
             project.Settings.TraceAllNets = settings.TraceAllNets;
@@ -491,6 +492,7 @@ public static class ProjectSerializer
             Settings = new SettingsDto
             {
                 MaxEvaluationsPerComponentPerTimestamp = project.Settings.MaxEvaluationsPerComponentPerTimestamp,
+                MaxPendingEvents = project.Settings.MaxPendingEvents,
                 MaxRecordedNetChanges = project.Settings.MaxRecordedNetChanges,
                 DefaultAdvanceTicks = project.Settings.DefaultAdvanceTicks,
                 TraceAllNets = project.Settings.TraceAllNets,

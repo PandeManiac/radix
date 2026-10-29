@@ -61,6 +61,8 @@ internal sealed class SettingsDto
 {
     public int MaxEvaluationsPerComponentPerTimestamp { get; set; } = 64;
 
+    public int MaxPendingEvents { get; set; } = 1_000_000;
+
     public int MaxRecordedNetChanges { get; set; } = 500_000;
 
     public long DefaultAdvanceTicks { get; set; } = 10;
