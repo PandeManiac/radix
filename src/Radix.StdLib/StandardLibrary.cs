@@ -34,6 +34,8 @@ public static class StandardLibrary
     public const string QuaternaryAddId = "std.q4-add";
     public const string QuaternaryFullAdderId = "std.q4-full-adder";
     public const string QuaternaryAdder2Id = "std.q4-adder-2";
+    public const string QuaternaryMux4Id = "std.q4-mux4";
+    public const string QuaternaryRam4x2Id = "std.q4-ram-4x2";
     public const string TernaryFullAdderId = "std.t-full-adder";
     public const string TernaryAdder2Id = "std.t-adder-2";
     public const string TernaryRegister2Id = "std.t-reg-2";
@@ -944,6 +946,51 @@ public static class StandardLibrary
             added.Add(QuaternaryAdder2Id);
         }
 
+        if (project.FindDefinition(QuaternaryMux4Id) is null)
+        {
+            int[] table = new int[1024];
+            for (int a = 0; a < 4; a++)
+            {
+                for (int b = 0; b < 4; b++)
+                {
+                    for (int c = 0; c < 4; c++)
+                    {
+                        for (int d = 0; d < 4; d++)
+                        {
+                            for (int select = 0; select < 4; select++)
+                            {
+                                int index = ((((a * 4) + b) * 4 + c) * 4 + d) * 4 + select;
+                                table[index] = select switch
+                                {
+                                    0 => a,
+                                    1 => b,
+                                    2 => c,
+                                    _ => d,
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+
+            AddLookupDefinition(
+                project,
+                QuaternaryMux4Id,
+                "Quaternary 4:1 selector",
+                StandardDomains.QuaternaryId,
+                ["a", "b", "c", "d", "s"],
+                ["A", "B", "C", "D", "SELECT"],
+                table,
+                description: "Selects A, B, C, or D according to the radix-4 SELECT digit.");
+            added.Add(QuaternaryMux4Id);
+        }
+
+        if (project.FindDefinition(QuaternaryRam4x2Id) is null)
+        {
+            AddQuaternaryRam4x2(project);
+            added.Add(QuaternaryRam4x2Id);
+        }
+
         return added;
     }
 
@@ -1128,6 +1175,83 @@ public static class StandardLibrary
         builder.AddNumericLane("a", "A", NumericFormats.UnsignedQuaternary.Id, "a0", "a1");
         builder.AddNumericLane("b", "B", NumericFormats.UnsignedQuaternary.Id, "b0", "b1");
         builder.AddNumericLane("s", "A + B", NumericFormats.UnsignedQuaternary.Id, "s0", "s1", "cout");
+    }
+
+    private static void AddQuaternaryRam4x2(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, QuaternaryRam4x2Id, "Quaternary 4 × 2 RAM");
+        builder.Definition.Description =
+            "Four two-digit radix-4 words with asynchronous read and synchronous write. ADDR selects 0..3; " +
+            "WE=3 writes D on the rising CLK edge (0 -> 3), while WE=0, 1, or 2 holds every word. " +
+            "The read port is one quaternary 4:1 selector per digit.";
+
+        Net address = builder.AddPin("addr", "ADDR", PinDirection.Input, StandardDomains.QuaternaryId);
+        var data = new Net[2];
+        var output = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            data[lane] = builder.AddPin($"d{lane}", $"D{lane}", PinDirection.Input, StandardDomains.QuaternaryId);
+            output[lane] = builder.SetInitial(
+                builder.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.QuaternaryId),
+                0);
+        }
+
+        Net writeEnable = builder.AddPin("we", "WE", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net clock = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.QuaternaryId);
+
+        builder.AddNumericLane("address", "Address", NumericFormats.UnsignedQuaternary.Id, "addr");
+        builder.AddNumericLane("data", "Data", NumericFormats.UnsignedQuaternary.Id, "d0", "d1");
+        builder.AddNumericLane("result", "Read", NumericFormats.UnsignedQuaternary.Id, "q0", "q1");
+
+        var words = new Net[4][];
+        for (int word = 0; word < 4; word++)
+        {
+            int[] writeTable = new int[16];
+            for (int enable = 0; enable < 4; enable++)
+            {
+                for (int selected = 0; selected < 4; selected++)
+                {
+                    writeTable[(enable * 4) + selected] = enable == 3 && selected == word ? 3 : 0;
+                }
+            }
+
+            Net write = builder.Rename(
+                builder.AddNet($"write{word}", StandardDomains.QuaternaryId),
+                $"write word {word}");
+            builder.AddPrimitive(
+                $"decode_write{word}",
+                new LookupSpec(2, writeTable, GateDelay),
+                240,
+                60 + (word * 190));
+            builder.Connect(writeEnable, builder.Pin($"decode_write{word}", "in0"));
+            builder.Connect(address, builder.Pin($"decode_write{word}", "in1"));
+            builder.Connect(write, builder.Pin($"decode_write{word}", PrimitiveShapes.OutputPinId));
+
+            words[word] = new Net[2];
+            builder.AddInstance($"word{word}", QuaternaryRegister2Id, 580, 60 + (word * 190));
+            for (int lane = 0; lane < 2; lane++)
+            {
+                words[word][lane] = builder.Rename(
+                    builder.AddNet($"word{word}_{lane}", StandardDomains.QuaternaryId),
+                    $"word {word} digit {lane}");
+                builder.Connect(data[lane], builder.Pin($"word{word}", $"d{lane}"));
+                builder.Connect(words[word][lane], builder.Pin($"word{word}", $"q{lane}"));
+            }
+
+            builder.Connect(write, builder.Pin($"word{word}", "load"));
+            builder.Connect(clock, builder.Pin($"word{word}", "clk"));
+        }
+
+        for (int lane = 0; lane < 2; lane++)
+        {
+            builder.AddInstance($"read{lane}", QuaternaryMux4Id, 1000, 140 + (lane * 300));
+            builder.Connect(words[0][lane], builder.Pin($"read{lane}", "a"));
+            builder.Connect(words[1][lane], builder.Pin($"read{lane}", "b"));
+            builder.Connect(words[2][lane], builder.Pin($"read{lane}", "c"));
+            builder.Connect(words[3][lane], builder.Pin($"read{lane}", "d"));
+            builder.Connect(address, builder.Pin($"read{lane}", "s"));
+            builder.Connect(output[lane], builder.Pin($"read{lane}", "y"));
+        }
     }
 
     private static IEnumerable<string> AddTernaryDefinitions(CircuitProject project)

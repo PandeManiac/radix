@@ -18,6 +18,7 @@ public static class ExampleProjects
     public const string TernaryCounterFile = "ternary-counter.radix";
     public const string QuaternaryCounterFile = "quaternary-counter.radix";
     public const string QuaternaryAccumulatorFile = "quaternary-accumulator.radix";
+    public const string QuaternaryMemoryFile = "quaternary-memory.radix";
     public const string TernaryAdder2File = "ternary-adder-2.radix";
     public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
     public const string TernaryMachineFile = "ternary-machine.radix";
@@ -42,6 +43,7 @@ public static class ExampleProjects
         new(TernaryCounterFile, "Ternary counter", "A two-trit sequential machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane.", CreateTernaryCounterDemo()),
         new(QuaternaryCounterFile, "Quaternary counter", "A two-digit radix-4 counter: quaternary flip-flops, increment/carry lookups, and a 0..15 count lane.", CreateQuaternaryCounterDemo()),
         new(QuaternaryAccumulatorFile, "Quaternary accumulator", "A two-digit radix-4 register with LOAD/ADD/HOLD control, a 2-digit adder, and a 0..15 result lane.", CreateQuaternaryAccumulatorDemo()),
+        new(QuaternaryMemoryFile, "Quaternary 4 × 2 RAM", "A standalone four-word, two-digit radix-4 memory. Drive ADDR, D, WE, and CLK, then read any word from the asynchronous port.", CreateQuaternaryMemoryDemo()),
         new(TernaryAdder2File, "Ternary 2-trit adder", "Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane.", CreateTernaryAdder2Demo()),
         new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
         new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
@@ -1147,6 +1149,46 @@ public static class ExampleProjects
         root.Connect(q[1], root.Pin("reg", "q1"));
 
         return builder.Build("demo.q4-accumulator");
+    }
+
+    public static CircuitProject CreateQuaternaryMemoryDemo()
+    {
+        var builder = new ProjectBuilder("Quaternary 4 × 2 RAM demo");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.q4-memory", "Quaternary 4 × 2 RAM demo");
+        root.Definition.Description =
+            "Top-level wrapper around std.q4-ram-4x2. ADDR selects one of four words; WE=3 writes " +
+            "D on the rising CLK edge (0 -> 3), any other WE holds every word, and the Read lane " +
+            "always shows the addressed word.";
+
+        Net address = root.AddPin("addr", "ADDR", PinDirection.Input, StandardDomains.QuaternaryId);
+        var data = new Net[2];
+        var output = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            data[lane] = root.AddPin($"d{lane}", $"D{lane}", PinDirection.Input, StandardDomains.QuaternaryId);
+            output[lane] = root.SetInitial(
+                root.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.QuaternaryId),
+                0);
+        }
+
+        Net writeEnable = root.AddPin("we", "WE", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net clock = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.QuaternaryId);
+
+        root.AddNumericLane("address", "Address", NumericFormats.UnsignedQuaternary.Id, "addr");
+        root.AddNumericLane("data", "Data", NumericFormats.UnsignedQuaternary.Id, "d0", "d1");
+        root.AddNumericLane("result", "Read", NumericFormats.UnsignedQuaternary.Id, "q0", "q1");
+
+        root.AddInstance("memory", StandardLibrary.QuaternaryRam4x2Id, 320, 140);
+        root.Connect(address, root.Pin("memory", "addr"));
+        root.Connect(data[0], root.Pin("memory", "d0"));
+        root.Connect(data[1], root.Pin("memory", "d1"));
+        root.Connect(writeEnable, root.Pin("memory", "we"));
+        root.Connect(clock, root.Pin("memory", "clk"));
+        root.Connect(output[0], root.Pin("memory", "q0"));
+        root.Connect(output[1], root.Pin("memory", "q1"));
+
+        return builder.Build("demo.q4-memory");
     }
 
     public static CircuitProject CreateTernaryAdder2Demo()

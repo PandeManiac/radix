@@ -1330,6 +1330,93 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void QuaternaryMux4CoversEverySelectAndDataCombination()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryMux4Id);
+        for (int a = 0; a < 4; a++)
+        {
+            for (int b = 0; b < 4; b++)
+            {
+                for (int c = 0; c < 4; c++)
+                {
+                    for (int d = 0; d < 4; d++)
+                    {
+                        engine.Drive("a", a);
+                        engine.Drive("b", b);
+                        engine.Drive("c", c);
+                        engine.Drive("d", d);
+                        for (int select = 0; select < 4; select++)
+                        {
+                            engine.Drive("s", select);
+                            Settle(engine, 8);
+                            int expected = select switch
+                            {
+                                0 => a,
+                                1 => b,
+                                2 => c,
+                                _ => d,
+                            };
+                            Assert.Equal(expected, engine.Read("y"));
+                        }
+                    }
+                }
+            }
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    [Fact]
+    public void QuaternaryRamWritesReadsAndHoldsEveryWord()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryRam4x2Id);
+        engine.Drive("clk", 0);
+        engine.Drive("we", 0);
+        engine.Drive("addr", 0);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        Settle(engine, 40);
+        Assert.Equal(0, ReadQuaternaryPair(engine, "q"));
+
+        int[] values = [10, 3, 15, 7];
+        for (int word = 0; word < 4; word++)
+        {
+            engine.Drive("addr", word);
+            engine.Drive("d0", values[word] % 4);
+            engine.Drive("d1", values[word] / 4);
+            engine.Drive("we", 3);
+            Settle(engine, 40);
+            engine.Drive("clk", 3);
+            Settle(engine, 60);
+            engine.Drive("clk", 0);
+            Settle(engine, 40);
+        }
+
+        engine.Drive("we", 0);
+        for (int word = 0; word < 4; word++)
+        {
+            engine.Drive("addr", word);
+            Settle(engine, 20);
+            Assert.Equal(values[word], ReadQuaternaryPair(engine, "q"));
+        }
+
+        // WE values other than 3 must hold, even with a clock edge and new data.
+        engine.Drive("addr", 0);
+        engine.Drive("we", 1);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        Settle(engine, 40);
+        engine.Drive("clk", 3);
+        Settle(engine, 60);
+        engine.Drive("clk", 0);
+        Settle(engine, 40);
+        Assert.Equal(10, ReadQuaternaryPair(engine, "q"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void QuaternaryCounterCyclesThroughAllSixteenStates()
     {
         CircuitProject project = ExampleProjects.CreateQuaternaryCounterDemo();
@@ -1381,7 +1468,10 @@ public sealed class StdLibTests
         engine.Read("t0") + (3 * engine.Read("t1"));
 
     private static int ReadQuaternaryCounter(SimulationEngine engine) =>
-        engine.Read("q0") + (4 * engine.Read("q1"));
+        ReadQuaternaryPair(engine, "q");
+
+    private static int ReadQuaternaryPair(SimulationEngine engine, string prefix) =>
+        engine.Read($"{prefix}0") + (4 * engine.Read($"{prefix}1"));
 
     private static int ReadTernaryPair(SimulationEngine engine, string prefix) =>
         engine.Read($"{prefix}0") + (3 * engine.Read($"{prefix}1"));

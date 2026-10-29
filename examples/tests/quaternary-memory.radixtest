@@ -1,0 +1,70 @@
+{
+  "format": "radix-test",
+  "version": 1,
+  "name": "Quaternary 4 x 2 RAM writes, reads, and holds every word",
+  "description": "Writes 10, 3, 15, and 7 to words 0..3, reads each back through the asynchronous port, then checks that WE=1 holds word 0 while D changes.",
+  "definition": "demo.q4-memory",
+  "steps": [
+    {
+      "at": 0,
+      "set": { "clk": 0, "we": 0, "addr": 0 },
+      "setLane": { "data": 0 },
+      "expectLane": { "address": 0, "data": 0, "result": 0 }
+    },
+    {
+      "at": 40,
+      "set": { "addr": 0, "we": 3 },
+      "setLane": { "data": 10 },
+      "expectLane": { "address": 0, "data": 10, "result": 0 },
+      "description": "drive word 0 data"
+    },
+    { "at": 80, "set": { "clk": 3 } },
+    { "at": 120, "set": { "clk": 0 } },
+    { "at": 160, "expectLane": { "address": 0, "result": 10 } },
+    {
+      "at": 180,
+      "set": { "addr": 1, "we": 3 },
+      "setLane": { "data": 3 }
+    },
+    { "at": 220, "set": { "clk": 3 } },
+    { "at": 260, "set": { "clk": 0 } },
+    { "at": 300, "expectLane": { "address": 1, "result": 3 } },
+    {
+      "at": 320,
+      "set": { "addr": 2, "we": 3 },
+      "setLane": { "data": 15 }
+    },
+    { "at": 360, "set": { "clk": 3 } },
+    { "at": 400, "set": { "clk": 0 } },
+    { "at": 440, "expectLane": { "address": 2, "result": 15 } },
+    {
+      "at": 460,
+      "set": { "addr": 3, "we": 3 },
+      "setLane": { "data": 7 }
+    },
+    { "at": 500, "set": { "clk": 3 } },
+    { "at": 540, "set": { "clk": 0 } },
+    { "at": 580, "expectLane": { "address": 3, "result": 7 } },
+    {
+      "at": 600,
+      "set": { "we": 0, "addr": 0 },
+      "setLane": { "data": 0 }
+    },
+    { "at": 620, "expectLane": { "address": 0, "result": 10 } },
+    { "at": 640, "set": { "addr": 1 } },
+    { "at": 660, "expectLane": { "address": 1, "result": 3 } },
+    { "at": 680, "set": { "addr": 2 } },
+    { "at": 700, "expectLane": { "address": 2, "result": 15 } },
+    { "at": 720, "set": { "addr": 3 } },
+    { "at": 740, "expectLane": { "address": 3, "result": 7 } },
+    {
+      "at": 760,
+      "set": { "addr": 0, "we": 1 },
+      "setLane": { "data": 0 },
+      "description": "WE=1 must hold word 0"
+    },
+    { "at": 800, "set": { "clk": 3 } },
+    { "at": 840, "set": { "clk": 0 } },
+    { "at": 880, "expectLane": { "address": 0, "data": 0, "result": 10 } }
+  ]
+}

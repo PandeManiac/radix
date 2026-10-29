@@ -385,6 +385,55 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void QuaternaryMemoryWritesReadsAndHoldsEveryWord()
+    {
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateQuaternaryMemoryDemo(), "demo.q4-memory");
+        engine.Drive("clk", 0);
+        engine.Drive("we", 0);
+        engine.Drive("addr", 0);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        engine.Settle(60);
+        Assert.Equal(0, ReadQuaternaryPair(engine, "q"));
+
+        int[] values = [10, 3, 15, 7];
+        for (int word = 0; word < 4; word++)
+        {
+            engine.Drive("addr", word);
+            engine.Drive("d0", values[word] % 4);
+            engine.Drive("d1", values[word] / 4);
+            engine.Drive("we", 3);
+            engine.Settle(60);
+            engine.Drive("clk", 3);
+            engine.Settle(80);
+            engine.Drive("clk", 0);
+            engine.Settle(60);
+        }
+
+        engine.Drive("we", 0);
+        for (int word = 0; word < 4; word++)
+        {
+            engine.Drive("addr", word);
+            engine.Settle(30);
+            Assert.Equal(values[word], ReadQuaternaryPair(engine, "q"));
+        }
+
+        engine.Drive("addr", 0);
+        engine.Drive("we", 2);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        engine.Settle(60);
+        engine.Drive("clk", 3);
+        engine.Settle(80);
+        engine.Drive("clk", 0);
+        engine.Settle(60);
+        Assert.Equal(10, ReadQuaternaryPair(engine, "q"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TinyCpuFetchesAndExecutesItsShippedProgram()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(), "demo.tiny-cpu");

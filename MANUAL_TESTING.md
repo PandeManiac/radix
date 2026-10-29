@@ -355,6 +355,16 @@ This uses the GUI.
 6. Lower `CLK`, set `ADD = 0` and `D0 = D1 = 0`; settle. Expected: `Result` stays `8`, proving the register holds when neither control is active.
 7. Set `LOAD = 3` and `ADD = 3` together with `Data = 5`; settle, then raise `CLK`. Expected: `Result = 5`; LOAD takes priority over ADD. Lower `CLK` and check that no warnings or errors appear.
 
+### Quaternary memory
+
+1. Open `examples/quaternary-memory.radix`. Expected: one `memory` instance, **Address**, **Data**, and **Read** lanes over `unsigned-quaternary`, plus `WE` and `CLK` inputs.
+2. Double-click `memory`. Expected: four `std.q4-reg-2` word registers, one write-decode lookup per word, and two `std.q4-mux4` read selectors. Each decoder drives one register's LOAD; both read selectors share ADDR.
+3. Click **Begin**, drive `CLK = 0`, `WE = 0`, `ADDR = 0`, `Data = 0`; settle. Expected: `Read = 0`.
+4. Set `ADDR = 0`, `WE = 3`, `Data = 10`; settle, raise `CLK` to `3`, settle, then lower `CLK`. Expected: `Read = 10`. Repeat for words 1, 2, and 3 with data 3, 15, and 7; each write should land only in the addressed word.
+5. Set `WE = 0` and step `ADDR` through 0, 1, 2, 3, allowing each address change to settle. Expected: `Read` returns 10, 3, 15, 7 in that order.
+6. Set `WE = 1` or `2`, drive different `Data`, and pulse `CLK`. Expected: the addressed word and every other word keep their previous values; only `WE = 3` writes.
+7. Check Diagnostics. Expected: no errors or warnings.
+
 ## 16. Ternary accumulator
 
 This uses the GUI. The accumulator is two trit flip-flops plus a ternary adder and four trit muxes; `LOAD` and `ADD` use the trit value 2 as active, 0 as inactive.
@@ -543,7 +553,7 @@ Do not file these as new failures until they change in the README:
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; filtered `edges` and ordered `sequence` blocks cover direction and order; `expectRelation` compares two pins or nets with one typed operator and requires a shared domain; value assertions, `expectRelation`, `transitions.expectNet`, `edges.expectNet`, and sequence `net` items all read authored internal nets as well as interface pins. The CLI can run a folder as a suite, and the editor can run one script or a folder; both editor paths run against a snapshot on a background thread and check cancellation inside long windows as well as between scripts. The suite result lists only failing or errored scripts individually. The editor's result panel is transient, and a structural or behaviour-affecting edit marks it stale; presentation-only moves, labels, colors, and routes do not. Rerun after any stale notice for a current verdict;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
-- quaternary support covers a latch, flip-flop, 2-digit register, increment/carry/adder lookups, full adder, 2-digit adder, counter, and accumulator; there is no quaternary memory or programmable machine, and the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level. Register LOAD and accumulator ADD are active at 3; when LOAD and ADD are both 3, LOAD wins;
+- quaternary support covers a latch, flip-flop, 2-digit register, increment/carry/adder lookups, full adder, 2-digit adder, counter, accumulator, and a fixed 4-word × 2-digit RAM; there is no quaternary programmable machine, and the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level. Register LOAD, accumulator ADD, and RAM WE are active at 3; when LOAD and ADD are both 3, LOAD wins; only WE=3 writes, and RAM addresses and words have fixed widths;
 - project-wide find is literal substring matching over definitions, instances, nets, interface pins, and numeric lanes; it is not fuzzy, does not index signal values, instance pin names, or files on disk, caps its visible list at 60 rows, and has no recent-search history. The open definition only breaks ties and never narrows the search. Pin rows navigate to the bound net when there is one; lane rows frame their pins but do not select a lane because the editor has no lane-selection state;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.
 
