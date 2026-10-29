@@ -1,3 +1,4 @@
+using System.Buffers;
 using Avalonia;
 using Radix.Core.Model;
 using Radix.Core.Signals;
@@ -26,11 +27,10 @@ internal static class WireRouter
         Net net,
         int netOrdinal,
         IReadOnlyList<WireTerminal> terminals,
-        IReadOnlyList<ComponentBox> components,
-        IReadOnlyList<PortBox> ports,
+        RoutingContext context,
         IReadOnlyList<(Point A, Point B)> routedSegments)
     {
-        var obstacles = BuildObstacles(components, ports);
+        IReadOnlyList<Obstacle> obstacles = context.Obstacles;
         if (terminals.Count == 0)
         {
             return RoutedWire.Empty;
@@ -50,7 +50,7 @@ internal static class WireRouter
             return Finish(builder.Points, builder.Segments, [], label, net);
         }
 
-        var router = new GridRouter(terminals, obstacles, routedSegments);
+        var router = new GridRouter(terminals, context, routedSegments);
         RoutedWire? routed = router.Route();
         if (routed is null || routed.Segments.Count == 0)
         {
@@ -80,6 +80,105 @@ internal static class WireRouter
         }
 
         return new RoutedWire(points, segments, junctions, label, net.RoutePoints.ToArray());
+    }
+
+    /// <summary>
+    /// Shared routing geometry for one layout build: obstacles plus the sorted
+    /// obstacle-derived axis candidates. Building this once removes per-net obstacle
+    /// allocation and repeated sorting from a canonical rebuild.
+    /// </summary>
+    internal sealed class RoutingContext
+    {
+        public RoutingContext(
+            IReadOnlyList<Obstacle> obstacles,
+            double[] axisX,
+            double[] axisY,
+            double minX,
+            double maxX,
+            double minY,
+            double maxY)
+        {
+            Obstacles = obstacles;
+            AxisX = axisX;
+            AxisY = axisY;
+            MinX = minX;
+            MaxX = maxX;
+            MinY = minY;
+            MaxY = maxY;
+        }
+
+        public IReadOnlyList<Obstacle> Obstacles { get; }
+
+        public double[] AxisX { get; }
+
+        public double[] AxisY { get; }
+
+        public double MinX { get; }
+
+        public double MaxX { get; }
+
+        public double MinY { get; }
+
+        public double MaxY { get; }
+    }
+
+    internal static RoutingContext BuildContext(
+        IReadOnlyList<ComponentBox> components,
+        IReadOnlyList<PortBox> ports)
+    {
+        List<Obstacle> obstacles = BuildObstacles(components, ports);
+        var xs = new List<double>(obstacles.Count * 4);
+        var ys = new List<double>(obstacles.Count * 4);
+        double minX = double.MaxValue;
+        double maxX = double.MinValue;
+        double minY = double.MaxValue;
+        double maxY = double.MinValue;
+        foreach (Obstacle obstacle in obstacles)
+        {
+            Rect bounds = obstacle.Bounds;
+            xs.Add(bounds.Left - Channel);
+            xs.Add(bounds.Left - 1);
+            xs.Add(bounds.Right + Channel);
+            xs.Add(bounds.Right + 1);
+            ys.Add(bounds.Top - Channel);
+            ys.Add(bounds.Top - 1);
+            ys.Add(bounds.Bottom + Channel);
+            ys.Add(bounds.Bottom + 1);
+            minX = Math.Min(minX, bounds.Left);
+            maxX = Math.Max(maxX, bounds.Right);
+            minY = Math.Min(minY, bounds.Top);
+            maxY = Math.Max(maxY, bounds.Bottom);
+        }
+
+        return new RoutingContext(
+            obstacles,
+            SortedDistinct(xs),
+            SortedDistinct(ys),
+            minX,
+            maxX,
+            minY,
+            maxY);
+    }
+
+    private static double[] SortedDistinct(List<double> values)
+    {
+        if (values.Count == 0)
+        {
+            return [];
+        }
+
+        values.Sort();
+        int write = 1;
+        for (int read = 1; read < values.Count; read++)
+        {
+            if (values[read] != values[write - 1])
+            {
+                values[write++] = values[read];
+            }
+        }
+
+        values.RemoveRange(write, values.Count - write);
+        return values.ToArray();
     }
 
     private static List<Obstacle> BuildObstacles(
@@ -326,30 +425,32 @@ internal static class WireRouter
 
         public GridRouter(
             IReadOnlyList<WireTerminal> terminals,
-            IReadOnlyList<Obstacle> obstacles,
+            RoutingContext context,
             IReadOnlyList<(Point A, Point B)> otherWires)
         {
             _terminals = terminals;
-            _obstacles = obstacles;
+            _obstacles = context.Obstacles;
             _otherWires = otherWires;
 
-            var extras = new List<Point>(terminals.Count * 2);
+            var extrasX = new List<double>(terminals.Count * 2);
+            var extrasY = new List<double>(terminals.Count * 2);
             foreach (WireTerminal terminal in terminals)
             {
-                extras.Add(terminal.Position);
-                double stub = StubLength(terminal, obstacles);
-                extras.Add(terminal.Position + new Vector(terminal.ExtendDirection * stub, 0));
+                extrasX.Add(terminal.Position.X);
+                extrasY.Add(terminal.Position.Y);
+                double stub = StubLength(terminal, _obstacles);
+                extrasX.Add(terminal.Position.X + (terminal.ExtendDirection * stub));
             }
 
-            _xs = BuildAxis(extras.Select(p => p.X), obstacles.Select(o => o.Bounds.Left), obstacles.Select(o => o.Bounds.Right));
-            _ys = BuildAxis(extras.Select(p => p.Y), obstacles.Select(o => o.Bounds.Top), obstacles.Select(o => o.Bounds.Bottom));
+            _xs = BuildAxis(extrasX, context.AxisX, context.MinX, context.MaxX);
+            _ys = BuildAxis(extrasY, context.AxisY, context.MinY, context.MaxY);
 
             int nx = _xs.Length;
             int ny = _ys.Length;
             _blockedNodes = new bool[nx * ny];
             _blockedHorizontalEdges = new bool[Math.Max(0, nx - 1) * ny];
             _blockedVerticalEdges = new bool[nx * Math.Max(0, ny - 1)];
-            foreach (Obstacle obstacle in obstacles)
+            foreach (Obstacle obstacle in _obstacles)
             {
                 MarkObstacle(obstacle.Bounds);
             }
@@ -638,71 +739,81 @@ internal static class WireRouter
             int ny = _ys.Length;
             int nodeCount = nx * ny;
             int stateCount = nodeCount * 3;
-            var g = new double[stateCount];
-            Array.Fill(g, double.MaxValue);
-            var cameFrom = new int[stateCount];
-            Array.Fill(cameFrom, -1);
-            var closed = new bool[stateCount];
-            var queue = new PriorityQueue<int, double>();
-
-            int startIy = start / nx;
-            int startIx = start % nx;
-            g[start * 3] = 0;
-            queue.Enqueue(start * 3, Heuristic(startIx, startIy));
-
-            int goalState = -1;
-            int expanded = 0;
-            while (queue.TryDequeue(out int state, out _))
+            double[] g = ArrayPool<double>.Shared.Rent(stateCount);
+            int[] cameFrom = ArrayPool<int>.Shared.Rent(stateCount);
+            bool[] closed = ArrayPool<bool>.Shared.Rent(stateCount);
+            try
             {
-                if (closed[state])
+                Array.Fill(g, double.MaxValue, 0, stateCount);
+                Array.Fill(cameFrom, -1, 0, stateCount);
+                Array.Clear(closed, 0, stateCount);
+                var queue = new PriorityQueue<int, double>();
+
+                int startIy = start / nx;
+                int startIx = start % nx;
+                g[start * 3] = 0;
+                queue.Enqueue(start * 3, Heuristic(startIx, startIy));
+
+                int goalState = -1;
+                int expanded = 0;
+                while (queue.TryDequeue(out int state, out _))
                 {
-                    continue;
+                    if (closed[state])
+                    {
+                        continue;
+                    }
+
+                    closed[state] = true;
+                    int node = state / 3;
+                    int direction = state % 3;
+                    int ix = node % nx;
+                    int iy = node / nx;
+
+                    if (_treeNodes.Contains(node) && node != start)
+                    {
+                        goalState = state;
+                        break;
+                    }
+
+                    if (++expanded > 250_000)
+                    {
+                        break;
+                    }
+
+                    TryNeighbor(ix - 1, iy, node, state, direction, 1, g, cameFrom, queue, start);
+                    TryNeighbor(ix + 1, iy, node, state, direction, 1, g, cameFrom, queue, start);
+                    TryNeighbor(ix, iy - 1, node, state, direction, 2, g, cameFrom, queue, start);
+                    TryNeighbor(ix, iy + 1, node, state, direction, 2, g, cameFrom, queue, start);
                 }
 
-                closed[state] = true;
-                int node = state / 3;
-                int direction = state % 3;
-                int ix = node % nx;
-                int iy = node / nx;
-
-                if (_treeNodes.Contains(node) && node != start)
+                if (goalState < 0)
                 {
-                    goalState = state;
-                    break;
+                    return null;
                 }
 
-                if (++expanded > 250_000)
+                var path = new List<Point>();
+                int cursor = goalState;
+                while (cursor >= 0)
                 {
-                    break;
+                    int node = cursor / 3;
+                    path.Add(new Point(_xs[node % nx], _ys[node / nx]));
+                    if (node == start)
+                    {
+                        break;
+                    }
+
+                    cursor = cameFrom[cursor];
                 }
 
-                TryNeighbor(ix - 1, iy, node, state, direction, 1, g, cameFrom, queue, start);
-                TryNeighbor(ix + 1, iy, node, state, direction, 1, g, cameFrom, queue, start);
-                TryNeighbor(ix, iy - 1, node, state, direction, 2, g, cameFrom, queue, start);
-                TryNeighbor(ix, iy + 1, node, state, direction, 2, g, cameFrom, queue, start);
+                path.Reverse();
+                return path;
             }
-
-            if (goalState < 0)
+            finally
             {
-                return null;
+                ArrayPool<double>.Shared.Return(g);
+                ArrayPool<int>.Shared.Return(cameFrom);
+                ArrayPool<bool>.Shared.Return(closed);
             }
-
-            var path = new List<Point>();
-            int cursor = goalState;
-            while (cursor >= 0)
-            {
-                int node = cursor / 3;
-                path.Add(new Point(_xs[node % nx], _ys[node / nx]));
-                if (node == start)
-                {
-                    break;
-                }
-
-                cursor = cameFrom[cursor];
-            }
-
-            path.Reverse();
-            return path;
         }
 
         private void TryNeighbor(
@@ -853,31 +964,46 @@ internal static class WireRouter
             }
         }
 
-        private double[] BuildAxis(
-            IEnumerable<double> extras,
-            IEnumerable<double> lows,
-            IEnumerable<double> highs)
+        private static double[] BuildAxis(
+            List<double> extras,
+            double[] baseValues,
+            double obstacleMin,
+            double obstacleMax)
         {
-            var values = new SortedSet<double>();
-            double min = double.MaxValue;
-            double max = double.MinValue;
-            foreach (double low in lows)
+            extras.Sort();
+            var values = new List<double>(baseValues.Length + extras.Count + 2);
+            int baseIndex = 0;
+            int extraIndex = 0;
+            while (baseIndex < baseValues.Length || extraIndex < extras.Count)
             {
-                values.Add(low - Channel);
-                values.Add(low - 1);
-                min = Math.Min(min, low);
+                double next;
+                if (baseIndex >= baseValues.Length)
+                {
+                    next = extras[extraIndex++];
+                }
+                else if (extraIndex >= extras.Count)
+                {
+                    next = baseValues[baseIndex++];
+                }
+                else if (baseValues[baseIndex] <= extras[extraIndex])
+                {
+                    next = baseValues[baseIndex++];
+                }
+                else
+                {
+                    next = extras[extraIndex++];
+                }
+
+                if (values.Count == 0 || values[^1] != next)
+                {
+                    values.Add(next);
+                }
             }
 
-            foreach (double high in highs)
-            {
-                values.Add(high + Channel);
-                values.Add(high + 1);
-                max = Math.Max(max, high);
-            }
-
+            double min = obstacleMin;
+            double max = obstacleMax;
             foreach (double extra in extras)
             {
-                values.Add(extra);
                 min = Math.Min(min, extra);
                 max = Math.Max(max, extra);
             }
@@ -888,24 +1014,42 @@ internal static class WireRouter
                 max = 100;
             }
 
-            values.Add(min - 36);
-            values.Add(max + 36);
-
-            var list = values.Where(double.IsFinite).ToList();
-            // Add one middle lane in wide gaps so the search has a natural channel.
-            for (int i = list.Count - 1; i > 0; i--)
+            if (values.Count == 0 || values[0] > min - 36)
             {
-                double gap = list[i] - list[i - 1];
+                values.Insert(0, min - 36);
+            }
+
+            if (values[^1] < max + 36)
+            {
+                values.Add(max + 36);
+            }
+
+            // One middle lane in wide gaps so the search has a natural channel.
+            var list = new List<double>(values.Count * 2) { values[0] };
+            for (int i = 1; i < values.Count; i++)
+            {
+                double gap = values[i] - values[i - 1];
                 if (gap > 26)
                 {
-                    list.Insert(i, list[i - 1] + (gap / 2));
+                    list.Add(values[i - 1] + (gap / 2));
                 }
+
+                list.Add(values[i]);
             }
 
             if (list.Count > MaxAxisCoordinates)
             {
                 int step = (int)Math.Ceiling(list.Count / (double)MaxAxisCoordinates);
-                list = list.Where((_, index) => index % step == 0 || index == list.Count - 1).ToList();
+                var truncated = new List<double>((list.Count / step) + 2);
+                for (int index = 0; index < list.Count; index++)
+                {
+                    if (index % step == 0 || index == list.Count - 1)
+                    {
+                        truncated.Add(list[index]);
+                    }
+                }
+
+                return truncated.ToArray();
             }
 
             return list.ToArray();

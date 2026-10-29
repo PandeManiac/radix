@@ -331,6 +331,7 @@ public sealed class CircuitLayout
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
         var wires = new List<NetWire>(definition.Nets.Count);
         var routedSegments = new List<(Point A, Point B)>();
+        WireRouter.RoutingContext? routing = null;
         int ordinal = 0;
 
         CircuitLayout? reuse = ReferenceEquals(previous?.Definition, definition) ? previous : null;
@@ -399,12 +400,12 @@ public sealed class CircuitLayout
                 continue;
             }
 
+            routing ??= WireRouter.BuildContext(components, ports);
             WireRouter.RoutedWire routed = WireRouter.Route(
                 net,
                 ordinal++,
                 terminals,
-                components,
-                ports,
+                routing,
                 routedSegments);
             if (routed.Segments.Count == 0)
             {
