@@ -20,6 +20,7 @@ public sealed class SimulationEngine
 {
     public const string NonConvergenceCode = "RAD100";
     public const string DriverConflictCode = "RAD101";
+    public const string TimeOverflowCode = "RAD102";
     public const string RuntimeWarningCode = "RAD140";
 
     private readonly CompiledCircuit _circuit;
@@ -378,13 +379,41 @@ public sealed class SimulationEngine
     internal void ScheduleOutput(int pinIndex, int value, long delayTicks)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(delayTicks);
-        _queue.Push(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.CommitOutput, pinIndex, value));
+        if (!TryScheduleTime(delayTicks, out long eventTime))
+        {
+            return;
+        }
+
+        _queue.Push(new SimEvent(eventTime, _sequence++, SimEventKind.CommitOutput, pinIndex, value));
     }
 
     internal void ScheduleTimer(int componentIndex, long delayTicks, int payload)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(delayTicks);
-        _queue.Push(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.PrimitiveTimer, componentIndex, payload));
+        if (!TryScheduleTime(delayTicks, out long eventTime))
+        {
+            return;
+        }
+
+        _queue.Push(new SimEvent(eventTime, _sequence++, SimEventKind.PrimitiveTimer, componentIndex, payload));
+    }
+
+    private bool TryScheduleTime(long delayTicks, out long eventTime)
+    {
+        try
+        {
+            eventTime = checked(_now + delayTicks);
+            return true;
+        }
+        catch (OverflowException)
+        {
+            eventTime = 0;
+            _halted = true;
+            _haltReason = $"Scheduling an event {delayTicks} ticks after time {_now} exceeds the supported simulation-time range.";
+            _queue.Clear();
+            _runtimeDiagnostics.Error(TimeOverflowCode, $"{_haltReason} Simulation halted at time {_now}.");
+            return false;
+        }
     }
 
     internal void ReportRuntimeWarning(string code, string message, CompiledComponent component)

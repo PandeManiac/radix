@@ -177,6 +177,22 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void WaveformTimeOverflowHaltsWithDiagnosticInsteadOfEscaping()
+    {
+        SimulationEngine engine = Engine(TestCircuits.ClockRoot([long.MaxValue], [0]));
+
+        engine.AdvanceTo(long.MaxValue);
+
+        Assert.True(engine.IsHalted);
+        Assert.Contains("simulation-time range", engine.HaltReason, StringComparison.Ordinal);
+        Diagnostic diagnostic = Assert.Single(engine.RuntimeDiagnostics);
+        Assert.Equal(SimulationEngine.TimeOverflowCode, diagnostic.Code);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.False(engine.HasPendingEvents);
+        Assert.Equal(long.MaxValue, engine.Now);
+    }
+
+    [Fact]
     public void TraceRecordsInitialNetValue()
     {
         CircuitProject project = TestCircuits.ConstantRoot(0);
