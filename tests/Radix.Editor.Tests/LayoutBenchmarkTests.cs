@@ -179,25 +179,36 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
 
         foreach (int count in new[] { 25, 100, 250 })
         {
+            CircuitProject warmupProject = RepeatedChildHierarchy(count);
+            var warmupViewModel = new EditorViewModel(warmupProject);
+            _ = CircuitLayout.Build(warmupViewModel.Definition, warmupViewModel.Project);
+
             CircuitProject project = RepeatedChildHierarchy(count);
             CircuitDefinition root = project.FindDefinition("main")!;
             CircuitDefinition child = project.FindDefinition("child")!;
-
-            var constructWatch = Stopwatch.StartNew();
-            var viewModel = new EditorViewModel(project);
-            constructWatch.Stop();
-
-            var layoutWatch = Stopwatch.StartNew();
-            for (int i = 0; i < 10; i++)
+            long construct = long.MaxValue;
+            long canonicalBuilds = long.MaxValue;
+            for (int run = 0; run < 3; run++)
             {
-                _ = CircuitLayout.Build(viewModel.Definition, viewModel.Project);
+                var constructWatch = Stopwatch.StartNew();
+                var viewModel = new EditorViewModel(project);
+                constructWatch.Stop();
+                construct = Math.Min(construct, constructWatch.ElapsedMilliseconds);
+
+                var layoutWatch = Stopwatch.StartNew();
+                for (int i = 0; i < 10; i++)
+                {
+                    _ = CircuitLayout.Build(viewModel.Definition, viewModel.Project);
+                }
+
+                layoutWatch.Stop();
+                canonicalBuilds = Math.Min(canonicalBuilds, layoutWatch.ElapsedMilliseconds);
             }
 
-            layoutWatch.Stop();
             output.WriteLine(
                 $"{count} repeated children: root instances {root.Instances.Count}, root nets {root.Nets.Count}, " +
                 $"child primitives {child.Instances.Count}, child nets {child.Nets.Count}, " +
-                $"construct {constructWatch.ElapsedMilliseconds} ms, ten canonical builds {layoutWatch.ElapsedMilliseconds} ms");
+                $"best of 3 construct {construct} ms, best of 3 ten-build runs {canonicalBuilds} ms");
         }
     }
 
