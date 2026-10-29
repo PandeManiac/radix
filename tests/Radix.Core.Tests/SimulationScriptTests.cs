@@ -16,6 +16,7 @@ public sealed class SimulationScriptTests
         { "balanced-ternary-adder-2.radix", "balanced-ternary-adder-2.radixtest" },
         { "ternary-counter.radix", "ternary-counter.radixtest" },
         { "quaternary-counter.radix", "quaternary-counter.radixtest" },
+        { "quaternary-accumulator.radix", "quaternary-accumulator.radixtest" },
         { "ternary-adder-2.radix", "ternary-adder-2.radixtest" },
         { "ternary-accumulator.radix", "ternary-accumulator.radixtest" },
         { "ternary-machine.radix", "ternary-machine.radixtest" },

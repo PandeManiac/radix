@@ -345,6 +345,16 @@ This uses the GUI.
 4. Pulse `CLK` again. Expected: `Q0 = 0`, `Q1 = 1`, count `4`. This is the radix-4 carry: both digits change once on the same edge, unlike a binary counter's longer ripple.
 5. Continue through count `15` (`Q0 = 3`, `Q1 = 3`), then pulse once more. Expected: count `0` and no warnings or errors. The quaternary latch captures only when its enable is exactly `1`; other enable values hold.
 
+### Quaternary accumulator
+
+1. Open `examples/quaternary-accumulator.radix`. Expected: an `adder`, two `data_mux` instances, a `write_enable` lookup, and one `reg`; the inspector lists **Data** and **Result** lanes over D0/D1 and Q0/Q1, plus a `CARRY` output.
+2. Double-click `reg`. Expected: two `std.q4-dff` instances and a `std.q4-load-mux` per digit. Double-click `adder`. Expected: two `std.q4-full-adder` instances, a constant zero on the low carry input, and the low carry wired to the high digit.
+3. Click **Begin**, drive `CLK = 0`, `LOAD = 0`, `ADD = 0`, and `D0 = D1 = 0`; settle. Expected: `Q0 = Q1 = 0`, `Result = 0`.
+4. Set `D0 = 1`, `D1 = 2` (`Data = 9`), `LOAD = 3`, settle, then raise `CLK` to `3` and settle. Expected: `Q0 = 1`, `Q1 = 2`, `Result = 9`; lower `CLK` to `0`.
+5. Set `LOAD = 0`, `ADD = 3`, `D0 = D1 = 3` (`Data = 15`); settle. Expected: `CARRY = 1` from the combinational `ACC + D` adder while `Result` is still `9`. Raise `CLK` and settle. Expected: `Result = 8` and `Q = 2,0` because 9 + 15 wraps modulo 16. The carry remains the third digit of the current sum.
+6. Lower `CLK`, set `ADD = 0` and `D0 = D1 = 0`; settle. Expected: `Result` stays `8`, proving the register holds when neither control is active.
+7. Set `LOAD = 3` and `ADD = 3` together with `Data = 5`; settle, then raise `CLK`. Expected: `Result = 5`; LOAD takes priority over ADD. Lower `CLK` and check that no warnings or errors appear.
+
 ## 16. Ternary accumulator
 
 This uses the GUI. The accumulator is two trit flip-flops plus a ternary adder and four trit muxes; `LOAD` and `ADD` use the trit value 2 as active, 0 as inactive.
@@ -533,7 +543,7 @@ Do not file these as new failures until they change in the README:
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; filtered `edges` and ordered `sequence` blocks cover direction and order; `expectRelation` compares two pins or nets with one typed operator and requires a shared domain; value assertions, `expectRelation`, `transitions.expectNet`, `edges.expectNet`, and sequence `net` items all read authored internal nets as well as interface pins. The CLI can run a folder as a suite, and the editor can run one script or a folder; both editor paths run against a snapshot on a background thread and check cancellation inside long windows as well as between scripts. The suite result lists only failing or errored scripts individually. The editor's result panel is transient, and a structural or behaviour-affecting edit marks it stale; presentation-only moves, labels, colors, and routes do not. Rerun after any stale notice for a current verdict;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
-- quaternary support covers a latch, flip-flop, increment/carry/adder lookups, and the two-digit counter; there is no quaternary register, memory, or programmable machine, and the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level;
+- quaternary support covers a latch, flip-flop, 2-digit register, increment/carry/adder lookups, full adder, 2-digit adder, counter, and accumulator; there is no quaternary memory or programmable machine, and the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level. Register LOAD and accumulator ADD are active at 3; when LOAD and ADD are both 3, LOAD wins;
 - project-wide find is literal substring matching over definitions, instances, nets, interface pins, and numeric lanes; it is not fuzzy, does not index signal values, instance pin names, or files on disk, caps its visible list at 60 rows, and has no recent-search history. The open definition only breaks ties and never narrows the search. Pin rows navigate to the bound net when there is one; lane rows frame their pins but do not select a lane because the editor has no lane-selection state;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.
 

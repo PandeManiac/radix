@@ -309,6 +309,82 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void QuaternaryAccumulatorLoadsAddsHoldsAndWraps()
+    {
+        CircuitProject project = ExampleProjects.CreateQuaternaryAccumulatorDemo();
+        CircuitDefinition root = project.RequireDefinition("demo.q4-accumulator");
+        Assert.Equal(["Data", "Result"], root.NumericLanes.Select(lane => lane.Name).ToArray());
+
+        var engine = TestFixtures.Simulate(project, "demo.q4-accumulator");
+        engine.Drive("clk", 0);
+        engine.Drive("load", 0);
+        engine.Drive("add", 0);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        engine.Settle(100);
+        Assert.Equal(0, ReadQuaternaryPair(engine, "q"));
+
+        engine.Drive("d0", 1);
+        engine.Drive("d1", 2);
+        engine.Drive("load", 3);
+        PulseQuaternaryClock(engine);
+        Assert.Equal(9, ReadQuaternaryPair(engine, "q"));
+
+        engine.Drive("load", 0);
+        engine.Drive("d0", 3);
+        engine.Drive("d1", 3);
+        engine.Drive("add", 3);
+        engine.Settle(40);
+        Assert.Equal(9, ReadQuaternaryPair(engine, "q"));
+        Assert.Equal(1, engine.Read("carry"));
+        PulseQuaternaryClock(engine);
+        Assert.Equal(8, ReadQuaternaryPair(engine, "q"));
+
+        engine.Drive("add", 0);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        PulseQuaternaryClock(engine);
+        Assert.Equal(8, ReadQuaternaryPair(engine, "q"));
+
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        engine.Drive("load", 3);
+        PulseQuaternaryClock(engine);
+        Assert.Equal(0, ReadQuaternaryPair(engine, "q"));
+
+        engine.Drive("load", 0);
+        engine.Drive("d0", 2);
+        engine.Drive("d1", 1);
+        engine.Drive("add", 3);
+        PulseQuaternaryClock(engine);
+        Assert.Equal(6, ReadQuaternaryPair(engine, "q"));
+
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 3);
+        engine.Settle(40);
+        Assert.Equal(1, engine.Read("carry"));
+        PulseQuaternaryClock(engine);
+        Assert.Equal(2, ReadQuaternaryPair(engine, "q"));
+
+        engine.Drive("load", 3);
+        engine.Drive("d0", 1);
+        engine.Drive("d1", 1);
+        PulseQuaternaryClock(engine);
+        Assert.Equal(5, ReadQuaternaryPair(engine, "q"));
+        Assert.True(engine.Read("q0") == 1 && engine.Read("q1") == 1);
+
+        engine.Drive("load", 0);
+        engine.Drive("add", 3);
+        engine.Drive("d0", 0);
+        engine.Drive("d1", 0);
+        engine.Settle(40);
+        Assert.Equal(5, ReadQuaternaryPair(engine, "q"));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void TinyCpuFetchesAndExecutesItsShippedProgram()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateTinyCpuDemo(), "demo.tiny-cpu");
@@ -553,6 +629,20 @@ public sealed class ExampleTests
         engine.Drive("clk", 0);
         engine.Settle(40);
     }
+
+    private static void PulseQuaternaryClock(SimulationEngine engine)
+    {
+        // Let the selected data and the write-enable decoder settle while the clock is
+        // low; the flip-flop's master latch must see the new D before the rising edge.
+        engine.Settle(80);
+        engine.Drive("clk", 3);
+        engine.Settle(100);
+        engine.Drive("clk", 0);
+        engine.Settle(100);
+    }
+
+    private static int ReadQuaternaryPair(SimulationEngine engine, string prefix) =>
+        engine.Read($"{prefix}0") + (4 * engine.Read($"{prefix}1"));
 
     private static int ReadAccumulator(SimulationEngine engine)
     {

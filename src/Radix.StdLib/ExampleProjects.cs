@@ -17,6 +17,7 @@ public static class ExampleProjects
     public const string BalancedTernaryAdder2File = "balanced-ternary-adder-2.radix";
     public const string TernaryCounterFile = "ternary-counter.radix";
     public const string QuaternaryCounterFile = "quaternary-counter.radix";
+    public const string QuaternaryAccumulatorFile = "quaternary-accumulator.radix";
     public const string TernaryAdder2File = "ternary-adder-2.radix";
     public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
     public const string TernaryMachineFile = "ternary-machine.radix";
@@ -40,6 +41,7 @@ public static class ExampleProjects
         new(BalancedTernaryAdder2File, "Balanced ternary 2-trit adder", "Two-stage trit addition with numeric lanes and a ninth-valued result.", CreateBalancedTernaryAdder2Demo()),
         new(TernaryCounterFile, "Ternary counter", "A two-trit sequential machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane.", CreateTernaryCounterDemo()),
         new(QuaternaryCounterFile, "Quaternary counter", "A two-digit radix-4 counter: quaternary flip-flops, increment/carry lookups, and a 0..15 count lane.", CreateQuaternaryCounterDemo()),
+        new(QuaternaryAccumulatorFile, "Quaternary accumulator", "A two-digit radix-4 register with LOAD/ADD/HOLD control, a 2-digit adder, and a 0..15 result lane.", CreateQuaternaryAccumulatorDemo()),
         new(TernaryAdder2File, "Ternary 2-trit adder", "Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane.", CreateTernaryAdder2Demo()),
         new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
         new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
@@ -1058,6 +1060,93 @@ public static class ExampleProjects
         root.Connect(q[1], root.Pin("ff1", "q"));
 
         return builder.Build("demo.q4-counter");
+    }
+
+    public static CircuitProject CreateQuaternaryAccumulatorDemo()
+    {
+        var builder = new ProjectBuilder("Quaternary accumulator");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.q4-accumulator", "Two-digit quaternary accumulator");
+        root.Definition.Description =
+            "Accumulates radix-4 digits. On a rising CLK edge (0 -> 3), LOAD=3 captures D, " +
+            "ADD=3 captures ACC+D modulo 16, and both controls inactive holds ACC. " +
+            "When LOAD and ADD are both 3, LOAD wins. CARRY is the third digit of the current ACC+D sum.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net load = root.AddPin("load", "LOAD", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net add = root.AddPin("add", "ADD", PinDirection.Input, StandardDomains.QuaternaryId);
+
+        var data = new Net[2];
+        var q = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            data[lane] = root.AddPin($"d{lane}", $"D{lane}", PinDirection.Input, StandardDomains.QuaternaryId);
+            q[lane] = root.SetInitial(
+                root.AddPin($"q{lane}", $"Q{lane}", PinDirection.Output, StandardDomains.QuaternaryId),
+                0);
+        }
+
+        Net carry = root.AddPin("carry", "CARRY", PinDirection.Output, StandardDomains.QuaternaryId);
+        root.AddNumericLane("data", "Data", NumericFormats.UnsignedQuaternary.Id, "d0", "d1");
+        root.AddNumericLane("result", "Result", NumericFormats.UnsignedQuaternary.Id, "q0", "q1");
+
+        var sum = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            sum[lane] = root.Rename(
+                root.AddNet($"sum{lane}", StandardDomains.QuaternaryId),
+                $"ACC + D lane {lane}");
+        }
+
+        root.AddInstance("adder", StandardLibrary.QuaternaryAdder2Id, 280, 220);
+        root.Connect(q[0], root.Pin("adder", "a0"));
+        root.Connect(q[1], root.Pin("adder", "a1"));
+        root.Connect(data[0], root.Pin("adder", "b0"));
+        root.Connect(data[1], root.Pin("adder", "b1"));
+        root.Connect(sum[0], root.Pin("adder", "s0"));
+        root.Connect(sum[1], root.Pin("adder", "s1"));
+        root.Connect(carry, root.Pin("adder", "cout"));
+
+        // LOAD selects D; every other value selects the adder result. The register
+        // still holds until its explicit write enable is asserted.
+        var next = new Net[2];
+        for (int lane = 0; lane < 2; lane++)
+        {
+            next[lane] = root.Rename(
+                root.AddNet($"next{lane}", StandardDomains.QuaternaryId),
+                $"next Q{lane}");
+            root.AddInstance($"data_mux{lane}", StandardLibrary.QuaternaryLoadMuxId, 620, 120 + (lane * 220));
+            root.Connect(sum[lane], root.Pin($"data_mux{lane}", "a"));
+            root.Connect(data[lane], root.Pin($"data_mux{lane}", "b"));
+            root.Connect(load, root.Pin($"data_mux{lane}", "s"));
+            root.Connect(next[lane], root.Pin($"data_mux{lane}", "y"));
+        }
+
+        int[] writeTable = new int[16];
+        for (int loadValue = 0; loadValue < 4; loadValue++)
+        {
+            for (int addValue = 0; addValue < 4; addValue++)
+            {
+                writeTable[(loadValue * 4) + addValue] =
+                    loadValue == 3 || addValue == 3 ? 3 : 0;
+            }
+        }
+
+        Net write = root.Rename(root.AddNet("write", StandardDomains.QuaternaryId), "LOAD or ADD");
+        root.AddPrimitive("write_enable", new LookupSpec(2, writeTable, StandardLibrary.GateDelay), 620, 520);
+        root.Connect(load, root.Pin("write_enable", "in0"));
+        root.Connect(add, root.Pin("write_enable", "in1"));
+        root.Connect(write, root.Pin("write_enable", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("reg", StandardLibrary.QuaternaryRegister2Id, 980, 220);
+        root.Connect(next[0], root.Pin("reg", "d0"));
+        root.Connect(next[1], root.Pin("reg", "d1"));
+        root.Connect(write, root.Pin("reg", "load"));
+        root.Connect(clk, root.Pin("reg", "clk"));
+        root.Connect(q[0], root.Pin("reg", "q0"));
+        root.Connect(q[1], root.Pin("reg", "q1"));
+
+        return builder.Build("demo.q4-accumulator");
     }
 
     public static CircuitProject CreateTernaryAdder2Demo()
