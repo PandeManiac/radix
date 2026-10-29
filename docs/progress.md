@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `bbc79e7` (generated repeated-child hierarchy benchmark); documentation of its measurement is in progress.
+- Latest verified code commit: `bbc79e7`; current changes add warmup and best-of-three timing to the generated hierarchy benchmark and update its results, pending commit.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -72,9 +72,10 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    615 ms, ten route-reused drag frames 82 ms. Documented the scope limitation:
    root-view layout does not expand child definitions into the canvas.
 14. Added an opt-in generated hierarchy benchmark with a fixed two-primitive,
-   four-net child repeated 25/100/250 times. One run reports construction 176/60/153
-   ms and ten canonical root builds 148/632/536 ms; these are explicitly noisy,
-   non-monotonic exploratory measurements rather than a scaling claim.
+   four-net child repeated 25/100/250 times. The first single-run measurements were
+   visibly noisy. Added one warmup model per size and three measured iterations,
+   reporting the minimum: construction 10/14/38 ms and ten canonical root builds
+   116/102/359 ms. Documented that minima are exploratory lower bounds, not medians.
 
 ## Known issues and limitations
 
@@ -86,7 +87,8 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. For stable hierarchy scalability data, repeat measurements with warmup and
-   multiple runs or use a bounded CPU-profile export; this one-run sample is noisy.
+1. For stronger hierarchy scalability data, capture repeated full distributions
+   or use a bounded CPU-profile export; the current best-of-three minima are not
+   typical-latency estimates and the profiler export remains unresolved.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

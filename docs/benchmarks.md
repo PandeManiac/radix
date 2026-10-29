@@ -223,11 +223,21 @@ Skia), one run reported:
 | 100 | 100 | 101 | 2 | 4 | 60 ms | 632 ms |
 | 250 | 250 | 251 | 2 | 4 | 153 ms | 536 ms |
 
-These measurements are exploratory and from a single run. The non-monotonic
-construct/build times demonstrate substantial runtime noise at this scale; they
-should not be interpreted as a reliable scaling curve. The canvas lays out the
-root instances only—the child primitives and nets are included in the project but
-are not expanded into per-instance child geometry in the root view.
+These initial measurements were exploratory single-run results and visibly
+non-monotonic. The benchmark was then changed to warm each size with one separate
+model and take the minimum of three measured runs. Best-of-three results on the
+same VM (.NET SDK 10.0.100, Release, headless Skia):
+
+| Repeated child instances | Root instances | Root nets | Child primitives | Child nets | Best construct | Best of 3 ten-build runs |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 25 | 25 | 26 | 2 | 4 | 10 ms | 116 ms |
+| 100 | 100 | 101 | 2 | 4 | 14 ms | 102 ms |
+| 250 | 250 | 251 | 2 | 4 | 38 ms | 359 ms |
+
+The minimum is a lower-bound observation, not a median or typical latency; keep
+these results exploratory. The canvas lays out root instances only—the child
+primitives and nets are included in the project but are not expanded into
+per-instance child geometry in the root view.
 
 
 ### Interpretation
