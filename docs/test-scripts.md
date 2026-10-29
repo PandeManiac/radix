@@ -1,6 +1,6 @@
 # RADIX test scripts
 
-A `.radixtest` file is a deterministic experiment over a project. It drives top-level input pins at chosen simulated ticks and asserts top-level pin values, decoded numeric lanes, values on authored internal nets at any hierarchy level, or a typed relation between two signals. Scripts are JSON data, never executable code, and run through the same compiler and `SimulationEngine` as the editor.
+A `.radixtest` file is a deterministic experiment over a project. It drives top-level input pins or whole numeric lanes at chosen simulated ticks and asserts top-level pin values, decoded numeric lanes, values on authored internal nets at any hierarchy level, or a typed relation between two signals. Scripts are JSON data, never executable code, and run through the same compiler and `SimulationEngine` as the editor.
 
 Scripts stay outside `.radix` projects on purpose: a project describes a circuit, while a script describes one experiment over that circuit. The same project can have many scripts, and a script can target a non-root definition for isolated component tests.
 
@@ -37,6 +37,7 @@ Unknown fields are rejected so a misspelled assertion cannot silently pass.
 | --- | --- |
 | `at` | Absolute simulated tick. Omit it to reuse the previous step's tick; the first step defaults to 0. |
 | `set` | Object of input pin ID to value. Drives are external inputs and persist until changed or cleared with `null`/`"undriven"`. |
+| `setLane` | Object of numeric lane ID to integer. Encodes the value with the lane's format and drives every pin in one batch. Applied after `set`; a lane must contain only input pins from one domain. |
 | `expect` | Object of interface pin ID to expected value. Both inputs and outputs can be read. |
 | `expectLane` | Object of numeric lane ID to expected decoded integer. The lane's pins, order, and format come from the definition. |
 | `expectNet` | Object of authored-net reference to expected value. A bare ID names a net in the simulated definition; `instance/netId` names a net under a hierarchy path. See [Internal nets](#internal-nets). |
@@ -54,7 +55,7 @@ Each step's execution order is fixed:
 
 1. advance through the `setup` window, from `at - N` through `at - 1`, checking its values;
 2. advance to `at`;
-3. apply this step's `set` drives;
+3. apply this step's `set` drives, then its `setLane` drives;
 4. settle zero-delay consequences at `at`;
 5. check `expect`, `expectLane`, `expectNet`, and `expectRelation`;
 6. run the `within` window (searching for a match), the `stable` window (checking every tick through its deadline), the `transitions` window (advancing to its deadline and counting changes), the `edges` window (advancing to its deadline and counting matching transitions), or the `sequence` window (advancing to its deadline and matching ordered transitions); a `within`, `stable`, or `setup` block may also contain `expectRelation` entries, which are checked at every sampled tick;
@@ -77,6 +78,23 @@ Interface pins are the right boundary for a whole-design experiment, but some be
 - `expectNet` can be used on a step and inside `setup`, `within`, and `stable`. It uses the same value forms and domain checks as `expect`, and a window may contain only `expectNet` entries. `transitions` and `edges` also accept an `expectNet` object, and a `sequence` item may name a `net` instead of a `pin`. Relation assertions use the same hierarchy-relative references with a `net:` prefix, for example `{"left":"q","right":"net:adder/c1","op":"eq"}`.
 
 The runner resolves the path against the compiled circuit, not against a display label. A failure names the reference, the expected and observed values, and the net's domain; an unknown reference also lists a bounded sample of the authored nets that do exist. Because the reference is hierarchy-relative, the same script can target a reusable definition directly and keep working when that definition is instantiated elsewhere.
+
+## Driving numeric lanes
+
+A numeric lane names an ordered set of interface pins and a format. `setLane` uses that same descriptor to turn one number into ordinary external pin drives, without making lanes a new signal type:
+
+```json
+{
+  "at": 40,
+  "set": { "load": 3 },
+  "setLane": { "data": 9 },
+  "description": "encode 9 as the radix-4 digits D0=1, D1=2 and drive both pins"
+}
+```
+
+The lane's format can be positional, signed, a project-authored custom format, or any other registered descriptor. Both the lane and all of its pins are validated before the first drive is applied, so a value that does not fit, an output pin, a missing pin, or a mixed-domain lane fails the step without leaving a partially driven number. Element order follows `NumericLane.PinIds` (least significant first by contract) and is reversed automatically for formats that read most significant first.
+
+The runner applies ordinary `set` drives first and lane drives second. If both name the same pin, the lane value wins; avoid mixing the two forms for one pin in the same step. `setLane` is available on steps only, not inside `setup`, `within`, or `stable`; those windows observe rather than drive. The editor's numeric-lane **Drive** button uses the same format encoder, so a value that works interactively also works in a script.
 
 ## Timing windows
 
@@ -206,7 +224,7 @@ A relation is one binary comparison. It is deliberately not an expression langua
 - An integer is a domain value index (`0`, `1`, `2`, …).
 - A string is a domain value label (`"high"`, `"X"`, `"+"`), matched case-insensitively. Numeric strings such as `"2"` are treated as indices.
 - `null` or `"undriven"` clears an external drive. This is the kernel's undriven marker, not a domain value.
-- `expectLane` values must be integers; use `expect` or `expectNet` when a raw signal index is what matters.
+- `expectLane` and `setLane` values must be integers; use `expect` or `expectNet` when a raw signal index is what matters.
 
 Values are checked against the pin's or internal net's domain. A value outside the domain fails the step with a message naming the domain and its valid range.
 
@@ -256,7 +274,7 @@ The Diagnostics tab's **Run script…** button runs one file against the current
 
 ## Shipped scripts
 
-`examples/tests/` contains regression scripts for the D flip-flop (which asserts a 5-tick pre-edge setup window, its capture with a 10-tick settle window, its low-phase hold with a 10-tick stability window, and the complementary `q`/`qn` invariant plus `q` against its authored internal net through relations), binary counter (which checks the ripple adder's internal carry levels and an exact one-transition carry count as well as the output bits), balanced and unsigned ternary 2-trit adders, ternary counter, quaternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions and an ordered sequence to require the clock edge before the trit update; the quaternary counter script steps all sixteen states through a 0..15 radix-4 lane, checks the 3→4 carry and the 15→0 wrap, and uses edge and transition windows to require exactly one clock and digit change on the carry and wrap edges; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
+`examples/tests/` contains regression scripts for the D flip-flop (which asserts a 5-tick pre-edge setup window, its capture with a 10-tick settle window, its low-phase hold with a 10-tick stability window, and the complementary `q`/`qn` invariant plus `q` against its authored internal net through relations), binary counter (which checks the ripple adder's internal carry levels and an exact one-transition carry count as well as the output bits), balanced and unsigned ternary 2-trit adders, ternary counter, quaternary counter, ternary accumulator, ternary program machine, ternary branch machine, ternary call machine, balanced ternary accumulator, binary accumulator, and tiny program-driven CPU examples. The core test suite locates and runs them, so changing an example or its timing cannot silently invalidate the shipped demonstrations. The balanced-ternary adder script asserts both raw trit pins and the example's numeric lanes at the extremes of the −8…8 range; the unsigned-ternary adder script checks carries and the top of its 0..16 range; the ternary counter script steps all nine states through the `Count` lane, checks the wrap, counts exactly one CLK/T0/T1 change on the wrap edge, and uses a filtered edge window to distinguish the low-trit wrap and carry from the opposite transitions and an ordered sequence to require the clock edge before the trit update; the quaternary counter script steps all sixteen states through a 0..15 radix-4 lane, checks the 3→4 carry and the 15→0 wrap, and uses edge and transition windows to require exactly one clock and digit change on the carry and wrap edges; the ternary accumulator script checks load, add, hold, and modulo-9 wrap; the quaternary accumulator script drives its **Data** lane with `setLane`, loads and adds across the 0..15 wrap, checks the carry digit, holds without a clock edge, and proves LOAD wins over ADD; the ternary machine script steps through its whole LOAD/ADD/NOP program and PC wrap; the branch machine script follows STORE into a memory lane, a BZ that falls through, a BZ that jumps over an instruction, LOADM reading the stored word through the RAM read port, and the PC wrap back to the first instruction; the call machine script follows two nested CALLs, both RETs in LIFO order, the stack-pointer walk 0→1→2→1→0, and the read port showing each popped word; the 9×2 memory script writes words 5 and 0, reads both back through the asynchronous port, and checks that WE=1 holds word 5 while the data pins change; the stack machine script follows PUSH 2, PUSH 3, SWAP, ADD, DUP, POP, OUT, POP, and JMP 0 through TOS/SP/output/read lanes; the four-state bus script checks Z when both drivers are disabled, a driven value, an X conflict with its CONFLICT flag, and agreement; the balanced-ternary accumulator script checks its signed lanes through LOAD +4, HOLD, ADD +4 wrapping to −1, ADD +2 reaching 1, and HOLD again.
 
 ## Intentional limits
 

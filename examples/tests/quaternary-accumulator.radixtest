@@ -5,12 +5,12 @@
   "description": "LOAD=3 captures D, ADD=3 adds D modulo 16, and both controls inactive holds ACC. Result lane = Q0 + 4*Q1; CARRY is the third digit of ACC+D.",
   "definition": "demo.q4-accumulator",
   "steps": [
-    { "at": 0, "set": { "clk": 0, "load": 0, "add": 0, "d0": 0, "d1": 0 } },
+    { "at": 0, "set": { "clk": 0, "load": 0, "add": 0 }, "setLane": { "data": 0 } },
     { "at": 20, "expect": { "q0": 0, "q1": 0 }, "expectLane": { "data": 0, "result": 0 } },
-    { "at": 40, "set": { "load": 3, "add": 0, "d0": 1, "d1": 2 }, "description": "LOAD 9" },
+    { "at": 40, "set": { "load": 3, "add": 0 }, "setLane": { "data": 9 }, "description": "LOAD 9" },
     { "at": 80, "set": { "clk": 3 } },
     { "at": 120, "expect": { "q0": 1, "q1": 2 }, "expectLane": { "data": 9, "result": 9 } },
-    { "at": 140, "set": { "clk": 0, "load": 0, "add": 3, "d0": 3, "d1": 3 }, "description": "ADD 15 -> 24 wraps to 8" },
+    { "at": 140, "set": { "clk": 0, "load": 0, "add": 3 }, "setLane": { "data": 15 }, "description": "ADD 15 -> 24 wraps to 8" },
     { "at": 180, "expectLane": { "result": 9 }, "expect": { "carry": 1 } },
     {
       "at": 200,
@@ -19,26 +19,27 @@
       "description": "the wrap edge changes the low digit exactly once; the high digit stays at 2"
     },
     { "at": 240, "expect": { "q0": 0, "q1": 2, "carry": 1 }, "expectLane": { "result": 8 } },
-    { "at": 260, "set": { "clk": 0, "add": 0, "d0": 0, "d1": 0 } },
+    { "at": 260, "set": { "clk": 0, "add": 0 }, "setLane": { "data": 0 } },
     { "at": 300, "expectLane": { "result": 8 }, "expect": { "carry": 0 } },
-    { "at": 320, "set": { "load": 3, "d0": 0, "d1": 0 }, "description": "LOAD 0" },
+    { "at": 320, "set": { "load": 3 }, "setLane": { "data": 0 }, "description": "LOAD 0" },
     { "at": 360, "set": { "clk": 3 } },
     { "at": 400, "expectLane": { "result": 0 } },
-    { "at": 420, "set": { "clk": 0, "load": 0, "add": 3, "d0": 2, "d1": 1 }, "description": "ADD 6" },
+    { "at": 420, "set": { "clk": 0, "load": 0, "add": 3 }, "setLane": { "data": 6 }, "description": "ADD 6" },
     { "at": 460, "set": { "clk": 3 } },
     { "at": 500, "expect": { "q0": 2, "q1": 1, "carry": 0 }, "expectLane": { "result": 6 } },
-    { "at": 520, "set": { "clk": 0, "d0": 0, "d1": 3 }, "description": "ADD 12 -> 18 wraps to 2" },
+    { "at": 520, "set": { "clk": 0 }, "setLane": { "data": 12 }, "description": "ADD 12 -> 18 wraps to 2" },
     { "at": 560, "expect": { "carry": 1 }, "expectLane": { "result": 6 } },
     { "at": 580, "set": { "clk": 3 } },
     { "at": 620, "expect": { "q0": 2, "q1": 0, "carry": 0 }, "expectLane": { "result": 2 } },
     {
       "at": 640,
-      "set": { "clk": 0, "load": 3, "add": 3, "d0": 1, "d1": 1 },
+      "set": { "clk": 0, "load": 3, "add": 3 },
+      "setLane": { "data": 5 },
       "description": "LOAD and ADD both asserted: LOAD wins"
     },
     { "at": 680, "set": { "clk": 3 } },
     { "at": 720, "expect": { "q0": 1, "q1": 1 }, "expectLane": { "result": 5 } },
-    { "at": 740, "set": { "clk": 0, "load": 0, "add": 3, "d0": 0, "d1": 0 } },
+    { "at": 740, "set": { "clk": 0, "load": 0, "add": 3 }, "setLane": { "data": 0 } },
     { "at": 780, "expect": { "q0": 1, "q1": 1 }, "expectLane": { "result": 5 }, "description": "no clock edge, so ADD does not change state" }
   ]
 }

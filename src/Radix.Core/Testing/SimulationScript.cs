@@ -106,6 +106,24 @@ public sealed record ScriptRelationExpectation(
     };
 }
 
+/// <summary>
+/// A numeric lane written as one value at a scripted tick. The runner encodes it with
+/// the lane's format and drives its pins in one batch, so scripts can set multi-pin
+/// numbers without duplicating the encoding by hand.
+/// </summary>
+public sealed class ScriptLaneDrive
+{
+    public ScriptLaneDrive(string laneId, BigInteger value)
+    {
+        LaneId = laneId;
+        Value = value;
+    }
+
+    public string LaneId { get; }
+
+    public BigInteger Value { get; }
+}
+
 /// <summary>An expected decoded numeric-lane value at a scripted tick.</summary>
 public sealed class ScriptLaneExpectation
 {
@@ -310,6 +328,7 @@ public sealed class SimulationScriptStep
     public SimulationScriptStep(
         long at,
         IReadOnlyList<ScriptDrive> drives,
+        IReadOnlyList<ScriptLaneDrive> laneDrives,
         IReadOnlyList<ScriptPinExpectation> pinExpectations,
         IReadOnlyList<ScriptLaneExpectation> laneExpectations,
         IReadOnlyList<ScriptNetExpectation> netExpectations,
@@ -325,6 +344,7 @@ public sealed class SimulationScriptStep
     {
         At = at;
         Drives = drives;
+        LaneDrives = laneDrives;
         PinExpectations = pinExpectations;
         LaneExpectations = laneExpectations;
         NetExpectations = netExpectations;
@@ -343,6 +363,9 @@ public sealed class SimulationScriptStep
     public long At { get; }
 
     public IReadOnlyList<ScriptDrive> Drives { get; }
+
+    /// <summary>Numeric-lane values applied after the individual pin drives.</summary>
+    public IReadOnlyList<ScriptLaneDrive> LaneDrives { get; }
 
     public IReadOnlyList<ScriptPinExpectation> PinExpectations { get; }
 
@@ -378,7 +401,7 @@ public sealed class SimulationScriptStep
     public ScriptEdgeSequenceWindow? Sequence { get; }
 
     public bool HasActions =>
-        Drives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
+        Drives.Count > 0 || LaneDrives.Count > 0 || PinExpectations.Count > 0 || LaneExpectations.Count > 0 ||
         NetExpectations.Count > 0 || RelationExpectations.Count > 0 || ExpectHalted is not null ||
         Window is not null || Stability is not null ||
         Transitions is not null || Edges is not null || Sequence is not null ||
@@ -490,6 +513,7 @@ public sealed class SimulationScript
 
             previousAt = at;
             var drives = MapDrives(step.Set, stepNumber);
+            var laneDrives = MapLaneDrives(step.SetLane, stepNumber);
             var pinExpectations = MapExpectations(step.Expect, stepNumber, "expect");
             var laneExpectations = MapLaneExpectations(step.ExpectLane, stepNumber, "expectLane");
             var netExpectations = MapNetExpectations(step.ExpectNet, stepNumber, "expectNet");
@@ -541,6 +565,7 @@ public sealed class SimulationScript
             steps.Add(new SimulationScriptStep(
                 at,
                 drives,
+                laneDrives,
                 pinExpectations,
                 laneExpectations,
                 netExpectations,
@@ -580,6 +605,36 @@ public sealed class SimulationScript
             drives.Add(new ScriptDrive(
                 NormalizeId(pinId, "pin", stepNumber, "set"),
                 ReadValue(element, stepNumber, $"set.{pinId}")));
+        }
+
+        return drives;
+    }
+
+    private static List<ScriptLaneDrive> MapLaneDrives(
+        Dictionary<string, JsonElement>? source,
+        int stepNumber)
+    {
+        var drives = new List<ScriptLaneDrive>();
+        if (source is null)
+        {
+            return drives;
+        }
+
+        if (source.Count == 0)
+        {
+            throw new SimulationScriptException($"Step {stepNumber} has an empty 'setLane' object.");
+        }
+
+        foreach ((string laneId, JsonElement element) in source)
+        {
+            string normalizedLane = NormalizeId(laneId, "lane", stepNumber, "setLane");
+            if (!TryReadBigInteger(element, out BigInteger numeric))
+            {
+                throw new SimulationScriptException(
+                    $"Step {stepNumber} 'setLane.{laneId}' must be an integer value.");
+            }
+
+            drives.Add(new ScriptLaneDrive(normalizedLane, numeric));
         }
 
         return drives;
@@ -1289,6 +1344,8 @@ public sealed class SimulationScript
         public string? Description { get; set; }
 
         public Dictionary<string, JsonElement>? Set { get; set; }
+
+        public Dictionary<string, JsonElement>? SetLane { get; set; }
 
         public Dictionary<string, JsonElement>? Expect { get; set; }
 

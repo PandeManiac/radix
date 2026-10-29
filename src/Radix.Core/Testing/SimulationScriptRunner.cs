@@ -165,6 +165,11 @@ public static class SimulationScriptRunner
                     ApplyDrive(engine, stepNumber, step.At, drive, failures);
                 }
 
+                foreach (ScriptLaneDrive drive in step.LaneDrives)
+                {
+                    ApplyLaneDrive(project, definition, engine, stepNumber, step.At, drive, failures);
+                }
+
                 // Settle zero-delay consequences of this step's drives at the same tick.
                 // AdvanceTo is deliberate here: StepTimestamp would run the earliest
                 // pending event even when it belongs to a later tick, which would make
@@ -721,6 +726,132 @@ public static class SimulationScriptRunner
         }
 
         engine.SetPortValue(portIndex, value);
+    }
+
+    /// <summary>
+    /// Encodes one numeric lane and applies every resulting digit as an external
+    /// drive. The lane and every pin are validated before the first drive is applied,
+    /// so a malformed lane cannot leave a partially driven value behind.
+    /// </summary>
+    private static void ApplyLaneDrive(
+        CircuitProject project,
+        CircuitDefinition definition,
+        SimulationEngine engine,
+        int stepNumber,
+        long at,
+        ScriptLaneDrive drive,
+        List<ScriptFailure> failures)
+    {
+        NumericLane? lane = definition.FindNumericLane(drive.LaneId);
+        if (lane is null)
+        {
+            failures.Add(new ScriptFailure(
+                stepNumber,
+                at,
+                $"definition '{definition.Id}' has no numeric lane '{drive.LaneId}'."));
+            return;
+        }
+
+        INumericFormat? format = NumericFormatCatalog.Find(project, lane.FormatId);
+        if (format is null)
+        {
+            failures.Add(new ScriptFailure(
+                stepNumber,
+                at,
+                $"lane '{lane.Id}' uses unknown numeric format '{lane.FormatId}'."));
+            return;
+        }
+
+        if (lane.PinIds.Count == 0)
+        {
+            failures.Add(new ScriptFailure(stepNumber, at, $"lane '{lane.Id}' has no interface pins."));
+            return;
+        }
+
+        int[] signals = new int[lane.PinIds.Count];
+        if (!format.TryEncode(drive.Value, signals, out string? encodeError))
+        {
+            failures.Add(new ScriptFailure(
+                stepNumber,
+                at,
+                $"cannot drive lane '{lane.Id}' with {drive.Value}: {encodeError}"));
+            return;
+        }
+
+        if (!format.LeastSignificantFirst)
+        {
+            Array.Reverse(signals);
+        }
+
+        string? domainId = null;
+        var targets = new List<(int PortIndex, int Value)>(signals.Length);
+        for (int i = 0; i < lane.PinIds.Count; i++)
+        {
+            string pinId = lane.PinIds[i];
+            PinDeclaration? pin = definition.FindPin(pinId);
+            if (pin is null)
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    at,
+                    $"lane '{lane.Id}' refers to unknown interface pin '{pinId}'."));
+                return;
+            }
+
+            if (pin.Direction != PinDirection.Input)
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    at,
+                    $"lane '{lane.Id}' can only be driven when every pin is an input; '{pinId}' is an output."));
+                return;
+            }
+
+            if (domainId is null)
+            {
+                domainId = pin.DomainId;
+            }
+            else if (!string.Equals(domainId, pin.DomainId, StringComparison.Ordinal))
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    at,
+                    $"lane '{lane.Id}' contains pins from more than one domain."));
+                return;
+            }
+
+            SignalDomain? domain = project.FindDomain(pin.DomainId);
+            if (domain is null || !domain.IsValidValue(signals[i]))
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    at,
+                    $"lane '{lane.Id}' needs a digit outside domain '{pin.DomainId}' for pin '{pinId}'."));
+                return;
+            }
+
+            if (!TryFindPort(engine, pinId, out int portIndex, out CompiledPort port, out string portError))
+            {
+                failures.Add(new ScriptFailure(stepNumber, at, $"lane '{lane.Id}': {portError}"));
+                return;
+            }
+
+            if (port.Direction != PinDirection.Input)
+            {
+                failures.Add(new ScriptFailure(
+                    stepNumber,
+                    at,
+                    $"lane '{lane.Id}': pin '{pinId}' is not an input port."));
+                return;
+            }
+
+            targets.Add((portIndex, signals[i]));
+        }
+
+        foreach ((int portIndex, int value) in targets)
+        {
+            engine.SetPortValue(portIndex, value);
+        }
     }
 
     /// <summary>Returns a failure message, or null when the pin matches.</summary>

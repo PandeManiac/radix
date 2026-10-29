@@ -244,6 +244,107 @@ public sealed class SimulationScriptTests
     }
 
     [Fact]
+    public void LaneDriveEncodesOneValueAcrossInputPins()
+    {
+        SimulationScript script = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "name": "drive quaternary data as one number",
+              "steps": [
+                { "at": 0, "set": { "clk": 0, "load": 0, "add": 0 }, "setLane": { "data": 9 } },
+                { "at": 20, "expect": { "d0": 1, "d1": 2 }, "expectLane": { "data": 9 } },
+                { "at": 40, "set": { "load": 3 } },
+                { "at": 80, "set": { "clk": 3 } },
+                { "at": 120, "expectLane": { "result": 9 } },
+                { "at": 140, "set": { "clk": 0, "load": 0, "add": 3 }, "setLane": { "data": 15 } },
+                { "at": 180, "set": { "clk": 3 } },
+                { "at": 220, "expect": { "carry": 1 }, "expectLane": { "result": 8 } }
+              ]
+            }
+            """);
+
+        SimulationScriptResult result = SimulationScriptRunner.Run(
+            ExampleProjects.CreateQuaternaryAccumulatorDemo(),
+            script);
+
+        Assert.True(result.Passed, string.Join(Environment.NewLine, result.Failures.Select(f => f.Message)));
+    }
+
+    [Fact]
+    public void LaneDriveRejectsUnknownAndOutputLanes()
+    {
+        SimulationScript unknown = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [ { "at": 0, "setLane": { "nope": 1 } } ]
+            }
+            """);
+        SimulationScriptResult unknownResult = SimulationScriptRunner.Run(
+            ExampleProjects.CreateQuaternaryAccumulatorDemo(),
+            unknown);
+        Assert.Contains(
+            "has no numeric lane 'nope'",
+            Assert.Single(unknownResult.Failures).Message,
+            StringComparison.Ordinal);
+
+        SimulationScript output = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [ { "at": 0, "setLane": { "result": 1 } } ]
+            }
+            """);
+        SimulationScriptResult outputResult = SimulationScriptRunner.Run(
+            ExampleProjects.CreateQuaternaryAccumulatorDemo(),
+            output);
+        Assert.Contains(
+            "every pin is an input",
+            Assert.Single(outputResult.Failures).Message,
+            StringComparison.Ordinal);
+
+        SimulationScript overflow = SimulationScript.LoadFromString(
+            """
+            {
+              "format": "radix-test",
+              "version": 1,
+              "steps": [ { "at": 0, "setLane": { "data": 16 } } ]
+            }
+            """);
+        SimulationScriptResult overflowResult = SimulationScriptRunner.Run(
+            ExampleProjects.CreateQuaternaryAccumulatorDemo(),
+            overflow);
+        Assert.Contains(
+            "cannot drive lane 'data' with 16",
+            Assert.Single(overflowResult.Failures).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMalformedLaneDrives()
+    {
+        Assert.Contains(
+            "must be an integer value",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "setLane": { "data": true } } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "empty 'setLane' object",
+            Assert.Throws<SimulationScriptException>(() => SimulationScript.LoadFromString(
+                """
+                { "format": "radix-test", "version": 1, "steps": [ { "setLane": {} } ] }
+                """)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WindowPassesWhenPinsAndLanesConvergeAtTheSameTick()
     {
         var builder = new ProjectBuilder("window lane");
