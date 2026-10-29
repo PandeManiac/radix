@@ -126,6 +126,114 @@ public sealed class PartGeneratorTests
         Assert.Empty(engine.RuntimeDiagnostics);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(16)]
+    [InlineData(32)]
+    public void GeneratedAluComputesAllOperationsAndFlags(int width)
+    {
+        GeneratedPart part = PartGenerator.CreateAlu(width);
+        SimulationEngine engine = TestFixtures.Simulate(part.Project, part.RootDefinitionId);
+        uint mask = Mask(width);
+        (uint A, uint B)[] cases =
+        [
+            (0, 0),
+            (mask, mask),
+            (mask, 1),
+            (0x5555_5555u & mask, 0xAAAA_AAAAu & mask),
+            (0x1234_5678u & mask, 0x0FED_CBA9u & mask),
+        ];
+
+        for (int operation = 0; operation < 4; operation++)
+        {
+            foreach ((uint a, uint b) in cases)
+            {
+                DriveValue(engine, "a", width, a);
+                DriveValue(engine, "b", width, b);
+                engine.Drive("op0", operation & 1);
+                engine.Drive("op1", (operation >> 1) & 1);
+                engine.Settle((width * 5) + 40);
+
+                ulong arithmetic = (ulong)a + b;
+                uint expected = operation switch
+                {
+                    0 => (uint)arithmetic & mask,
+                    1 => a & b,
+                    2 => a | b,
+                    _ => a ^ b,
+                };
+                int expectedCarry = operation == 0 ? (int)(arithmetic >> width) & 1 : 0;
+
+                Assert.Equal(expected, ReadValue(engine, "y", width));
+                Assert.Equal(expectedCarry, engine.Read("carry"));
+                Assert.Equal(expected == 0 ? 1 : 0, engine.Read("zero"));
+            }
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    [InlineData(8)]
+    public void GeneratedCounterLoadsHoldsIncrementsAndWraps(int width)
+    {
+        GeneratedPart part = PartGenerator.CreateCounter(width);
+        SimulationEngine engine = TestFixtures.Simulate(part.Project, part.RootDefinitionId);
+        uint mask = Mask(width);
+        engine.Drive("clk", 0);
+        engine.Drive("clr", 0);
+        engine.Drive("load", 0);
+        engine.Drive("en", 0);
+        DriveValue(engine, "d", width, 0);
+
+        Assert.Equal(0u, ReadValue(engine, "q", width));
+        engine.Drive("en", 1);
+        Pulse(engine);
+        Assert.Equal(1u, ReadValue(engine, "q", width));
+        Pulse(engine);
+        Assert.Equal(2u & mask, ReadValue(engine, "q", width));
+
+        engine.Drive("en", 0);
+        uint loaded = 0x5Au & mask;
+        engine.Drive("load", 1);
+        DriveValue(engine, "d", width, loaded);
+        Pulse(engine);
+        Assert.Equal(loaded, ReadValue(engine, "q", width));
+
+        engine.Drive("load", 0);
+        DriveValue(engine, "d", width, ~loaded & mask);
+        Pulse(engine);
+        Assert.Equal(loaded, ReadValue(engine, "q", width));
+
+        engine.Drive("load", 1);
+        DriveValue(engine, "d", width, mask);
+        Pulse(engine);
+        engine.Drive("en", 1);
+        engine.Settle(20);
+        Assert.Equal(0, engine.Read("carry"));
+        engine.Drive("load", 0);
+        engine.Settle(20);
+        Assert.Equal(1, engine.Read("carry"));
+        Pulse(engine);
+        Assert.Equal(0u, ReadValue(engine, "q", width));
+        Assert.Equal(0, engine.Read("carry"));
+
+        engine.Drive("clr", 1);
+        engine.Drive("load", 1);
+        engine.Drive("en", 1);
+        DriveValue(engine, "d", width, 1);
+        Pulse(engine);
+        Assert.Equal(0u, ReadValue(engine, "q", width));
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
     [Fact]
     public void ExportedGeneratedPartIsAValidStandaloneLibrary()
     {

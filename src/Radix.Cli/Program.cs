@@ -120,8 +120,11 @@ internal static class Program
                   [--depth <n>]              Tree depth (default 6, max 64)
                   [--json]                   Emit one machine-readable JSON report
                   [--dot]                    Emit Graphviz DOT
-              generate register|adder|ram     Build a width-parameterized part library
-                  --width <n>                Register/adder width, or RAM word width
+              generate <kind>                Build a width-parameterized part library
+                  register|adder|alu|counter --width <n>
+                                             Generated part and datapath width
+                  ram --width <n> --words <n>
+                                             RAM word width and word count
                   --words <n>                RAM word count (power of two)
                   --out <file.radixlib>      Output library path
                   [--force]                  Overwrite an existing file
@@ -832,7 +835,7 @@ internal static class Program
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix generate <register|adder|ram> --width <n> [--words <n>] --out <file.radixlib> [--force]");
+                "usage: radix generate <register|adder|alu|counter|ram> --width <n> [--words <n>] --out <file.radixlib> [--force]");
             return 2;
         }
 
@@ -859,13 +862,15 @@ internal static class Program
             {
                 "register" or "reg" => PartGenerator.CreateRegister(width),
                 "adder" => PartGenerator.CreateAdder(width),
+                "alu" => PartGenerator.CreateAlu(width),
+                "counter" or "ctr" => PartGenerator.CreateCounter(width),
                 "ram" when GetOption(options, "words") is not null =>
                     PartGenerator.CreateRam(
                         GetIntOption(options, "words", 0, PartGenerator.MinRamWords, PartGenerator.MaxRamWords),
                         width),
                 "ram" => throw new ProjectFormatException("generate ram requires --words."),
                 _ => throw new ProjectFormatException(
-                    $"unknown generated part '{positional[0]}'; expected register, adder, or ram."),
+                    $"unknown generated part '{positional[0]}'; expected register, adder, alu, counter, or ram."),
             };
         }
         catch (ArgumentOutOfRangeException exception)
