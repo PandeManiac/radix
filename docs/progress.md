@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `117845d`.
+- Latest verified code commit: `01fb6f7`.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -55,6 +55,10 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    pooling A* state arrays: at 1,000 gates, construct 794 -> 461 ms, ten canonical
    frames 7,849 -> 4,706 ms, and ten canonical placements 6,543 -> 3,881 ms. Route
    output is unchanged and all 178 editor tests pass.
+10. Shared the routed-segment index across nets and vectorized obstacle masking.
+   At 1,000 gates the canonical path is now 366-368 ms to construct, 3,743-3,801 ms
+   for ten canonical frames, and 2,900-2,982 ms for ten canonical placements, about
+   54%/52%/55% below the pre-optimization baseline.
 
 ## Known issues and limitations
 
@@ -66,7 +70,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Continue reducing canonical rebuild cost: profile A* expansion and obstacle
-   marking, which dominate the remaining ~0.46 s at 1,000 gates.
+1. Continue reducing canonical rebuild cost: target A* expansion cost, which
+   dominates the remaining ~0.37 s at 1,000 gates.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

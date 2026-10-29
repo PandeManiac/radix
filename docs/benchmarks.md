@@ -166,9 +166,26 @@ At 1,000 gates that is about 42% less construct time, 40% less for ten canonical
 frames, and 41% less for ten canonical placements; the 500-gate construct and
 canonical-frame costs fell by about two thirds. Reuse-path columns are unchanged
 within run-to-run noise, and the 200-gate frame row is visibly noisy across runs.
-A canonical rebuild of 1,000 gates still costs roughly 0.46 s, dominated by A*
-searches and obstacle marking, so route reuse remains what keeps dragging
-responsive.
+A second pass shared the routed-segment spatial index across nets (it had been
+rebuilt per net) and replaced per-cell obstacle loops with span fills. Comparing
+the first optimized build with the second, over two runs each:
+
+| Gates | Construct | 10 canonical frames | 10 canonical placements |
+| ---: | ---: | ---: | ---: |
+| 200 | 94-96 -> 95-98 ms | 638-825 -> 672-693 ms | 302-313 -> 363-370 ms |
+| 500 | 83-84 -> 83 ms | 832-855 -> 632-661 ms | 1,732-1,734 -> 1,556-1,575 ms |
+| 1,000 | 459-461 -> 366-368 ms | 4,706-4,734 -> 3,743-3,801 ms | 3,881-3,954 -> 2,900-2,982 ms |
+
+Cumulatively, at 1,000 gates the canonical path is now 794 -> 366-368 ms for
+construct (-54%), 7,849 -> 3,743-3,801 ms for ten canonical frames (-52%), and
+6,543 -> 2,900-2,982 ms for ten canonical placements (-55%). The 200-gate
+placement row and the reuse-path rows remain noisy; at 500 and 1,000 gates the
+frame and placement gains are consistent across runs.
+
+A canonical rebuild of 1,000 gates still costs roughly 0.37 s. A temporary phase
+profile (removed after measurement) attributed most routing time to A* expansion
+and obstacle marking, so further work should target the search rather than the
+shared setup.
 
 ### Interpretation
 
