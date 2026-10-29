@@ -27,8 +27,7 @@ internal static class WireRouter
         Net net,
         int netOrdinal,
         IReadOnlyList<WireTerminal> terminals,
-        RoutingContext context,
-        IReadOnlyList<(Point A, Point B)> routedSegments)
+        RoutingContext context)
     {
         IReadOnlyList<Obstacle> obstacles = context.Obstacles;
         if (terminals.Count == 0)
@@ -50,7 +49,7 @@ internal static class WireRouter
             return Finish(builder.Points, builder.Segments, [], label, net);
         }
 
-        var router = new GridRouter(terminals, context, routedSegments);
+        var router = new GridRouter(terminals, context);
         RoutedWire? routed = router.Route();
         if (routed is null || routed.Segments.Count == 0)
         {
@@ -107,7 +106,13 @@ internal static class WireRouter
             MaxY = maxY;
         }
 
+        private const double WireCellSize = 120;
+        private readonly List<(Point A, Point B)> _segments = [];
+        private readonly Dictionary<long, List<int>> _cells = [];
+
         public IReadOnlyList<Obstacle> Obstacles { get; }
+
+        public IReadOnlyList<(Point A, Point B)> Segments => _segments;
 
         public double[] AxisX { get; }
 
@@ -120,11 +125,52 @@ internal static class WireRouter
         public double MinY { get; }
 
         public double MaxY { get; }
+
+        public static int Cell(double coordinate) =>
+            (int)Math.Floor(coordinate / WireCellSize);
+
+        public static long CellKey(int x, int y) => ((long)x << 32) ^ (uint)y;
+
+        /// <summary>
+        /// Adds already-routed segments to the shared spatial index. The index is
+        /// built once per segment instead of once per net, and only segments added
+        /// before a net is routed are visible to that net.
+        /// </summary>
+        public void AddSegments(IReadOnlyList<(Point A, Point B)> segments)
+        {
+            foreach ((Point a, Point b) in segments)
+            {
+                int index = _segments.Count;
+                _segments.Add((a, b));
+                int x0 = Cell(Math.Min(a.X, b.X));
+                int x1 = Cell(Math.Max(a.X, b.X));
+                int y0 = Cell(Math.Min(a.Y, b.Y));
+                int y1 = Cell(Math.Max(a.Y, b.Y));
+                for (int cx = x0; cx <= x1; cx++)
+                {
+                    for (int cy = y0; cy <= y1; cy++)
+                    {
+                        long key = CellKey(cx, cy);
+                        if (!_cells.TryGetValue(key, out List<int>? list))
+                        {
+                            list = [];
+                            _cells[key] = list;
+                        }
+
+                        list.Add(index);
+                    }
+                }
+            }
+        }
+
+        public bool TryGetCell(int x, int y, out List<int> segments) =>
+            _cells.TryGetValue(CellKey(x, y), out segments!);
     }
 
     internal static RoutingContext BuildContext(
         IReadOnlyList<ComponentBox> components,
-        IReadOnlyList<PortBox> ports)
+        IReadOnlyList<PortBox> ports,
+        IReadOnlyList<(Point A, Point B)> existingSegments)
     {
         List<Obstacle> obstacles = BuildObstacles(components, ports);
         var xs = new List<double>(obstacles.Count * 4);
@@ -150,7 +196,7 @@ internal static class WireRouter
             maxY = Math.Max(maxY, bounds.Bottom);
         }
 
-        return new RoutingContext(
+        var context = new RoutingContext(
             obstacles,
             SortedDistinct(xs),
             SortedDistinct(ys),
@@ -158,6 +204,8 @@ internal static class WireRouter
             maxX,
             minY,
             maxY);
+        context.AddSegments(existingSegments);
+        return context;
     }
 
     private static double[] SortedDistinct(List<double> values)
@@ -403,17 +451,14 @@ internal static class WireRouter
     /// <summary>Sparse orthogonal grid A* shared by every terminal of one net.</summary>
     private sealed class GridRouter
     {
-        private const double WireCellSize = 120;
-
         private readonly IReadOnlyList<WireTerminal> _terminals;
         private readonly IReadOnlyList<Obstacle> _obstacles;
-        private readonly IReadOnlyList<(Point A, Point B)> _otherWires;
+        private readonly RoutingContext _context;
         private readonly double[] _xs;
         private readonly double[] _ys;
         private readonly bool[] _blockedNodes;
         private readonly bool[] _blockedHorizontalEdges;
         private readonly bool[] _blockedVerticalEdges;
-        private readonly Dictionary<long, List<int>> _wireCells = [];
         private readonly HashSet<int> _seenWires = [];
         private readonly HashSet<int> _treeNodes = [];
         private readonly List<(Point A, Point B)> _segments = [];
@@ -425,12 +470,11 @@ internal static class WireRouter
 
         public GridRouter(
             IReadOnlyList<WireTerminal> terminals,
-            RoutingContext context,
-            IReadOnlyList<(Point A, Point B)> otherWires)
+            RoutingContext context)
         {
             _terminals = terminals;
             _obstacles = context.Obstacles;
-            _otherWires = otherWires;
+            _context = context;
 
             var extrasX = new List<double>(terminals.Count * 2);
             var extrasY = new List<double>(terminals.Count * 2);
@@ -454,8 +498,6 @@ internal static class WireRouter
             {
                 MarkObstacle(obstacle.Bounds);
             }
-
-            BuildWireCells();
         }
 
         /// <summary>
@@ -473,28 +515,29 @@ internal static class WireRouter
             int y0 = FirstGreater(_ys, bounds.Top + epsilon);
             int y1 = FirstAtLeast(_ys, bounds.Bottom - epsilon);
 
+            int nodeWidth = Math.Max(0, x1 - x0);
+            int edgeStart = Math.Max(0, x0 - 1);
+            int edgeWidth = Math.Max(0, Math.Min(nx - 2, x1 - 1) - edgeStart + 1);
             for (int iy = y0; iy < y1; iy++)
             {
-                for (int ix = x0; ix < x1; ix++)
+                if (nodeWidth > 0)
                 {
-                    _blockedNodes[(iy * nx) + ix] = true;
+                    Array.Fill(_blockedNodes, true, (iy * nx) + x0, nodeWidth);
                 }
 
-                int edgeStart = Math.Max(0, x0 - 1);
-                int edgeEnd = Math.Min(nx - 2, x1 - 1);
-                for (int ex = edgeStart; ex <= edgeEnd; ex++)
+                if (edgeWidth > 0)
                 {
-                    _blockedHorizontalEdges[(iy * (nx - 1)) + ex] = true;
+                    Array.Fill(_blockedHorizontalEdges, true, (iy * (nx - 1)) + edgeStart, edgeWidth);
                 }
             }
 
-            for (int ix = x0; ix < x1; ix++)
+            int verticalStart = Math.Max(0, y0 - 1);
+            int verticalLength = Math.Max(0, Math.Min(ny - 2, y1 - 1) - verticalStart + 1);
+            if (verticalLength > 0)
             {
-                int edgeStart = Math.Max(0, y0 - 1);
-                int edgeEnd = Math.Min(ny - 2, y1 - 1);
-                for (int ey = edgeStart; ey <= edgeEnd; ey++)
+                for (int ix = x0; ix < x1; ix++)
                 {
-                    _blockedVerticalEdges[(ix * (ny - 1)) + ey] = true;
+                    Array.Fill(_blockedVerticalEdges, true, (ix * (ny - 1)) + verticalStart, verticalLength);
                 }
             }
         }
@@ -539,51 +582,20 @@ internal static class WireRouter
             return lo;
         }
 
-        /// <summary>Indexes existing wire segments so an edge only tests nearby ones.</summary>
-        private void BuildWireCells()
-        {
-            for (int i = 0; i < _otherWires.Count; i++)
-            {
-                (Point a, Point b) = _otherWires[i];
-                int x0 = Cell(Math.Min(a.X, b.X));
-                int x1 = Cell(Math.Max(a.X, b.X));
-                int y0 = Cell(Math.Min(a.Y, b.Y));
-                int y1 = Cell(Math.Max(a.Y, b.Y));
-                for (int cx = x0; cx <= x1; cx++)
-                {
-                    for (int cy = y0; cy <= y1; cy++)
-                    {
-                        long key = CellKey(cx, cy);
-                        if (!_wireCells.TryGetValue(key, out List<int>? segments))
-                        {
-                            segments = [];
-                            _wireCells[key] = segments;
-                        }
-
-                        segments.Add(i);
-                    }
-                }
-            }
-        }
-
-        private static int Cell(double coordinate) =>
-            (int)Math.Floor(coordinate / WireCellSize);
-
-        private static long CellKey(int x, int y) => ((long)x << 32) ^ (uint)y;
 
         private double WirePenalty(Point from, Point to)
         {
             _seenWires.Clear();
             double penalty = 0;
-            int x0 = Cell(Math.Min(from.X, to.X));
-            int x1 = Cell(Math.Max(from.X, to.X));
-            int y0 = Cell(Math.Min(from.Y, to.Y));
-            int y1 = Cell(Math.Max(from.Y, to.Y));
+            int x0 = RoutingContext.Cell(Math.Min(from.X, to.X));
+            int x1 = RoutingContext.Cell(Math.Max(from.X, to.X));
+            int y0 = RoutingContext.Cell(Math.Min(from.Y, to.Y));
+            int y1 = RoutingContext.Cell(Math.Max(from.Y, to.Y));
             for (int cx = x0; cx <= x1; cx++)
             {
                 for (int cy = y0; cy <= y1; cy++)
                 {
-                    if (!_wireCells.TryGetValue(CellKey(cx, cy), out List<int>? segments))
+                    if (!_context.TryGetCell(cx, cy, out List<int>? segments))
                     {
                         continue;
                     }
@@ -595,7 +607,7 @@ internal static class WireRouter
                             continue;
                         }
 
-                        (Point a, Point b) = _otherWires[index];
+                        (Point a, Point b) = _context.Segments[index];
                         if (Overlaps(from, to, a, b))
                         {
                             penalty += 35;

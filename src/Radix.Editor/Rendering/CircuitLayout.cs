@@ -396,17 +396,17 @@ public sealed class CircuitLayout
             {
                 wires.Add(previousWire);
                 routedSegments.AddRange(previousWire.Segments);
+                routing?.AddSegments(previousWire.Segments);
                 ordinal++;
                 continue;
             }
 
-            routing ??= WireRouter.BuildContext(components, ports);
+            routing ??= WireRouter.BuildContext(components, ports, routedSegments);
             WireRouter.RoutedWire routed = WireRouter.Route(
                 net,
                 ordinal++,
                 terminals,
-                routing,
-                routedSegments);
+                routing);
             if (routed.Segments.Count == 0)
             {
                 continue;
@@ -423,6 +423,7 @@ public sealed class CircuitLayout
                 editorPins,
                 routed.AuthoredPoints));
             routedSegments.AddRange(routed.Segments);
+            routing.AddSegments(routed.Segments);
         }
 
         AddCrossingBreaks(wires);
