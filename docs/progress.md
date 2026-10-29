@@ -10,9 +10,9 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `3a85bc9`.
+- Latest verified code commit: `7d97858`.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
-  0 warnings; core tests pass 388/388; editor tests pass 177/177.
+  0 warnings; core tests pass 388/388; editor tests pass 178/178.
 
 ## Reproducible setup and commands
 
