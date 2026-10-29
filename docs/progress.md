@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `16826e9`; current changes extend the opt-in layout benchmark to 2,000 gates and record exploratory scaling, pending commit.
+- Latest verified code commit: `d1698f8`; current changes add an opt-in hierarchical-example layout benchmark and record its one-run results, pending commit.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -67,6 +67,10 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    construct, 6,445 ms for ten canonical frames, and 5,743 ms for ten canonical
    placements; doubled-size costs grew about 1.8-2.0x, with no abrupt cliff on this
    synthetic chain. Added a caveated exploratory result to docs/benchmarks.md.
+13. Added an opt-in layout sample for the bundled 4-bit accumulator CPU root view
+   (23 components, 34 nets). One run: construct 254 ms, ten canonical frames
+   615 ms, ten route-reused drag frames 82 ms. Documented the scope limitation:
+   root-view layout does not expand child definitions into the canvas.
 
 ## Known issues and limitations
 
@@ -78,8 +82,8 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Continue reducing canonical rebuild cost: obtain a representative hierarchical
-   circuit workload and use a profiler with a bounded trace/export path; the first
+1. Continue layout performance work: consider a generated larger hierarchy and
+   capture CPU profiles using a bounded/streaming export workflow; the first
    dotnet-trace export exceeded this environment's command limit.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

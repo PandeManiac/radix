@@ -200,8 +200,15 @@ same VM (single run): construct 634 ms, ten canonical frames 6,445 ms, ten nudge
 5,743 ms, and ten incremental placements 130 ms. Doubling from 1,000 to 2,000
 increased construct and canonical frames by about 1.8x, canonical placements by
 2.0x, and reused drag by 2.2x. This shows no abrupt scaling cliff at 2,000 gates
-for the synthetic chain, but is not a representative hierarchical workload or a
-stable performance guarantee.
+for the synthetic chain.
+
+A bundled hierarchical workload was added to the same opt-in test and measured
+once on this VM: the 4-bit accumulator CPU root view has 23 components and 34 nets;
+construct took 254 ms, ten canonical frames 615 ms, and ten drag frames with route
+reuse 82 ms. This gives a representative authored/hierarchical-layout point beside
+the regular synthetic chain. It is a single timing sample; root-view layout does
+not expand child definitions into the canvas, and the result is not a universal
+performance guarantee.
 
 ### Interpretation
 

@@ -124,6 +124,51 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public void HierarchicalAccumulatorLayoutBenchmark()
+    {
+        if (Environment.GetEnvironmentVariable("RADIX_LAYOUT_BENCH") != "1")
+        {
+            return;
+        }
+
+        CircuitProject project = ExampleProjects.CreateAccumulatorCpuDemo();
+        var constructWatch = Stopwatch.StartNew();
+        var viewModel = new EditorViewModel(project);
+        constructWatch.Stop();
+
+        CircuitLayout initial = Assert.IsType<CircuitLayout>(viewModel.Layout);
+        ComponentInstance target = viewModel.Definition.Instances[viewModel.Definition.Instances.Count / 2];
+
+        var canonicalWatch = Stopwatch.StartNew();
+        for (int i = 1; i <= 10; i++)
+        {
+            viewModel.SetInstanceState(target.Id, target.X + (i * 9), target.Y + (i * 5));
+        }
+
+        canonicalWatch.Stop();
+
+        // Use a separate model at the original authored position for the route-reuse
+        // measurement, so the baseline and timed edits do not compound.
+        var reusedModel = new EditorViewModel(ExampleProjects.CreateAccumulatorCpuDemo());
+        ComponentInstance reusedTarget = reusedModel.Definition.Instances[reusedModel.Definition.Instances.Count / 2];
+        double startX = reusedTarget.X;
+        double startY = reusedTarget.Y;
+        reusedModel.BeginDrag();
+        var reuseWatch = Stopwatch.StartNew();
+        for (int i = 1; i <= 10; i++)
+        {
+            reusedModel.MoveInstance(reusedTarget.Id, startX + (i * 9), startY + (i * 5));
+        }
+
+        reuseWatch.Stop();
+
+        output.WriteLine(
+            $"4-bit accumulator CPU ({initial.Components.Count} components, {initial.Wires.Count} nets): " +
+            $"construct {constructWatch.ElapsedMilliseconds} ms, ten canonical frames " +
+            $"{canonicalWatch.ElapsedMilliseconds} ms, ten route-reused drag frames {reuseWatch.ElapsedMilliseconds} ms");
+    }
+
     private static void Warmup()
     {
         CircuitProject project = SyntheticChain(50);
