@@ -210,6 +210,26 @@ the regular synthetic chain. It is a single timing sample; root-view layout does
 not expand child definitions into the canvas, and the result is not a universal
 performance guarantee.
 
+### Generated repeated-child hierarchy (2026-10-29)
+
+The opt-in `GeneratedHierarchyLayoutBenchmark` creates one fixed child definition
+(two cascaded 2-input binary lookup primitives; four child nets) and repeats it in
+the root, on a 20-column grid. On this VM (.NET SDK 10.0.100, Release, headless
+Skia), one run reported:
+
+| Repeated child instances | Root instances | Root nets | Child primitives | Child nets | Construct | 10 canonical root builds |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 25 | 25 | 26 | 2 | 4 | 176 ms | 148 ms |
+| 100 | 100 | 101 | 2 | 4 | 60 ms | 632 ms |
+| 250 | 250 | 251 | 2 | 4 | 153 ms | 536 ms |
+
+These measurements are exploratory and from a single run. The non-monotonic
+construct/build times demonstrate substantial runtime noise at this scale; they
+should not be interpreted as a reliable scaling curve. The canvas lays out the
+root instances only—the child primitives and nets are included in the project but
+are not expanded into per-instance child geometry in the root view.
+
+
 ### Interpretation
 
 - At 1,000 gates, ten drag frames cost ~20 ms with reuse versus ~4.5 s when every frame rebuilds the layout and routes. Ten arrow-key nudges cost ~70 ms, and ten placements cost ~43 ms instead of ~3.66 s. The first layout still costs roughly 0.42 s; that is the remaining pause on a design of this size.

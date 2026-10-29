@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `d1698f8`; current changes add an opt-in hierarchical-example layout benchmark and record its one-run results, pending commit.
+- Latest verified code commit: `bbc79e7` (generated repeated-child hierarchy benchmark); documentation of its measurement is in progress.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -71,6 +71,10 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    (23 components, 34 nets). One run: construct 254 ms, ten canonical frames
    615 ms, ten route-reused drag frames 82 ms. Documented the scope limitation:
    root-view layout does not expand child definitions into the canvas.
+14. Added an opt-in generated hierarchy benchmark with a fixed two-primitive,
+   four-net child repeated 25/100/250 times. One run reports construction 176/60/153
+   ms and ten canonical root builds 148/632/536 ms; these are explicitly noisy,
+   non-monotonic exploratory measurements rather than a scaling claim.
 
 ## Known issues and limitations
 
@@ -82,8 +86,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Continue layout performance work: consider a generated larger hierarchy and
-   capture CPU profiles using a bounded/streaming export workflow; the first
-   dotnet-trace export exceeded this environment's command limit.
+1. For stable hierarchy scalability data, repeat measurements with warmup and
+   multiple runs or use a bounded CPU-profile export; this one-run sample is noisy.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.
