@@ -186,15 +186,19 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
             CircuitProject project = RepeatedChildHierarchy(count);
             CircuitDefinition root = project.FindDefinition("main")!;
             CircuitDefinition child = project.FindDefinition("child")!;
-            long construct = long.MaxValue;
-            long canonicalBuilds = long.MaxValue;
-            for (int run = 0; run < 3; run++)
+            var constructSamples = new long[7];
+            for (int run = 0; run < constructSamples.Length; run++)
             {
                 var constructWatch = Stopwatch.StartNew();
-                var viewModel = new EditorViewModel(project);
+                _ = new EditorViewModel(project);
                 constructWatch.Stop();
-                construct = Math.Min(construct, constructWatch.ElapsedMilliseconds);
+                constructSamples[run] = constructWatch.ElapsedMilliseconds;
+            }
 
+            var viewModel = new EditorViewModel(project);
+            var canonicalSamples = new long[7];
+            for (int run = 0; run < canonicalSamples.Length; run++)
+            {
                 var layoutWatch = Stopwatch.StartNew();
                 for (int i = 0; i < 10; i++)
                 {
@@ -202,13 +206,17 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
                 }
 
                 layoutWatch.Stop();
-                canonicalBuilds = Math.Min(canonicalBuilds, layoutWatch.ElapsedMilliseconds);
+                canonicalSamples[run] = layoutWatch.ElapsedMilliseconds;
             }
 
+            Array.Sort(constructSamples);
+            Array.Sort(canonicalSamples);
             output.WriteLine(
                 $"{count} repeated children: root instances {root.Instances.Count}, root nets {root.Nets.Count}, " +
                 $"child primitives {child.Instances.Count}, child nets {child.Nets.Count}, " +
-                $"best of 3 construct {construct} ms, best of 3 ten-build runs {canonicalBuilds} ms");
+                $"construct median/range {constructSamples[constructSamples.Length / 2]} ms " +
+                $"[{constructSamples[0]}-{constructSamples[^1]}], ten-build median/range " +
+                $"{canonicalSamples[canonicalSamples.Length / 2]} ms [{canonicalSamples[0]}-{canonicalSamples[^1]}]");
         }
     }
 
