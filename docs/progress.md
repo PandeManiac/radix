@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `01fb6f7` (next A* visitation-stamp optimization verified; commit pending).
+- Latest verified code commit: `16826e9`; current changes extend the opt-in layout benchmark to 2,000 gates and record exploratory scaling, pending commit.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -63,6 +63,10 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    visitation stamps. Build and all 178 editor tests pass. One benchmark run per
    build: at 1,000 gates, ten canonical frames improved 3,762 -> 3,584 ms and ten
    canonical placements 2,924 -> 2,772 ms (~5%); reported as modest and noisy.
+12. Extended the opt-in layout benchmark to 2,000 gates. One run measured 634 ms
+   construct, 6,445 ms for ten canonical frames, and 5,743 ms for ten canonical
+   placements; doubled-size costs grew about 1.8-2.0x, with no abrupt cliff on this
+   synthetic chain. Added a caveated exploratory result to docs/benchmarks.md.
 
 ## Known issues and limitations
 
@@ -74,8 +78,8 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Continue reducing canonical rebuild cost: profile A* expansion further; the
-   visitation-stamp optimization yielded a modest ~5% benchmark improvement, and
-   the remaining ~0.35 s at 1,000 gates is still dominated by search cost.
+1. Continue reducing canonical rebuild cost: obtain a representative hierarchical
+   circuit workload and use a profiler with a bounded trace/export path; the first
+   dotnet-trace export exceeded this environment's command limit.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

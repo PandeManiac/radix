@@ -28,7 +28,7 @@ public sealed class LayoutBenchmarkTests(ITestOutputHelper output)
 
         Warmup();
 
-        foreach (int count in new[] { 200, 500, 1000 })
+        foreach (int count in new[] { 200, 500, 1000, 2000 })
         {
             CircuitProject project = SyntheticChain(count);
             long construct = long.MaxValue;

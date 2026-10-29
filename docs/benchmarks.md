@@ -194,6 +194,15 @@ This preserves segment iteration order and penalty values while avoiding a hash
 clear/lookup for every candidate edge. The full editor suite (178 tests) and
 Release solution build pass; exact-route tests remain unchanged.
 
+An exploratory extension of the opt-in layout benchmark to 2,000 gates ran on the
+same VM (single run): construct 634 ms, ten canonical frames 6,445 ms, ten nudges
+147 ms, ten reused drag frames 84 ms, final rebuild 1 ms, ten canonical placements
+5,743 ms, and ten incremental placements 130 ms. Doubling from 1,000 to 2,000
+increased construct and canonical frames by about 1.8x, canonical placements by
+2.0x, and reused drag by 2.2x. This shows no abrupt scaling cliff at 2,000 gates
+for the synthetic chain, but is not a representative hierarchical workload or a
+stable performance guarantee.
+
 ### Interpretation
 
 - At 1,000 gates, ten drag frames cost ~20 ms with reuse versus ~4.5 s when every frame rebuilds the layout and routes. Ten arrow-key nudges cost ~70 ms, and ten placements cost ~43 ms instead of ~3.66 s. The first layout still costs roughly 0.42 s; that is the remaining pause on a design of this size.
