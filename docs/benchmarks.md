@@ -145,6 +145,31 @@ costs ~39 ms with route reuse versus ~8.2 s when every frame rebuilds routes, an
 ten incremental placements cost ~85 ms versus ~6.9 s. The one-time construct pause
 at 1,000 gates is ~0.8 s on this host.
 
+### Routing-context optimization (2026-10-29)
+
+A canonical rebuild previously rebuilt the obstacle list and sorted axis
+candidates for every net and allocated fresh A* state arrays per search. Those
+are now shared per layout (obstacles and sorted axis candidates) or pooled
+(`ArrayPool` state arrays), and axis candidates are merged instead of reinserted
+into a `SortedSet`. The midpoint and truncation rules are unchanged, and the
+editor suite's exact-route assertions still pass.
+
+Same host and command, one baseline run and two runs after the change:
+
+| Gates | Construct before -> after | 10 canonical frames before -> after | 10 canonical placements before -> after |
+| ---: | ---: | ---: | ---: |
+| 200 | 272 -> 94-96 ms | 1,059 -> 638-825 ms | 657 -> 302-313 ms |
+| 500 | 269 -> 83-84 ms | 2,620 -> 832-855 ms | 2,887 -> 1,732-1,734 ms |
+| 1,000 | 794 -> 459-461 ms | 7,849 -> 4,706-4,734 ms | 6,543 -> 3,881-3,954 ms |
+
+At 1,000 gates that is about 42% less construct time, 40% less for ten canonical
+frames, and 41% less for ten canonical placements; the 500-gate construct and
+canonical-frame costs fell by about two thirds. Reuse-path columns are unchanged
+within run-to-run noise, and the 200-gate frame row is visibly noisy across runs.
+A canonical rebuild of 1,000 gates still costs roughly 0.46 s, dominated by A*
+searches and obstacle marking, so route reuse remains what keeps dragging
+responsive.
+
 ### Interpretation
 
 - At 1,000 gates, ten drag frames cost ~20 ms with reuse versus ~4.5 s when every frame rebuilds the layout and routes. Ten arrow-key nudges cost ~70 ms, and ten placements cost ~43 ms instead of ~3.66 s. The first layout still costs roughly 0.42 s; that is the remaining pause on a design of this size.

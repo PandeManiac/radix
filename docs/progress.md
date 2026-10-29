@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `ea1250a`.
+- Latest verified code commit: `117845d`.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -51,6 +51,10 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 8. Reproduced the editor layout benchmark on this VM; results are in
    `docs/benchmarks.md`. Absolute costs are roughly 1.5–2x the reference machine,
    while the route-reuse ratios hold.
+9. Cut canonical layout rebuild cost by sharing routing geometry per layout and
+   pooling A* state arrays: at 1,000 gates, construct 794 -> 461 ms, ten canonical
+   frames 7,849 -> 4,706 ms, and ten canonical placements 6,543 -> 3,881 ms. Route
+   output is unchanged and all 178 editor tests pass.
 
 ## Known issues and limitations
 
@@ -62,5 +66,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Continue the roadmap: large-definition scalability, richer hierarchy/library
+1. Continue reducing canonical rebuild cost: profile A* expansion and obstacle
+   marking, which dominate the remaining ~0.46 s at 1,000 gates.
+2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.
