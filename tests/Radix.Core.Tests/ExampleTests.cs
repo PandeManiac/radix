@@ -94,6 +94,40 @@ public sealed class ExampleTests
     }
 
     [Fact]
+    public void AccumulatorExecutesLoadAddClearAndHold()
+    {
+        var engine = TestFixtures.Simulate(ExampleProjects.CreateAccumulatorCpuDemo(), "demo.accumulator");
+        engine.Drive("clk", 0);
+        engine.Settle(40);
+        DriveOperation(engine, 0, 0, 0);
+        Assert.Equal(0, ReadAccumulator(engine));
+
+        DriveOperation(engine, 1, 0, 5);       // LOAD 5
+        PulseClock(engine);
+        Assert.Equal(5, ReadAccumulator(engine));
+
+        DriveOperation(engine, 0, 1, 3);       // ADD 3
+        PulseClock(engine);
+        Assert.Equal(8, ReadAccumulator(engine));
+
+        DriveOperation(engine, 0, 0, 9);       // NOP keeps data irrelevant
+        PulseClock(engine);
+        Assert.Equal(8, ReadAccumulator(engine));
+
+        DriveOperation(engine, 1, 0, 15);      // LOAD 15
+        PulseClock(engine);
+        DriveOperation(engine, 0, 1, 2);       // ADD 2 -> 17 wraps to 1, carry 1
+        PulseClock(engine);
+        Assert.Equal(1, ReadAccumulator(engine));
+        Assert.Equal(1, engine.Read("carry"));
+
+        DriveOperation(engine, 1, 1, 0);       // CLEAR
+        PulseClock(engine);
+        Assert.Equal(0, ReadAccumulator(engine));
+        Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    [Fact]
     public void CounterExampleIsFreeRunning()
     {
         var engine = TestFixtures.Simulate(ExampleProjects.CreateCounterDemo(), "demo.counter");
@@ -106,5 +140,36 @@ public sealed class ExampleTests
 
         Assert.Equal(0, value);
         Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    private static void DriveOperation(SimulationEngine engine, int op0, int op1, int value)
+    {
+        engine.Drive("op0", op0);
+        engine.Drive("op1", op1);
+        for (int bit = 0; bit < 4; bit++)
+        {
+            engine.Drive($"d{bit}", (value >> bit) & 1);
+        }
+
+        engine.Settle(40);
+    }
+
+    private static void PulseClock(SimulationEngine engine)
+    {
+        engine.Drive("clk", 1);
+        engine.Settle(40);
+        engine.Drive("clk", 0);
+        engine.Settle(40);
+    }
+
+    private static int ReadAccumulator(SimulationEngine engine)
+    {
+        int value = 0;
+        for (int bit = 0; bit < 4; bit++)
+        {
+            value |= engine.Read($"q{bit}") << bit;
+        }
+
+        return value;
     }
 }

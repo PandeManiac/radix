@@ -13,6 +13,7 @@ public static class ExampleProjects
     public const string FullAdderFile = "full-adder.radix";
     public const string CounterFile = "binary-counter.radix";
     public const string BalancedTernaryFile = "balanced-ternary-half-adder.radix";
+    public const string AccumulatorFile = "accumulator-cpu.radix";
 
     public static IReadOnlyList<ExampleProject> All() =>
     [
@@ -20,6 +21,7 @@ public static class ExampleProjects
         new(FullAdderFile, "Full adder", "A full adder built from two half adders and an OR gate.", CreateFullAdderDemo()),
         new(CounterFile, "4-bit counter", "A free-running 4-bit binary counter: DFFs, a ripple-carry adder, and a waveform clock.", CreateCounterDemo()),
         new(BalancedTernaryFile, "Balanced ternary half adder", "Two-trit addition with sum and carry on a three-valued domain.", CreateBalancedTernaryHalfAdderDemo()),
+        new(AccumulatorFile, "4-bit accumulator CPU", "A tiny instruction-controlled accumulator built from DFFs, adders, muxes, and lookup control logic.", CreateAccumulatorCpuDemo()),
     ];
 
     public static CircuitProject CreateDFlipFlopDemo()
@@ -118,6 +120,107 @@ public static class ExampleProjects
         }
 
         return builder.Build("demo.counter");
+    }
+
+    public static CircuitProject CreateAccumulatorCpuDemo()
+    {
+        var builder = new ProjectBuilder("4-bit accumulator CPU");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.accumulator", "4-bit accumulator");
+        root.Definition.Description =
+            "Instruction-controlled accumulator. OP=00 holds, 01 loads D, 10 adds D, 11 clears. " +
+            "The 4-bit result is registered on the rising edge of CLK; CARRY exposes the adder carry.";
+
+        Net clock = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.BinaryId);
+        Net op0 = root.AddPin("op0", "OP0", PinDirection.Input, StandardDomains.BinaryId);
+        Net op1 = root.AddPin("op1", "OP1", PinDirection.Input, StandardDomains.BinaryId);
+
+        var data = new Net[4];
+        var q = new Net[4];
+        for (int i = 0; i < 4; i++)
+        {
+            data[i] = root.AddPin($"d{i}", $"D{i}", PinDirection.Input, StandardDomains.BinaryId);
+            q[i] = root.SetInitial(root.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.BinaryId), 0);
+        }
+
+        Net carry = root.AddPin("carry", "CARRY", PinDirection.Output, StandardDomains.BinaryId);
+
+        Net nOp0 = root.Rename(root.AddNet("n_op0", StandardDomains.BinaryId), "!OP0");
+        Net selectSum = root.Rename(root.AddNet("select_sum", StandardDomains.BinaryId), "select add");
+        Net enable = root.Rename(root.AddNet("enable", StandardDomains.BinaryId), "enable");
+        Net clear = root.Rename(root.AddNet("clear", StandardDomains.BinaryId), "clear");
+        Net zero = root.Rename(root.AddNet("zero", StandardDomains.BinaryId), "zero");
+
+        root.AddPrimitive("const0", new ConstantSpec(0), 60, 520);
+        root.Connect(zero, root.Pin("const0", PrimitiveShapes.OutputPinId));
+
+        root.AddInstance("inv_op0", "std.not", 60, 60);
+        root.Connect(op0, root.Pin("inv_op0", "a"));
+        root.Connect(nOp0, root.Pin("inv_op0", "y"));
+
+        root.AddInstance("and_select", "std.and", 240, 60);
+        root.Connect(nOp0, root.Pin("and_select", "a"));
+        root.Connect(op1, root.Pin("and_select", "b"));
+        root.Connect(selectSum, root.Pin("and_select", "y"));
+
+        root.AddInstance("or_enable", "std.or", 240, 160);
+        root.Connect(op0, root.Pin("or_enable", "a"));
+        root.Connect(op1, root.Pin("or_enable", "b"));
+        root.Connect(enable, root.Pin("or_enable", "y"));
+
+        root.AddInstance("and_clear", "std.and", 240, 260);
+        root.Connect(op0, root.Pin("and_clear", "a"));
+        root.Connect(op1, root.Pin("and_clear", "b"));
+        root.Connect(clear, root.Pin("and_clear", "y"));
+
+        var sums = new Net[4];
+        for (int i = 0; i < 4; i++)
+        {
+            sums[i] = root.Rename(root.AddNet($"sum{i}", StandardDomains.BinaryId), $"sum{i}");
+        }
+
+        root.AddInstance("adder", "std.ripple-adder-4", 420, 40);
+        root.Connect(carry, root.Pin("adder", "cout"));
+
+        var loadNets = new Net[4];
+        var clearedNets = new Net[4];
+        var nextNets = new Net[4];
+        for (int i = 0; i < 4; i++)
+        {
+            root.Connect(q[i], root.Pin("adder", $"a{i}"));
+            root.Connect(data[i], root.Pin("adder", $"b{i}"));
+            root.Connect(sums[i], root.Pin("adder", $"s{i}"));
+
+            loadNets[i] = root.Rename(root.AddNet($"load{i}", StandardDomains.BinaryId), $"load{i} value");
+            clearedNets[i] = root.AddNet($"cleared{i}", StandardDomains.BinaryId);
+            nextNets[i] = root.Rename(root.AddNet($"next{i}", StandardDomains.BinaryId), $"next{i}");
+            double y = 60 + (i * 130);
+
+            root.AddInstance($"mux_load{i}", "std.mux2", 640, y);
+            root.Connect(data[i], root.Pin($"mux_load{i}", "a"));
+            root.Connect(sums[i], root.Pin($"mux_load{i}", "b"));
+            root.Connect(selectSum, root.Pin($"mux_load{i}", "s"));
+            root.Connect(loadNets[i], root.Pin($"mux_load{i}", "y"));
+
+            root.AddInstance($"mux_clear{i}", "std.mux2", 820, y);
+            root.Connect(loadNets[i], root.Pin($"mux_clear{i}", "a"));
+            root.Connect(zero, root.Pin($"mux_clear{i}", "b"));
+            root.Connect(clear, root.Pin($"mux_clear{i}", "s"));
+            root.Connect(clearedNets[i], root.Pin($"mux_clear{i}", "y"));
+
+            root.AddInstance($"mux_hold{i}", "std.mux2", 1000, y);
+            root.Connect(q[i], root.Pin($"mux_hold{i}", "a"));
+            root.Connect(clearedNets[i], root.Pin($"mux_hold{i}", "b"));
+            root.Connect(enable, root.Pin($"mux_hold{i}", "s"));
+            root.Connect(nextNets[i], root.Pin($"mux_hold{i}", "y"));
+
+            root.AddInstance($"ff{i}", StandardLibrary.DFlipFlopId, 1180, y);
+            root.Connect(nextNets[i], root.Pin($"ff{i}", "d"));
+            root.Connect(clock, root.Pin($"ff{i}", "clk"));
+            root.Connect(q[i], root.Pin($"ff{i}", "q"));
+        }
+
+        return builder.Build("demo.accumulator");
     }
 
     public static CircuitProject CreateBalancedTernaryHalfAdderDemo()
