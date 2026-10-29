@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `2d7a67e`; benchmark documentation has a fresh seven-sample run recorded below (uncommitted documentation update).
+- Latest verified code commit: see `git log agent/radix-verification`; benchmark documentation has a fresh seven-sample run recorded below.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -97,15 +97,38 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     remains; the test exercises the same in-row cancellation path via the engine's
     every-1,024-events check.
 17. Baseline on this VM (.NET SDK 10.0.403): release build clean (0 warnings),
-    core tests 404/404. Editor tests are blocked here because the image ships no
-    fontconfig/freetype/libpng and the unprivileged user cannot install packages
-    (see Known issues).
+    core tests 412/412, editor tests 180/180. The image ships no
+    fontconfig/freetype/libpng and `sudo` is disabled, so the editor suite needs
+    those packages fetched directly from the Ubuntu archive (see Known issues).
+18. Added `SerializationFuzzTests`: 600 deterministic mutations (truncation,
+    deleted/duplicated lines, corrupted tokens, out-of-range numbers) across five
+    bundled example projects. Loading must either succeed or throw only
+    `ProjectFormatException`/`CircuitValidationException`; the campaign reports
+    source, iteration, mutation, length, and content hash on failure.
+19. Added `GeneratorScaleTests`: generated register loads/holds/clears at 64, 65,
+    and 128 bits; counter wrap-plus-carry at 64/65; adder carry past bit 64; and a
+    128x8 RAM with independent words at the address-space edges. No width defect
+    was found. The campaign did expose a semantic sharp edge: lookup primitives
+    (including `std.mux2`) hold while *any* input is undriven, so the generated
+    counter does not increment when EN=1 but the unused D pins are left floating.
+    The tests now drive every input as documented; see Known issues.
 
 ## Known issues and limitations
 
 - Editor tests need fontconfig, freetype, libpng and a font on Linux. This VM's
   image has none of them and `sudo` is disabled; `scripts/linux-test-natives.sh`
-  cannot fetch them because apt lists are absent. Core tests are unaffected.
+  cannot fetch them because apt lists are absent. Verified workaround: download
+  the noble debs (`libfontconfig1_2.15.0-2.3ubuntu1`, `libfreetype6_2.13.2+dfsg-1build3`,
+  `libpng16-16t64_1.6.43-5build1`, `fonts-dejavu-core_2.37-8`) from
+  archive.ubuntu.com, extract with `dpkg-deb -x`, then set `LD_LIBRARY_PATH` to
+  the extracted `usr/lib/x86_64-linux-gnu` and `FONTCONFIG_FILE` to a config that
+  points at the extracted fonts. Core tests are unaffected.
+- Undriven inputs are not three-valued: a lookup holds even when the output is
+  logically determined (for example a mux whose unselected data input is
+  undriven). `UndrivenInputMakesGateHoldItsOutput` pins this behavior, but it
+  makes partially driven generated parts appear frozen. A conservative
+  "evaluate determined outputs over all input completions" semantic would be a
+  deliberate model/version decision, not a silent compatibility change.
 - `src/Radix.Core/Simulation/SimulationEngine.cs.backup` is a committed stale copy
   of the engine source. It is not compiled, but it duplicates code and will drift.
 - Everything under "Explicit limitations" in `README.md` still applies (no analog
@@ -116,5 +139,11 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 1. For stronger hierarchy scalability data, compare the seven-sample run on a
    quieter host, or install/use `dotnet-trace` to capture a bounded CPU profile;
    this VM has no profiler tool installed and the repeated runs remain noisy.
-2. Continue the roadmap: large-definition scalability, richer hierarchy/library
+2. Decide whether lookup evaluation should derive outputs that are determined
+   across all completions of undriven inputs (three-valued evaluation). This
+   would make muxes and controlling-value gates behave physically, but it changes
+   documented core semantics and needs its own compatibility plan and tests.
+3. Add an explicit event budget for CLI-driven runs so an extreme `--until`
+   value on a fast periodic source cannot run effectively forever.
+4. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.
