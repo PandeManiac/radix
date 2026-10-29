@@ -64,6 +64,16 @@ public sealed class InterpretationTests
     }
 
     [Fact]
+    public void UnsignedQuaternaryDecodes()
+    {
+        Assert.Equal(63, (int)NumericFormats.UnsignedQuaternary.Decode([3, 3, 3]).Value);
+        Assert.Equal(15, (int)NumericFormats.UnsignedQuaternary.Decode([3, 3]).Value);
+        Assert.Equal(0, (int)NumericFormats.UnsignedQuaternary.MinimumValue(3));
+        Assert.Equal(63, (int)NumericFormats.UnsignedQuaternary.MaximumValue(3));
+        Assert.Equal(170, NumericFormats.UnsignedQuaternary.Decode([2, 2, 2, 2]).Value);
+    }
+
+    [Fact]
     public void BalancedTernaryDecodes()
     {
         // least significant first: +, +, 0 -> 1 + 3 = 4
@@ -101,6 +111,7 @@ public sealed class InterpretationTests
         AssertRoundTrips(NumericFormats.OnesComplement, width);
         AssertRoundTrips(NumericFormats.SignMagnitude, width);
         AssertRoundTrips(NumericFormats.UnsignedTernary, width);
+        AssertRoundTrips(NumericFormats.UnsignedQuaternary, width);
         AssertRoundTrips(NumericFormats.TernaryTopNegative, width);
         AssertRoundTrips(NumericFormats.BalancedTernary, width);
     }

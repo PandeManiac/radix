@@ -65,8 +65,8 @@ public sealed class SignalDomainTests
     public void CustomFiniteDomainIsSupported()
     {
         var domain = new SignalDomain(
-            "quaternary",
-            "Quaternary",
+            "custom-four",
+            "Custom four-level",
             ["low", "mid", "high", "float"],
             new PriorityDriverResolution([2, 3, 4, 0], 1));
 

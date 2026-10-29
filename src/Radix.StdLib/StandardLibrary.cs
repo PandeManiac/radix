@@ -25,6 +25,11 @@ public static class StandardLibrary
     public const string BalancedTernaryLatchId = "std.bt-latch";
     public const string BalancedTernaryDFlipFlopId = "std.bt-dff";
     public const string BalancedTernaryRegister2Id = "std.bt-reg-2";
+    public const string QuaternaryLatchId = "std.q4-latch";
+    public const string QuaternaryDFlipFlopId = "std.q4-dff";
+    public const string QuaternaryIncId = "std.q4-inc";
+    public const string QuaternaryCarryId = "std.q4-carry";
+    public const string QuaternaryAddId = "std.q4-add";
     public const string TernaryFullAdderId = "std.t-full-adder";
     public const string TernaryAdder2Id = "std.t-adder-2";
     public const string TernaryRegister2Id = "std.t-reg-2";
@@ -163,6 +168,7 @@ public static class StandardLibrary
         }
 
         added.AddRange(AddTernaryDefinitions(project));
+        added.AddRange(AddQuaternaryDefinitions(project));
         return added;
     }
 
@@ -814,6 +820,146 @@ public static class StandardLibrary
                 level = reduced;
             }
         }
+    }
+
+    /// <summary>
+    /// Radix-4 parts. A quaternary latch is one feedback lookup instead of the
+    /// cross-coupled gate pair used for three-valued domains: the table holds D when
+    /// enabled and Q otherwise, which needs only values, not a complement operator.
+    /// The flip-flop is that latch twice with clock-phase enables.
+    /// </summary>
+    private static IEnumerable<string> AddQuaternaryDefinitions(CircuitProject project)
+    {
+        var added = new List<string>();
+
+        if (project.FindDefinition(QuaternaryLatchId) is null)
+        {
+            AddQuaternaryLatch(project);
+            added.Add(QuaternaryLatchId);
+        }
+
+        if (project.FindDefinition(QuaternaryDFlipFlopId) is null)
+        {
+            AddQuaternaryDFlipFlop(project);
+            added.Add(QuaternaryDFlipFlopId);
+        }
+
+        if (project.FindDefinition(QuaternaryIncId) is null)
+        {
+            AddLookupDefinition(
+                project,
+                QuaternaryIncId,
+                "Quaternary increment",
+                StandardDomains.QuaternaryId,
+                ["a"],
+                ["A"],
+                [1, 2, 3, 0],
+                description: "Adds one to a radix-4 digit modulo 4.");
+            added.Add(QuaternaryIncId);
+        }
+
+        if (project.FindDefinition(QuaternaryCarryId) is null)
+        {
+            AddLookupDefinition(
+                project,
+                QuaternaryCarryId,
+                "Quaternary carry",
+                StandardDomains.QuaternaryId,
+                ["a"],
+                ["A"],
+                [0, 0, 0, 1],
+                description: "Carry out of adding one: 1 when the digit is 3, otherwise 0.");
+            added.Add(QuaternaryCarryId);
+        }
+
+        if (project.FindDefinition(QuaternaryAddId) is null)
+        {
+            int[] table = new int[16];
+            for (int a = 0; a < 4; a++)
+            {
+                for (int b = 0; b < 4; b++)
+                {
+                    table[(a * 4) + b] = (a + b) % 4;
+                }
+            }
+
+            AddLookupDefinition(
+                project,
+                QuaternaryAddId,
+                "Quaternary digit adder",
+                StandardDomains.QuaternaryId,
+                ["a", "b"],
+                ["A", "B"],
+                table,
+                description: "Adds two radix-4 digits modulo 4; carry is a separate lookup such as std.q4-carry.");
+            added.Add(QuaternaryAddId);
+        }
+
+        return added;
+    }
+
+    private static void AddQuaternaryLatch(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, QuaternaryLatchId, "Quaternary D latch");
+        builder.Definition.Description =
+            "Level-sensitive radix-4 latch. E=1 captures D, E=0 holds, and other enable values hold. " +
+            "One lookup reads D, E, and the fed-back Q; Q powers up at 0.";
+
+        Net d = builder.AddPin("d", "D", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net e = builder.AddPin("e", "E", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net q = builder.SetInitial(
+            builder.AddPin("q", "Q", PinDirection.Output, StandardDomains.QuaternaryId),
+            0);
+
+        int[] table = new int[64];
+        for (int digit = 0; digit < 4; digit++)
+        {
+            for (int enable = 0; enable < 4; enable++)
+            {
+                for (int held = 0; held < 4; held++)
+                {
+                    table[(digit * 16) + (enable * 4) + held] = enable == 1 ? digit : held;
+                }
+            }
+        }
+
+        builder.AddPrimitive("cell", new LookupSpec(3, table, 1), 300, 120);
+        builder.Connect(d, builder.Pin("cell", "in0"));
+        builder.Connect(e, builder.Pin("cell", "in1"));
+        builder.Connect(q, builder.Pin("cell", "in2"));
+        builder.Connect(q, builder.Pin("cell", PrimitiveShapes.OutputPinId));
+    }
+
+    private static void AddQuaternaryDFlipFlop(CircuitProject project)
+    {
+        var builder = new DefinitionBuilder(project, QuaternaryDFlipFlopId, "Quaternary D flip-flop");
+        builder.Definition.Description =
+            "Positive-edge-triggered radix-4 flip-flop. The master latch captures while CLK=0 and the " +
+            "slave captures while CLK=3, so a 0 -> 3 transition samples D once. Q powers up at 0.";
+
+        Net d = builder.AddPin("d", "D", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net clk = builder.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.QuaternaryId);
+        Net q = builder.SetInitial(
+            builder.AddPin("q", "Q", PinDirection.Output, StandardDomains.QuaternaryId),
+            0);
+
+        Net clockLow = builder.Rename(builder.AddNet("clk_low", StandardDomains.QuaternaryId), "clock is 0");
+        Net clockHigh = builder.Rename(builder.AddNet("clk_high", StandardDomains.QuaternaryId), "clock is 3");
+        Net masterQ = builder.SetInitial(
+            builder.Rename(builder.AddNet("master_q", StandardDomains.QuaternaryId), "master Q"),
+            0);
+
+        builder.AddPrimitive("low_select", new LookupSpec(1, [1, 0, 0, 0]), 60, 240);
+        builder.AddPrimitive("high_select", new LookupSpec(1, [0, 0, 0, 1]), 60, 420);
+        builder.AddInstance("master", QuaternaryLatchId, 300, 40);
+        builder.AddInstance("slave", QuaternaryLatchId, 600, 40);
+
+        builder.Connect(clk, builder.Pin("low_select", "in0"), builder.Pin("high_select", "in0"));
+        builder.Connect(clockLow, builder.Pin("low_select", PrimitiveShapes.OutputPinId), builder.Pin("master", "e"));
+        builder.Connect(clockHigh, builder.Pin("high_select", PrimitiveShapes.OutputPinId), builder.Pin("slave", "e"));
+        builder.Connect(d, builder.Pin("master", "d"));
+        builder.Connect(masterQ, builder.Pin("master", "q"), builder.Pin("slave", "d"));
+        builder.Connect(q, builder.Pin("slave", "q"));
     }
 
     private static IEnumerable<string> AddTernaryDefinitions(CircuitProject project)

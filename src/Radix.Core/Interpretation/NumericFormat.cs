@@ -672,6 +672,14 @@ public static class NumericFormats
         3,
         description: "Σ trit_i × 3^i; range 0..3^n−1.");
 
+    public static PositionalFormat UnsignedQuaternary { get; } = new(
+        "unsigned-quaternary",
+        "Unsigned quaternary",
+        Signals.StandardDomains.QuaternaryId,
+        [0, 1, 2, 3],
+        4,
+        description: "Σ digit_i × 4^i; range 0..4^n−1.");
+
     public static PositionalFormat TernaryTopNegative { get; } = new(
         "ternary-top-negative",
         "Ternary radix complement (top digit negative)",
@@ -696,6 +704,7 @@ public static class NumericFormats
         OnesComplement,
         SignMagnitude,
         UnsignedTernary,
+        UnsignedQuaternary,
         TernaryTopNegative,
         BalancedTernary,
     ];

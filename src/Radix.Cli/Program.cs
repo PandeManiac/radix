@@ -119,7 +119,8 @@ internal static class Program
 
             Numeric formats:
               Built-ins: unsigned-binary, twos-complement, ones-complement,
-              sign-magnitude, unsigned-ternary, ternary-top-negative, balanced-ternary.
+              sign-magnitude, unsigned-ternary, unsigned-quaternary,
+              ternary-top-negative, balanced-ternary.
               Projects may also define custom formats, listed by `radix inspect`.
 
             Test scripts are JSON files (.radixtest) with timed drives and assertions;

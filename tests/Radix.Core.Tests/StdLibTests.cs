@@ -1156,6 +1156,84 @@ public sealed class StdLibTests
     }
 
     [Fact]
+    public void QuaternaryLatchCapturesOnlyAtEnableOne()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryLatchId);
+        engine.Drive("e", 1);
+        engine.Drive("d", 2);
+        Settle(engine, 20);
+        Assert.Equal(2, engine.Read("q"));
+
+        engine.Drive("d", 3);
+        Settle(engine, 20);
+        Assert.Equal(3, engine.Read("q"));
+
+        engine.Drive("e", 0);
+        engine.Drive("d", 0);
+        Settle(engine, 20);
+        Assert.Equal(3, engine.Read("q"));
+
+        engine.Drive("e", 2);
+        Settle(engine, 20);
+        Assert.True(engine.Read("q") == 3, "values other than the documented enable level hold");
+
+        engine.Drive("e", 1);
+        Settle(engine, 20);
+        Assert.Equal(0, engine.Read("q"));
+    }
+
+    [Fact]
+    public void QuaternaryFlipFlopSamplesOnRisingEdgeOnly()
+    {
+        SimulationEngine engine = Engine(StandardLibrary.QuaternaryDFlipFlopId);
+        engine.Drive("clk", 0);
+        engine.Drive("d", 3);
+        Settle(engine, 40);
+        Assert.Equal(0, engine.Read("q"));
+
+        engine.Drive("clk", 3);
+        Settle(engine, 40);
+        Assert.Equal(3, engine.Read("q"));
+
+        engine.Drive("clk", 0);
+        engine.Drive("d", 1);
+        Settle(engine, 40);
+        Assert.Equal(3, engine.Read("q"));
+
+        engine.Drive("d", 2);
+        Settle(engine, 40);
+        Assert.Equal(3, engine.Read("q"));
+
+        engine.Drive("clk", 3);
+        Settle(engine, 40);
+        Assert.Equal(2, engine.Read("q"));
+    }
+
+    [Fact]
+    public void QuaternaryCounterCyclesThroughAllSixteenStates()
+    {
+        CircuitProject project = ExampleProjects.CreateQuaternaryCounterDemo();
+        SimulationEngine engine = Engine("demo.q4-counter", project);
+        engine.Drive("clk", 0);
+        Settle(engine, 80);
+        Assert.Equal(0, ReadQuaternaryCounter(engine));
+
+        for (int expected = 1; expected <= 16; expected++)
+        {
+            engine.Drive("clk", 3);
+            Settle(engine, 80);
+            Assert.Equal(expected % 16, ReadQuaternaryCounter(engine));
+
+            engine.Drive("clk", 0);
+            Settle(engine, 80);
+            Assert.Equal(expected % 16, ReadQuaternaryCounter(engine));
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
     public void InstallIsIdempotent()
     {
         CircuitProject project = TestFixtures.WithStandardLibrary();
@@ -1181,6 +1259,9 @@ public sealed class StdLibTests
 
     private static int ReadTernaryCounter(SimulationEngine engine) =>
         engine.Read("t0") + (3 * engine.Read("t1"));
+
+    private static int ReadQuaternaryCounter(SimulationEngine engine) =>
+        engine.Read("q0") + (4 * engine.Read("q1"));
 
     private static int ReadTernaryPair(SimulationEngine engine, string prefix) =>
         engine.Read($"{prefix}0") + (3 * engine.Read($"{prefix}1"));

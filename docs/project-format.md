@@ -130,7 +130,7 @@ Multiple active drivers resolve deterministically to the first active driver in 
 - `weighting` is `standard`, `radix-complement` (top position contributes `−(radix^(width−1))`), or `diminished-radix-complement` (top position contributes `−(radix^(width−1)−1)`).
 - `negativeSignValue` selects sign-magnitude instead: the top position is a sign indicator with that digit index. `weighting` is then omitted or `standard`.
 - `leastSignificantFirst` follows the same convention as the built-in formats and should usually be `true` for editor lanes.
-- `id` must be a valid identifier, unique in the project, and must not collide with a built-in format ID (`unsigned-binary`, `twos-complement`, `ones-complement`, `sign-magnitude`, `unsigned-ternary`, `ternary-top-negative`, `balanced-ternary`).
+- `id` must be a valid identifier, unique in the project, and must not collide with a built-in format ID (`unsigned-binary`, `twos-complement`, `ones-complement`, `sign-magnitude`, `unsigned-ternary`, `unsigned-quaternary`, `ternary-top-negative`, `balanced-ternary`).
 - `domain` must name a project domain. It is nominal: lanes warn when their pins use a different domain, but still decode signal indices.
 - Non-contiguous digit values are accepted for decoding; encoding (driving a lane) refuses them because the mapping is not invertible by position.
 

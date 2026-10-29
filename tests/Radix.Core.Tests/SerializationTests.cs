@@ -34,8 +34,8 @@ public sealed class SerializationTests
         project.Definitions[0].Instances[0].Y = -4.25;
         project.Definitions[0].Nets[0].InitialValue = 1;
         project.Domains.Add(new SignalDomain(
-            "quaternary",
-            "Quaternary",
+            "quad-priority",
+            "Quad priority",
             ["L", "M", "H", "Z"],
             new PriorityDriverResolution([1, 2, 3, 0], 1)));
 
@@ -51,7 +51,7 @@ public sealed class SerializationTests
         Assert.Equal(1, loaded.Definitions[0].Nets[0].InitialValue);
         Assert.Equal(5, loaded.RequireDefinition("demo.full-adder").InterfacePins.Count);
 
-        SignalDomain quaternary = Assert.Single(loaded.Domains, d => d.Id == "quaternary");
+        SignalDomain quaternary = Assert.Single(loaded.Domains, d => d.Id == "quad-priority");
         var priority = Assert.IsType<PriorityDriverResolution>(quaternary.Drivers);
         Assert.Equal(new[] { 1, 2, 3, 0 }, priority.Priorities.ToArray());
         Assert.Equal(1, priority.ConflictValue);

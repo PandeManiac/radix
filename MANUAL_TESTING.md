@@ -324,9 +324,11 @@ This check uses the GUI and the examples from the previous section.
 7. Open `examples/ternary-adder-2.radix`. Expected: lanes **A**, **B**, and **A + B** over `unsigned-ternary`. Set `A0 = A1 = B0 = B1 = 2` (A = B = 8) and settle. Expected: `S0 = 1`, `S1 = 2`, `COUT = 1`, and `A + B` reads `16`.
 8. Set `A0 = A1 = 1` (A = 4), `B0 = 2`, `B1 = 1` (B = 5), and settle. Expected: `S0 = S1 = 0`, `COUT = 1`, and the lane reads `9`.
 
-## 15. Ternary counter (sequential ternary logic)
+## 15. Sequential counters (ternary and quaternary)
 
 This uses the GUI.
+
+### Ternary counter
 
 1. Open `examples/ternary-counter.radix`. Expected: one `inc`, one `carry_out`, one `add_high`, and two `ff` instances; the inspector lists a single **Count** lane over T0/T1.
 2. Click **Begin**. With `CLK = 0`, settle, then set `CLK = 2` and settle. Expected: `T0 = 1`, `T1 = 0`, **Count** = `1`; setting `CLK` back to `0` does not change the count.
@@ -334,6 +336,14 @@ This uses the GUI.
 4. Continue to count `8` (`T0 = 2`, `T1 = 2`), then pulse once more. Expected: `T0 = 0`, `T1 = 0`, count `0`.
 5. Double-click `ff0`, then its `slave` latch. Expected: two `std.t-latch` instances, a Kleene NOT for the clock, and inside the latch two cross-coupled NOT/min pairs. The definitions use `std.t-lognot`, not the mod-3 `std.t-not`.
 6. Check **Trace**: the clock, `next T0`, `T0 carry`, `next T1`, and both stored trits should transition only around edges; no warnings or errors appear.
+
+### Quaternary counter
+
+1. Open `examples/quaternary-counter.radix`. Expected: `inc`, `carry_out`, `add_high`, and two quaternary flip-flops; one **Count** lane over Q0/Q1. Double-click `ff0` and then `master`. Expected: two `std.q4-latch` instances, two one-input clock-phase lookups, and inside a latch a single three-input lookup whose third input is Q feedback.
+2. Click **Begin** and drive `CLK = 0`, then settle. Expected: `Q0 = Q1 = 0` and **Count** = `0`.
+3. Set `CLK = 3` and settle. Expected: count `1`; returning `CLK` to `0` holds it. Repeat until count `3`. Expected: `Q0 = 3`, `Q1 = 0`.
+4. Pulse `CLK` again. Expected: `Q0 = 0`, `Q1 = 1`, count `4`. This is the radix-4 carry: both digits change once on the same edge, unlike a binary counter's longer ripple.
+5. Continue through count `15` (`Q0 = 3`, `Q1 = 3`), then pulse once more. Expected: count `0` and no warnings or errors. The quaternary latch captures only when its enable is exactly `1`; other enable values hold.
 
 ## 16. Ternary accumulator
 
@@ -512,6 +522,7 @@ Do not file these as new failures until they change in the README:
 - `.radixtest` scripts are linear; there are no loops, variables, expressions, or random drives. `within` asserts eventual convergence, `stable` asserts sampled held values, and `transitions` counts changes; filtered `edges` and ordered `sequence` blocks cover direction and order; `expectRelation` compares two pins or nets with one typed operator and requires a shared domain; value assertions, `expectRelation`, `transitions.expectNet`, `edges.expectNet`, and sequence `net` items all read authored internal nets as well as interface pins. The CLI can run a folder as a suite, and the editor can run one script or a folder; both editor paths run against a snapshot on a background thread and check cancellation inside long windows as well as between scripts. The suite result lists only failing or errored scripts individually. The editor's result panel is transient, and a structural or behaviour-affecting edit marks it stale; presentation-only moves, labels, colors, and routes do not. Rerun after any stale notice for a current verdict;
 - undo snapshots whole projects and is capped at 80 entries;
 - crash recovery keeps one snapshot refreshed every 20 seconds, so a crash can lose recent edits; it restores snapshots without validation, so a recovered project may need repair;
+- quaternary support covers a latch, flip-flop, increment/carry/adder lookups, and the two-digit counter; there is no quaternary register, memory, or programmable machine, and the latch has no QN output. It captures only at enable value 1, so values 2 and 3 hold rather than acting as a second active level;
 - project-wide find is literal substring matching over definitions, instances, nets, interface pins, and numeric lanes; it is not fuzzy, does not index signal values, instance pin names, or files on disk, caps its visible list at 60 rows, and has no recent-search history. The open definition only breaks ties and never narrows the search. Pin rows navigate to the bound net when there is one; lane rows frame their pins but do not select a lane because the editor has no lane-selection state;
 - the definition navigation trail is in-memory only: opening a project, undo/redo, or creating/removing a definition resets it to the current definition, and it is not saved in the project.
 

@@ -16,6 +16,7 @@ public static class ExampleProjects
     public const string BalancedTernaryFile = "balanced-ternary-half-adder.radix";
     public const string BalancedTernaryAdder2File = "balanced-ternary-adder-2.radix";
     public const string TernaryCounterFile = "ternary-counter.radix";
+    public const string QuaternaryCounterFile = "quaternary-counter.radix";
     public const string TernaryAdder2File = "ternary-adder-2.radix";
     public const string TernaryAccumulatorFile = "ternary-accumulator.radix";
     public const string TernaryMachineFile = "ternary-machine.radix";
@@ -38,6 +39,7 @@ public static class ExampleProjects
         new(BalancedTernaryFile, "Balanced ternary half adder", "Two-trit addition with sum and carry on a three-valued domain.", CreateBalancedTernaryHalfAdderDemo()),
         new(BalancedTernaryAdder2File, "Balanced ternary 2-trit adder", "Two-stage trit addition with numeric lanes and a ninth-valued result.", CreateBalancedTernaryAdder2Demo()),
         new(TernaryCounterFile, "Ternary counter", "A two-trit sequential machine: trit flip-flops, increment/carry lookups, and a 0..8 count lane.", CreateTernaryCounterDemo()),
+        new(QuaternaryCounterFile, "Quaternary counter", "A two-digit radix-4 counter: quaternary flip-flops, increment/carry lookups, and a 0..15 count lane.", CreateQuaternaryCounterDemo()),
         new(TernaryAdder2File, "Ternary 2-trit adder", "Unsigned 0/1/2 addition through a hierarchical full adder, with a three-trit result lane.", CreateTernaryAdder2Demo()),
         new(TernaryAccumulatorFile, "Ternary accumulator", "A trit register with LOAD/ADD/HOLD control and a modulo-9 result lane.", CreateTernaryAccumulatorDemo()),
         new(TernaryMachineFile, "Ternary program machine", "A stored-program trit machine: two-trit PC, lookup ROM, trit decoder, and the ternary accumulator.", CreateTernaryMachineDemo()),
@@ -1013,6 +1015,49 @@ public static class ExampleProjects
         root.Connect(q[1], root.Pin("ff1", "q"));
 
         return builder.Build("demo.ternary-counter");
+    }
+
+    public static CircuitProject CreateQuaternaryCounterDemo()
+    {
+        var builder = new ProjectBuilder("Quaternary counter");
+        StandardLibrary.Install(builder.Project);
+        var root = builder.Define("demo.q4-counter", "Two-digit quaternary counter");
+        root.Definition.Description =
+            "Counts 0..15 in radix 4 and wraps. Each rising edge of CLK (0 -> 3) samples the next " +
+            "state, which radix-4 increment/carry lookups compute from the two quaternary flip-flop outputs.";
+
+        Net clk = root.AddPin("clk", "CLK", PinDirection.Input, StandardDomains.QuaternaryId);
+        var q = new Net[2];
+        for (int i = 0; i < 2; i++)
+        {
+            q[i] = root.SetInitial(
+                root.AddPin($"q{i}", $"Q{i}", PinDirection.Output, StandardDomains.QuaternaryId),
+                0);
+        }
+
+        root.AddNumericLane("count", "Count", NumericFormats.UnsignedQuaternary.Id, "q0", "q1");
+
+        Net nextLow = root.Rename(root.AddNet("next_low", StandardDomains.QuaternaryId), "next D0");
+        Net carry = root.Rename(root.AddNet("carry", StandardDomains.QuaternaryId), "D0 carry");
+        Net nextHigh = root.Rename(root.AddNet("next_high", StandardDomains.QuaternaryId), "next D1");
+
+        root.AddInstance("inc", StandardLibrary.QuaternaryIncId, 220, 60);
+        root.AddInstance("carry_out", StandardLibrary.QuaternaryCarryId, 220, 260);
+        root.AddInstance("add_high", StandardLibrary.QuaternaryAddId, 460, 180);
+        root.AddInstance("ff0", StandardLibrary.QuaternaryDFlipFlopId, 760, 60);
+        root.AddInstance("ff1", StandardLibrary.QuaternaryDFlipFlopId, 760, 300);
+
+        root.Connect(q[0], root.Pin("inc", "a"), root.Pin("carry_out", "a"));
+        root.Connect(nextLow, root.Pin("inc", "y"), root.Pin("ff0", "d"));
+        root.Connect(carry, root.Pin("carry_out", "y"), root.Pin("add_high", "b"));
+        root.Connect(q[1], root.Pin("add_high", "a"));
+        root.Connect(nextHigh, root.Pin("add_high", "y"), root.Pin("ff1", "d"));
+
+        root.Connect(clk, root.Pin("ff0", "clk"), root.Pin("ff1", "clk"));
+        root.Connect(q[0], root.Pin("ff0", "q"));
+        root.Connect(q[1], root.Pin("ff1", "q"));
+
+        return builder.Build("demo.q4-counter");
     }
 
     public static CircuitProject CreateTernaryAdder2Demo()
