@@ -31,3 +31,7 @@ screenshots/local/
 # NuGet
 packages/
 *.nupkg
+
+# Workspace-local SDKs and native test prerequisites
+.local-sdk/
+.local-native/

@@ -127,6 +127,28 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void SingleDriverPolicyReportsDuplicateEqualDriversAsContention()
+    {
+        var builder = new ProjectBuilder("equal drivers");
+        var root = builder.Define("root", "Root");
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("first", new ConstantSpec(1));
+        root.AddPrimitive("second", new ConstantSpec(1));
+        root.Connect(y, root.Pin("first", "out"), root.Pin("second", "out"));
+
+        SimulationEngine engine = Engine(builder.Build("root"));
+        engine.AdvanceTo(0);
+
+        Assert.Equal(1, engine.Read("y"));
+        Diagnostic conflict = Assert.Single(
+            engine.RuntimeDiagnostics,
+            diagnostic => diagnostic.Code == SimulationEngine.DriverConflictCode);
+        Assert.Contains("active drivers", conflict.Message, StringComparison.Ordinal);
+        Assert.Contains("single", conflict.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("disagree", conflict.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ResetRestoresTimeValuesAndEvents()
     {
         SimulationEngine engine = Engine(TestCircuits.ClockRoot([5, 5], [0, 1]));

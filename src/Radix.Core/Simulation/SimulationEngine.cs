@@ -331,7 +331,7 @@ public sealed class SimulationEngine
             _conflictReported[netIndex] = true;
             _runtimeDiagnostics.Warning(
                 DriverConflictCode,
-                $"Multiple drivers on net '{net.RepresentativeNetId}' disagree under domain '{net.Domain.Id}'.",
+                $"Multiple active drivers on net '{net.RepresentativeNetId}' violate the '{net.Domain.Drivers.Kind}' driver policy for domain '{net.Domain.Id}'.",
                 net.RepresentativeDefinitionId,
                 netId: net.RepresentativeNetId,
                 path: net.RepresentativePath);
