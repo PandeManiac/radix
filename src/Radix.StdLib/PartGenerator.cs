@@ -32,6 +32,9 @@ public static class PartGenerator
     public const int MaxRamWords = 128;
     public const int MaxRamWidth = 64;
     public const int MaxRamBits = 4096;
+    public const int MaxRomWords = 256;
+    public const int MaxRomWidth = 64;
+    public const int MaxRomCells = 16384;
 
     public static GeneratedPart CreateRegister(int width)
     {
@@ -538,6 +541,56 @@ public static class PartGenerator
         return Finish(project, builder.Definition.Id, $"cmp-{width}");
     }
 
+    public static GeneratedPart CreateRom(int words, int width, IReadOnlyList<ulong>? contents = null)
+    {
+        RequireRomShape(words, width, contents);
+        int addressBits = System.Numerics.BitOperations.Log2((uint)words);
+        CircuitProject project = CreateProject($"{words} × {width} read-only memory");
+        var builder = new DefinitionBuilder(project, $"gen.rom-{words}x{width}", $"{words} × {width} read-only memory");
+        builder.Definition.Description =
+            $"Generated {words}-word × {width}-bit read-only memory. DATA is a combinational " +
+            "function of ADDR; each output bit is an editable lookup table with the supplied " +
+            "contents and one entry per word.";
+
+        var address = new Net[addressBits];
+        for (int bit = 0; bit < addressBits; bit++)
+        {
+            address[bit] = builder.AddPin($"addr{bit}", $"ADDR{bit}", PinDirection.Input, StandardDomains.BinaryId);
+        }
+
+        var data = new Net[width];
+        for (int bit = 0; bit < width; bit++)
+        {
+            data[bit] = builder.AddPin($"d{bit}", $"D{bit}", PinDirection.Output, StandardDomains.BinaryId);
+        }
+
+        builder.AddNumericLane("address", "Address", NumericFormats.UnsignedBinary.Id, PinIds("addr", addressBits));
+        builder.AddNumericLane("data", "Data", NumericFormats.UnsignedBinary.Id, PinIds("d", width));
+
+        for (int bit = 0; bit < width; bit++)
+        {
+            var table = new int[words];
+            if (contents is not null)
+            {
+                for (int word = 0; word < contents.Count; word++)
+                {
+                    table[word] = (int)((contents[word] >> bit) & 1);
+                }
+            }
+
+            string id = $"rom_bit{bit}";
+            builder.AddPrimitive(id, new LookupSpec(addressBits, table, 1), 80 + (bit * 220), 100);
+            for (int input = 0; input < addressBits; input++)
+            {
+                builder.Connect(address[addressBits - 1 - input], builder.Pin(id, $"in{input}"));
+            }
+
+            builder.Connect(data[bit], builder.Pin(id, PrimitiveShapes.OutputPinId));
+        }
+
+        return Finish(project, builder.Definition.Id, $"rom-{words}x{width}");
+    }
+
     private static string AddRegister(CircuitProject project, int width)
     {
         string id = $"gen.reg-{width}";
@@ -772,6 +825,58 @@ public static class PartGenerator
                 nameof(width),
                 width,
                 $"Width must be in {MinWidth}..{MaxWidth}.");
+        }
+    }
+
+    private static void RequireRomShape(int words, int width, IReadOnlyList<ulong>? contents)
+    {
+        if (words is < MinRamWords or > MaxRomWords || (words & (words - 1)) != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(words),
+                words,
+                $"ROM word count must be a power of two in {MinRamWords}..{MaxRomWords}.");
+        }
+
+        if (width is < MinWidth or > MaxRomWidth)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                width,
+                $"ROM width must be in {MinWidth}..{MaxRomWidth}.");
+        }
+
+        if ((long)words * width > MaxRomCells)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                width,
+                $"A generated ROM may contain at most {MaxRomCells} cells ({words} words × {width} bits requested).");
+        }
+
+        if (contents is null)
+        {
+            return;
+        }
+
+        if (contents.Count > words)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(contents),
+                contents.Count,
+                $"ROM contents contain {contents.Count} words but the generated ROM has {words}.");
+        }
+
+        ulong limit = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
+        for (int i = 0; i < contents.Count; i++)
+        {
+            if (contents[i] > limit)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(contents),
+                    contents[i],
+                    $"ROM contents word {i} does not fit in {width} bits.");
+            }
         }
     }
 

@@ -81,6 +81,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _generatedPartKind = "Register";
     private string _generatedPartWidthText = "8";
     private string _generatedPartWordsText = "16";
+    private string _generatedPartContentsText = string.Empty;
     private string _librarySearch = string.Empty;
     private string _netSearch = string.Empty;
     private string _netListSummary = string.Empty;
@@ -793,7 +794,7 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public IReadOnlyList<string> GeneratedPartKinds { get; } =
-        ["Register", "Adder", "ALU", "Counter", "Mux", "Comparator", "RAM"];
+        ["Register", "Adder", "ALU", "Counter", "Mux", "Comparator", "RAM", "ROM"];
 
     public string SelectedGeneratedPartKind
     {
@@ -808,6 +809,9 @@ public sealed class EditorViewModel : ObservableObject
             if (SetField(ref _generatedPartKind, value))
             {
                 RaisePropertyChanged(nameof(IsRamGenerator));
+                RaisePropertyChanged(nameof(IsRomGenerator));
+                RaisePropertyChanged(nameof(NeedsGeneratedWordCount));
+                RaisePropertyChanged(nameof(NeedsGeneratedContents));
                 _generatePartCommand.RaiseCanExecuteChanged();
             }
         }
@@ -837,8 +841,27 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
+    public string GeneratedPartContentsText
+    {
+        get => _generatedPartContentsText;
+        set
+        {
+            if (SetField(ref _generatedPartContentsText, value))
+            {
+                _generatePartCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
     public bool IsRamGenerator =>
         string.Equals(_generatedPartKind, "RAM", StringComparison.Ordinal);
+
+    public bool IsRomGenerator =>
+        string.Equals(_generatedPartKind, "ROM", StringComparison.Ordinal);
+
+    public bool NeedsGeneratedWordCount => IsRamGenerator || IsRomGenerator;
+
+    public bool NeedsGeneratedContents => IsRomGenerator;
 
     public string LibrarySearch
     {
@@ -2483,7 +2506,8 @@ public sealed class EditorViewModel : ObservableObject
     /// </summary>
     public bool GeneratePart()
     {
-        if (!TryGetGeneratedPartShape(out int width, out int words, out bool isRam))
+        if (!TryGetGeneratedPartShape(out int width, out int words, out _) ||
+            !TryGetGeneratedContents(words, width, out IReadOnlyList<ulong>? contents))
         {
             StatusText = "Generated part shape is invalid.";
             return false;
@@ -2500,6 +2524,7 @@ public sealed class EditorViewModel : ObservableObject
                 "Mux" => PartGenerator.CreateMux(width),
                 "Comparator" => PartGenerator.CreateComparator(width),
                 "RAM" => PartGenerator.CreateRam(words, width),
+                "ROM" => PartGenerator.CreateRom(words, width, contents),
                 _ => throw new InvalidOperationException($"Unknown generated part kind '{_generatedPartKind}'."),
             };
 
@@ -2531,13 +2556,54 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
-    private bool CanGeneratePart() => TryGetGeneratedPartShape(out _, out _, out _);
+    private bool CanGeneratePart() =>
+        TryGetGeneratedPartShape(out int width, out int words, out _) &&
+        TryGetGeneratedContents(words, width, out _);
+
+    /// <summary>
+    /// Parses an optional whitespace- or comma-separated list of hexadecimal ROM
+    /// words. An empty list means an all-zero ROM; omitted trailing words are zero.
+    /// </summary>
+    private bool TryGetGeneratedContents(int words, int width, out IReadOnlyList<ulong>? contents)
+    {
+        contents = null;
+        if (!IsRomGenerator || string.IsNullOrWhiteSpace(_generatedPartContentsText))
+        {
+            return true;
+        }
+
+        string[] tokens = _generatedPartContentsText.Split(
+            [',', ' ', '\t', '\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length > words)
+        {
+            return false;
+        }
+
+        ulong limit = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
+        var values = new List<ulong>(tokens.Length);
+        foreach (string token in tokens)
+        {
+            string text = token.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? token[2..] : token;
+            if (!ulong.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong value) ||
+                value > limit)
+            {
+                return false;
+            }
+
+            values.Add(value);
+        }
+
+        contents = values;
+        return true;
+    }
 
     private bool TryGetGeneratedPartShape(out int width, out int words, out bool isRam)
     {
         width = 0;
         words = 0;
         isRam = IsRamGenerator;
+        bool isRom = IsRomGenerator;
         if (!int.TryParse(
                 _generatedPartWidthText,
                 NumberStyles.Integer,
@@ -2547,20 +2613,28 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        if (!isRam)
+        if (!isRam && !isRom)
         {
             return width is >= PartGenerator.MinWidth and <= PartGenerator.MaxWidth;
         }
 
-        return int.TryParse(
-                   _generatedPartWordsText,
-                   NumberStyles.Integer,
-                   CultureInfo.InvariantCulture,
-                   out words) &&
-               width is >= PartGenerator.MinWidth and <= PartGenerator.MaxRamWidth &&
-               words is >= PartGenerator.MinRamWords and <= PartGenerator.MaxRamWords &&
-               (words & (words - 1)) == 0 &&
-               (long)words * width <= PartGenerator.MaxRamBits;
+        if (!int.TryParse(
+                _generatedPartWordsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out words) ||
+            (words & (words - 1)) != 0)
+        {
+            return false;
+        }
+
+        return isRam
+            ? width is >= PartGenerator.MinWidth and <= PartGenerator.MaxRamWidth &&
+              words is >= PartGenerator.MinRamWords and <= PartGenerator.MaxRamWords &&
+              (long)words * width <= PartGenerator.MaxRamBits
+            : width is >= PartGenerator.MinWidth and <= PartGenerator.MaxRomWidth &&
+              words is >= PartGenerator.MinRamWords and <= PartGenerator.MaxRomWords &&
+              (long)words * width <= PartGenerator.MaxRomCells;
     }
 
     public bool SaveProject(string path)

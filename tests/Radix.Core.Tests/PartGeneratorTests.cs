@@ -204,6 +204,65 @@ public sealed class PartGeneratorTests
     }
 
     [Theory]
+    [InlineData(4, 8)]
+    [InlineData(16, 4)]
+    [InlineData(8, 1)]
+    [InlineData(2, 16)]
+    public void GeneratedRomReturnsItsProgrammedContents(int words, int width)
+    {
+        uint mask = Mask(width);
+        ulong[] contents = new ulong[words];
+        for (int word = 0; word < words; word++)
+        {
+            contents[word] = (uint)((word * 61) + 7) & mask;
+        }
+
+        GeneratedPart part = PartGenerator.CreateRom(words, width, contents);
+        SimulationEngine engine = TestFixtures.Simulate(part.Project, part.RootDefinitionId);
+        int addressBits = System.Numerics.BitOperations.Log2((uint)words);
+
+        for (int word = 0; word < words; word++)
+        {
+            DriveValue(engine, "addr", addressBits, (uint)word);
+            engine.Settle(30);
+            Assert.Equal((uint)contents[word], ReadValue(engine, "d", width));
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+        Assert.Empty(engine.RuntimeDiagnostics);
+    }
+
+    [Fact]
+    public void UnprogrammedRomWordsReadAsZero()
+    {
+        GeneratedPart part = PartGenerator.CreateRom(4, 4, [3, 12]);
+        SimulationEngine engine = TestFixtures.Simulate(part.Project, part.RootDefinitionId);
+
+        DriveValue(engine, "addr", 2, 0);
+        engine.Settle(20);
+        Assert.Equal(3u, ReadValue(engine, "d", 4));
+
+        DriveValue(engine, "addr", 2, 1);
+        engine.Settle(20);
+        Assert.Equal(12u, ReadValue(engine, "d", 4));
+
+        DriveValue(engine, "addr", 2, 2);
+        engine.Settle(20);
+        Assert.Equal(0u, ReadValue(engine, "d", 4));
+    }
+
+    [Fact]
+    public void RomCarriesAddressAndDataLanes()
+    {
+        GeneratedPart part = PartGenerator.CreateRom(8, 6);
+        CircuitDefinition root = part.Project.RequireDefinition(part.RootDefinitionId);
+
+        Assert.Equal(["address", "data"], root.NumericLanes.Select(lane => lane.Id));
+        Assert.Equal(3, root.FindNumericLane("address")!.PinIds.Count);
+        Assert.Equal(6, root.FindNumericLane("data")!.PinIds.Count);
+    }
+
+    [Theory]
     [InlineData(1)]
     [InlineData(4)]
     [InlineData(8)]
@@ -354,6 +413,26 @@ public sealed class PartGeneratorTests
     public void RamRejectsInvalidShape(int words, int width)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => PartGenerator.CreateRam(words, width));
+    }
+
+    [Theory]
+    [InlineData(0, 8)]
+    [InlineData(3, 8)]
+    [InlineData(512, 8)]
+    [InlineData(8, 0)]
+    [InlineData(8, PartGenerator.MaxRomWidth + 1)]
+    [InlineData(256, 128)]
+    public void RomRejectsInvalidShape(int words, int width)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => PartGenerator.CreateRom(words, width));
+    }
+
+    [Fact]
+    public void RomRejectsOverlongOrOversizedContents()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => PartGenerator.CreateRom(4, 4, [1, 2, 3, 4, 5]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PartGenerator.CreateRom(4, 4, [16]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PartGenerator.CreateRom(4, 1, [2]));
     }
 
     private static void Pulse(SimulationEngine engine)

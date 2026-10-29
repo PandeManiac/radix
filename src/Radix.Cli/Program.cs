@@ -123,8 +123,9 @@ internal static class Program
               generate <kind>                Build a width-parameterized part library
                   register|adder|alu|counter|mux|comparator --width <n>
                                              Generated part and datapath width
-                  ram --width <n> --words <n>
-                                             RAM word width and word count
+                  ram|rom --width <n> --words <n>
+                                             RAM/ROM word width and word count
+                  --contents <file>          ROM contents as one hex word per line
                   --words <n>                RAM word count (power of two)
                   --out <file.radixlib>      Output library path
                   [--force]                  Overwrite an existing file
@@ -831,7 +832,7 @@ internal static class Program
 
     private static int GenerateCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["width", "words", "out"], ["force"]);
+        (var positional, var options) = Parse(args, ["width", "words", "out", "contents"], ["force"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
@@ -870,9 +871,14 @@ internal static class Program
                     PartGenerator.CreateRam(
                         GetIntOption(options, "words", 0, PartGenerator.MinRamWords, PartGenerator.MaxRamWords),
                         width),
-                "ram" => throw new ProjectFormatException("generate ram requires --words."),
+                "rom" when GetOption(options, "words") is not null =>
+                    PartGenerator.CreateRom(
+                        GetIntOption(options, "words", 0, PartGenerator.MinRamWords, PartGenerator.MaxRomWords),
+                        width,
+                        ReadRomContents(GetOption(options, "contents"), width)),
+                "ram" or "rom" => throw new ProjectFormatException($"generate {kind} requires --words."),
                 _ => throw new ProjectFormatException(
-                    $"unknown generated part '{positional[0]}'; expected register, adder, alu, counter, mux, comparator, or ram."),
+                    $"unknown generated part '{positional[0]}'; expected register, adder, alu, counter, mux, comparator, ram, or rom."),
             };
         }
         catch (ArgumentOutOfRangeException exception)
@@ -913,6 +919,53 @@ internal static class Program
             $"({library.Definitions.Count.ToString(CultureInfo.InvariantCulture)} definitions, " +
             $"{json.Length.ToString("N0", CultureInfo.InvariantCulture)} chars)");
         return 0;
+    }
+
+    private static IReadOnlyList<ulong>? ReadRomContents(string? path, int width)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var values = new List<ulong>();
+        string[] lines = File.ReadAllLines(path);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string text = lines[i];
+            int comment = text.IndexOf('#');
+            if (comment >= 0)
+            {
+                text = text[..comment];
+            }
+
+            text = text.Trim();
+            if (text.Length == 0)
+            {
+                continue;
+            }
+
+            if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[2..];
+            }
+
+            if (!ulong.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong value))
+            {
+                throw new ProjectFormatException(
+                    $"ROM contents line {i + 1} '{lines[i].Trim()}' is not a hexadecimal word.");
+            }
+
+            if (width < 64 && value >= (1UL << width))
+            {
+                throw new ProjectFormatException(
+                    $"ROM contents line {i + 1} value 0x{value:X} does not fit in {width} bits.");
+            }
+
+            values.Add(value);
+        }
+
+        return values;
     }
 
     private static int ExamplesCommand(string[] args)

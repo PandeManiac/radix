@@ -2559,6 +2559,58 @@ public sealed class EditorViewModelTests
         Assert.Equal("gen.cmp-8", viewModel.Definition.Id);
     }
 
+    [Fact]
+    public void GeneratePartBuildsAProgrammableRom()
+    {
+        var viewModel = CreateEmptyEditor();
+        int definitionsBefore = viewModel.Project.Definitions.Count;
+        int dffsBefore = viewModel.Project.Definitions.Count(d => d.Id == StandardLibrary.DFlipFlopId);
+
+        viewModel.SelectedGeneratedPartKind = "ROM";
+        viewModel.GeneratedPartWidthText = "4";
+        viewModel.GeneratedPartWordsText = "4";
+        viewModel.GeneratedPartContentsText = "3, 0xC";
+
+        Assert.True(viewModel.IsRomGenerator);
+        Assert.True(viewModel.NeedsGeneratedWordCount);
+        Assert.True(viewModel.NeedsGeneratedContents);
+        Assert.True(viewModel.GeneratePartCommand.CanExecute(null));
+        Assert.True(viewModel.GeneratePart());
+        Assert.Equal("gen.rom-4x4", viewModel.Definition.Id);
+        Assert.Equal(definitionsBefore + 1, viewModel.Project.Definitions.Count);
+        Assert.Equal(dffsBefore, viewModel.Project.Definitions.Count(d => d.Id == StandardLibrary.DFlipFlopId));
+        Assert.Contains("gen.rom-4x4", viewModel.StatusText);
+
+        var bit0 = Assert.IsType<LookupSpec>(viewModel.Definition.Instances.Single(instance => instance.Id == "rom_bit0").Primitive);
+        var bit1 = Assert.IsType<LookupSpec>(viewModel.Definition.Instances.Single(instance => instance.Id == "rom_bit1").Primitive);
+        Assert.Equal(new[] { 1, 0, 0, 0 }, bit0.Table);
+        Assert.Equal(new[] { 1, 0, 0, 0 }, bit1.Table);
+
+        viewModel.Undo();
+        Assert.Equal(definitionsBefore, viewModel.Project.Definitions.Count);
+    }
+
+    [Fact]
+    public void GeneratePartRejectsMalformedRomContents()
+    {
+        var viewModel = CreateEmptyEditor();
+        viewModel.SelectedGeneratedPartKind = "ROM";
+        viewModel.GeneratedPartWidthText = "4";
+        viewModel.GeneratedPartWordsText = "4";
+
+        viewModel.GeneratedPartContentsText = "1 2 3 4 5";
+        Assert.False(viewModel.GeneratePartCommand.CanExecute(null));
+
+        viewModel.GeneratedPartContentsText = "10";
+        Assert.False(viewModel.GeneratePartCommand.CanExecute(null));
+
+        viewModel.GeneratedPartContentsText = "zz";
+        Assert.False(viewModel.GeneratePartCommand.CanExecute(null));
+
+        viewModel.GeneratedPartContentsText = "0x1 0xA";
+        Assert.True(viewModel.GeneratePartCommand.CanExecute(null));
+    }
+
     private static EditorViewModel CreateEmptyEditor()
     {
         var project = CircuitProject.CreateEmpty("Editor test");
