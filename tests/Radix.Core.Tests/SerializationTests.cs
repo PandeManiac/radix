@@ -373,6 +373,21 @@ public sealed class SerializationTests
     }
 
     [Fact]
+    public void VersionSixProjectsLoadWithDefaultPendingEventCapAndUpgradeOnSave()
+    {
+        JsonNode root = JsonNode.Parse(ProjectSerializer.SaveToString(TestCircuits.ValidProject()))!;
+        root["version"] = 6;
+        root["settings"]!.AsObject().Remove("maxPendingEvents");
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(root.ToJsonString());
+
+        Assert.Equal(6, loaded.FormatVersion);
+        Assert.Equal(1_000_000, loaded.Settings.MaxPendingEvents);
+        JsonNode saved = JsonNode.Parse(ProjectSerializer.SaveToString(loaded))!;
+        Assert.Equal(7, saved["version"]!.GetValue<int>());
+    }
+
+    [Fact]
     public void CustomNumericFormatValidationRejectsReservedAndMissingDomainIds()
     {
         CircuitProject project = TestCircuits.ValidProject();

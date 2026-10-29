@@ -123,3 +123,23 @@ Run the new workflow on hosted Ubuntu and Windows runners, then update test coun
 and address the highest-risk runtime safety issue with a regression test before
 making semantic changes to contention behavior. Reproduce the benchmark only after
 the verification baseline is clean.
+
+## Follow-up pass (2026-10-29, second session)
+
+- Baseline re-verified on this VM with .NET SDK 10.0.100: `dotnet build Radix.slnx`
+  is clean (0 warnings, 0 errors), core tests pass 386/386, and editor tests pass
+  177/177. `scripts/linux-test-natives.sh` now prepares the headless Skia/font
+  prerequisites into the gitignored `.local-native/` prefix without sudo; the
+  previous 24 rendering failures were a missing fontconfig configuration, not a
+  code defect.
+- Risk 2 (resource limits) is partially addressed. `maxPendingEvents` (default
+  1,000,000; `0` disables) bounds the event queue and halts with `RAD150` when a
+  circuit schedules events faster than they drain, instead of growing until an
+  allocation failure. The setting is saved with the project (format v7) and
+  editable in Simulation Settings. Runtime diagnostic accumulation and a maximum
+  project-file size remain open.
+- The earlier intermittent failure of
+  `SweepHonorsCancellationInsideASingleSettleRow` was observed once under a full
+  parallel run and passed both in isolation and on the next full run; the test
+  depends on a 30 ms cancellation deadline, so it remains timing-sensitive.
+
