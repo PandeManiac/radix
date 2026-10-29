@@ -10,7 +10,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
-- Latest verified code commit: `2d7a67e`; current changes update generated-hierarchy timing to median/range over seven runs and record a fresh sample, pending commit.
+- Latest verified code commit: `2d7a67e`; benchmark documentation has a fresh seven-sample run recorded below (uncommitted documentation update).
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
@@ -75,7 +75,11 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    four-net child repeated 25/100/250 times. It now warms each size and gathers
    seven samples per metric, reporting median/range. Latest sample: construction
    12 [10-29] / 25 [13-57] / 41 [40-47] ms; ten canonical builds
-   107 [97-122] / 71 [70-100] / 365 [360-369] ms. Documented shared-VM caveats.
+   107 [97-122] / 71 [70-100] / 365 [360-369] ms. A fresh rerun measured
+   construction 12 [10-22] / 36 [16-72] / 39 [38-43] ms and ten builds
+   114 [101-116] / 99 [72-163] / 367 [359-371] ms. The noisy ranges, especially
+   for 100 instances, reinforce that this shared-VM sample is exploratory only;
+   profiler tooling is not installed and no representative CPU profile was captured.
 
 ## Known issues and limitations
 
@@ -87,8 +91,8 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. For stronger hierarchy scalability data, repeat the seven-sample run on a
-   quieter host or capture a bounded CPU profile; this session's ranges still
-   reflect a shared VM, and profiler export remains unresolved.
+1. For stronger hierarchy scalability data, compare the seven-sample run on a
+   quieter host, or install/use `dotnet-trace` to capture a bounded CPU profile;
+   this VM has no profiler tool installed and the repeated runs remain noisy.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

@@ -230,15 +230,17 @@ canonical builds, reporting median and min–max range. Latest run on this VM
 
 | Repeated child instances | Root instances | Root nets | Child primitives | Child nets | Construct median [range] | 10-build median [range] |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 25 | 25 | 26 | 2 | 4 | 12 ms [10–29] | 107 ms [97–122] |
-| 100 | 100 | 101 | 2 | 4 | 25 ms [13–57] | 71 ms [70–100] |
-| 250 | 250 | 251 | 2 | 4 | 41 ms [40–47] | 365 ms [360–369] |
+| 25 | 25 | 26 | 2 | 4 | 12 ms [10–22] | 114 ms [101–116] |
+| 100 | 100 | 101 | 2 | 4 | 36 ms [16–72] | 99 ms [72–163] |
+| 250 | 250 | 251 | 2 | 4 | 39 ms [38–43] | 367 ms [359–371] |
 
-The earlier single-run and best-of-three samples above are retained as history;
-this seven-sample result is a better variability summary, but remains one benchmark
-session on a shared VM and is not a universal scaling guarantee. The canvas lays
-out root instances only—the child primitives and nets are included in the project
-but are not expanded into per-instance child geometry in the root view.
+The earlier single-run and best-of-three samples above are retained as history.
+The seven-sample medians and ranges remain noisy, especially for the 100-instance
+case; the sizes are run in ascending order and each has its own warmup, so host load
+and measurement order remain possible confounders. This is one session on a shared
+VM, not a universal scaling guarantee. The canvas lays out root instances only—the
+child primitives and nets are included in the project but are not expanded into
+per-instance child geometry in the root view.
 
 
 ### Interpretation
