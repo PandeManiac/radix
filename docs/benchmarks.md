@@ -128,6 +128,23 @@ Measured 2026-10-28 on the same machine and .NET 10 runtime as the engine benchm
 
 These are interaction-latency measurements, not pure router time: they include layout of component boxes and ports, view-model refreshes, and canvas invalidation. Absolute values vary with GC, JIT, and which node is moved, so individual rows are not monotonic; use the orders of magnitude, not adjacent differences. The nudge and incremental-placement columns measure route reuse: all boxes and ports are still rebuilt, but valid cached wires are retained, so the dominant route search runs only for nets whose terminals or obstacles changed.
 
+### This VM (2026-10-29)
+
+Same command on the 8-vCPU cloud VM used for the engine reproduction above,
+Release build, with the headless Skia natives from `scripts/linux-test-natives.sh`:
+
+| Gates | Construct | 10 canonical frames | 10 nudge frames | 10 reused frames | Final rebuild | 10 canonical placements | 10 incremental placements |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 200 | 280 ms | 905 ms | 87 ms | 25 ms | 1 ms | 541 ms | 35 ms |
+| 500 | 217 ms | 2,487 ms | 114 ms | 114 ms | 4 ms | 2,759 ms | 93 ms |
+| 1,000 | 791 ms | 8,213 ms | 104 ms | 39 ms | 0 ms | 6,856 ms | 85 ms |
+
+Absolute costs are roughly 1.5–2x the reference machine, consistent with the slower
+engine numbers above, but the reuse ratios hold: at 1,000 gates a ten-frame drag
+costs ~39 ms with route reuse versus ~8.2 s when every frame rebuilds routes, and
+ten incremental placements cost ~85 ms versus ~6.9 s. The one-time construct pause
+at 1,000 gates is ~0.8 s on this host.
+
 ### Interpretation
 
 - At 1,000 gates, ten drag frames cost ~20 ms with reuse versus ~4.5 s when every frame rebuilds the layout and routes. Ten arrow-key nudges cost ~70 ms, and ten placements cost ~43 ms instead of ~3.66 s. The first layout still costs roughly 0.42 s; that is the remaining pause on a design of this size.

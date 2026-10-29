@@ -48,6 +48,9 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 7. Extended randomized differential tests to ternary, quaternary, balanced-ternary,
    and four-state networks, and added serialization-replay equivalence checks across
    representative examples. Failures report the seed, trial, and step.
+8. Reproduced the editor layout benchmark on this VM; results are in
+   `docs/benchmarks.md`. Absolute costs are roughly 1.5–2x the reference machine,
+   while the route-reuse ratios hold.
 
 ## Known issues and limitations
 
@@ -59,6 +62,5 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. Reproduce the editor layout benchmark on this VM and record it.
-2. Continue the roadmap: large-definition scalability, richer hierarchy/library
+1. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

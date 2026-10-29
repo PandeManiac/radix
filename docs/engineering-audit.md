@@ -30,8 +30,10 @@ this audit. No license file or CI workflow was present.
 
 ## Claims not independently reproduced
 
-- The throughput and editor-layout results in `docs/benchmarks.md` are detailed,
-  but were measured on another machine and have not been reproduced in this VM.
+- The throughput and editor-layout results in `docs/benchmarks.md` were measured on
+  another machine. Both were reproduced in the follow-up pass on the 8-vCPU VM:
+  ~5.4M events/sec at 10,000 gates and the layout table recorded there. Absolute
+  times differ by roughly 1.5–2x, while compile scaling and route-reuse ratios match.
 - The README's full editor screenshot/rendering coverage could not be verified here
   until the Skia native dependency is available.
 - No previous commit is available in this clone to determine whether the published
