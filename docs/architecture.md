@@ -223,7 +223,8 @@ A net transition is the unit of trace history. Pin values that do not change nev
 ### 6.4 Convergence and oscillation
 
 - Every component evaluation increments an evaluation count for the current timestamp.
-- If a component exceeds `MaxEvaluationsPerComponentPerTimestamp` (default 64), the engine halts with `RAD100` and a message naming the instance and timestamp.
+- The count covers one settle cycle: when the event queue drains, the next event at that timestamp starts from fresh counts. Repeated testbench stimuli at the same simulated time therefore do not accumulate into a false `RAD100`.
+- If a component exceeds `MaxEvaluationsPerComponentPerTimestamp` (default 64) within one settle cycle, the engine halts with `RAD100` and a message naming the instance and timestamp.
 - Independently of per-timestamp convergence, the event queue has a configurable pending-event cap (`MaxPendingEvents`, default 1,000,000; `0` disables it). Reaching the cap halts with `RAD150` and clears the queue, so event production that outpaces draining is reported instead of consuming memory until allocation fails.
 - Runtime warnings are capped at `MaxRuntimeDiagnostics` (default 1,000) per reset. Further warnings are counted in `SuppressedRuntimeDiagnostics`, and the editor reports the count as `RAD151`; halt diagnostics bypass the cap so a stopping reason is never dropped.
 - Legitimate sequential feedback uses delays/latches and does not spin at one timestamp; those designs converge normally.

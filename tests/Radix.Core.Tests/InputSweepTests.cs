@@ -170,13 +170,25 @@ public sealed class InputSweepTests
 
         CircuitProject project = builder.Build("cancel");
         using var cancellation = new CancellationTokenSource();
-        cancellation.CancelAfter(TimeSpan.FromMilliseconds(30));
+        int observedChanges = 0;
 
+        // Cancel from a net observer instead of a wall-clock deadline. The engine checks
+        // the token every 1,024 processed events, and this circuit produces hundreds of
+        // thousands of them during a single settle, so the check is guaranteed to run and
+        // the test cannot flake on a slow or loaded machine.
         Assert.Throws<OperationCanceledException>(() => InputSweep.Run(
             project,
             "cancel",
             settleTicks: 1_000,
+            engineObserver: engine => engine.NetChanged += _ =>
+            {
+                if (++observedChanges == 64)
+                {
+                    cancellation.Cancel();
+                }
+            },
             cancellationToken: cancellation.Token));
+        Assert.True(observedChanges >= 64, $"observed {observedChanges} net changes");
     }
 
     [Fact]

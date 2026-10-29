@@ -6,8 +6,10 @@ namespace Radix.Core.Simulation;
 public sealed class SimulationOptions
 {
     /// <summary>
-    /// Maximum evaluations of a single component at one simulated timestamp.
-    /// Exceeding this indicates zero-delay feedback that does not converge.
+    /// Maximum evaluations of a single component during one settle cycle at a simulated
+    /// timestamp. A settle cycle ends when the event queue drains, so a later stimulus at
+    /// the same timestamp starts with fresh counters. Exceeding the limit within one
+    /// settle indicates zero-delay feedback that does not converge.
     /// </summary>
     public int MaxEvaluationsPerComponentPerTimestamp { get; init; } = 64;
 

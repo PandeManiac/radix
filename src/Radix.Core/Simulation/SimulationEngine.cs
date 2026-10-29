@@ -309,6 +309,15 @@ public sealed class SimulationEngine
                 _runtimes[ev.Target].OnTimer(this, component!, ev.Value);
                 break;
         }
+
+        if (_queue.Count == 0)
+        {
+            // An empty queue means the current timestamp has settled. Starting the
+            // convergence counters afresh keeps a later stimulus at the same simulated
+            // time from inheriting the previous settle's evaluation counts and being
+            // misreported as zero-delay feedback that never converged.
+            _evaluationTimestamp = -1;
+        }
     }
 
     private void CommitOutput(int pinIndex, int value)

@@ -5,8 +5,8 @@ humans; update it at each milestone instead of relying on chat history.
 
 ## Where the project stands
 
-- Branch: `freebuff/7f9464929ff01fc3fe083290`. **No git remote is configured**, so
-  every commit is local to this workspace.
+- Remote: `origin` = https://github.com/PandeManiac/radix (write access verified).
+- Working branch for this session: `agent/radix-verification`, pushed to origin.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
@@ -81,11 +81,33 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    for 100 instances, reinforce that this shared-VM sample is exploratory only;
    profiler tooling is not installed and no representative CPU profile was captured.
 
+## Session 2026-10-29 (agent/radix-verification)
+
+15. Fixed a false non-convergence halt: per-timestamp evaluation counters were
+    never reset when the event queue drained, so 65 stimuli applied at the same
+    simulated time made the engine report `RAD100` even for a single gate with no
+    feedback. The counters now belong to one settle cycle, and a drained queue
+    starts the next stimulus with fresh counts. Regression test:
+    `EngineTests.RepeatedStimuliAtOneTimestampDoNotAccumulateConvergenceCounters`.
+    Documented the precise semantics in `docs/architecture.md` (6.4).
+16. Made `SweepHonorsCancellationInsideASingleSettleRow` deterministic. It used a
+    30 ms wall-clock deadline and was the repository's one known flaky test. It now
+    cancels from a `NetChanged` observer after 64 transitions, wired through a new
+    optional `engineObserver` parameter on `InputSweep.Run`. No timing assumption
+    remains; the test exercises the same in-row cancellation path via the engine's
+    every-1,024-events check.
+17. Baseline on this VM (.NET SDK 10.0.403): release build clean (0 warnings),
+    core tests 404/404. Editor tests are blocked here because the image ships no
+    fontconfig/freetype/libpng and the unprivileged user cannot install packages
+    (see Known issues).
+
 ## Known issues and limitations
 
-- No remote; pushes are impossible until one is configured.
-- `SweepHonorsCancellationInsideASingleSettleRow` is timing-sensitive (30 ms
-  deadline); it failed once under a full parallel run and passed on reruns.
+- Editor tests need fontconfig, freetype, libpng and a font on Linux. This VM's
+  image has none of them and `sudo` is disabled; `scripts/linux-test-natives.sh`
+  cannot fetch them because apt lists are absent. Core tests are unaffected.
+- `src/Radix.Core/Simulation/SimulationEngine.cs.backup` is a committed stale copy
+  of the engine source. It is not compiled, but it duplicates code and will drift.
 - Everything under "Explicit limitations" in `README.md` still applies (no analog
   solver, no JIT, fixed-width generated parts, and so on).
 
