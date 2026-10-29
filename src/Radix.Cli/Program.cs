@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Radix.Core;
 using Radix.Core.Analysis;
 using Radix.Core.Compilation;
@@ -16,6 +18,12 @@ namespace Radix.Cli;
 internal static class Program
 {
     private const string Version = "0.1.0";
+    private static readonly JsonSerializerOptions ReportJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = true,
+    };
 
     public static int Main(string[] args)
     {
@@ -103,8 +111,10 @@ internal static class Program
                                              Drive an input at a simulated tick (repeatable)
                   [--bus <pin,pin,...>]      Pin order for numeric display (LSB first)
                   [--format <id>]            Decode the bus using a numeric format
-                  [--trace]                  Print net transitions (bounded)
+                  [--trace]                  Include net transitions (bounded; works with --json)
                   [--max-changes <n>]        Trace print limit (default 200)
+                  [--json]                   Emit a versioned simulation state report
+                  [--max-nets <n>]           Limit JSON net state rows (default 200)
               test <project.radix> <script-or-directory> [<more>...]
                                              Run scripted drives and assertions
                   [--definition <id>]        Definition to simulate (default: script or root)
@@ -228,7 +238,10 @@ internal static class Program
 
     private static int SimulateCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["definition", "ticks", "set", "schedule", "bus", "format", "trace", "max-changes"]);
+        (var positional, var options) = Parse(
+            args,
+            ["definition", "ticks", "set", "schedule", "bus", "format", "max-changes", "max-nets"],
+            ["trace", "json"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine("usage: radix simulate <project.radix> [options]");
@@ -248,9 +261,13 @@ internal static class Program
         CompiledCircuit circuit = CircuitCompiler.Compile(project, definitionId);
         var engine = new SimulationEngine(circuit, simulationOptions);
 
-        Console.WriteLine($"project:    {project.Name}");
-        Console.WriteLine($"definition: {definitionId}");
-        Console.WriteLine($"domain(s):  {string.Join(", ", project.Domains.Select(d => d.Id))}");
+        bool json = options.ContainsKey("json");
+        if (!json)
+        {
+            Console.WriteLine($"project:    {project.Name}");
+            Console.WriteLine($"definition: {definitionId}");
+            Console.WriteLine($"domain(s):  {string.Join(", ", project.Domains.Select(d => d.Id))}");
+        }
 
         if (options.TryGetValue("set", out List<string>? sets))
         {
@@ -289,6 +306,22 @@ internal static class Program
         }
 
         engine.AdvanceTo(ticks);
+        int maxChanges = GetIntOption(options, "max-changes", 200, 0, 1_000_000);
+        int maxNets = GetIntOption(options, "max-nets", 200, 0, 100_000);
+        if (json)
+        {
+            PrintSimulationJson(
+                project,
+                engine,
+                ticks,
+                options.ContainsKey("trace"),
+                maxChanges,
+                maxNets,
+                GetOption(options, "format"),
+                GetOption(options, "bus"));
+            return engine.IsHalted ? 1 : 0;
+        }
+
         PrintDiagnostics(circuit.Diagnostics.Concat(engine.RuntimeDiagnostics), Console.Out);
 
         if (engine.IsHalted)
@@ -342,11 +375,166 @@ internal static class Program
 
         if (options.ContainsKey("trace"))
         {
-            int limit = GetIntOption(options, "max-changes", 200, 0, 1_000_000);
-            PrintTrace(engine, limit);
+            PrintTrace(engine, maxChanges);
         }
 
         return engine.IsHalted ? 1 : 0;
+    }
+
+    private static void PrintSimulationJson(
+        CircuitProject project,
+        SimulationEngine engine,
+        long requestedEndTime,
+        bool includeTrace,
+        int maxChanges,
+        int maxNets,
+        string? formatId,
+        string? busOption)
+    {
+        CompiledCircuit circuit = engine.Circuit;
+        var netRows = circuit.Nets.Take(maxNets).Select((net, index) =>
+        {
+            int value = engine.GetNetValue(index);
+            return new
+            {
+                index,
+                path = net.RepresentativePath,
+                id = net.RepresentativeNetId,
+                domain = net.Domain.Id,
+                value,
+                valueName = value < 0 ? "undriven" : net.Domain.ValueName(value),
+                drivers = net.DriverPins.Length,
+                sinks = net.SinkComponents.Length,
+            };
+        }).ToArray();
+
+        var ports = circuit.Ports.Select((port, index) =>
+        {
+            int value = engine.GetPortValue(index);
+            return new
+            {
+                id = port.PinId,
+                name = port.Name,
+                direction = port.Direction.ToString().ToLowerInvariant(),
+                domain = port.Domain.Id,
+                net = port.Net,
+                value,
+                valueName = value < 0 ? "undriven" : port.Domain.ValueName(value),
+            };
+        }).ToArray();
+
+        object? trace = null;
+        if (includeTrace)
+        {
+            int returned = Math.Min(engine.Trace.Count, maxChanges);
+            var changes = Enumerable.Range(engine.Trace.Count - returned, returned)
+                .Select(i =>
+                {
+                    NetChange change = engine.Trace[i];
+                    CompiledNet net = circuit.Nets[change.Net];
+                    return new
+                    {
+                        time = change.Time,
+                        net = change.Net,
+                        path = net.RepresentativePath,
+                        id = net.RepresentativeNetId,
+                        domain = net.Domain.Id,
+                        oldValue = change.OldValue,
+                        oldValueName = change.OldValue < 0 ? "undriven" : net.Domain.ValueName(change.OldValue),
+                        newValue = change.NewValue,
+                        newValueName = change.NewValue < 0 ? "undriven" : net.Domain.ValueName(change.NewValue),
+                    };
+                }).ToArray();
+            trace = new
+            {
+                totalRecorded = engine.Trace.TotalRecorded,
+                stored = engine.Trace.Count,
+                returned,
+                omitted = engine.Trace.TotalRecorded - returned,
+                truncated = engine.Trace.IsTruncated || returned < engine.Trace.Count,
+                changes,
+            };
+        }
+
+        object? numeric = null;
+        if (formatId is not null)
+        {
+            INumericFormat? format = NumericFormatCatalog.All(project).FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, formatId, StringComparison.OrdinalIgnoreCase));
+            if (format is null)
+            {
+                throw new ProjectFormatException(
+                    $"Unknown numeric format '{formatId}'. Known: {string.Join(", ", NumericFormatCatalog.All(project).Select(candidate => candidate.Id))}");
+            }
+
+            List<(CompiledPort Port, int Index)> bus = SelectBus(engine, busOption);
+            if (bus.Count == 0)
+            {
+                throw new ProjectFormatException("No output pins are available for numeric display.");
+            }
+
+            int[] values = bus.Select(entry => engine.GetPortValue(entry.Index)).ToArray();
+            if (!format.LeastSignificantFirst)
+            {
+                Array.Reverse(values);
+            }
+
+            NumericDecodeResult decoded = format.Decode(values);
+            numeric = new
+            {
+                format = format.Id,
+                pins = bus.Select(entry => entry.Port.PinId),
+                valid = decoded.IsValid,
+                value = decoded.IsValid ? decoded.Value.ToString(CultureInfo.InvariantCulture) : null,
+                error = decoded.Error,
+            };
+        }
+
+        var report = new
+        {
+            format = "radix-simulation-report",
+            version = 1,
+            project = project.Name,
+            definitionId = circuit.RootDefinitionId,
+            status = engine.IsHalted ? "halted" : "completed",
+            requestedEndTime,
+            currentTime = engine.Now,
+            haltReason = engine.HaltReason,
+            statistics = new
+            {
+                eventsProcessed = engine.EventsProcessed,
+                componentEvaluations = engine.ComponentEvaluations,
+                netTransitions = engine.NetTransitions,
+                pendingEvents = engine.PendingEventCount,
+                components = circuit.Components.Count,
+                pins = circuit.Pins.Count,
+                nets = circuit.Nets.Count,
+            },
+            ports,
+            netState = new
+            {
+                returned = netRows.Length,
+                total = circuit.Nets.Count,
+                omitted = circuit.Nets.Count - netRows.Length,
+                nets = netRows,
+            },
+            numeric,
+            diagnostics = circuit.Diagnostics.Concat(engine.RuntimeDiagnostics).Select(diagnostic => new
+            {
+                severity = diagnostic.Severity.ToString().ToLowerInvariant(),
+                diagnostic.Code,
+                diagnostic.Message,
+                diagnostic.DefinitionId,
+                diagnostic.InstanceId,
+                diagnostic.NetId,
+                diagnostic.PinId,
+                diagnostic.Path,
+                diagnostic.Location,
+            }),
+            trace,
+        };
+
+        Console.WriteLine(JsonSerializer.Serialize(report, ReportJsonOptions));
     }
 
     private static int TestCommand(string[] args)
