@@ -211,4 +211,41 @@ public sealed class CompilerTests
         Assert.Empty(circuit.Nets);
         Assert.Empty(circuit.Ports);
     }
+
+    [Fact]
+    public void HierarchyAtMaximumDepthCompiles()
+    {
+        CircuitProject project = BuildHierarchyChain(CircuitCompiler.MaxHierarchyDepth);
+
+        CompiledCircuit circuit = CircuitCompiler.Compile(project);
+
+        Assert.Empty(circuit.Components);
+    }
+
+    [Fact]
+    public void HierarchyBeyondMaximumDepthReturnsDiagnostic()
+    {
+        CircuitProject project = BuildHierarchyChain(CircuitCompiler.MaxHierarchyDepth + 1);
+
+        Assert.False(CircuitCompiler.TryCompile(project, null, out _, out DiagnosticBag diagnostics));
+        Diagnostic diagnostic = Assert.Single(diagnostics, item => item.Code == "RAD120");
+        Assert.Contains($"maximum depth of {CircuitCompiler.MaxHierarchyDepth}", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    private static CircuitProject BuildHierarchyChain(int depth)
+    {
+        var builder = new ProjectBuilder("hierarchy depth");
+        var definitions = new DefinitionBuilder[depth + 1];
+        for (int i = 0; i <= depth; i++)
+        {
+            definitions[i] = builder.Define($"level{i}", $"Level {i}");
+        }
+
+        for (int i = 0; i < depth; i++)
+        {
+            definitions[i].AddInstance("child", definitions[i + 1].Definition.Id);
+        }
+
+        return builder.Build("level0");
+    }
 }

@@ -96,7 +96,7 @@ Definitions can instantiate other definitions, including multiple times. The mod
 
 The flattened representation is immutable. That is why the engine has no dictionary lookups in its hot loop and why the editor can keep editing the mutable project while an older compiled snapshot remains untouched.
 
-Maximum hierarchy depth is 64. Recursive cycles are a validation error, not a stack overflow.
+Maximum hierarchy depth is 64. The compiler reports depth overflow as a diagnostic, and hierarchy-cycle validation uses an explicit traversal stack so inspecting a deeply nested authored graph does not consume the process call stack. Recursive cycles are a validation error.
 
 ### 4.1 Compiled arrays
 

@@ -178,31 +178,43 @@ public static class CircuitValidator
     private static void ValidateHierarchy(CircuitProject project, DiagnosticBag diagnostics)
     {
         var state = new Dictionary<string, int>(StringComparer.Ordinal);
-        var stack = new List<string>();
         var reported = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (CircuitDefinition definition in project.Definitions)
         {
             if (!state.ContainsKey(definition.Id))
             {
-                Visit(definition, project, state, stack, reported, diagnostics);
+                VisitIteratively(definition, project, state, reported, diagnostics);
             }
         }
     }
 
-    private static void Visit(
+    private static void VisitIteratively(
         CircuitDefinition definition,
         CircuitProject project,
         Dictionary<string, int> state,
-        List<string> stack,
         HashSet<string> reported,
         DiagnosticBag diagnostics)
     {
-        state[definition.Id] = 1;
-        stack.Add(definition.Id);
+        var activePath = new List<string>();
+        var activePosition = new Dictionary<string, int>(StringComparer.Ordinal);
+        var traversal = new List<(CircuitDefinition Definition, int NextInstance)>();
 
-        foreach (ComponentInstance instance in definition.Instances)
+        Enter(definition);
+        while (traversal.Count > 0)
         {
+            (CircuitDefinition current, int nextInstance) = traversal[^1];
+            if (nextInstance >= current.Instances.Count)
+            {
+                traversal.RemoveAt(traversal.Count - 1);
+                activePath.RemoveAt(activePath.Count - 1);
+                activePosition.Remove(current.Id);
+                state[current.Id] = 2;
+                continue;
+            }
+
+            traversal[^1] = (current, nextInstance + 1);
+            ComponentInstance instance = current.Instances[nextInstance];
             if (instance.DefinitionId is null)
             {
                 continue;
@@ -218,22 +230,28 @@ public static class CircuitValidator
             state.TryGetValue(child.Id, out int childState);
             if (childState == 0)
             {
-                Visit(child, project, state, stack, reported, diagnostics);
+                Enter(child);
             }
             else if (childState == 1)
             {
-                int start = stack.IndexOf(child.Id);
-                string cycle = string.Join(" -> ", stack.Skip(start).Append(child.Id));
-                string key = string.Join("|", stack.Skip(start));
+                int start = activePosition[child.Id];
+                IEnumerable<string> cyclePath = activePath.Skip(start);
+                string cycle = string.Join(" -> ", cyclePath.Append(child.Id));
+                string key = string.Join("|", cyclePath);
                 if (reported.Add(key))
                 {
-                    diagnostics.Error("RAD032", $"Definitions form a recursive cycle: {cycle}.", definition.Id, instance.Id);
+                    diagnostics.Error("RAD032", $"Definitions form a recursive cycle: {cycle}.", current.Id, instance.Id);
                 }
             }
         }
 
-        stack.RemoveAt(stack.Count - 1);
-        state[definition.Id] = 2;
+        void Enter(CircuitDefinition current)
+        {
+            state[current.Id] = 1;
+            activePosition[current.Id] = activePath.Count;
+            activePath.Add(current.Id);
+            traversal.Add((current, 0));
+        }
     }
 
     private static void ValidateDefinition(CircuitProject project, CircuitDefinition definition, DiagnosticBag diagnostics)
