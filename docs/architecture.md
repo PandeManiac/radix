@@ -139,7 +139,7 @@ The cost is that a lookup evaluation computes a table index rather than executin
 
 This is a **transport-delay, event-driven** model with zero-delay logical evaluation. It is not an inertial-delay or analog RC model. Users who want sequential feedback construct it with latches/flip-flops and deliberate delays.
 
-Simulation time is a non-negative signed 64-bit tick count. If an output or timer would be scheduled beyond `Int64.MaxValue`, the engine halts, clears pending events, and emits runtime error `RAD102`; it never wraps time or lets an overflow exception escape the event loop. This is a representational boundary, not a physical time limit.
+Simulation time is a non-negative signed 64-bit tick count. If an output or timer would be scheduled beyond `Int64.MaxValue`, the engine halts, clears pending events, and emits runtime error `RAD142`; it never wraps time or lets an overflow exception escape the event loop. This is a representational boundary, not a physical time limit.
 
 ### 5.3 Worked example: the tiny program-driven CPU
 

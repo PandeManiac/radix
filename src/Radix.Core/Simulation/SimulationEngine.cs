@@ -20,7 +20,7 @@ public sealed class SimulationEngine
 {
     public const string NonConvergenceCode = "RAD100";
     public const string DriverConflictCode = "RAD101";
-    public const string TimeOverflowCode = "RAD102";
+    public const string TimeOverflowCode = "RAD142";
     public const string RuntimeWarningCode = "RAD140";
 
     private readonly CompiledCircuit _circuit;
