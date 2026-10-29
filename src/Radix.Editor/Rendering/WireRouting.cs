@@ -459,7 +459,8 @@ internal static class WireRouter
         private readonly bool[] _blockedNodes;
         private readonly bool[] _blockedHorizontalEdges;
         private readonly bool[] _blockedVerticalEdges;
-        private readonly HashSet<int> _seenWires = [];
+        private readonly int[] _seenWireStamps;
+        private int _wirePenaltyStamp;
         private readonly HashSet<int> _treeNodes = [];
         private readonly List<(Point A, Point B)> _segments = [];
         private readonly List<Point> _treePoints = [];
@@ -475,6 +476,7 @@ internal static class WireRouter
             _terminals = terminals;
             _obstacles = context.Obstacles;
             _context = context;
+            _seenWireStamps = new int[context.Segments.Count];
 
             var extrasX = new List<double>(terminals.Count * 2);
             var extrasY = new List<double>(terminals.Count * 2);
@@ -585,7 +587,13 @@ internal static class WireRouter
 
         private double WirePenalty(Point from, Point to)
         {
-            _seenWires.Clear();
+            int stamp = unchecked(++_wirePenaltyStamp);
+            if (stamp == 0)
+            {
+                Array.Clear(_seenWireStamps);
+                stamp = _wirePenaltyStamp = 1;
+            }
+
             double penalty = 0;
             int x0 = RoutingContext.Cell(Math.Min(from.X, to.X));
             int x1 = RoutingContext.Cell(Math.Max(from.X, to.X));
@@ -602,11 +610,12 @@ internal static class WireRouter
 
                     foreach (int index in segments)
                     {
-                        if (!_seenWires.Add(index))
+                        if (_seenWireStamps[index] == stamp)
                         {
                             continue;
                         }
 
+                        _seenWireStamps[index] = stamp;
                         (Point a, Point b) = _context.Segments[index];
                         if (Overlaps(from, to, a, b))
                         {

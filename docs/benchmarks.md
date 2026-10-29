@@ -182,10 +182,17 @@ construct (-54%), 7,849 -> 3,743-3,801 ms for ten canonical frames (-52%), and
 placement row and the reuse-path rows remain noisy; at 500 and 1,000 gates the
 frame and placement gains are consistent across runs.
 
-A canonical rebuild of 1,000 gates still costs roughly 0.37 s. A temporary phase
+A canonical rebuild of 1,000 gates still costs roughly 0.35 s. A temporary phase
 profile (removed after measurement) attributed most routing time to A* expansion
 and obstacle marking, so further work should target the search rather than the
-shared setup.
+shared setup. On the same VM, replacing the per-candidate `HashSet<int>` used to
+deduplicate wire-penalty segments with integer visitation stamps reduced the
+1,000-gate ten-frame result from 3,762 ms to 3,584 ms, and ten canonical
+placements from 2,924 ms to 2,772 ms (about 5%). Construct measured 360 ms before
+and 344 ms after; one run per build, so small differences are subject to noise.
+This preserves segment iteration order and penalty values while avoiding a hash
+clear/lookup for every candidate edge. The full editor suite (178 tests) and
+Release solution build pass; exact-route tests remain unchanged.
 
 ### Interpretation
 
