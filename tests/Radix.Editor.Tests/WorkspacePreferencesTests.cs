@@ -17,6 +17,7 @@ public sealed class WorkspacePreferencesTests
                 WindowHeight = 800,
                 Maximized = true,
                 InspectorTabIndex = 2,
+                WireLabelMode = WireLabelModes.Named,
             }, path);
 
             WorkspaceSettings loaded = WorkspacePreferences.Load(path);
@@ -25,7 +26,9 @@ public sealed class WorkspacePreferencesTests
             Assert.Equal(800, loaded.WindowHeight);
             Assert.True(loaded.Maximized);
             Assert.Equal(2, loaded.InspectorTabIndex);
+            Assert.Equal(WireLabelModes.Named, loaded.WireLabelMode);
             Assert.Contains("\"windowWidth\": 1280", File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Contains("\"wireLabelMode\": \"Named\"", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {
@@ -82,6 +85,10 @@ public sealed class WorkspacePreferencesTests
             Assert.Equal(WorkspacePreferences.MinWindowWidth, clamped.WindowWidth);
             Assert.Equal(WorkspacePreferences.MaxWindowHeight, clamped.WindowHeight);
             Assert.Equal(WorkspacePreferences.MaxInspectorTabIndex, clamped.InspectorTabIndex);
+            Assert.Equal(WireLabelModes.All, clamped.WireLabelMode);
+
+            File.WriteAllText(path, """{"wireLabelMode":"Loud"}""");
+            Assert.Equal(WireLabelModes.All, WorkspacePreferences.Load(path).WireLabelMode);
 
             File.Delete(path);
             WorkspaceSettings missing = WorkspacePreferences.Load(path);
@@ -92,6 +99,19 @@ public sealed class WorkspacePreferencesTests
         {
             Delete(path);
         }
+    }
+
+    [Theory]
+    [InlineData(WireLabelModes.All, null, true)]
+    [InlineData(WireLabelModes.All, "clk", true)]
+    [InlineData(WireLabelModes.Named, null, false)]
+    [InlineData(WireLabelModes.Named, "clk", true)]
+    [InlineData(WireLabelModes.None, "clk", false)]
+    [InlineData("invalid", "clk", true)]
+    public void WireLabelModesDecideWhichLabelsAreDrawn(string mode, string? label, bool expected)
+    {
+        Assert.Equal(expected, WireLabelModes.Shows(mode, label));
+        Assert.Contains(WireLabelModes.Normalize(mode), WireLabelModes.Options);
     }
 
     private static string TemporaryPath() =>

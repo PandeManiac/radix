@@ -158,6 +158,7 @@ public partial class MainWindow : Window
         WindowHeight = _normalWorkspaceHeight,
         Maximized = WindowState == WindowState.Maximized,
         InspectorTabIndex = RightTabs.SelectedIndex,
+        WireLabelMode = ViewModel?.WireLabelMode ?? WireLabelModes.All,
         RecentProjects = ViewModel?.RecentProjectPaths.ToList() ?? [],
     };
 

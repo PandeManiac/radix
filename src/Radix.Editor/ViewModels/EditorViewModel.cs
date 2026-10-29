@@ -65,6 +65,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _newPinName = string.Empty;
     private bool _newPinIsInput = true;
     private string _advanceTicksText = "10";
+    private string _wireLabelMode = WireLabelModes.All;
     private string _defaultAdvanceTicksText = "10";
     private string _evaluationGuardText = "64";
     private string _traceCapacityText = "500000";
@@ -719,6 +720,21 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public string ZoomText => "100%";
+
+    /// <summary>Per-window wire label detail; never saved into the project.</summary>
+    public string WireLabelMode
+    {
+        get => _wireLabelMode;
+        set
+        {
+            if (SetField(ref _wireLabelMode, WireLabelModes.Normalize(value)))
+            {
+                VisualInvalidated?.Invoke();
+            }
+        }
+    }
+
+    public IReadOnlyList<string> WireLabelModeOptions => WireLabelModes.Options;
 
     public bool HasSelection => _selectedInstanceIds.Count > 0 || _selectedNet is not null;
 

@@ -62,6 +62,8 @@
         </StackPanel>
 
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="Wire labels" FontSize="10" Foreground="{DynamicResource App.TextMuted}" VerticalAlignment="Center" />
+          <ComboBox Width="82" ItemsSource="{Binding WireLabelModeOptions}" SelectedItem="{Binding WireLabelMode, Mode=TwoWay}" ToolTip.Tip="Show every net's name and value, only named nets, or no wire labels" />
           <ComboBox x:Name="ThemeBox" Width="82" SelectedIndex="0" SelectionChanged="ThemeBox_SelectionChanged" ToolTip.Tip="Colour theme: follow the system, light, or dark">
             <ComboBoxItem Content="Auto" />
             <ComboBoxItem Content="Light" />

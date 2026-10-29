@@ -22,6 +22,7 @@ public partial class App : Application
             WorkspaceSettings workspace = WorkspacePreferences.Load();
             var viewModel = new EditorViewModel(ExampleProjects.CreateCounterDemo());
             viewModel.SetRecentProjects(workspace.RecentProjects);
+            viewModel.WireLabelMode = workspace.WireLabelMode;
             string? startupProject = desktop.Args?.FirstOrDefault(
                 argument => argument.EndsWith(".radix", StringComparison.OrdinalIgnoreCase));
             bool openStartupProject = startupProject is not null && File.Exists(startupProject);

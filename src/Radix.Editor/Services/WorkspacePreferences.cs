@@ -20,6 +20,9 @@ public sealed class WorkspaceSettings
 
     public int InspectorTabIndex { get; set; }
 
+    /// <summary>All, Named, or None; presentation-only and never saved in a project.</summary>
+    public string WireLabelMode { get; set; } = WireLabelModes.All;
+
     /// <summary>Most recently opened or saved project paths, newest first.</summary>
     public List<string> RecentProjects { get; set; } = [];
 }
@@ -108,6 +111,7 @@ public static class WorkspacePreferences
             : WorkspaceSettings.DefaultHeight,
         Maximized = settings.Maximized,
         InspectorTabIndex = Math.Clamp(settings.InspectorTabIndex, 0, MaxInspectorTabIndex),
+        WireLabelMode = WireLabelModes.Normalize(settings.WireLabelMode),
         RecentProjects = NormalizeRecentProjects(settings.RecentProjects),
     };
 

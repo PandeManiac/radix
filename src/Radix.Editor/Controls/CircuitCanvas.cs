@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 using Radix.Editor.Rendering;
+using Radix.Editor.Services;
 using Radix.Editor.ViewModels;
 
 namespace Radix.Editor.Controls;
@@ -329,7 +330,9 @@ public sealed class CircuitCanvas : Control
                 context.DrawEllipse(lineBrush, null, Viewport.WorldToScreen(junction), dot, dot);
             }
 
-            if (Viewport.Scale >= 0.72 && (!dim || focused))
+            if (Viewport.Scale >= 0.72 &&
+                (!dim || focused) &&
+                WireLabelModes.Shows(viewModel.WireLabelMode, net?.Label))
             {
                 string label = net?.Label ?? wire.NetId;
                 string valueText = value < 0 ? "z" : FormatValue(value, domain);

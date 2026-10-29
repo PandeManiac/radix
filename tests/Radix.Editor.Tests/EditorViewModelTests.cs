@@ -2611,6 +2611,24 @@ public sealed class EditorViewModelTests
         Assert.True(viewModel.GeneratePartCommand.CanExecute(null));
     }
 
+    [Fact]
+    public void WireLabelModeIsAPresentationSettingAndNormalizesInput()
+    {
+        var viewModel = CreateEmptyEditor();
+        int invalidations = 0;
+        viewModel.VisualInvalidated += () => invalidations++;
+
+        Assert.Equal(WireLabelModes.All, viewModel.WireLabelMode);
+        viewModel.WireLabelMode = WireLabelModes.Named;
+        Assert.Equal(1, invalidations);
+        Assert.Equal(WireLabelModes.Named, viewModel.WireLabelMode);
+
+        viewModel.WireLabelMode = "not a mode";
+        Assert.Equal(WireLabelModes.All, viewModel.WireLabelMode);
+        Assert.Equal(2, invalidations);
+        Assert.False(viewModel.IsDirty);
+    }
+
     private static EditorViewModel CreateEmptyEditor()
     {
         var project = CircuitProject.CreateEmpty("Editor test");
