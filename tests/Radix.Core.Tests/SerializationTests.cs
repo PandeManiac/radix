@@ -208,6 +208,32 @@ public sealed class SerializationTests
     }
 
     [Fact]
+    public void LoadRejectsFilesAboveTheConfiguredByteLimitBeforeParsing()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "radix-size-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string path = Path.Combine(directory, "project.radix");
+            ProjectSerializer.Save(path, TestCircuits.ValidProject());
+            long length = new FileInfo(path).Length;
+
+            ProjectFormatException error = Assert.Throws<ProjectFormatException>(() =>
+                ProjectSerializer.Load(path, maxBytes: length - 1));
+            Assert.Contains("above the supported limit", error.Message, StringComparison.Ordinal);
+
+            CircuitProject loaded = ProjectSerializer.Load(path, maxBytes: length);
+            Assert.Equal("valid", loaded.Name);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void JsonUsesDocumentedFormatName()
     {
         JsonObject json = Json(TestCircuits.ValidProject());
@@ -359,6 +385,32 @@ public sealed class SerializationTests
         Assert.Equal(1, sign.NegativeSignValue);
         Assert.IsType<SignMagnitudeFormat>(sign.ToFormat());
         Assert.Equal(-7, (int)sign.ToFormat().MinimumValue(4));
+    }
+
+    [Fact]
+    public void PendingEventLimitRoundTripsWithProjectSettings()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        project.Settings.MaxPendingEvents = 12345;
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(ProjectSerializer.SaveToString(project));
+
+        Assert.Equal(12345, loaded.Settings.MaxPendingEvents);
+    }
+
+    [Fact]
+    public void VersionSixProjectsLoadWithDefaultPendingEventCapAndUpgradeOnSave()
+    {
+        JsonNode root = JsonNode.Parse(ProjectSerializer.SaveToString(TestCircuits.ValidProject()))!;
+        root["version"] = 6;
+        root["settings"]!.AsObject().Remove("maxPendingEvents");
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(root.ToJsonString());
+
+        Assert.Equal(6, loaded.FormatVersion);
+        Assert.Equal(1_000_000, loaded.Settings.MaxPendingEvents);
+        JsonNode saved = JsonNode.Parse(ProjectSerializer.SaveToString(loaded))!;
+        Assert.Equal(7, saved["version"]!.GetValue<int>());
     }
 
     [Fact]

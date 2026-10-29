@@ -64,6 +64,11 @@ public static class CircuitValidator
         {
             diagnostics.Warning("RAD004", "Recorded-change limit must be non-negative; it will be clamped to zero.");
         }
+
+        if (project.Settings.MaxPendingEvents < 0)
+        {
+            diagnostics.Warning("RAD005", "Pending-event limit must be non-negative; it will be clamped to zero (unlimited).");
+        }
     }
 
     private static void ValidateDomains(CircuitProject project, DiagnosticBag diagnostics)

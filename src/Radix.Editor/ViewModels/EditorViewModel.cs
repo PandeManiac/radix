@@ -1129,6 +1129,15 @@ public sealed class EditorViewModel : ObservableObject
         set => SetField(ref _evaluationGuardText, value);
     }
 
+    private string _pendingEventLimitText = "1000000";
+
+    /// <summary>Maximum events waiting in the engine queue; zero disables the cap.</summary>
+    public string PendingEventLimitText
+    {
+        get => _pendingEventLimitText;
+        set => SetField(ref _pendingEventLimitText, value);
+    }
+
     /// <summary>Waveform trace ring capacity; zero disables recording.</summary>
     public string TraceCapacityText
     {
@@ -2488,7 +2497,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         try
         {
-            string json = File.ReadAllText(path);
+            string json = ProjectSerializer.ReadProjectText(path);
             EditorSnapshot before = Capture();
             LibraryImportResult result = ComponentLibraryService.Import(_project, json);
             if (!result.Success || result.RootDefinitionId is not string rootId)
@@ -4547,16 +4556,18 @@ public sealed class EditorViewModel : ObservableObject
     {
         if (!TryParseSetting(DefaultAdvanceTicksText, 1, 1_000_000, out long advance) ||
             !TryParseSetting(EvaluationGuardText, 1, 1_000_000, out long guard) ||
+            !TryParseSetting(PendingEventLimitText, 0, 100_000_000, out long pendingEvents) ||
             !TryParseSetting(TraceCapacityText, 0, 100_000_000, out long capacity))
         {
             StatusText = "Project settings not applied: enter whole numbers in range " +
-                "(advance 1..1,000,000; guard 1..1,000,000; trace capacity 0..100,000,000).";
+                "(advance 1..1,000,000; guard 1..1,000,000; pending events 0..100,000,000; trace capacity 0..100,000,000).";
             return false;
         }
 
         ProjectSettings settings = _project.Settings;
         if (settings.DefaultAdvanceTicks == advance &&
             settings.MaxEvaluationsPerComponentPerTimestamp == (int)guard &&
+            settings.MaxPendingEvents == (int)pendingEvents &&
             settings.MaxRecordedNetChanges == (int)capacity &&
             settings.TraceAllNets == RecordNetTransitions)
         {
@@ -4567,6 +4578,7 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         settings.DefaultAdvanceTicks = advance;
         settings.MaxEvaluationsPerComponentPerTimestamp = (int)guard;
+        settings.MaxPendingEvents = (int)pendingEvents;
         settings.MaxRecordedNetChanges = (int)capacity;
         settings.TraceAllNets = RecordNetTransitions;
         AfterMutation(structural: false, invalidateSimulation: true, LayoutRefreshMode.None);
@@ -4584,6 +4596,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         DefaultAdvanceTicksText = _project.Settings.DefaultAdvanceTicks.ToString(CultureInfo.InvariantCulture);
         EvaluationGuardText = _project.Settings.MaxEvaluationsPerComponentPerTimestamp.ToString(CultureInfo.InvariantCulture);
+        PendingEventLimitText = _project.Settings.MaxPendingEvents.ToString(CultureInfo.InvariantCulture);
         TraceCapacityText = _project.Settings.MaxRecordedNetChanges.ToString(CultureInfo.InvariantCulture);
         RecordNetTransitions = _project.Settings.TraceAllNets;
     }

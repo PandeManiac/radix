@@ -1,5 +1,6 @@
 using Radix.Core.Model;
 using Radix.Core.Signals;
+using Radix.Core.Simulation;
 using Xunit;
 
 namespace Radix.Core.Tests;
@@ -10,6 +11,18 @@ public sealed class ValidationTests
         CircuitValidator.Validate(project, root);
 
     private static bool Has(DiagnosticBag bag, string code) => bag.Any(d => d.Code == code);
+
+    [Fact]
+    public void NegativePendingEventLimitWarnsAndIsClampedToUnlimited()
+    {
+        CircuitProject project = TestCircuits.ValidProject();
+        project.Settings.MaxPendingEvents = -5;
+
+        DiagnosticBag report = Validate(project);
+
+        Assert.True(Has(report, "RAD005"));
+        Assert.Equal(0, SimulationOptions.FromSettings(project.Settings).MaxPendingEvents);
+    }
 
     [Fact]
     public void ValidProjectHasNoErrors()

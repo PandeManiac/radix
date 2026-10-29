@@ -331,6 +331,7 @@ public sealed class CircuitLayout
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
         var wires = new List<NetWire>(definition.Nets.Count);
         var routedSegments = new List<(Point A, Point B)>();
+        WireRouter.RoutingContext? routing = null;
         int ordinal = 0;
 
         CircuitLayout? reuse = ReferenceEquals(previous?.Definition, definition) ? previous : null;
@@ -395,17 +396,17 @@ public sealed class CircuitLayout
             {
                 wires.Add(previousWire);
                 routedSegments.AddRange(previousWire.Segments);
+                routing?.AddSegments(previousWire.Segments);
                 ordinal++;
                 continue;
             }
 
+            routing ??= WireRouter.BuildContext(components, ports, routedSegments);
             WireRouter.RoutedWire routed = WireRouter.Route(
                 net,
                 ordinal++,
                 terminals,
-                components,
-                ports,
-                routedSegments);
+                routing);
             if (routed.Segments.Count == 0)
             {
                 continue;
@@ -422,6 +423,7 @@ public sealed class CircuitLayout
                 editorPins,
                 routed.AuthoredPoints));
             routedSegments.AddRange(routed.Segments);
+            routing.AddSegments(routed.Segments);
         }
 
         AddCrossingBreaks(wires);

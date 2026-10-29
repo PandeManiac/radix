@@ -11,6 +11,19 @@ public sealed class SimulationOptions
     /// </summary>
     public int MaxEvaluationsPerComponentPerTimestamp { get; init; } = 64;
 
+    /// <summary>
+    /// Maximum number of events that may wait in the queue at once. Zero disables the
+    /// limit. Exceeding it halts the run with a diagnostic instead of letting a circuit
+    /// that produces events faster than they drain exhaust memory.
+    /// </summary>
+    public int MaxPendingEvents { get; init; } = 1_000_000;
+
+    /// <summary>
+    /// Maximum runtime warnings retained for inspection. Zero disables the cap.
+    /// Halt diagnostics are always retained, so the count never hides why a run stopped.
+    /// </summary>
+    public int MaxRuntimeDiagnostics { get; init; } = 1000;
+
     /// <summary>Capacity of the net-change trace ring buffer. Zero disables storage.</summary>
     public int MaxRecordedChanges { get; init; } = 500_000;
 
@@ -23,6 +36,7 @@ public sealed class SimulationOptions
         return new SimulationOptions
         {
             MaxEvaluationsPerComponentPerTimestamp = Math.Max(1, settings.MaxEvaluationsPerComponentPerTimestamp),
+            MaxPendingEvents = Math.Max(0, settings.MaxPendingEvents),
             MaxRecordedChanges = Math.Max(0, settings.MaxRecordedNetChanges),
             RecordTrace = settings.MaxRecordedNetChanges > 0 && settings.TraceAllNets,
         };

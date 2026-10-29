@@ -127,6 +127,28 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void SingleDriverPolicyReportsDuplicateEqualDriversAsContention()
+    {
+        var builder = new ProjectBuilder("equal drivers");
+        var root = builder.Define("root", "Root");
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("first", new ConstantSpec(1));
+        root.AddPrimitive("second", new ConstantSpec(1));
+        root.Connect(y, root.Pin("first", "out"), root.Pin("second", "out"));
+
+        SimulationEngine engine = Engine(builder.Build("root"));
+        engine.AdvanceTo(0);
+
+        Assert.Equal(1, engine.Read("y"));
+        Diagnostic conflict = Assert.Single(
+            engine.RuntimeDiagnostics,
+            diagnostic => diagnostic.Code == SimulationEngine.DriverConflictCode);
+        Assert.Contains("active drivers", conflict.Message, StringComparison.Ordinal);
+        Assert.Contains("single", conflict.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("disagree", conflict.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ResetRestoresTimeValuesAndEvents()
     {
         SimulationEngine engine = Engine(TestCircuits.ClockRoot([5, 5], [0, 1]));
@@ -220,6 +242,66 @@ public sealed class EngineTests
         Assert.Equal(3, engine.Trace.Count);
         Assert.True(engine.Trace.TotalRecorded > 3);
         Assert.True(engine.Trace.IsTruncated);
+    }
+
+    [Fact]
+    public void PendingEventLimitHaltsWithDiagnosticAndClearsTheQueue()
+    {
+        var options = new SimulationOptions
+        {
+            MaxPendingEvents = 4,
+            MaxRecordedChanges = 0,
+            RecordTrace = false,
+            MaxEvaluationsPerComponentPerTimestamp = 64,
+        };
+
+        var builder = new ProjectBuilder("event cap");
+        var root = builder.Define("root", "Root");
+        for (int i = 0; i < 8; i++)
+        {
+            root.AddPrimitive($"c{i}", new LookupSpec(0, [1]));
+        }
+
+        SimulationEngine engine = Engine(builder.Build("root"), options);
+
+        Assert.True(engine.IsHalted);
+        Assert.Equal(0, engine.PendingEventCount);
+        Assert.Contains(
+            engine.RuntimeDiagnostics,
+            diagnostic => diagnostic.Code == SimulationEngine.EventLimitCode);
+        Assert.Contains(
+            "Pending event limit of 4",
+            engine.HaltReason ?? string.Empty,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RuntimeWarningCapSuppressesRepeatedDiagnostics()
+    {
+        var options = new SimulationOptions
+        {
+            MaxRuntimeDiagnostics = 5,
+            MaxRecordedChanges = 0,
+            RecordTrace = false,
+            MaxEvaluationsPerComponentPerTimestamp = 64,
+        };
+
+        var builder = new ProjectBuilder("warning cap");
+        var root = builder.Define("root", "Root");
+        for (int i = 0; i < 20; i++)
+        {
+            Net net = root.AddNet($"n{i}", StandardDomains.BinaryId);
+            root.AddPrimitive($"a{i}", new LookupSpec(0, [0]));
+            root.AddPrimitive($"b{i}", new LookupSpec(0, [1]));
+            root.Connect(net, root.Pin($"a{i}", "out"));
+            root.Connect(net, root.Pin($"b{i}", "out"));
+        }
+
+        SimulationEngine engine = Engine(builder.Build("root"), options);
+        engine.AdvanceTo(0);
+
+        Assert.Equal(5, engine.RuntimeDiagnostics.Count(d => d.Severity == DiagnosticSeverity.Warning));
+        Assert.Equal(15, engine.SuppressedRuntimeDiagnostics);
     }
 
     [Fact]

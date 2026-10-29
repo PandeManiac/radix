@@ -66,6 +66,23 @@ evaluations/sec:      6,117,066
 halted:               false
 ```
 
+### This VM (2026-10-29)
+
+Re-measured on a different host to separate engine behavior from one machine's
+speed: an 8-vCPU cloud VM with 15 GiB RAM, .NET SDK 10.0.100, Release build, and
+the same commands.
+
+| Gates | Validate | Compile | Flatten | Simulate | Events/sec | Evals/sec |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2,000 | 34.1 ms | 90.5 ms | 56.5 ms | 47.7 ms | 4,194,504 | 2,180,618 |
+| 10,000 | 160.9 ms | 159.9 ms | -1.0 ms | 186.6 ms | 5,361,148 | 2,787,663 |
+| 20,000 | 227.9 ms | 243.5 ms | 15.6 ms | 261.5 ms | 7,649,796 | 3,977,798 |
+
+These absolute numbers are slower than the reference machine above, which is
+expected on a shared virtual host. The near-linear growth in compile time and the
+flat per-event simulation cost match the earlier results. A negative `flatten`
+value is timer noise, because it is computed as a difference of two stopwatches.
+
 ## Validation scaling fix
 
 Before the validation index change, the same 20,000-gate run took **~2,036 ms to compile, of which ~1,985 ms was validation**. Two nested scans were responsible:
@@ -110,6 +127,121 @@ Measured 2026-10-28 on the same machine and .NET 10 runtime as the engine benchm
 | 1,000 | 420 ms | 4,512 ms | 70 ms | 20 ms | 0 ms | 3,661 ms | 43 ms |
 
 These are interaction-latency measurements, not pure router time: they include layout of component boxes and ports, view-model refreshes, and canvas invalidation. Absolute values vary with GC, JIT, and which node is moved, so individual rows are not monotonic; use the orders of magnitude, not adjacent differences. The nudge and incremental-placement columns measure route reuse: all boxes and ports are still rebuilt, but valid cached wires are retained, so the dominant route search runs only for nets whose terminals or obstacles changed.
+
+### This VM (2026-10-29)
+
+Same command on the 8-vCPU cloud VM used for the engine reproduction above,
+Release build, with the headless Skia natives from `scripts/linux-test-natives.sh`:
+
+| Gates | Construct | 10 canonical frames | 10 nudge frames | 10 reused frames | Final rebuild | 10 canonical placements | 10 incremental placements |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 200 | 280 ms | 905 ms | 87 ms | 25 ms | 1 ms | 541 ms | 35 ms |
+| 500 | 217 ms | 2,487 ms | 114 ms | 114 ms | 4 ms | 2,759 ms | 93 ms |
+| 1,000 | 791 ms | 8,213 ms | 104 ms | 39 ms | 0 ms | 6,856 ms | 85 ms |
+
+Absolute costs are roughly 1.5–2x the reference machine, consistent with the slower
+engine numbers above, but the reuse ratios hold: at 1,000 gates a ten-frame drag
+costs ~39 ms with route reuse versus ~8.2 s when every frame rebuilds routes, and
+ten incremental placements cost ~85 ms versus ~6.9 s. The one-time construct pause
+at 1,000 gates is ~0.8 s on this host.
+
+### Routing-context optimization (2026-10-29)
+
+A canonical rebuild previously rebuilt the obstacle list and sorted axis
+candidates for every net and allocated fresh A* state arrays per search. Those
+are now shared per layout (obstacles and sorted axis candidates) or pooled
+(`ArrayPool` state arrays), and axis candidates are merged instead of reinserted
+into a `SortedSet`. The midpoint and truncation rules are unchanged, and the
+editor suite's exact-route assertions still pass.
+
+Same host and command, one baseline run and two runs after the change:
+
+| Gates | Construct before -> after | 10 canonical frames before -> after | 10 canonical placements before -> after |
+| ---: | ---: | ---: | ---: |
+| 200 | 272 -> 94-96 ms | 1,059 -> 638-825 ms | 657 -> 302-313 ms |
+| 500 | 269 -> 83-84 ms | 2,620 -> 832-855 ms | 2,887 -> 1,732-1,734 ms |
+| 1,000 | 794 -> 459-461 ms | 7,849 -> 4,706-4,734 ms | 6,543 -> 3,881-3,954 ms |
+
+At 1,000 gates that is about 42% less construct time, 40% less for ten canonical
+frames, and 41% less for ten canonical placements; the 500-gate construct and
+canonical-frame costs fell by about two thirds. Reuse-path columns are unchanged
+within run-to-run noise, and the 200-gate frame row is visibly noisy across runs.
+A second pass shared the routed-segment spatial index across nets (it had been
+rebuilt per net) and replaced per-cell obstacle loops with span fills. Comparing
+the first optimized build with the second, over two runs each:
+
+| Gates | Construct | 10 canonical frames | 10 canonical placements |
+| ---: | ---: | ---: | ---: |
+| 200 | 94-96 -> 95-98 ms | 638-825 -> 672-693 ms | 302-313 -> 363-370 ms |
+| 500 | 83-84 -> 83 ms | 832-855 -> 632-661 ms | 1,732-1,734 -> 1,556-1,575 ms |
+| 1,000 | 459-461 -> 366-368 ms | 4,706-4,734 -> 3,743-3,801 ms | 3,881-3,954 -> 2,900-2,982 ms |
+
+Cumulatively, at 1,000 gates the canonical path is now 794 -> 366-368 ms for
+construct (-54%), 7,849 -> 3,743-3,801 ms for ten canonical frames (-52%), and
+6,543 -> 2,900-2,982 ms for ten canonical placements (-55%). The 200-gate
+placement row and the reuse-path rows remain noisy; at 500 and 1,000 gates the
+frame and placement gains are consistent across runs.
+
+A canonical rebuild of 1,000 gates still costs roughly 0.35 s. A temporary phase
+profile (removed after measurement) attributed most routing time to A* expansion
+and obstacle marking, so further work should target the search rather than the
+shared setup. On the same VM, replacing the per-candidate `HashSet<int>` used to
+deduplicate wire-penalty segments with integer visitation stamps reduced the
+1,000-gate ten-frame result from 3,762 ms to 3,584 ms, and ten canonical
+placements from 2,924 ms to 2,772 ms (about 5%). Construct measured 360 ms before
+and 344 ms after; one run per build, so small differences are subject to noise.
+This preserves segment iteration order and penalty values while avoiding a hash
+clear/lookup for every candidate edge. The full editor suite (178 tests) and
+Release solution build pass; exact-route tests remain unchanged.
+
+An exploratory extension of the opt-in layout benchmark to 2,000 gates ran on the
+same VM (single run): construct 634 ms, ten canonical frames 6,445 ms, ten nudges
+147 ms, ten reused drag frames 84 ms, final rebuild 1 ms, ten canonical placements
+5,743 ms, and ten incremental placements 130 ms. Doubling from 1,000 to 2,000
+increased construct and canonical frames by about 1.8x, canonical placements by
+2.0x, and reused drag by 2.2x. This shows no abrupt scaling cliff at 2,000 gates
+for the synthetic chain.
+
+A bundled hierarchical workload was added to the same opt-in test and measured
+once on this VM: the 4-bit accumulator CPU root view has 23 components and 34 nets;
+construct took 254 ms, ten canonical frames 615 ms, and ten drag frames with route
+reuse 82 ms. This gives a representative authored/hierarchical-layout point beside
+the regular synthetic chain. It is a single timing sample; root-view layout does
+not expand child definitions into the canvas, and the result is not a universal
+performance guarantee.
+
+### Generated repeated-child hierarchy (2026-10-29)
+
+The opt-in `GeneratedHierarchyLayoutBenchmark` creates one fixed child definition
+(two cascaded 2-input binary lookup primitives; four child nets) and repeats it in
+the root, on a 20-column grid. On this VM (.NET SDK 10.0.100, Release, headless
+Skia), one run reported:
+
+| Repeated child instances | Root instances | Root nets | Child primitives | Child nets | Construct | 10 canonical root builds |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 25 | 25 | 26 | 2 | 4 | 176 ms | 148 ms |
+| 100 | 100 | 101 | 2 | 4 | 60 ms | 632 ms |
+| 250 | 250 | 251 | 2 | 4 | 153 ms | 536 ms |
+
+The benchmark then added a separate warmup model and three measured runs per size,
+reporting minima. It now collects seven samples each for construction and ten
+canonical builds, reporting median and min–max range. Latest run on this VM
+(.NET SDK 10.0.100, Release, headless Skia):
+
+| Repeated child instances | Root instances | Root nets | Child primitives | Child nets | Construct median [range] | 10-build median [range] |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 25 | 25 | 26 | 2 | 4 | 12 ms [10–22] | 114 ms [101–116] |
+| 100 | 100 | 101 | 2 | 4 | 36 ms [16–72] | 99 ms [72–163] |
+| 250 | 250 | 251 | 2 | 4 | 39 ms [38–43] | 367 ms [359–371] |
+
+The earlier single-run and best-of-three samples above are retained as history.
+The seven-sample medians and ranges remain noisy, especially for the 100-instance
+case; the sizes are run in ascending order and each has its own warmup, so host load
+and measurement order remain possible confounders. This is one session on a shared
+VM, not a universal scaling guarantee. The canvas lays out root instances only—the
+child primitives and nets are included in the project but are not expanded into
+per-instance child geometry in the root view.
+
 
 ### Interpretation
 

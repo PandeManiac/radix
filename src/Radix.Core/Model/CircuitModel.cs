@@ -155,6 +155,13 @@ public sealed class ProjectSettings
     /// </summary>
     public int MaxEvaluationsPerComponentPerTimestamp { get; set; } = 64;
 
+    /// <summary>
+    /// Maximum number of events that may wait in the engine queue at once. Zero means
+    /// no limit; reaching the cap halts the run with a diagnostic instead of growing
+    /// until memory is exhausted.
+    /// </summary>
+    public int MaxPendingEvents { get; set; } = 1_000_000;
+
     /// <summary>Maximum number of net changes retained for the editor's waveform view.</summary>
     public int MaxRecordedNetChanges { get; set; } = 500_000;
 
@@ -300,7 +307,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 6;
+    public const int CurrentFormatVersion = 7;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 

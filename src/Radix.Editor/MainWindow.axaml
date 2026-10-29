@@ -615,6 +615,11 @@
                       <TextBlock Grid.Column="2" Text="evals" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
                     </Grid>
                     <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
+                      <TextBlock Text="Pending event cap" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Maximum events waiting in the engine queue; exceeding it halts with RAD150 instead of exhausting memory. Zero disables the cap" />
+                      <TextBox x:Name="PendingEventCapBox" Grid.Column="1" Text="{Binding PendingEventLimitText, Mode=TwoWay}" ToolTip.Tip="Whole number, 0..100,000,000; zero disables the cap" />
+                      <TextBlock Grid.Column="2" Text="events" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,64,Auto" ColumnSpacing="5">
                       <TextBlock Text="Trace capacity" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource App.TextSecondary}" ToolTip.Tip="Net changes retained for the waveform and Trace tabs; zero disables recording" />
                       <TextBox Grid.Column="1" Text="{Binding TraceCapacityText, Mode=TwoWay}" ToolTip.Tip="Whole number, 0..100,000,000; zero disables recording" />
                       <TextBlock Grid.Column="2" Text="changes" VerticalAlignment="Center" Classes="muted" FontSize="9.5" />

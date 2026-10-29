@@ -63,7 +63,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 
 ### Project settings
 
-1. In **Inspect**, scroll to **SIMULATION SETTINGS**. Expected: default advance `10`, zero-delay guard `64`, trace capacity `500000`, and **Record net transitions** checked.
+1. In **Inspect**, scroll to **SIMULATION SETTINGS**. Expected: default advance `10`, zero-delay guard `64`, pending event cap `1000000`, trace capacity `500000`, and **Record net transitions** checked.
 2. Change default advance to `25` and click **Apply settings**. Expected: status reports the settings were applied, the project is marked modified, and **Trace** and **Waveform** are empty because the simulation was reset.
 3. Save and reopen the project. Expected: default advance is still `25`, and the Advance box starts at `25` for the reopened project. Click **Revert** after typing another value: the field returns to `25` without changing the project.
 4. Set default advance to `0` and click **Apply settings**. Expected: no change is committed; the status bar explains that whole numbers in range are required and names the advance range.
@@ -87,7 +87,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 3. Drag the handle. Expected: the wire follows orthogonally; the rest of the net stays connected. Undo restores the previous route.
 4. Alt+click a handle. Expected: that bendpoint is removed.
 5. Select a routed net and click **Reset wire route** in the net inspector. Expected: automatic routing resumes.
-6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, custom numeric formats, waveform pins, and the active definition/viewport survive (project format v6).
+6. Save, close, reopen. Expected: bendpoints, custom wire colors, numeric lanes, custom numeric formats, waveform pins, and the active definition/viewport survive (project format v7).
 7. In the net inspector, click the sky **WIRE COLOR** swatch, then the other colored swatches in turn. Expected: the wire changes color immediately, each selection is one undo step, and the **Wire color** field shows the matching hex value. Type `#38bdf8` directly, then `auto`: valid hex applies, invalid text is rejected with a status message, and `auto` (or the `A` swatch) returns to domain/signal coloring. Check both light and dark themes: the swatches and their borders must stay visible.
 8. Select a component. Expected: connected nets and pins are emphasized while unrelated wires dim. Hovering a pin or wire does the same.
 9. In the toolbar, change **Wire labels** from `All` to `Named` and then `None`. Expected: `All` shows every net ID or label with its value, `Named` keeps only wires with an authored label, and `None` hides all wire labels at every zoom. Routing, selection, simulation values, and the project's dirty state do not change. Set `Named` and rename a net in the inspector; its label appears immediately. Close and reopen the editor: the mode persists in `workspace.json`, but a saved project still contains no label-visibility setting.
@@ -237,7 +237,7 @@ If counter values differ, record the values and diagnostics; this is a correctne
 6. Open a deliberately malformed file (change `"version": 6` to `99`, or remove `root`). Expected: Open fails with a status-bar error and the previous project remains. The loader must not partially replace editor state.
 7. Trigger a located diagnostic (for example, drive one single-driver net from two outputs, or reopen a project whose Diagnostics lists a located error), switch to **Diagnostics**, and click **Locate** on the message. Expected: the status bar names the code, the owning definition opens when needed, the named instance or net is selected, and the canvas centers on it without changing the circuit. A project-wide message has no **Locate** button.
 8. Save a project and inspect the JSON. Expected: `"version": 6`, with optional net `color`/`route`, definition `numericLanes`, project `customNumericFormats`, and a top-level `view` object, and no executable content.
-9. Load a version 1, 2, 3, 4, or 5 project. Expected: it opens normally, missing metadata (including waveform pins) is empty, and the next save writes version 6.
+9. Load a version 1, 2, 3, 4, 5, or 6 project. Expected: it opens normally, missing metadata (including waveform pins and the pending-event cap) is filled from defaults, and the next save writes version 7.
 10. Duplicate a definition: select a part and click `⧉` in the Definitions list. Expected: a new entry appears directly below with an ID ending `-copy` and a name ending ` copy`; it opens automatically with the same pins, instances, nets, lane, and layout. Edit the copy's wiring or move a part; the original and every existing instance of it must stay unchanged.
 11. Duplicate the copy. Expected: the ID counts up (`part-copy2`, not `part-copy-copy`) and the name counts up (`… copy 2`). Undo once to remove only the second copy, and again to remove the first; the original remains throughout.
 

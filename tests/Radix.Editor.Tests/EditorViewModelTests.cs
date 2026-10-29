@@ -2333,28 +2333,33 @@ public sealed class EditorViewModelTests
         StandardLibrary.Install(project);
         project.Settings.DefaultAdvanceTicks = 42;
         project.Settings.MaxEvaluationsPerComponentPerTimestamp = 96;
+        project.Settings.MaxPendingEvents = 777;
         project.Settings.MaxRecordedNetChanges = 1234;
         project.Settings.TraceAllNets = false;
 
         var viewModel = new EditorViewModel(project);
         Assert.Equal("42", viewModel.DefaultAdvanceTicksText);
         Assert.Equal("96", viewModel.EvaluationGuardText);
+        Assert.Equal("777", viewModel.PendingEventLimitText);
         Assert.Equal("1234", viewModel.TraceCapacityText);
         Assert.False(viewModel.RecordNetTransitions);
 
         viewModel.DefaultAdvanceTicksText = "25";
         viewModel.EvaluationGuardText = "128";
+        viewModel.PendingEventLimitText = "900";
         viewModel.TraceCapacityText = "0";
         viewModel.RecordNetTransitions = true;
         Assert.True(viewModel.ApplyProjectSettings());
         Assert.True(viewModel.IsDirty);
         Assert.Equal(25, viewModel.Project.Settings.DefaultAdvanceTicks);
         Assert.Equal(128, viewModel.Project.Settings.MaxEvaluationsPerComponentPerTimestamp);
+        Assert.Equal(900, viewModel.Project.Settings.MaxPendingEvents);
         Assert.Equal(0, viewModel.Project.Settings.MaxRecordedNetChanges);
         Assert.True(viewModel.Project.Settings.TraceAllNets);
 
         viewModel.Undo();
         Assert.Equal(42, viewModel.Project.Settings.DefaultAdvanceTicks);
+        Assert.Equal(777, viewModel.Project.Settings.MaxPendingEvents);
         Assert.Equal("42", viewModel.DefaultAdvanceTicksText);
 
         viewModel.DefaultAdvanceTicksText = "0";
@@ -2362,8 +2367,13 @@ public sealed class EditorViewModelTests
         Assert.Equal(42, viewModel.Project.Settings.DefaultAdvanceTicks);
         Assert.Contains("not applied", viewModel.StatusText, StringComparison.Ordinal);
 
+        viewModel.PendingEventLimitText = "-1";
+        Assert.False(viewModel.ApplyProjectSettings());
+        Assert.Equal(777, viewModel.Project.Settings.MaxPendingEvents);
+
         viewModel.ReloadProjectSettings();
         Assert.Equal("42", viewModel.DefaultAdvanceTicksText);
+        Assert.Equal("777", viewModel.PendingEventLimitText);
     }
 
     [Fact]

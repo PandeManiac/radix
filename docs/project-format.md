@@ -1,4 +1,4 @@
-# RADIX project format, version 6
+# RADIX project format, version 7
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -24,7 +24,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `6`. Versions 1–6 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `7`. Versions 1–7 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
@@ -41,6 +41,7 @@ Property names are camelCase. JSON comments and trailing commas are accepted whe
 ```json
 "settings": {
   "maxEvaluationsPerComponentPerTimestamp": 64,
+  "maxPendingEvents": 1000000,
   "maxRecordedNetChanges": 500000,
   "defaultAdvanceTicks": 10,
   "traceAllNets": true
@@ -48,6 +49,7 @@ Property names are camelCase. JSON comments and trailing commas are accepted whe
 ```
 
 - `maxEvaluationsPerComponentPerTimestamp`: non-convergence guard for zero-delay feedback. Invalid low values are warned about and clamped by the engine.
+- `maxPendingEvents`: maximum events waiting in the engine queue at once. Reaching it halts the run with `RAD150`; `0` disables the cap. Negative values are warned about and clamped to `0`.
 - `maxRecordedNetChanges`: capacity of the trace ring buffer; `0` disables trace storage.
 - `defaultAdvanceTicks`: editor default for an Advance action.
 - `traceAllNets`: whether net transitions are recorded at all.
@@ -329,7 +331,7 @@ This project has one definition, one input port, one lookup inverter, and one ou
 
 ## Versioning and migration
 
-Versions 1 through 6 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 7 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.
@@ -356,7 +358,7 @@ Because libraries are ordinary projects, they can also be opened directly as pro
 - Primitive behavior is a closed built-in set; adding a primitive requires code and tests.
 - String IDs and all references are validated before simulation.
 - The loader accepts comments, trailing commas, and indented JSON; it does not resolve external references or URLs.
-- There is currently no maximum file size or maximum table count beyond the per-table 1,048,576-entry limit. Treat untrusted projects as a potential resource-exhaustion vector until a configurable size limit is added.
+- The loader refuses files above `ProjectSerializer.DefaultMaxProjectFileBytes` (64 MiB) before reading them; the limit is a per-call parameter so internal callers can lower it. Per-table entries remain capped at 1,048,576, but there is no separate cap on the number of tables. Treat untrusted projects as a potential resource-exhaustion vector.
 - `ProjectSerializer.Save` writes via a temporary file and atomic move, but callers are responsible for choosing a safe destination. The editor uses the platform file picker.
 
 ## What is not persisted

@@ -20,8 +20,19 @@ public sealed class SimulationEngine
 {
     public const string NonConvergenceCode = "RAD100";
     public const string DriverConflictCode = "RAD101";
-    public const string TimeOverflowCode = "RAD142";
     public const string RuntimeWarningCode = "RAD140";
+
+    /// <summary>
+    /// Reported when the configured pending-event cap is reached. The run halts rather
+    /// than letting event production outpace draining until memory is exhausted.
+    /// </summary>
+    public const string EventLimitCode = "RAD150";
+
+    /// <summary>
+    /// Emitted by the editor when runtime warnings were dropped after
+    /// <see cref="SimulationOptions.MaxRuntimeDiagnostics"/> was reached.
+    /// </summary>
+    public const string SuppressedDiagnosticsCode = "RAD151";
 
     private readonly CompiledCircuit _circuit;
     private readonly SimulationOptions _options;
@@ -35,6 +46,8 @@ public sealed class SimulationEngine
     private readonly DiagnosticBag _runtimeDiagnostics = new();
     private readonly SimulationTrace _trace;
     private readonly Dictionary<int, int> _externalValues = [];
+    private int _runtimeWarningCount;
+    private int _suppressedRuntimeDiagnostics;
 
     private PrimitiveRuntime[] _runtimes = [];
     private long _now;
@@ -93,6 +106,9 @@ public sealed class SimulationEngine
     /// <summary>Runtime warnings/errors (driver conflicts, non-convergence).</summary>
     public IReadOnlyList<Diagnostic> RuntimeDiagnostics => _runtimeDiagnostics;
 
+    /// <summary>Runtime warnings dropped after the configured diagnostic cap.</summary>
+    public int SuppressedRuntimeDiagnostics => _suppressedRuntimeDiagnostics;
+
     /// <summary>Restores time zero, all values, traces, and runtime state.</summary>
     public void Reset()
     {
@@ -104,6 +120,8 @@ public sealed class SimulationEngine
         EventsProcessed = 0;
         ComponentEvaluations = 0;
         NetTransitions = 0;
+        _runtimeWarningCount = 0;
+        _suppressedRuntimeDiagnostics = 0;
 
         _queue.Clear();
         _runtimeDiagnostics.Clear();
@@ -273,6 +291,7 @@ public sealed class SimulationEngine
                 if (++_evaluationCounts[ev.Target] > _options.MaxEvaluationsPerComponentPerTimestamp)
                 {
                     Halt(
+                        NonConvergenceCode,
                         $"Component '{component!.InstanceId}' evaluated more than {_options.MaxEvaluationsPerComponentPerTimestamp} times at time {_now}; zero-delay feedback did not converge.");
                     return;
                 }
@@ -330,10 +349,11 @@ public sealed class SimulationEngine
         if (resolution.Conflict && !_conflictReported[netIndex])
         {
             _conflictReported[netIndex] = true;
-            _runtimeDiagnostics.Warning(
+            AddRuntimeWarning(
                 DriverConflictCode,
-                $"Multiple drivers on net '{net.RepresentativeNetId}' disagree under domain '{net.Domain.Id}'.",
+                $"Multiple active drivers on net '{net.RepresentativeNetId}' violate the '{net.Domain.Drivers.Kind}' driver policy for domain '{net.Domain.Id}'.",
                 net.RepresentativeDefinitionId,
+                instanceId: null,
                 netId: net.RepresentativeNetId,
                 path: net.RepresentativePath);
         }
@@ -361,13 +381,17 @@ public sealed class SimulationEngine
 
     private void ScheduleEvaluation(int componentIndex)
     {
-        if (_pendingEvaluation[componentIndex])
+        if (_pendingEvaluation[componentIndex] || _halted)
+        {
+            return;
+        }
+
+        if (!TryEnqueue(new SimEvent(_now, _sequence++, SimEventKind.WakeComponent, componentIndex, 0)))
         {
             return;
         }
 
         _pendingEvaluation[componentIndex] = true;
-        _queue.Push(new SimEvent(_now, _sequence++, SimEventKind.WakeComponent, componentIndex, 0));
     }
 
     internal int ReadPinValue(int pinIndex)
@@ -379,60 +403,78 @@ public sealed class SimulationEngine
     internal void ScheduleOutput(int pinIndex, int value, long delayTicks)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(delayTicks);
-        if (!TryScheduleTime(delayTicks, out long eventTime))
-        {
-            return;
-        }
-
-        _queue.Push(new SimEvent(eventTime, _sequence++, SimEventKind.CommitOutput, pinIndex, value));
+        TryEnqueue(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.CommitOutput, pinIndex, value));
     }
 
     internal void ScheduleTimer(int componentIndex, long delayTicks, int payload)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(delayTicks);
-        if (!TryScheduleTime(delayTicks, out long eventTime))
-        {
-            return;
-        }
-
-        _queue.Push(new SimEvent(eventTime, _sequence++, SimEventKind.PrimitiveTimer, componentIndex, payload));
-    }
-
-    private bool TryScheduleTime(long delayTicks, out long eventTime)
-    {
-        try
-        {
-            eventTime = checked(_now + delayTicks);
-            return true;
-        }
-        catch (OverflowException)
-        {
-            eventTime = 0;
-            _halted = true;
-            _haltReason = $"Scheduling an event {delayTicks} ticks after time {_now} exceeds the supported simulation-time range.";
-            _queue.Clear();
-            _runtimeDiagnostics.Error(TimeOverflowCode, $"{_haltReason} Simulation halted at time {_now}.");
-            return false;
-        }
+        TryEnqueue(new SimEvent(checked(_now + delayTicks), _sequence++, SimEventKind.PrimitiveTimer, componentIndex, payload));
     }
 
     internal void ReportRuntimeWarning(string code, string message, CompiledComponent component)
     {
-        _runtimeDiagnostics.Warning(
+        AddRuntimeWarning(
             code,
             message,
             component.DefinitionId,
             component.InstanceId,
+            netId: null,
             path: component.Path);
     }
 
-    private void Halt(string reason)
+    /// <summary>
+    /// Retains a runtime warning unless the configured cap is reached. Suppressed
+    /// warnings are counted so callers can report how many were dropped.
+    /// </summary>
+    private void AddRuntimeWarning(
+        string code,
+        string message,
+        string? definitionId,
+        string? instanceId,
+        string? netId,
+        string? path)
+    {
+        if (_options.MaxRuntimeDiagnostics > 0 && _runtimeWarningCount >= _options.MaxRuntimeDiagnostics)
+        {
+            _suppressedRuntimeDiagnostics++;
+            return;
+        }
+
+        _runtimeWarningCount++;
+        _runtimeDiagnostics.Warning(code, message, definitionId, instanceId, netId, path);
+    }
+
+    /// <summary>
+    /// Enqueues one event unless the configured pending-event cap is reached. A circuit
+    /// that keeps producing events turns into a diagnostic instead of unbounded growth.
+    /// </summary>
+    private bool TryEnqueue(SimEvent simEvent)
+    {
+        if (_halted)
+        {
+            return false;
+        }
+
+        if (_options.MaxPendingEvents > 0 && _queue.Count >= _options.MaxPendingEvents)
+        {
+            Halt(
+                EventLimitCode,
+                $"Pending event limit of {_options.MaxPendingEvents} was reached; the circuit is scheduling events faster than they can be processed.");
+            return false;
+        }
+
+        _queue.Push(simEvent);
+        return true;
+    }
+
+    private void Halt(string code, string reason)
     {
         _halted = true;
         _haltReason = reason;
         _queue.Clear();
         _runtimeDiagnostics.Error(
-            NonConvergenceCode,
+            code,
             $"{reason} Simulation halted at time {_now}.");
     }
 

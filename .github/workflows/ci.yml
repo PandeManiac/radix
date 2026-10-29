@@ -1,8 +1,10 @@
+
 name: CI
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,25 +12,36 @@ permissions:
 jobs:
   verify:
     name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.113
+          dotnet-version: 10.0.x
+
+      - name: Install headless rendering dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libfontconfig1 libfreetype6
+
       - name: Restore
         run: dotnet restore Radix.slnx
+
       - name: Build Release
         run: dotnet build Radix.slnx -c Release --no-restore
-      - name: Core tests
-        run: dotnet test tests/Radix.Core.Tests/Radix.Core.Tests.csproj -c Release --no-build
-      - name: Headless Editor tests
-        run: dotnet test tests/Radix.Editor.Tests/Radix.Editor.Tests.csproj -c Release --no-build
-      - name: Validate every example and definition
+
+      - name: Run tests
+        run: dotnet test Radix.slnx -c Release --no-build
+
+      - name: Validate examples
         shell: pwsh
         run: |
           Get-ChildItem examples -Filter '*.radix' | ForEach-Object {
@@ -36,3 +49,10 @@ jobs:
             dotnet run -c Release --no-build --project src/Radix.Cli -- validate $_.FullName --all
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+
+      - name: Run example simulation scripts
+        shell: bash
+        run: >-
+          dotnet run -c Release --no-build --project src/Radix.Cli --
+          test examples/binary-counter.radix examples/tests/counter-counts.radixtest
+

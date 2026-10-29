@@ -87,6 +87,7 @@ public static class SimulationScriptRunner
         {
             MaxEvaluationsPerComponentPerTimestamp =
                 Math.Max(1, project.Settings.MaxEvaluationsPerComponentPerTimestamp),
+            MaxPendingEvents = Math.Max(0, project.Settings.MaxPendingEvents),
 
             // Scripts assert values, not waveforms. Skipping trace storage keeps long
             // sweeps cheap and avoids a hidden dependence on the trace ring capacity.
