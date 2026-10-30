@@ -143,6 +143,15 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     failure is fixed. Verification: release build 0 warnings, core tests 424/424,
     editor tests 180/180, and the counter CLI script passes. The rule is specified
     in `docs/architecture.md` 5.2 and `docs/project-format.md`.
+23. Added `RandomizedLookupOracleTests`, a seeded 200-case differential campaign.
+    Every case uses two to five inputs with at least two distinct standard domains
+    and a random table. Seven patterns per case cover fully driven, partially driven,
+    and fully undriven inputs. The independent oracle decodes each table entry,
+    rejects entries inconsistent with driven digits, and treats the output as
+    determined only when every remaining entry agrees. Expected held outputs are
+    tracked across steps, and the test asserts that both determined and ambiguous
+    steps occur, so it cannot pass by exercising only one path.
+    Verification: core tests 425/425, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
 
