@@ -11,6 +11,14 @@ public enum DiagnosticSeverity
     Error,
 }
 
+/// <summary>Whether a diagnostic comes from structure, runtime, or a recommendation.</summary>
+public enum DiagnosticNature
+{
+    Structural,
+    Runtime,
+    Heuristic,
+}
+
 /// <summary>A structured message with an optional location in a project.</summary>
 public sealed record Diagnostic(
     string Code,
@@ -22,6 +30,18 @@ public sealed record Diagnostic(
     string? PinId = null,
     string? Path = null)
 {
+    /// <summary>Electrical or modelling assumption behind this diagnostic.</summary>
+    public string? Assumption { get; init; }
+
+    /// <summary>Concrete corrective action, when one is justified.</summary>
+    public string? Suggestion { get; init; }
+
+    /// <summary>Whether simulation can still run, or null when that is not established.</summary>
+    public bool? SimulationRemainsValid { get; init; }
+
+    /// <summary>Structural, runtime, or heuristic origin, when that has been classified.</summary>
+    public DiagnosticNature? Nature { get; init; }
+
     /// <summary>Formatted location fragment such as "definition 'cpu' / instance 'alu'".</summary>
     public string Location
     {
@@ -95,6 +115,19 @@ public sealed class DiagnosticBag : IReadOnlyList<Diagnostic>
         {
             Add(diagnostic);
         }
+    }
+
+    /// <summary>Adds a diagnostic unless the exact same record is already present.</summary>
+    public bool AddUnique(Diagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+        if (_items.Contains(diagnostic))
+        {
+            return false;
+        }
+
+        _items.Add(diagnostic);
+        return true;
     }
 
     public void Clear() => _items.Clear();

@@ -1338,6 +1338,20 @@ internal static class Program
         foreach (Diagnostic diagnostic in diagnostics)
         {
             writer.WriteLine(diagnostic.ToString());
+            if (diagnostic.Nature is DiagnosticNature nature)
+            {
+                writer.WriteLine($"  classification: {nature}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(diagnostic.Assumption))
+            {
+                writer.WriteLine($"  assumption: {diagnostic.Assumption}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(diagnostic.Suggestion))
+            {
+                writer.WriteLine($"  suggestion: {diagnostic.Suggestion}");
+            }
         }
     }
 }

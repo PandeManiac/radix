@@ -1,3 +1,4 @@
+using Radix.Core.Analysis;
 using Radix.Core.Interpretation;
 using Radix.Core.Signals;
 
@@ -35,6 +36,8 @@ public static class CircuitValidator
         {
             ValidateDefinition(project, definition, diagnostics);
         }
+
+        ElectricalRuleChecker.Check(project, diagnostics);
     }
 
     private static void ValidateFormat(CircuitProject project, DiagnosticBag diagnostics)
@@ -631,12 +634,19 @@ public static class CircuitValidator
             {
                 if (pin.Direction == PinDirection.Input && !connectedPins.Contains(new PinRef(instance.Id, pin.Id)))
                 {
-                    diagnostics.Warning(
+                    diagnostics.AddUnique(new Diagnostic(
                         "RAD080",
+                        DiagnosticSeverity.Warning,
                         $"Input pin '{pin.Id}' of instance '{instance.Id}' is not connected.",
                         definition.Id,
                         instance.Id,
-                        pinId: pin.Id);
+                        PinId: pin.Id)
+                    {
+                        Assumption = "Every primitive and structural input pin is treated as required; RADIX has no optional-input metadata.",
+                        Suggestion = "Connect the pin to a driven net, or make the unused input explicit in the component design.",
+                        SimulationRemainsValid = true,
+                        Nature = DiagnosticNature.Structural,
+                    });
                 }
             }
         }
@@ -672,11 +682,18 @@ public static class CircuitValidator
 
         if (drivers > 1 && domain.Drivers is SingleDriverResolution)
         {
-            diagnostics.Warning(
+            diagnostics.AddUnique(new Diagnostic(
                 "RAD081",
+                DiagnosticSeverity.Warning,
                 $"Net '{net.Id}' has {drivers} output pins but domain '{domain.Id}' uses a single-driver policy; this will be resolved as a conflict.",
                 definition.Id,
-                netId: net.Id);
+                NetId: net.Id)
+            {
+                Assumption = "The domain's single-driver policy treats multiple active outputs as a structural conflict. This is not an overcurrent, resistance, or thermal calculation.",
+                Suggestion = "Keep one active push-pull driver, or choose a domain with an explicit priority or multi-driver policy for wired logic.",
+                SimulationRemainsValid = true,
+                Nature = DiagnosticNature.Structural,
+            });
         }
     }
 

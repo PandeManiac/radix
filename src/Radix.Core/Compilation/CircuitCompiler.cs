@@ -457,19 +457,9 @@ public sealed class CircuitCompiler
             List<CompiledPin> pins,
             CompiledNet[] nets)
         {
-            foreach (CompiledNet net in nets)
-            {
-                if (net.DriverPins.Length > 1 && !net.Domain.IsMultipleDriverPolicy)
-                {
-                    _diagnostics.Warning(
-                        "RAD119",
-                        $"Net '{net.RepresentativeNetId}' has {net.DriverPins.Length} active drivers while domain '{net.Domain.Id}' uses a single-driver policy.",
-                        net.RepresentativeDefinitionId,
-                        netId: net.RepresentativeNetId,
-                        path: net.RepresentativePath);
-                }
-            }
-
+            // Multiple drivers on a single-driver net are reported once by the
+            // authored-model ERC check (RAD081). Keeping a second flattened-net
+            // warning here produced two messages for the same design condition.
             foreach (CompiledComponent component in components)
             {
                 var localPins = new CompiledPin[component.PinCount];

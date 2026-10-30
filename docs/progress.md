@@ -1,6 +1,6 @@
 # RADIX continuation record
 
-Last updated: 2026-10-29. This file is the durable handoff note for agents and
+Last updated: 2026-10-30. This file is the durable handoff note for agents and
 humans; update it at each milestone instead of relying on chat history.
 
 ## Where the project stands
@@ -177,6 +177,21 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     multi-tick explicit delays, distinct feedback sources, and gate outputs that stay
     undriven until their first delayed commit.
     Verification: core tests 427/427, release build 0 warnings and 0 errors.
+
+29. Added the first structural electrical rule-checking layer. `RAD-ERC-001`
+    reports a net with required component inputs but no instance output or input-port
+    source; `RAD-ERC-002` reports an input-port net that is also driven internally
+    under a single-driver policy. Existing `RAD080` and `RAD081` now carry explicit
+    assumptions, suggestions, simulation-validity, and structural/runtime metadata.
+    Multiple drivers on priority or multi-driver domains remain valid, not faults.
+    The validation JSON report exposes the new metadata, the CLI prints assumptions
+    and suggestions, and the editor Diagnostics tab shows them and navigates to the
+    owning net. `docs/erc.md` records supported rules and deliberately unsupported
+    electrical phenomena. Removed the redundant compiler `RAD119` warning so a
+    single-driver conflict is reported once by the authored-model ERC check.
+    Verification: release build 0 warnings/0 errors, core tests 437/437, editor
+    tests 181/181, and all 24 bundled example projects validated without ERC,
+    `RAD080`, `RAD081`, or `RAD119` false positives.
 
 ## Known issues and limitations
 

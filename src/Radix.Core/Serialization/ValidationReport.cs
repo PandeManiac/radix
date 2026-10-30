@@ -74,7 +74,11 @@ public static class ValidationReport
             EmptyToNull(diagnostic.NetId),
             EmptyToNull(diagnostic.PinId),
             EmptyToNull(diagnostic.Path),
-            EmptyToNull(diagnostic.Location));
+            EmptyToNull(diagnostic.Location),
+            EmptyToNull(diagnostic.Assumption),
+            EmptyToNull(diagnostic.Suggestion),
+            diagnostic.SimulationRemainsValid,
+            diagnostic.Nature?.ToString());
 
     private static string? EmptyToNull(string? value) =>
         string.IsNullOrEmpty(value) ? null : value;
@@ -105,5 +109,9 @@ public static class ValidationReport
         string? NetId,
         string? PinId,
         string? Path,
-        string? Location);
+        string? Location,
+        string? Assumption,
+        string? Suggestion,
+        bool? SimulationRemainsValid,
+        string? Nature);
 }

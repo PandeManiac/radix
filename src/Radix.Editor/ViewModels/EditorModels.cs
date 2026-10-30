@@ -276,6 +276,32 @@ public sealed class DiagnosticItem
         Message = diagnostic.Message;
         Location = diagnostic.Location;
         Display = diagnostic.ToString();
+        Assumption = diagnostic.Assumption;
+        Suggestion = diagnostic.Suggestion;
+        var details = new List<string>(4);
+        if (diagnostic.Nature is DiagnosticNature nature)
+        {
+            details.Add($"Classification: {nature}.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(diagnostic.Assumption))
+        {
+            details.Add($"Assumption: {diagnostic.Assumption}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(diagnostic.Suggestion))
+        {
+            details.Add($"Suggested: {diagnostic.Suggestion}");
+        }
+
+        if (diagnostic.SimulationRemainsValid is bool simulationValid)
+        {
+            details.Add(simulationValid
+                ? "Simulation remains valid."
+                : "Simulation may no longer be valid.");
+        }
+
+        Details = string.Join(Environment.NewLine, details);
         LocateCommand = locateCommand;
         CanLocate = diagnostic.DefinitionId is not null ||
             diagnostic.InstanceId is not null ||
@@ -298,6 +324,14 @@ public sealed class DiagnosticItem
     public string Location { get; }
 
     public string Display { get; }
+
+    public string? Assumption { get; }
+
+    public string? Suggestion { get; }
+
+    public string Details { get; }
+
+    public bool HasDetails => Details.Length > 0;
 
     public ICommand LocateCommand { get; }
 

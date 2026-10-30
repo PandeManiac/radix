@@ -1505,6 +1505,34 @@ public sealed class EditorViewModelTests
     }
 
     [Fact]
+    public void ErcDiagnosticShowsExplanationAndNavigatesToNet()
+    {
+        var builder = new ProjectBuilder("erc editor");
+        DefinitionBuilder root = builder.Define("main", "Main");
+        Net output = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("buf", new LookupSpec(1, [0, 1]));
+        Net floating = root.AddNet("floating", StandardDomains.BinaryId);
+        root.Connect(floating, root.Pin("buf", "in0"));
+        root.Connect(output, root.Pin("buf", "out"));
+
+        var viewModel = new EditorViewModel(builder.Build("main"));
+        DiagnosticItem item = Assert.Single(
+            viewModel.Diagnostics,
+            diagnostic => diagnostic.Code == "RAD-ERC-001");
+
+        Assert.True(item.HasDetails);
+        Assert.Contains("Classification: Structural", item.Details, StringComparison.Ordinal);
+        Assert.Contains("Assumption:", item.Details, StringComparison.Ordinal);
+        Assert.Contains("Suggested:", item.Details, StringComparison.Ordinal);
+        Assert.Contains("Simulation remains valid", item.Details, StringComparison.Ordinal);
+
+        item.LocateCommand.Execute(null);
+
+        Assert.Equal("floating", viewModel.SelectedNetId);
+        Assert.Contains("Located net", viewModel.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DiagnosticsNavigateToDefinitionInstanceAndNet()
     {
         var viewModel = new EditorViewModel(ExampleProjects.CreateAccumulatorCpuDemo());
