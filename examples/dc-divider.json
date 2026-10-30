@@ -1,0 +1,28 @@
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    {
+      "id": "V1",
+      "type": "voltage-source",
+      "nodeA": "in",
+      "nodeB": "gnd",
+      "volts": 10
+    },
+    {
+      "id": "R1",
+      "type": "resistor",
+      "nodeA": "in",
+      "nodeB": "out",
+      "ohms": 1000
+    },
+    {
+      "id": "R2",
+      "type": "resistor",
+      "nodeA": "out",
+      "nodeB": "gnd",
+      "ohms": 1000
+    }
+  ]
+}

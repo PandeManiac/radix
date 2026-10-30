@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Radix.Core;
 using Radix.Core.Analysis;
 using Radix.Core.Compilation;
+using Radix.Core.Electrical;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
@@ -38,6 +39,7 @@ internal static class Program
             return args[0].ToLowerInvariant() switch
             {
                 "validate" => ValidateCommand(args[1..]),
+                "dc" => DcCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
                 "sweep" => SweepCommand(args[1..]),
@@ -103,6 +105,8 @@ internal static class Program
               validate <project.radix>       Validate structure and compile the project
                   [--all]                    Also compile every definition as a root
                   [--json]                   Emit one machine-readable JSON report
+              dc <netlist.json>              Solve a DC linear electrical netlist
+                  [--json]                   Emit one machine-readable DC report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -235,6 +239,60 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static int DcCommand(string[] args)
+    {
+        (var positional, var options) = Parse(args, [], ["json"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine("usage: radix dc <netlist.json> [--json]");
+            return 2;
+        }
+
+        bool json = options.ContainsKey("json");
+        DcNetlist netlist;
+        try
+        {
+            netlist = DcNetlistJson.Load(positional[0]);
+        }
+        catch (ProjectFormatException exception)
+        {
+            Console.Error.WriteLine($"netlist format error: {exception.Message}");
+            return 2;
+        }
+
+        try
+        {
+            DcSolution solution = netlist.Solve();
+            if (json)
+            {
+                Console.WriteLine(DcNetlistJson.ToReportJson(positional[0], netlist, solution));
+            }
+            else
+            {
+                PrintDcSolution(positional[0], netlist, solution);
+            }
+
+            return 0;
+        }
+        catch (DcSolveException exception)
+        {
+            if (json)
+            {
+                Console.WriteLine(DcNetlistJson.ToFailureJson(
+                    positional[0],
+                    netlist.GroundNodeId,
+                    exception.Failure,
+                    exception.Message));
+            }
+            else
+            {
+                Console.Error.WriteLine($"DC solve failed ({exception.Failure}): {exception.Message}");
+            }
+
+            return 1;
+        }
     }
 
     private static int SimulateCommand(string[] args)
@@ -1332,6 +1390,33 @@ internal static class Program
         long value = GetLongOption(options, key, fallback, min, max);
         return checked((int)value);
     }
+
+    private static void PrintDcSolution(string source, DcNetlist netlist, DcSolution solution)
+    {
+        Console.WriteLine($"netlist: {source}");
+        Console.WriteLine($"ground:  {netlist.GroundNodeId}");
+        Console.WriteLine("convention: element current flows nodeA -> nodeB; power is absorbed");
+        Console.WriteLine($"nodes ({netlist.Nodes.Count}):");
+        foreach (string node in netlist.Nodes)
+        {
+            Console.WriteLine($"  {node,-16} {FormatDcNumber(solution.NodeVoltages[node])} V");
+        }
+
+        Console.WriteLine($"elements ({netlist.Elements.Count}):");
+        foreach (DcElement element in netlist.Elements)
+        {
+            Console.WriteLine(
+                $"  {element.Id,-16} {DcNetlistJson.KindName(element),-16} {element.NodeA} -> {element.NodeB}");
+            Console.WriteLine(
+                $"    value={FormatDcNumber(element.Value)} {element.Unit}  " +
+                $"V={FormatDcNumber(solution.ElementVoltages[element.Id])}  " +
+                $"I={FormatDcNumber(solution.ElementCurrents[element.Id])} A  " +
+                $"P={FormatDcNumber(solution.ElementPowers[element.Id])} W");
+        }
+    }
+
+    private static string FormatDcNumber(double value) =>
+        value.ToString("G12", CultureInfo.InvariantCulture);
 
     private static void PrintDiagnostics(IEnumerable<Diagnostic> diagnostics, TextWriter writer)
     {

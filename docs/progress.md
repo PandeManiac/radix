@@ -208,6 +208,20 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     `docs/electrical.md`.
     Verification: core tests 451/451, release build 0 warnings and 0 errors.
 
+31. Exposed the DC linear solver through a headless `radix dc <netlist.json>`
+    command with text and `--json` reports. Added a strict versioned
+    `radix-dc-netlist` input format (resistor/voltage-source/current-source units,
+    required terminals, unknown-field rejection, 16 MiB bound) and a
+    `radix-dc-report` projection containing nodes, element parameters, terminal
+    voltages, currents, absorbed power, and stable solve-failure codes. Malformed
+    input exits 2; a singular or otherwise unsolvable system exits 1 with JSON when
+    requested; success exits 0. Added `examples/dc-divider.json` and
+    `DcNetlistJsonTests` for loading, reports, strict validation, file bounds, and
+    failure reports. Documented the format in `docs/electrical.md` and the CLI
+    examples in `README.md`.
+    Verification: core tests 456/456, release build 0 warnings and 0 errors, and
+    manual CLI checks for success, singular failure, and malformed input.
+
 ## Known issues and limitations
 
 - Editor tests need fontconfig, freetype, libpng and a font on Linux. This VM's

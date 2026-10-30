@@ -10,8 +10,9 @@ electrical-analysis layer:
 
 It is **not** connected to the digital event engine, the editor, the `.radix`
 project format, or the ERC checker. It is an independent netlist API under
-`Radix.Core.Electrical`, with analytical tests rather than a claim that existing
-digital designs now have analog behavior.
+`Radix.Core.Electrical`, exposed through the headless `radix dc` command, with
+analytical tests rather than a claim that existing digital designs now have
+analog behavior.
 
 ## Netlist API
 
@@ -114,6 +115,65 @@ explicit electrical terminals, units, models, and a documented digital/analog
 boundary rather than inferring electrical meaning from the existing signal
 engine.
 
+## Headless JSON netlist
+
+The CLI reads a versioned `radix-dc-netlist` document and writes either a human
+report or a `radix-dc-report` JSON object:
+
+```bash
+radix dc examples/dc-divider.json
+radix dc examples/dc-divider.json --json
+```
+
+Input shape:
+
+```json
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 10 },
+    { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
+    { "id": "R2", "type": "resistor", "nodeA": "out", "nodeB": "gnd", "ohms": 1000 }
+  ]
+}
+```
+
+- `format`, `version`, `ground`, and `elements` are required.
+- Each element requires `id`, `type`, `nodeA`, and `nodeB`.
+- `resistor` requires `ohms`; `voltage-source` requires `volts`;
+  `current-source` requires `amperes`.
+- Unknown fields, wrong versions, missing units, and mismatched unit properties
+  are rejected. Comments and trailing commas are accepted.
+- Input size is bounded to 16 MiB.
+
+The text report prints ground, every node voltage, and every element's parameter,
+terminal voltage, current, and absorbed power. The JSON report includes the same
+values under stable camel-case fields:
+
+```json
+{
+  "format": "radix-dc-report",
+  "version": 1,
+  "source": "examples/dc-divider.json",
+  "solved": true,
+  "ground": "gnd",
+  "nodes": [ { "id": "out", "volts": 5 } ],
+  "elements": [
+    { "id": "R1", "kind": "resistor", "nodeA": "in", "nodeB": "out",
+      "value": 1000, "unit": "ohm", "volts": 5,
+      "amperes": 0.005, "absorbedPowerWatts": 0.025 }
+  ]
+}
+```
+
+A singular system still produces valid JSON with `solved: false`, a stable
+`failure` value (`no-ground`, `singular-matrix`, or `non-finite-result`), and a
+message. Malformed input exits 2 before a report is emitted; a solve failure
+exits 1. Successful solves exit 0. The command never writes project or netlist
+state.
+
 ## Analytical validation
 
 `DcLinearSolverTests` checks the solver against closed-form results:
@@ -130,3 +190,5 @@ engine.
 - missing ground, empty netlists, invalid values, duplicate IDs, and self-loops;
 - 100 independent dividers sharing one source, checking every node, branch
   current, and the total source current.
+- versioned JSON loading, strict field/unit rejection, solved reports, and
+  machine-readable solve-failure reports.

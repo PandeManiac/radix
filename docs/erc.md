@@ -83,9 +83,10 @@ must not infer them from ideal digital values.
 
 A separate core DC linear solver now covers ideal resistors, independent voltage
 sources, independent current sources, and one ground reference. It has explicit
-units, node/ground conventions, singular-system failures, and analytical tests;
-see [electrical.md](electrical.md). It is not yet connected to ERC, the digital
-engine, the `.radix` format, or the editor.
+units, node/ground conventions, singular-system failures, analytical tests, and
+headless JSON netlists through `radix dc`; see [electrical.md](electrical.md). It
+is not yet connected to ERC, the digital engine, the `.radix` format, or the
+editor.
 
 The next step is explicit electrical terminals and component metadata with a
 documented mapping to electrical nodes. Transient, nonlinear, and component-rating
