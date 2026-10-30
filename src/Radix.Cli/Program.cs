@@ -115,6 +115,7 @@ internal static class Program
                   [--max-changes <n>]        Trace print limit (default 200)
                   [--json]                   Emit a versioned simulation state report
                   [--max-nets <n>]           Limit JSON net state rows (default 200)
+                  [--max-events <n>]         Stop after n processed events (default 100000000; 0 = unlimited)
               test <project.radix> <script-or-directory> [<more>...]
                                              Run scripted drives and assertions
                   [--definition <id>]        Definition to simulate (default: script or root)
@@ -240,7 +241,7 @@ internal static class Program
     {
         (var positional, var options) = Parse(
             args,
-            ["definition", "ticks", "set", "schedule", "bus", "format", "max-changes", "max-nets"],
+            ["definition", "ticks", "set", "schedule", "bus", "format", "max-changes", "max-nets", "max-events"],
             ["trace", "json"]);
         if (positional.Count != 1)
         {
@@ -257,7 +258,8 @@ internal static class Program
         }
 
         long ticks = GetLongOption(options, "ticks", 100, 0, long.MaxValue / 2);
-        SimulationOptions simulationOptions = SimulationOptions.FromSettings(project.Settings);
+        long maxEvents = GetLongOption(options, "max-events", 100_000_000, 0, long.MaxValue - 1);
+        SimulationOptions simulationOptions = SimulationOptions.FromSettings(project.Settings, maxEvents);
         CompiledCircuit circuit = CircuitCompiler.Compile(project, definitionId);
         var engine = new SimulationEngine(circuit, simulationOptions);
 
@@ -503,6 +505,7 @@ internal static class Program
             statistics = new
             {
                 eventsProcessed = engine.EventsProcessed,
+                eventBudget = engine.Options.MaxEventsProcessed,
                 componentEvaluations = engine.ComponentEvaluations,
                 netTransitions = engine.NetTransitions,
                 pendingEvents = engine.PendingEventCount,

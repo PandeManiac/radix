@@ -150,4 +150,9 @@ the verification baseline is clean.
   `SweepHonorsCancellationInsideASingleSettleRow` was observed once under a full
   parallel run and passed both in isolation and on the next full run; the test
   depends on a 30 ms cancellation deadline, so it remains timing-sensitive.
+- A cumulative event budget now supplements the queue cap. `MaxEventsProcessed`
+  (engine default `0` = disabled) halts with `RAD152` after an exact event count,
+  and `radix simulate` applies a 100,000,000-event default that `--max-events`
+  overrides. This bounds total work, not just instantaneous queue depth, so a
+  pathological `--ticks` value cannot monopolize a headless run.
 

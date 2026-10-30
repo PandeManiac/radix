@@ -112,6 +112,17 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     (including `std.mux2`) hold while *any* input is undriven, so the generated
     counter does not increment when EN=1 but the unused D pins are left floating.
     The tests now drive every input as documented; see Known issues.
+20. Added a cumulative event budget (`SimulationOptions.MaxEventsProcessed`, default
+    `0` = disabled) halting with `RAD152` at the exact processed count. `radix simulate`
+    now defaults to 100,000,000 events so an extreme `--ticks` value cannot run
+    effectively forever; `--max-events` overrides it and `0` disables it. The JSON
+    report exposes `statistics.eventBudget`. Four tests cover exact-count halting,
+    that a halted run ignores further advances, `0` disabling, and `RunUntilIdle`.
+    Also deleted the stale committed `SimulationEngine.cs.backup` and the
+    conflict-marker artifact `.github/workflows/ci.yml.orig`.
+    Verification: release build 0 warnings, core tests 416/416, editor tests 180/180,
+    `radix test examples/binary-counter.radix examples/tests/counter-counts.radixtest`
+    passes, and a bounded CLI run reports `eventsProcessed=1000` with `RAD152`.
 
 ## Known issues and limitations
 
@@ -129,8 +140,6 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
   makes partially driven generated parts appear frozen. A conservative
   "evaluate determined outputs over all input completions" semantic would be a
   deliberate model/version decision, not a silent compatibility change.
-- `src/Radix.Core/Simulation/SimulationEngine.cs.backup` is a committed stale copy
-  of the engine source. It is not compiled, but it duplicates code and will drift.
 - Everything under "Explicit limitations" in `README.md` still applies (no analog
   solver, no JIT, fixed-width generated parts, and so on).
 
@@ -143,7 +152,5 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    across all completions of undriven inputs (three-valued evaluation). This
    would make muxes and controlling-value gates behave physically, but it changes
    documented core semantics and needs its own compatibility plan and tests.
-3. Add an explicit event budget for CLI-driven runs so an extreme `--until`
-   value on a fast periodic source cannot run effectively forever.
-4. Continue the roadmap: large-definition scalability, richer hierarchy/library
+3. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

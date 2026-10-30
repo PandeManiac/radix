@@ -115,6 +115,10 @@ dotnet run --project src/Radix.Cli -- simulate examples/full-adder.radix \
   --set a=1,b=1,cin=0 --bus s,cout --format unsigned-binary \
   --json --max-nets 40 --trace --max-changes 100
 
+# Bound total work when sweeping a long, fast-running design
+dotnet run --project src/Radix.Cli -- simulate examples/binary-counter.radix \
+  --ticks 1000000000 --max-events 1000000
+
 # Drive initial input values and show a bus as a number
 dotnet run --project src/Radix.Cli -- simulate examples/full-adder.radix \
   --set a=1,b=1,cin=0 --bus s,cout --format unsigned-binary
@@ -165,7 +169,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 `test` accepts one script, several script paths, or directories; a directory is searched recursively for `*.radixtest` files in ordinal path order. One file keeps the single-script report. Several files print one block per script followed by an aggregate `PASS: N script(s), S step(s), E events`, `FAIL: X of N script(s) failed`, or `SUITE ERROR` summary. A malformed or uncompilable script is reported as that script's error while the remaining scripts still run. Duplicate paths are collapsed, and `--definition` overrides every script in the run. `--json` replaces the human prose with one `radix-test-report` object containing the project name, aggregate pass/fail/error counts, totals, and each script's path, definition, final time, halt state, failures, and diagnostics; exit codes are unchanged. It never writes project state.
 
-`simulate --json` emits one `radix-simulation-report` (schema version 1) to stdout. It contains the final simulation time and status, event/evaluation/transition counters, pending event count, interface pin values with domain labels, bounded compiled-net state, structured compile/runtime diagnostics, and an optional numeric-lane decode. Net rows default to 200 and are capped with `--max-nets` (0–100,000); `--trace` adds recent recorded transitions, with `--max-changes` defaulting to 200. Each bounded collection reports returned, total, and omitted counts. The report preserves ordinary exit codes (0 completed, 1 halted or semantic validation failure, 2 malformed project or invalid options) and does not write project state. JSON consumers should branch on `format` and `version` before relying on fields.
+`simulate --json` emits one `radix-simulation-report` (schema version 1) to stdout. It contains the final simulation time and status, event/evaluation/transition counters, pending event count, interface pin values with domain labels, bounded compiled-net state, structured compile/runtime diagnostics, and an optional numeric-lane decode. `--max-events` caps processed events (default 100,000,000; `0` disables) and the configured budget appears as `statistics.eventBudget`; exhausting it halts with `RAD152` while leaving partial state inspectable. Net rows default to 200 and are capped with `--max-nets` (0–100,000); `--trace` adds recent recorded transitions, with `--max-changes` defaulting to 200. Each bounded collection reports returned, total, and omitted counts. The report preserves ordinary exit codes (0 completed, 1 halted or semantic validation failure, 2 malformed project or invalid options) and does not write project state. JSON consumers should branch on `format` and `version` before relying on fields.
 
 `--set` applies an input value at time zero; `--schedule <tick>:<pin>=<value>` adds a timed drive (repeatable, comma-separated). The counter example has its own waveform clock, so it runs forever. For an edge-triggered circuit, power the clock up at a defined low level before scheduling the rising edge, as in the D flip-flop command above.
 
@@ -283,7 +287,7 @@ These are deliberate current boundaries, not hidden behavior:
 - Crash recovery keeps one snapshot for the latest dirty project and refreshes it on a 20-second timer, so a crash can lose up to the last 20 seconds of edits. Snapshots are restored without full validation so an intermediate invalid project can be repaired, which means a recovered project may open with diagnostics already present.
 - Undo snapshots the whole project and retains up to 80 states. This is simple and reliable, not asymptotically optimal for very large designs.
 - Very large traces are bounded (default 500,000 net changes); old changes are dropped and the UI shows only a subset of nets.
-- Pending event growth is bounded by a configurable cap (default 1,000,000; `0` disables it). Reaching it halts the run with `RAD150` and clears the queue. Runtime warnings are capped at 1,000 per run (`SimulationOptions.MaxRuntimeDiagnostics`); suppressed warnings are counted and reported as `RAD151`, while halt errors are always retained.
+- Pending event growth is bounded by a configurable cap (default 1,000,000; `0` disables it). Reaching it halts the run with `RAD150` and clears the queue. Total work is separately bounded by a cumulative event budget (`radix simulate` defaults to 100,000,000 events; `--max-events 0` disables), which halts with `RAD152`. Runtime warnings are capped at 1,000 per run (`SimulationOptions.MaxRuntimeDiagnostics`); suppressed warnings are counted and reported as `RAD151`, while halt errors are always retained.
 - Project and library files above 64 MiB are refused before parsing; the loader's byte limit is a per-call parameter.
 
 ## Repository layout
