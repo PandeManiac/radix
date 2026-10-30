@@ -177,6 +177,19 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     multi-tick explicit delays, distinct feedback sources, and gate outputs that stay
     undriven until their first delayed commit.
     Verification: core tests 427/427, release build 0 warnings and 0 errors.
+26. Extended the explicit-delay oracle to heterogeneous gate domains and wider
+    fan-in. Added a separate seeded campaign of 48 cases over 3-6 gates whose output
+    domains span binary, ternary, quaternary, and four-state signals. Each gate now
+    combines two or three distinct feedback taps with an external input, and every
+    tap remains an independent `Delay` primitive with a 1-3 tick delay and initialized
+    output. Twenty-eight steps mix fully driven, partially driven, and fully undriven
+    external inputs. The independent reference indexes each lookup by per-input
+    radices, enumerates undriven completions directly, and compares every gate output
+    and every internal delay output at every tick. Coverage assertions require all
+    four domains at gate outputs and external inputs, a gate with three feedback taps,
+    determined and ambiguous lookups, gate and delay transitions, multi-tick explicit
+    delays, and undriven gate outputs at time zero.
+    Verification: core tests 428/428, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
 
