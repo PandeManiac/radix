@@ -13,7 +13,8 @@ namespace Radix.Core.Tests;
 /// or three independent external inputs per gate so lookups genuinely evaluate several
 /// undriven inputs at once. Every link is a separate Delay primitive, and both gate
 /// outputs and every internal delay output are compared at every tick against an
-/// independent mixed-radix event model, including a bounded terminal drain.
+/// independent mixed-radix event model, and every gate/delay transition is compared
+/// in time order against a reference trace, including the bounded terminal drain.
 /// </summary>
 public sealed class RandomizedMixedDomainExplicitDelayOracleTests
 {
@@ -47,6 +48,7 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         int undrivenGateOutputsAtTimeZero = 0;
         int terminalTailEvents = 0;
         int settledDuringTail = 0;
+        int traceEvents = 0;
         var gateDomainIds = new HashSet<string>(StringComparer.Ordinal);
         var externalDomainIds = new HashSet<string>(StringComparer.Ordinal);
 
@@ -404,6 +406,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
                 settledDuringTail++;
             }
 
+            traceEvents += AssertTraceMatches(engine, reference, linkNets, gateCount, Seed, caseIndex);
+
             determinedEvaluations += reference.DeterminedEvaluations;
             ambiguousEvaluations += reference.AmbiguousEvaluations;
             gateTransitions += reference.GateTransitions;
@@ -435,6 +439,7 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
             $"campaign external domains covered [{string.Join(", ", externalDomainIds)}]");
         Assert.True(terminalTailEvents > 0, "the terminal drain processed no delayed events");
         Assert.True(settledDuringTail > 0, "no mixed-domain case settled during the terminal drain");
+        Assert.True(traceEvents > 0, "the mixed-domain trace comparison saw no gate or delay transitions");
     }
 
     [Fact]
@@ -452,6 +457,7 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         int multiTickLinkDelayCases = 0;
         int terminalTailEvents = 0;
         int settledDuringTail = 0;
+        int traceEvents = 0;
         var gateDomainIds = new HashSet<string>(StringComparer.Ordinal);
         var externalDomainIds = new HashSet<string>(StringComparer.Ordinal);
 
@@ -720,6 +726,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
                 settledDuringTail++;
             }
 
+            traceEvents += AssertTraceMatches(engine, reference, linkNets, gateCount, MultiUndrivenSeed, caseIndex);
+
             determinedEvaluations += reference.DeterminedEvaluations;
             ambiguousEvaluations += reference.AmbiguousEvaluations;
             multiWildcardEvaluations += reference.MultiWildcardEvaluations;
@@ -751,6 +759,7 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         Assert.True(multiUndrivenSteps > 0, "the campaign never drove several inputs of one gate undriven at once");
         Assert.True(terminalTailEvents > 0, "the terminal drain processed no delayed events");
         Assert.True(settledDuringTail > 0, "no multi-undriven case settled during the terminal drain");
+        Assert.True(traceEvents > 0, "the multi-undriven trace comparison saw no gate or delay transitions");
         Assert.True(
             gateDomainIds.Count == DomainChoices.Length,
             $"multi-undriven gate domains covered [{string.Join(", ", gateDomainIds)}]");
@@ -930,6 +939,71 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         return (engine, compiledLinks);
     }
 
+    private static int AssertTraceMatches(
+        SimulationEngine engine,
+        MixedDomainExplicitDelayReference reference,
+        int[] linkNets,
+        int gateCount,
+        int seed,
+        int caseIndex)
+    {
+        Assert.False(
+            engine.Trace.IsTruncated,
+            $"seed 0x{seed:X8}, case {caseIndex}: trace capacity {engine.Trace.Capacity} truncated " +
+            $"{engine.Trace.TotalRecorded} recorded transitions");
+
+        var names = new Dictionary<int, string>(linkNets.Length + gateCount);
+        for (int link = 0; link < linkNets.Length; link++)
+        {
+            names[linkNets[link]] = $"d{link}";
+        }
+
+        for (int gate = 0; gate < gateCount; gate++)
+        {
+            names[engine.Circuit.Ports[engine.Port($"y{gate}")].Net] = $"g{gate}";
+        }
+
+        var linkNetSet = linkNets.ToHashSet();
+        var actual = new List<ReferenceNetChange>();
+        foreach (NetChange change in engine.Trace)
+        {
+            if (!names.TryGetValue(change.Net, out string? name))
+            {
+                continue;
+            }
+
+            // Net construction records each initialized delay net before time-zero
+            // evaluation; the reference starts from those values instead of emitting
+            // a transition for them.
+            if (change.Time == 0 &&
+                linkNetSet.Contains(change.Net) &&
+                change.OldValue == SignalValue.UndrivenIndex)
+            {
+                continue;
+            }
+
+            actual.Add(new ReferenceNetChange(change.Time, name, change.OldValue, change.NewValue));
+        }
+
+        IReadOnlyList<ReferenceNetChange> expected = reference.Trace;
+        Assert.True(
+            expected.Count == actual.Count,
+            $"seed 0x{seed:X8}, case {caseIndex}: expected {expected.Count} scoped trace events, " +
+            $"actual {actual.Count}");
+
+        for (int i = 0; i < expected.Count; i++)
+        {
+            if (expected[i] != actual[i])
+            {
+                Assert.Fail(
+                    $"seed 0x{seed:X8}, case {caseIndex}: trace mismatch at event {i}; " +
+                    $"expected {expected[i]}, actual {actual[i]}");
+            }
+        }
+
+        return actual.Count;
+    }
+
     private static string DescribeCase(
         string reason,
         int caseIndex,
@@ -1067,6 +1141,12 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         int Index,
         int Value);
 
+    private readonly record struct ReferenceNetChange(
+        long Time,
+        string Net,
+        int OldValue,
+        int NewValue);
+
     /// <summary>
     /// Independent event model of the mixed-domain explicit-delay network. Gate
     /// lookups enumerate undriven input completions directly over per-input radices,
@@ -1091,6 +1171,7 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         private readonly int[][] _inputRadices;
         private readonly bool[] _gatePending;
         private readonly bool[] _delayPending;
+        private readonly List<ReferenceNetChange> _trace = [];
         private readonly PriorityQueue<ScheduledEvent, (long Time, long Sequence)> _queue = new();
         private long _now;
         private long _sequence;
@@ -1165,6 +1246,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         public int MultiWildcardDeterminedEvaluations { get; private set; }
 
         public int MultiWildcardAmbiguousEvaluations { get; private set; }
+
+        public IReadOnlyList<ReferenceNetChange> Trace => _trace;
 
         public bool HasPendingEvents => _queue.Count > 0;
 
@@ -1265,12 +1348,14 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
 
         private void CommitGate(int gate, int value)
         {
-            if (_gateValues[gate] == value)
+            int oldValue = _gateValues[gate];
+            if (oldValue == value)
             {
                 return;
             }
 
             _gateValues[gate] = value;
+            _trace.Add(new ReferenceNetChange(_now, $"g{gate}", oldValue, value));
             GateTransitions++;
             for (int link = 0; link < _linkCount; link++)
             {
@@ -1300,12 +1385,14 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
 
         private void CommitDelay(int link, int value)
         {
-            if (_linkValues[link] == value)
+            int oldValue = _linkValues[link];
+            if (oldValue == value)
             {
                 return;
             }
 
             _linkValues[link] = value;
+            _trace.Add(new ReferenceNetChange(_now, $"d{link}", oldValue, value));
             LinkTransitions++;
             ScheduleGateEvaluation(_linkDestinations[link]);
         }

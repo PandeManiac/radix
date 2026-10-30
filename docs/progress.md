@@ -202,6 +202,9 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     lookup that determines an output, one that holds on disagreement, all four domains
     at gate and external inputs, multi-tick delays, an all-undriven gate stimulus, and
     terminal-drain progress plus at least one fully settled case in each campaign.
+    Both campaigns also project the engine's net trace onto gate outputs and delay nets
+    and compare the exact time, order, old value, and new value of every transition
+    against a reference-side transition log, including the terminal drain.
     Verification: core tests 429/429, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
