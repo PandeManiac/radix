@@ -130,6 +130,19 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     `TextReportUsesDeterministicLineFeedEndings` asserts no `\r` and a final `\n`.
     CI runs on both platforms; this is a real portability defect, not a test-only
     normalization.
+22. Implemented conservative lookup evaluation for undriven inputs. A lookup now
+    completes every undriven input across its connected domain and commits an output
+    only when all completions agree; otherwise it holds its previous output. This
+    makes an unselected floating mux data input and a controlling gate value usable
+    without fabricating a result for genuinely ambiguous inputs. Explicit four-state
+    X/Z values remain ordinary table indices. Compiler validation bounds the
+    completion space with the 1,048,576-entry table cap. Added
+    `ConservativeLookupTests` covering mux, AND/OR, fully undriven constant and
+    ambiguous lookups, mixed radix, four-state X, and transport delay; the wide
+    counter test now leaves D undriven and proves the original generated-part
+    failure is fixed. Verification: release build 0 warnings, core tests 424/424,
+    editor tests 180/180, and the counter CLI script passes. The rule is specified
+    in `docs/architecture.md` 5.2 and `docs/project-format.md`.
 
 ## Known issues and limitations
 
@@ -141,12 +154,6 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
   archive.ubuntu.com, extract with `dpkg-deb -x`, then set `LD_LIBRARY_PATH` to
   the extracted `usr/lib/x86_64-linux-gnu` and `FONTCONFIG_FILE` to a config that
   points at the extracted fonts. Core tests are unaffected.
-- Undriven inputs are not three-valued: a lookup holds even when the output is
-  logically determined (for example a mux whose unselected data input is
-  undriven). `UndrivenInputMakesGateHoldItsOutput` pins this behavior, but it
-  makes partially driven generated parts appear frozen. A conservative
-  "evaluate determined outputs over all input completions" semantic would be a
-  deliberate model/version decision, not a silent compatibility change.
 - Everything under "Explicit limitations" in `README.md` still applies (no analog
   solver, no JIT, fixed-width generated parts, and so on).
 
@@ -155,9 +162,5 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 1. For stronger hierarchy scalability data, compare the seven-sample run on a
    quieter host, or install/use `dotnet-trace` to capture a bounded CPU profile;
    this VM has no profiler tool installed and the repeated runs remain noisy.
-2. Decide whether lookup evaluation should derive outputs that are determined
-   across all completions of undriven inputs (three-valued evaluation). This
-   would make muxes and controlling-value gates behave physically, but it changes
-   documented core semantics and needs its own compatibility plan and tests.
-3. Continue the roadmap: large-definition scalability, richer hierarchy/library
+2. Continue the roadmap: large-definition scalability, richer hierarchy/library
    workflows, and the documented electrical-simulation boundary.

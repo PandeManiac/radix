@@ -131,7 +131,17 @@ A lookup table is an explicit behavioral primitive. A NAND is a project definiti
 
 The cost is that a lookup evaluation computes a table index rather than executing a specialized Boolean instruction. Benchmarks show the managed event overhead dominates for event-driven designs, and the tradeoff preserves extensibility. A future optimizing compiler may recognize common lookup shapes without changing semantics.
 
-### 5.2 Delay models
+### 5.2 Undriven lookup inputs
+
+An undriven input is not a domain value and is never used directly as a table index. When a lookup has undriven inputs, the runtime enumerates every completion of those inputs with values from their connected domains. If all completions select a table entry with the same output, that output is committed after the primitive's normal transport delay. If completions disagree, the lookup holds its previous output and produces no new commit. This conservative completion semantics is the three-valued rule for lookups: an input that cannot affect the result is ignored, while an ambiguous result never fabricates a value.
+
+For example, a 2:1 mux with a driven select and a driven selected data input produces the selected value even if the unselected data input is floating. An AND gate with a driven 0 produces 0 regardless of its other input, and an OR gate with a driven 1 produces 1. A floating buffer input remains ambiguous because the two completions produce different outputs.
+
+A domain's explicit values, including four-state `X` and `Z`, are ordinary driven values and index the table normally. The rule applies only to the kernel's out-of-domain undriven marker. An unconnected primitive input has no domain to complete from, so it holds the output; a one-value domain has exactly one completion and is therefore never ambiguous.
+
+Compiler validation bounds every connected lookup at 1,048,576 table entries, which also bounds the completion space. The scan runs only while at least one input is undriven and stops at the first disagreeing completion, so fully driven circuits keep the ordinary direct-index path.
+
+### 5.3 Delay models
 
 - A lookup's output commit is scheduled at `now + DelayTicks`.
 - A delay primitive initializes its output at its declared initial value and schedules each accepted input commit at `now + DelayTicks`.
@@ -141,7 +151,7 @@ This is a **transport-delay, event-driven** model with zero-delay logical evalua
 
 Simulation time is a non-negative signed 64-bit tick count. If an output or timer would be scheduled beyond `Int64.MaxValue`, the engine halts, clears pending events, and emits runtime error `RAD142`; it never wraps time or lets an overflow exception escape the event loop. This is a representational boundary, not a physical time limit.
 
-### 5.3 Worked example: the tiny program-driven CPU
+### 5.4 Worked example: the tiny program-driven CPU
 
 `examples/tiny-cpu.radix` demonstrates that a processor is ordinary project structure. It contains no new primitive kinds and required no kernel change:
 

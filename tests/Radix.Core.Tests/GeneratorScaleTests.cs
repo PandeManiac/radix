@@ -69,14 +69,13 @@ public sealed class GeneratorScaleTests
         GeneratedPart part = PartGenerator.CreateCounter(width);
         SimulationEngine engine = TestFixtures.Simulate(part.Project, part.RootDefinitionId);
 
-        // Lookup primitives hold while any input is undriven, and the generated
-        // counter's data muxes carry D even when LOAD is low. Drive every input, as
-        // the generated part's documented usage requires.
+        // The data muxes carry D even when LOAD is low. Leaving D undriven verifies
+        // conservative lookup evaluation: the selected feedback path determines the
+        // mux output, so the counter increments without unused data pins driven.
         engine.Drive("clk", 0);
         engine.Drive("clr", 0);
         engine.Drive("load", 0);
         engine.Drive("en", 1);
-        DriveBits(engine, "d", new bool[width]);
         engine.Settle(width * 8 + 40);
 
         Pulse(engine, width);

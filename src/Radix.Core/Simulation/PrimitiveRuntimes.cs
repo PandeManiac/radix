@@ -37,6 +37,9 @@ internal sealed class LookupRuntime : PrimitiveRuntime
     private readonly long _delay;
     private readonly int[] _table;
     private readonly int[] _radices;
+    private readonly int[] _strides;
+    private readonly int[] _wildcardInputs;
+    private readonly int[] _wildcardDigits;
     private readonly int _outputPinOffset;
 
     public LookupRuntime(LookupSpec spec)
@@ -44,6 +47,9 @@ internal sealed class LookupRuntime : PrimitiveRuntime
         _delay = spec.DelayTicks;
         _table = spec.Table.ToArray();
         _radices = new int[spec.InputCount];
+        _strides = new int[spec.InputCount];
+        _wildcardInputs = new int[spec.InputCount];
+        _wildcardDigits = new int[spec.InputCount];
         _outputPinOffset = spec.InputCount;
     }
 
@@ -54,28 +60,43 @@ internal sealed class LookupRuntime : PrimitiveRuntime
             CompiledPin pin = engine.Circuit.Pins[component.FirstPin + i];
             _radices[i] = pin.Net >= 0 ? engine.Circuit.Nets[pin.Net].Domain.ValueCount : 0;
         }
+
+        // Compiler validation guarantees that a fully connected lookup's table is
+        // exactly the product of its input-domain sizes and is capped at 1,048,576
+        // entries, so these strides cannot overflow for a compiled circuit.
+        int stride = 1;
+        for (int i = _radices.Length - 1; i >= 0; i--)
+        {
+            _strides[i] = stride;
+            stride *= Math.Max(_radices[i], 1);
+        }
     }
 
     public override void Evaluate(SimulationEngine engine, CompiledComponent component)
     {
         int index = 0;
+        int wildcardCount = 0;
         for (int i = 0; i < _radices.Length; i++)
         {
-            int value = engine.ReadPinValue(component.FirstPin + i);
-            if (value < 0)
+            int radix = _radices[i];
+            if (radix <= 0)
             {
-                // Undriven is not a logical value. Hold the previous output until the
-                // input becomes defined; this also preserves explicit net seed values
-                // during start-up propagation.
+                // The pin has no compiled net, so there is no domain to complete.
+                // Hold the previous output, as the pre-conservative evaluator did.
                 return;
             }
 
-            int radix = _radices[i];
-            if (radix <= 1)
+            int value = engine.ReadPinValue(component.FirstPin + i);
+            if (value < 0)
             {
-                // A one-valued input contributes nothing to the index; a zero-valued
-                // (unconnected) input was already handled by the undriven check.
-                index *= Math.Max(radix, 1);
+                if (radix == 1)
+                {
+                    // A one-valued domain has exactly one completion; its digit is 0.
+                    continue;
+                }
+
+                _wildcardInputs[wildcardCount++] = i;
+                index *= radix;
                 continue;
             }
 
@@ -91,16 +112,109 @@ internal sealed class LookupRuntime : PrimitiveRuntime
             index = (index * radix) + value;
         }
 
+        if (wildcardCount == 0)
+        {
+            if (TryReadTable(engine, component, index, out int output))
+            {
+                engine.ScheduleOutput(component.FirstPin + _outputPinOffset, output, _delay);
+            }
+
+            return;
+        }
+
+        if (!TryDetermineOutput(engine, component, index, wildcardCount, out int determined))
+        {
+            return;
+        }
+
+        engine.ScheduleOutput(component.FirstPin + _outputPinOffset, determined, _delay);
+    }
+
+    /// <summary>
+    /// Conservative evaluation over undriven inputs: the output is usable only when
+    /// every completion of those inputs selects the same table entry. Otherwise the
+    /// lookup holds its previous output instead of fabricating a value.
+    /// </summary>
+    private bool TryDetermineOutput(
+        SimulationEngine engine,
+        CompiledComponent component,
+        int baseIndex,
+        int wildcardCount,
+        out int output)
+    {
+        output = 0;
+        long combinations = 1;
+        for (int i = 0; i < wildcardCount; i++)
+        {
+            int radix = _radices[_wildcardInputs[i]];
+            if (combinations > _table.Length / radix)
+            {
+                engine.ReportRuntimeWarning(
+                    "RAD141",
+                    $"Lookup has {wildcardCount} undriven inputs whose value completions exceed the {_table.Length}-entry table.",
+                    component);
+                return false;
+            }
+
+            combinations *= radix;
+        }
+
+        if (!TryReadTable(engine, component, baseIndex, out output))
+        {
+            return false;
+        }
+
+        int count = (int)combinations;
+        int current = baseIndex;
+        Array.Clear(_wildcardDigits, 0, wildcardCount);
+        for (int combination = 1; combination < count; combination++)
+        {
+            for (int i = wildcardCount - 1; i >= 0; i--)
+            {
+                int input = _wildcardInputs[i];
+                current += _strides[input];
+                _wildcardDigits[i]++;
+                if (_wildcardDigits[i] < _radices[input])
+                {
+                    break;
+                }
+
+                current -= _wildcardDigits[i] * _strides[input];
+                _wildcardDigits[i] = 0;
+            }
+
+            if (!TryReadTable(engine, component, current, out int value))
+            {
+                return false;
+            }
+
+            if (value != output)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool TryReadTable(
+        SimulationEngine engine,
+        CompiledComponent component,
+        int index,
+        out int value)
+    {
         if ((uint)index >= (uint)_table.Length)
         {
             engine.ReportRuntimeWarning(
                 "RAD141",
                 $"Lookup index {index} is outside the table ({_table.Length} entries).",
                 component);
-            return;
+            value = 0;
+            return false;
         }
 
-        engine.ScheduleOutput(component.FirstPin + _outputPinOffset, _table[index], _delay);
+        value = _table[index];
+        return true;
     }
 }
 

@@ -208,6 +208,8 @@ Instance pins are derived from the referenced definition's interface or from the
 
 `probe` has one input and no output. Its label is informational only.
 
+Lookup evaluation is conservative when inputs are undriven. The runtime completes every undriven input with all values of its connected domain; it commits an output only when every completion selects the same table entry, and otherwise holds the previous output. This applies to the kernel's undriven marker (`-1`) only. Explicit domain values such as four-state `X` and `Z` are driven indices and are looked up normally. See [architecture.md](architecture.md#52-undriven-lookup-inputs).
+
 ### Nets
 
 ```json
