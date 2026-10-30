@@ -164,6 +164,19 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     require determined and ambiguous lookups, output transitions, feedback changes,
     positive-delay undriven outputs, and a multi-tick delay.
     Verification: core tests 426/426, release build 0 warnings and 0 errors.
+25. Extended the cascade oracle to explicit `Delay` primitives and multiple feedback
+    paths. Added a second seeded campaign of 64 cases over 3-6 binary lookup gates.
+    Each gate has two distinct incoming feedback edges, a neighbor tap and a randomly
+    offset tap, both implemented as separate `Delay` components with independent 1-3
+    tick delays and initialized outputs. Each gate also receives an external input and
+    commits after its own 1-2 tick lookup delay. Twenty-eight steps mix fully driven,
+    partially driven, and fully undriven external inputs. An independent event model
+    tracks pending evaluations, delayed commits, and the exact component order, and
+    compares every gate output and every internal delay output at every tick. Coverage
+    assertions require determined and ambiguous lookups, gate and delay transitions,
+    multi-tick explicit delays, distinct feedback sources, and gate outputs that stay
+    undriven until their first delayed commit.
+    Verification: core tests 427/427, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
 
