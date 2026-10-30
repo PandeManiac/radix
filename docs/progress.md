@@ -237,6 +237,32 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     manual CLI checks for authored `.radix` and standalone `.json` success plus JSON
     reports.
 
+33. Added the editor's **Electrical** tab for browsing and editing authored DC
+    circuits. It creates/removes independent circuits, selects ground, adds and
+    renames nodes, adds/removes components, changes component kind while
+    preserving node bindings and rebuilding the terminal contract, edits finite
+    values, and binds each explicit terminal to a node. Live `RAD-ELEC-*`
+    validation, dirty tracking, undo/redo, project save/load, and the existing
+    inspector field-commit behavior are wired through. The tab is intentionally a
+    text/metadata inspector plus a read-only DC operating-point preview: Solve
+    runs the same MNA bridge as `radix dc` and shows node voltages and each
+    element's terminal voltage, current, and absorbed power, with explicit
+    structural and singularity failures. Results clear on edits. It does not map
+    digital nets to volts or change the digital simulation.
+    Verification: release build 0 warnings/0 errors; all 9 electrical editor
+    tests pass; full editor suite passes 190/190.
+
+34. Added JSON and CSV clipboard export for the Electrical tab's DC solve
+    preview. The result rows now retain their raw numeric values, and the export
+    builders project those displayed values without re-solving or mutating the
+    project. JSON is versioned (`radix-dc-solve`) and carries circuit identity,
+    ground, conventions, node voltages (including unreferenced nodes), and element
+    values, terminal voltages, currents, and absorbed power. CSV combines node and
+    element rows with invariant round-trip numbers and escaped text. Copy actions
+    appear only with a successful solve and clear with the preview on edits.
+    Verification: release build 0 warnings/0 errors; all 10 electrical editor
+    tests pass; full editor suite passes 191/191.
+
 ## Known issues and limitations
 
 - Editor tests need fontconfig, freetype, libpng and a font on Linux. This VM's
@@ -248,8 +274,9 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
   the extracted `usr/lib/x86_64-linux-gnu` and `FONTCONFIG_FILE` to a config that
   points at the extracted fonts. Core tests are unaffected.
 - Everything under "Explicit limitations" in `README.md` still applies (the DC
-  solver is core-only and not editor-integrated, no AC/transient/nonlinear
-  solver, no JIT, fixed-width generated parts, and so on).
+  solver remains core-only with a read-only editor preview; the editor does not
+  simulate or graphically visualize circuits, no AC/transient/nonlinear solver,
+  no JIT, fixed-width generated parts, and so on).
 
 ## Next meaningful steps
 
@@ -257,6 +284,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    quieter host, or install/use `dotnet-trace` to capture a bounded CPU profile;
    this VM has no profiler tool installed and the repeated runs remain noisy.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
-   workflows, and the electrical-solver integration boundary. The next electrical
-   step is explicit terminal/component metadata and a documented mapping to a
-   sparse or transient solver, not an implicit interpretation of digital values.
+   workflows, and the electrical-solver integration boundary. Authored circuits,
+   explicit terminals, and a read-only DC solve preview are now available in the
+   workbench; the next electrical step is a sparse/transient solver or richer
+   result visualization, not an implicit interpretation of digital values.

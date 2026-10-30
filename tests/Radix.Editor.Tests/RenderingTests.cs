@@ -898,6 +898,49 @@ public sealed class RenderingTests
         window.Close();
     }
 
+    [AvaloniaFact]
+    public void ElectricalTabRendersAuthoredCircuitAndTerminalBindings()
+    {
+        var project = CircuitProject.CreateEmpty("electrical render");
+        project.Definitions.Add(new CircuitDefinition { Id = "main", Name = "Main" });
+        project.RootDefinitionId = "main";
+        StandardLibrary.Install(project);
+        var viewModel = new EditorViewModel(project);
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+
+        var window = new MainWindow { DataContext = viewModel, Width = 1480, Height = 920 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var tabs = window.FindControl<TabControl>("RightTabs");
+        Assert.NotNull(tabs);
+        tabs!.SelectedIndex = 6;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(window.FindControl<ListBox>("ElectricalCircuitList")!.IsEffectivelyVisible);
+        Assert.NotNull(window.FindControl<Button>("ElectricalSolveButton"));
+        Assert.NotNull(window.FindControl<Button>("ElectricalCopyJsonButton"));
+        Assert.NotNull(window.FindControl<Button>("ElectricalCopyCsvButton"));
+        Assert.True(window.FindControl<ListBox>("ElectricalComponentList")!.IsEffectivelyVisible);
+        ComboBox terminal = Assert.Single(
+            window.GetVisualDescendants().OfType<ComboBox>(),
+            combo => combo.DataContext is ElectricalTerminalListItem { Id: "b" });
+        Assert.True(terminal.IsEffectivelyVisible);
+        Assert.Equal("n1", ((ElectricalTerminalListItem)terminal.DataContext!).SelectedNode!.Id);
+
+        using var bitmap = new RenderTargetBitmap(new PixelSize(1480, 920), new Vector(96, 96));
+        bitmap.Render(window);
+        string path = Path.Combine(ArtifactDirectory(), "workbench-electrical.png");
+        using (FileStream stream = File.Create(path))
+        {
+            bitmap.Save(stream);
+        }
+
+        window.DataContext = null;
+        window.Close();
+        Assert.True(new FileInfo(path).Length > 10_000, $"expected a non-trivial screenshot at {path}");
+    }
+
     private static (byte R, byte G, byte B) SamplePixel(Bitmap bitmap, int x, int y)
     {
         var buffer = new byte[4];

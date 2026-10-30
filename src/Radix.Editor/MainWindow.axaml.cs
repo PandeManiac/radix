@@ -176,6 +176,18 @@ public partial class MainWindow : Window
         MimeTypes = ["application/json"],
     };
 
+    private static readonly FilePickerFileType JsonFileType = new("JSON")
+    {
+        Patterns = ["*.json"],
+        MimeTypes = ["application/json"],
+    };
+
+    private static readonly FilePickerFileType CsvFileType = new("CSV")
+    {
+        Patterns = ["*.csv"],
+        MimeTypes = ["text/csv"],
+    };
+
     private static readonly FilePickerFileType TestScriptFileType = new("RADIX test script")
     {
         Patterns = ["*.radixtest"],
@@ -257,6 +269,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ElectricalTerminalNode_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { DataContext: ElectricalTerminalListItem terminal, SelectedItem: ElectricalNodeChoice node } &&
+            ViewModel is EditorViewModel viewModel)
+        {
+            viewModel.SetElectricalTerminalNode(terminal.ComponentId, terminal.Id, node.Id);
+        }
+    }
+
     private void LaneValue_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter ||
@@ -332,6 +353,105 @@ public partial class MainWindow : Window
         if (ViewModel is EditorViewModel viewModel)
         {
             await SaveAsAsync(viewModel);
+        }
+    }
+
+    private async void ElectricalCopyJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSolveJson(out string json))
+        {
+            await CopyElectricalSolveTextAsync(json, "Copied DC solve result as JSON");
+        }
+    }
+
+    private async void ElectricalCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSolveCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied DC solve result as CSV");
+        }
+    }
+
+    private async void ElectricalSaveJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSolveJson(out string json))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, json, "json", JsonFileType);
+        }
+    }
+
+    private async void ElectricalSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSolveCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, csv, "csv", CsvFileType);
+        }
+    }
+
+    private async Task SaveElectricalSolveTextAsync(
+        EditorViewModel viewModel,
+        string text,
+        string extension,
+        FilePickerFileType fileType)
+    {
+        IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = $"Save DC solve result as {extension.ToUpperInvariant()}",
+            SuggestedFileName = $"{SanitizeFileName(viewModel.Project.Name)}-dc-solve.{extension}",
+            DefaultExtension = extension,
+            FileTypeChoices = [fileType],
+            ShowOverwritePrompt = true,
+        });
+
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await using Stream stream = await file.OpenWriteAsync();
+            stream.SetLength(0);
+            await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
+            await writer.WriteAsync(text);
+            await writer.FlushAsync();
+            viewModel.StatusText = $"Saved DC solve result as {extension.ToUpperInvariant()}";
+        }
+        catch (Exception)
+        {
+            viewModel.StatusText = $"Could not save DC solve result as {extension.ToUpperInvariant()}.";
+        }
+    }
+
+    private async Task CopyElectricalSolveTextAsync(string text, string status)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+        {
+            if (ViewModel is EditorViewModel missingClipboard)
+            {
+                missingClipboard.StatusText = "Clipboard is not available.";
+            }
+
+            return;
+        }
+
+        try
+        {
+            await clipboard.SetTextAsync(text);
+        }
+        catch (Exception)
+        {
+            if (ViewModel is EditorViewModel failedClipboard)
+            {
+                failedClipboard.StatusText = "Could not copy to the clipboard.";
+            }
+
+            return;
+        }
+
+        if (ViewModel is EditorViewModel viewModel)
+        {
+            viewModel.StatusText = status;
         }
     }
 

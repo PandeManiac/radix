@@ -8,12 +8,17 @@ electrical-analysis layer:
 - ideal independent current sources;
 - one explicit ground reference.
 
-It is **not** connected to the digital event engine, the editor, or the ERC
-checker. Authored electrical circuits are stored as separate `.radix` project
-assets; they never reuse digital nets or interpret signal-domain indices as
-volts. The solver is an independent netlist API under `Radix.Core.Electrical`,
-exposed through the headless `radix dc` command, with analytical tests rather
-than a claim that existing digital designs now have analog behavior.
+It is **not** connected to the digital event engine or the ERC checker.
+Authored electrical circuits are stored as separate `.radix` project assets;
+they never reuse digital nets or interpret signal-domain indices as volts. The
+editor's **Electrical** tab browses and edits these assets, including their
+explicit terminals, and can solve the selected circuit on demand through the
+same `DcNetlist` bridge. The displayed operating point can be copied as JSON or
+CSV for use in a notebook, spreadsheet, or test fixture. It does not run
+time-domain simulation. The solver is
+an independent netlist API under `Radix.Core.Electrical`, exposed through the
+headless `radix dc` command, with analytical tests rather than a claim that
+existing digital designs now have analog behavior.
 
 ## Netlist API
 
@@ -93,6 +98,27 @@ If a project has exactly one electrical circuit, `--circuit` may be omitted. A
 project with several circuits requires it. Standalone JSON netlists remain
 supported for tools that do not author a project.
 
+## Editor result export
+
+After **Solve**, **Copy JSON** and **Copy CSV** place the displayed result on the
+system clipboard, while **Save JSON…** and **Save CSV…** write it to a chosen
+file. All four actions use the displayed result; they never re-run the solver,
+mutate the project, or change the digital simulation. Editing the circuit clears
+the preview and disables the actions. If a solve fails, there is no result to
+copy or save.
+
+The JSON document has `format: "radix-dc-solve"`, `version: 1`, the circuit ID,
+name and ground, the current/voltage/power conventions, one object per authored
+node, and one object per solved element. Unreferenced nodes have
+`"solved": false` and a null `volts` value.
+
+The CSV document has one header row and then node and element rows. The columns
+are `circuit,type,id,name,kind,node_a,node_b,value,unit,volts,amperes,absorbed_power_watts,solved`.
+Node rows leave the element fields empty; element rows use the same
+`nodeA -> nodeB` sign convention as the solve preview and the headless JSON
+report. Numeric fields use invariant, round-trip formatting, and text fields are
+quoted with CSV escaping.
+
 ## Sign and unit conventions
 
 - Voltages and node voltages are in volts.
@@ -152,6 +178,13 @@ as a short; ideal voltage-source loops are reported as singular systems.
 
 Supported now:
 
+- authoring and editing circuits, nodes, components, values, polarity, and
+  explicit terminal bindings in the editor's Electrical inspector;
+- on-demand DC solve preview of node voltages and each element's terminal
+  voltage, current, and absorbed power, with explicit structural/singularity
+  failures;
+- copying the displayed solve result as a versioned JSON document or as one CSV
+  table containing both node rows and element rows;
 - arbitrary two-terminal wiring among named nodes;
 - multiple independent voltage and current sources;
 - series, parallel, bridge, divider, and multi-source linear networks;
@@ -167,7 +200,7 @@ Not supported:
 - wire resistance, parasitic elements, or physical layout;
 - short-circuit current, overcurrent, or fuse-trip prediction;
 - automatic mapping of digital `.radix` nets or domain indices to volts;
-- editor instruments or a graphical analog canvas.
+- graphical analog schematic canvas, time-domain electrical simulation, or editor instruments (the Electrical tab is a metadata/terminal inspector plus a read-only DC operating-point preview).
 
 A digital domain index is not a voltage. Any future integration must introduce
 explicit electrical terminals, units, models, and a documented digital/analog

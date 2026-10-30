@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Numerics;
+using System.Text;
+using System.Text.Json;
 using System.Windows.Input;
 using Avalonia;
 using Radix.Core;
 using Radix.Core.Analysis;
 using Radix.Core.Compilation;
+using Radix.Core.Electrical;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
@@ -24,6 +27,12 @@ namespace Radix.Editor.ViewModels;
 /// </summary>
 public sealed class EditorViewModel : ObservableObject
 {
+    private static readonly JsonSerializerOptions ElectricalSolveJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
+
     private readonly Stack<EditorSnapshot> _undo = new();
     private readonly Stack<EditorSnapshot> _redo = new();
     private readonly RelayCommand _undoCommand;
@@ -139,6 +148,20 @@ public sealed class EditorViewModel : ObservableObject
     private string _lookupTableSummary = string.Empty;
     private string? _lookupTableInstanceId;
     private readonly List<int> _lookupTableModel = [];
+    private bool _refreshingElectrical;
+    private string? _selectedElectricalCircuitId;
+    private string? _selectedElectricalNodeId;
+    private string? _selectedElectricalComponentId;
+    private ElectricalCircuitListItem? _selectedElectricalCircuit;
+    private ElectricalNodeListItem? _selectedElectricalNode;
+    private ElectricalComponentListItem? _selectedElectricalComponent;
+    private ElectricalNodeChoice? _selectedElectricalGround;
+    private ElectricalComponentKindChoice? _selectedElectricalComponentKind;
+    private string _electricalValidationSummary = "No authored circuit selected.";
+    private string _electricalCircuitSummary = "No authored circuits.";
+    private string _electricalSolveSummary = "Choose Solve to compute the DC operating point.";
+    private bool _hasElectricalSolveResult;
+    private bool _hasElectricalSolveError;
 
 
     public EditorViewModel(CircuitProject project)
@@ -242,6 +265,13 @@ public sealed class EditorViewModel : ObservableObject
         CancelLaneEditCommand = new RelayCommand(CancelNumericLaneEdit);
         AddNumericFormatCommand = new RelayCommand(AddCustomNumericFormat);
         CancelFormatEditCommand = new RelayCommand(CancelCustomNumericFormatEdit);
+        AddElectricalCircuitCommand = new RelayCommand(AddElectricalCircuit);
+        RemoveElectricalCircuitCommand = new RelayCommand(RemoveElectricalCircuit);
+        AddElectricalNodeCommand = new RelayCommand(AddElectricalNode);
+        RemoveElectricalNodeCommand = new RelayCommand(RemoveElectricalNode);
+        AddElectricalComponentCommand = new RelayCommand(AddElectricalComponent);
+        RemoveElectricalComponentCommand = new RelayCommand(RemoveElectricalComponent);
+        SolveElectricalCircuitCommand = new RelayCommand(() => SolveElectricalCircuit());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -337,6 +367,38 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<NumericDisplayOption> FormatChoices { get; } = [];
 
     public ObservableCollection<CustomNumericFormatListItem> CustomNumericFormats { get; } = [];
+
+    public ObservableCollection<ElectricalCircuitListItem> ElectricalCircuits { get; } = [];
+
+    public ObservableCollection<ElectricalNodeListItem> ElectricalNodes { get; } = [];
+
+    public ObservableCollection<ElectricalComponentListItem> ElectricalComponents { get; } = [];
+
+    public ObservableCollection<ElectricalTerminalListItem> ElectricalTerminals { get; } = [];
+
+    public ObservableCollection<ElectricalNodeChoice> ElectricalGroundChoices { get; } = [];
+
+    public ObservableCollection<ElectricalDiagnosticItem> ElectricalDiagnostics { get; } = [];
+
+    public ObservableCollection<ElectricalNodeResultItem> ElectricalNodeResults { get; } = [];
+
+    public ObservableCollection<ElectricalElementResultItem> ElectricalElementResults { get; } = [];
+
+    /// <summary>Circuit metadata fields for the Electrical tab.</summary>
+    public ObservableCollection<EditableField> ElectricalCircuitFields { get; } = [];
+
+    /// <summary>Metadata for the selected electrical node.</summary>
+    public ObservableCollection<EditableField> ElectricalNodeFields { get; } = [];
+
+    /// <summary>Metadata for the selected electrical component.</summary>
+    public ObservableCollection<EditableField> ElectricalComponentFields { get; } = [];
+
+    public IReadOnlyList<ElectricalComponentKindChoice> ElectricalComponentKinds { get; } =
+    [
+        new(ElectricalComponentKind.Resistor),
+        new(ElectricalComponentKind.VoltageSource),
+        new(ElectricalComponentKind.CurrentSource),
+    ];
 
     public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
     [
@@ -966,9 +1028,188 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand CancelFormatEditCommand { get; }
 
+    public ICommand AddElectricalCircuitCommand { get; }
+
+    public ICommand RemoveElectricalCircuitCommand { get; }
+
+    public ICommand AddElectricalNodeCommand { get; }
+
+    public ICommand RemoveElectricalNodeCommand { get; }
+
+    public ICommand AddElectricalComponentCommand { get; }
+
+    public ICommand RemoveElectricalComponentCommand { get; }
+
+    public ICommand SolveElectricalCircuitCommand { get; }
+
     public bool IsEditingFormat => _editingFormatId is not null;
 
     public string FormatSaveButtonText => IsEditingFormat ? "Update numeric format" : "Add numeric format";
+
+    public ElectricalCircuitListItem? SelectedElectricalCircuit
+    {
+        get => _selectedElectricalCircuit;
+        set
+        {
+            if (ReferenceEquals(_selectedElectricalCircuit, value))
+            {
+                return;
+            }
+
+            _selectedElectricalCircuit = value;
+            RaisePropertyChanged();
+            if (_refreshingElectrical)
+            {
+                return;
+            }
+
+            _selectedElectricalCircuitId = value?.Id;
+            _selectedElectricalNodeId = null;
+            _selectedElectricalComponentId = null;
+            ClearElectricalSolveResult();
+            RefreshElectricalPanel();
+            StatusText = value is null
+                ? "No electrical circuit selected"
+                : $"Editing electrical circuit '{value.Name}'";
+        }
+    }
+
+    public ElectricalNodeListItem? SelectedElectricalNode
+    {
+        get => _selectedElectricalNode;
+        set
+        {
+            if (ReferenceEquals(_selectedElectricalNode, value))
+            {
+                return;
+            }
+
+            _selectedElectricalNode = value;
+            RaisePropertyChanged();
+            if (_refreshingElectrical)
+            {
+                return;
+            }
+
+            _selectedElectricalNodeId = value?.Id;
+            RefreshElectricalSelection();
+        }
+    }
+
+    public ElectricalComponentListItem? SelectedElectricalComponent
+    {
+        get => _selectedElectricalComponent;
+        set
+        {
+            if (ReferenceEquals(_selectedElectricalComponent, value))
+            {
+                return;
+            }
+
+            _selectedElectricalComponent = value;
+            RaisePropertyChanged();
+            if (_refreshingElectrical)
+            {
+                return;
+            }
+
+            _selectedElectricalComponentId = value?.Id;
+            RefreshElectricalSelection();
+        }
+    }
+
+    public ElectricalNodeChoice? SelectedElectricalGround
+    {
+        get => _selectedElectricalGround;
+        set
+        {
+            if (ReferenceEquals(_selectedElectricalGround, value))
+            {
+                return;
+            }
+
+            _selectedElectricalGround = value;
+            RaisePropertyChanged();
+            if (!_refreshingElectrical && value is not null)
+            {
+                SetElectricalGroundNode(value.Id);
+            }
+        }
+    }
+
+    public ElectricalComponentKindChoice? SelectedElectricalComponentKind
+    {
+        get => _selectedElectricalComponentKind;
+        set
+        {
+            if (ReferenceEquals(_selectedElectricalComponentKind, value))
+            {
+                return;
+            }
+
+            _selectedElectricalComponentKind = value;
+            RaisePropertyChanged();
+            if (!_refreshingElectrical && value is not null && _selectedElectricalComponentId is not null)
+            {
+                SetElectricalComponentKind(_selectedElectricalComponentId, value.Kind);
+            }
+        }
+    }
+
+    public string? SelectedElectricalCircuitId => _selectedElectricalCircuitId;
+
+    public string? SelectedElectricalNodeId => _selectedElectricalNodeId;
+
+    public string? SelectedElectricalComponentId => _selectedElectricalComponentId;
+
+    public ElectricalCircuit? SelectedElectricalCircuitModel =>
+        _project.FindElectricalCircuit(_selectedElectricalCircuitId);
+
+    public bool HasElectricalCircuits => ElectricalCircuits.Count > 0;
+
+    public bool HasSelectedElectricalCircuit => _selectedElectricalCircuit is not null;
+
+    public bool HasElectricalNodes => ElectricalNodes.Count > 0;
+
+    public bool HasElectricalComponents => ElectricalComponents.Count > 0;
+
+    public bool HasSelectedElectricalComponent => _selectedElectricalComponent is not null;
+
+    public bool HasSelectedElectricalNode => _selectedElectricalNode is not null;
+
+    public bool HasElectricalTerminals => ElectricalTerminals.Count > 0;
+
+    public bool HasElectricalDiagnostics => ElectricalDiagnostics.Count > 0;
+
+    public string ElectricalValidationSummary
+    {
+        get => _electricalValidationSummary;
+        private set => SetField(ref _electricalValidationSummary, value);
+    }
+
+    public string ElectricalCircuitSummary
+    {
+        get => _electricalCircuitSummary;
+        private set => SetField(ref _electricalCircuitSummary, value);
+    }
+
+    public string ElectricalSolveSummary
+    {
+        get => _electricalSolveSummary;
+        private set => SetField(ref _electricalSolveSummary, value);
+    }
+
+    public bool HasElectricalSolveResult
+    {
+        get => _hasElectricalSolveResult;
+        private set => SetField(ref _hasElectricalSolveResult, value);
+    }
+
+    public bool HasElectricalSolveError
+    {
+        get => _hasElectricalSolveError;
+        private set => SetField(ref _hasElectricalSolveError, value);
+    }
 
     public string FormatPreviewText
     {
@@ -4810,6 +5051,7 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshAll(bool fit)
     {
         ClearSweepResult();
+        ClearElectricalSolveResult();
         EnsureProjectShape();
         RefreshProjectSettingsFields();
         if (_project.FindDefinition(_definitionId) is null)
@@ -4831,6 +5073,7 @@ public sealed class EditorViewModel : ObservableObject
         RebuildLayout();
         RefreshInspector();
         RefreshDiagnosticsFromValidator();
+        RefreshElectricalPanel();
         RefreshWaveform();
         RefreshRecentTransitions();
         RefreshSimStatus();
@@ -5411,6 +5654,846 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
     }
+
+    public void AddElectricalCircuit()
+    {
+        PushUndo();
+        string id = UniqueElectricalCircuitId();
+        var circuit = new ElectricalCircuit
+        {
+            Id = id,
+            Name = $"DC circuit {_project.ElectricalCircuits.Count + 1}",
+            GroundNodeId = "gnd",
+        };
+        circuit.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "n1", Name = "Node 1" });
+        _project.ElectricalCircuits.Add(circuit);
+        _selectedElectricalCircuitId = id;
+        _selectedElectricalNodeId = null;
+        _selectedElectricalComponentId = null;
+        AfterElectricalMutation($"Added electrical circuit '{id}'");
+    }
+
+    public void RemoveElectricalCircuit()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            StatusText = "No electrical circuit is selected.";
+            return;
+        }
+
+        PushUndo();
+        _project.ElectricalCircuits.Remove(circuit);
+        _selectedElectricalCircuitId = null;
+        _selectedElectricalNodeId = null;
+        _selectedElectricalComponentId = null;
+        AfterElectricalMutation($"Removed electrical circuit '{circuit.Id}'");
+    }
+
+    public void AddElectricalNode()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            StatusText = "Select an electrical circuit first.";
+            return;
+        }
+
+        PushUndo();
+        string id = UniqueElectricalNodeId(circuit);
+        circuit.Nodes.Add(new ElectricalNode { Id = id, Name = $"Node {circuit.Nodes.Count}" });
+        _selectedElectricalNodeId = id;
+        AfterElectricalMutation($"Added electrical node '{id}'");
+    }
+
+    public void RemoveElectricalNode()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        ElectricalNode? node = circuit?.FindNode(_selectedElectricalNodeId ?? string.Empty);
+        if (circuit is null || node is null)
+        {
+            StatusText = "Select an electrical node first.";
+            return;
+        }
+
+        if (string.Equals(circuit.GroundNodeId, node.Id, StringComparison.Ordinal))
+        {
+            StatusText = "The ground node cannot be removed; choose another ground first.";
+            return;
+        }
+
+        ElectricalComponent? owner = circuit.Components.FirstOrDefault(component =>
+            component.Terminals.Any(terminal =>
+                string.Equals(terminal.NodeId, node.Id, StringComparison.Ordinal)));
+        if (owner is not null)
+        {
+            StatusText = $"Node '{node.Id}' is bound to a terminal on '{owner.Id}'.";
+            return;
+        }
+
+        PushUndo();
+        circuit.Nodes.Remove(node);
+        _selectedElectricalNodeId = null;
+        AfterElectricalMutation($"Removed electrical node '{node.Id}'");
+    }
+
+    public void AddElectricalComponent()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            StatusText = "Select an electrical circuit first.";
+            return;
+        }
+
+        if (circuit.FindNode(circuit.GroundNodeId) is null)
+        {
+            StatusText = "Choose an existing ground node before adding a component.";
+            return;
+        }
+
+        PushUndo();
+        if (circuit.Nodes.Count < 2)
+        {
+            string nodeId = UniqueElectricalNodeId(circuit);
+            circuit.Nodes.Add(new ElectricalNode { Id = nodeId, Name = $"Node {circuit.Nodes.Count}" });
+        }
+
+        string otherNode = circuit.Nodes
+            .First(node => !string.Equals(node.Id, circuit.GroundNodeId, StringComparison.Ordinal)).Id;
+        ElectricalComponentKind kind = ElectricalComponentKind.Resistor;
+        string id = UniqueElectricalComponentId(circuit, kind);
+        var component = new ElectricalComponent
+        {
+            Id = id,
+            Name = id.ToUpperInvariant(),
+            Kind = kind,
+            Value = DefaultElectricalValue(kind),
+        };
+        AddElectricalTerminals(component, circuit.GroundNodeId, otherNode);
+        circuit.Components.Add(component);
+        _selectedElectricalComponentId = id;
+        AfterElectricalMutation($"Added electrical component '{id}'");
+    }
+
+    public void RemoveElectricalComponent()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        ElectricalComponent? component = circuit?.FindComponent(_selectedElectricalComponentId ?? string.Empty);
+        if (circuit is null || component is null)
+        {
+            StatusText = "Select an electrical component first.";
+            return;
+        }
+
+        PushUndo();
+        circuit.Components.Remove(component);
+        _selectedElectricalComponentId = null;
+        AfterElectricalMutation($"Removed electrical component '{component.Id}'");
+    }
+
+    public void SetElectricalGroundNode(string nodeId)
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit?.FindNode(nodeId) is null ||
+            string.Equals(circuit.GroundNodeId, nodeId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        PushUndo();
+        circuit.GroundNodeId = nodeId;
+        AfterElectricalMutation($"Electrical ground is now '{nodeId}'");
+    }
+
+    /// <summary>Binds one explicit terminal to an existing node. Missing terminals are restored from metadata.</summary>
+    public void SetElectricalTerminalNode(string componentId, string terminalId, string nodeId)
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        ElectricalComponent? component = circuit?.FindComponent(componentId);
+        if (circuit is null || component is null || circuit.FindNode(nodeId) is null)
+        {
+            return;
+        }
+
+        ElectricalTerminal? terminal = component.FindTerminal(terminalId);
+        if (terminal is null)
+        {
+            ElectricalTerminalTemplate found = ElectricalComponentMetadata.Terminals(component.Kind)
+                .FirstOrDefault(candidate => string.Equals(candidate.Id, terminalId, StringComparison.Ordinal));
+            if (string.IsNullOrEmpty(found.Id))
+            {
+                return;
+            }
+
+            terminal = new ElectricalTerminal
+            {
+                Id = found.Id,
+                Name = found.Name,
+                Polarity = found.Polarity,
+            };
+            component.Terminals.Add(terminal);
+        }
+
+        if (string.Equals(terminal.NodeId, nodeId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        PushUndo();
+        terminal.NodeId = nodeId;
+        AfterElectricalMutation($"Bound terminal '{component.Id}.{terminal.Id}' to '{nodeId}'");
+    }
+
+    public void SetElectricalComponentKind(string componentId, ElectricalComponentKind kind)
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        ElectricalComponent? component = circuit?.FindComponent(componentId);
+        if (component is null || component.Kind == kind)
+        {
+            return;
+        }
+
+        Dictionary<string, string> nodeBindings = component.Terminals
+            .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
+        PushUndo();
+        component.Kind = kind;
+        AddElectricalTerminals(
+            component,
+            nodeBindings.GetValueOrDefault("a", string.Empty),
+            nodeBindings.GetValueOrDefault("b", string.Empty));
+        AfterElectricalMutation($"'{component.Id}' is now a {new ElectricalComponentKindChoice(kind).Label.ToLowerInvariant()}");
+    }
+
+    private ElectricalCircuitListItem? FindElectricalCircuitItem(string? id) =>
+        ElectricalCircuits.FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+
+    private void AfterElectricalMutation(string status)
+    {
+        IsDirty = true;
+        ClearElectricalSolveResult();
+        RefreshElectricalPanel();
+        StatusText = status;
+    }
+
+    private void RefreshElectricalPanel()
+    {
+        bool wasRefreshing = _refreshingElectrical;
+        _refreshingElectrical = true;
+        try
+        {
+            ElectricalCircuits.Clear();
+            foreach (ElectricalCircuit circuit in _project.ElectricalCircuits)
+            {
+                ElectricalCircuits.Add(new ElectricalCircuitListItem(circuit));
+            }
+
+            ElectricalCircuit? selected = _project.FindElectricalCircuit(_selectedElectricalCircuitId) ??
+                _project.ElectricalCircuits.FirstOrDefault();
+            _selectedElectricalCircuitId = selected?.Id;
+            _selectedElectricalCircuit = FindElectricalCircuitItem(selected?.Id);
+
+            if (selected is null)
+            {
+                ClearElectricalSelection();
+            }
+            else
+            {
+            _selectedElectricalNodeId = selected.FindNode(_selectedElectricalNodeId ?? string.Empty)?.Id;
+            _selectedElectricalComponentId = selected.FindComponent(_selectedElectricalComponentId ?? string.Empty)?.Id;
+
+            ElectricalGroundChoices.Clear();
+            foreach (ElectricalNode node in selected.Nodes)
+            {
+                ElectricalGroundChoices.Add(new ElectricalNodeChoice(node));
+            }
+
+            _selectedElectricalGround = ElectricalGroundChoices.FirstOrDefault(choice =>
+                string.Equals(choice.Id, selected.GroundNodeId, StringComparison.Ordinal));
+
+            ElectricalNodes.Clear();
+            foreach (ElectricalNode node in selected.Nodes)
+            {
+                ElectricalNodes.Add(new ElectricalNodeListItem(
+                    node,
+                    string.Equals(node.Id, selected.GroundNodeId, StringComparison.Ordinal)));
+            }
+
+            _selectedElectricalNode = ElectricalNodes.FirstOrDefault(item =>
+                string.Equals(item.Id, _selectedElectricalNodeId, StringComparison.Ordinal));
+
+            ElectricalComponents.Clear();
+            foreach (ElectricalComponent component in selected.Components)
+            {
+                ElectricalComponents.Add(new ElectricalComponentListItem(component));
+            }
+
+            _selectedElectricalComponent = ElectricalComponents.FirstOrDefault(item =>
+                string.Equals(item.Id, _selectedElectricalComponentId, StringComparison.Ordinal));
+            _selectedElectricalComponentKind = _selectedElectricalComponent is null
+                ? null
+                : ElectricalComponentKinds.First(choice => choice.Kind == _selectedElectricalComponent.Kind);
+
+            RefreshElectricalDetails(selected);
+            ElectricalCircuitSummary = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{selected.Nodes.Count} nodes · {selected.Components.Count} components · ground '{selected.GroundNodeId}'");
+            }
+        }
+        finally
+        {
+            _refreshingElectrical = wasRefreshing;
+        }
+
+        RaiseElectricalStateChanged();
+    }
+
+    private void RefreshElectricalSelection()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            return;
+        }
+
+        bool wasRefreshing = _refreshingElectrical;
+        _refreshingElectrical = true;
+        try
+        {
+            _selectedElectricalNodeId = circuit.FindNode(_selectedElectricalNodeId ?? string.Empty)?.Id;
+            _selectedElectricalNode = ElectricalNodes.FirstOrDefault(item =>
+                string.Equals(item.Id, _selectedElectricalNodeId, StringComparison.Ordinal));
+            _selectedElectricalComponentId = circuit.FindComponent(_selectedElectricalComponentId ?? string.Empty)?.Id;
+            _selectedElectricalComponent = ElectricalComponents.FirstOrDefault(item =>
+                string.Equals(item.Id, _selectedElectricalComponentId, StringComparison.Ordinal));
+            _selectedElectricalComponentKind = _selectedElectricalComponent is null
+                ? null
+                : ElectricalComponentKinds.First(choice => choice.Kind == _selectedElectricalComponent.Kind);
+            RefreshElectricalDetails(circuit);
+        }
+        finally
+        {
+            _refreshingElectrical = wasRefreshing;
+        }
+
+        RaiseElectricalStateChanged();
+    }
+
+    private void ClearElectricalSelection()
+    {
+        ElectricalNodes.Clear();
+        ElectricalComponents.Clear();
+        ElectricalTerminals.Clear();
+        ElectricalGroundChoices.Clear();
+        ElectricalCircuitFields.Clear();
+        ElectricalNodeFields.Clear();
+        ElectricalComponentFields.Clear();
+        ElectricalDiagnostics.Clear();
+        _selectedElectricalNode = null;
+        _selectedElectricalComponent = null;
+        _selectedElectricalGround = null;
+        _selectedElectricalComponentKind = null;
+        ElectricalValidationSummary = "No authored circuit selected.";
+        ElectricalCircuitSummary = _project.ElectricalCircuits.Count == 0
+            ? "No authored circuits. Create one to author nodes, components, and terminals."
+            : "Select an authored circuit.";
+    }
+
+    private void RefreshElectricalDetails(ElectricalCircuit circuit)
+    {
+        RefreshElectricalTerminals(circuit);
+        RefreshElectricalFields(circuit);
+        RefreshElectricalDiagnostics(circuit);
+    }
+
+    private void RefreshElectricalTerminals(ElectricalCircuit circuit)
+    {
+        ElectricalTerminals.Clear();
+        ElectricalComponent? component = circuit.FindComponent(_selectedElectricalComponentId ?? string.Empty);
+        if (component is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<ElectricalNodeChoice> choices = ElectricalGroundChoices.ToList();
+        IReadOnlyList<ElectricalTerminalTemplate> templates = ElectricalComponentMetadata.Terminals(component.Kind);
+        foreach (ElectricalTerminalTemplate template in templates)
+        {
+            ElectricalTerminal terminal = component.FindTerminal(template.Id) ?? new ElectricalTerminal
+            {
+                Id = template.Id,
+                Name = template.Name,
+                Polarity = template.Polarity,
+            };
+            ElectricalTerminals.Add(new ElectricalTerminalListItem(component, terminal, choices));
+        }
+
+        foreach (ElectricalTerminal terminal in component.Terminals.Where(terminal =>
+            templates.All(template => !string.Equals(template.Id, terminal.Id, StringComparison.Ordinal))))
+        {
+            ElectricalTerminals.Add(new ElectricalTerminalListItem(component, terminal, choices));
+        }
+    }
+
+    private void RefreshElectricalFields(ElectricalCircuit circuit)
+    {
+        ElectricalCircuitFields.Clear();
+        ElectricalCircuitFields.Add(new EditableField("Circuit", circuit.Id, isReadOnly: true));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Name",
+            circuit.Name,
+            apply: value => RenameElectricalCircuit(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Description",
+            circuit.Description ?? string.Empty,
+            hint: "Optional context for this DC circuit",
+            apply: value => SetElectricalCircuitDescription(circuit.Id, value)));
+
+        ElectricalNodeFields.Clear();
+        if (_selectedElectricalNode is not null)
+        {
+            string nodeId = _selectedElectricalNode.Id;
+            ElectricalNodeFields.Add(new EditableField("Node", nodeId, isReadOnly: true));
+            ElectricalNodeFields.Add(new EditableField(
+                "Node name",
+                _selectedElectricalNode.Name,
+                hint: "Display label only; terminals reference the node ID",
+                apply: value => RenameElectricalNode(circuit.Id, nodeId, value)));
+        }
+
+        ElectricalComponentFields.Clear();
+        if (_selectedElectricalComponent is not null)
+        {
+            ElectricalComponent? component = circuit.FindComponent(_selectedElectricalComponent.Id);
+            if (component is not null)
+            {
+                ElectricalComponentFields.Add(new EditableField("Component", component.Id, isReadOnly: true));
+                ElectricalComponentFields.Add(new EditableField(
+                    "Name",
+                    component.Name,
+                    hint: "Display label only",
+                    apply: value => RenameElectricalComponent(circuit.Id, component.Id, value)));
+                ElectricalComponentFields.Add(new EditableField(
+                    $"Value ({component.Unit})",
+                    FormatElectricalValue(component.Value),
+                    hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; validation is shown below",
+                    apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Solves the selected authored circuit through the same netlist bridge used by
+    /// <c>radix dc</c>. This never mutates the project or the digital simulation, and
+    /// structural errors or a singular system are reported in the panel.
+    /// </summary>
+    public bool SolveElectricalCircuit()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ShowElectricalSolveError(
+                "Select an authored circuit before solving.",
+                "No electrical circuit selected.");
+            return false;
+        }
+
+        DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+        if (validation.HasErrors)
+        {
+            ShowElectricalSolveError(
+                $"Cannot solve: {validation.ErrorCount} structural error(s). Fix the validation messages above.",
+                $"DC solve blocked by {validation.ErrorCount} structural error(s).");
+            return false;
+        }
+
+        DcNetlist netlist;
+        try
+        {
+            netlist = circuit.ToDcNetlist();
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            ShowElectricalSolveError(
+                $"Cannot solve: {exception.Diagnostics.ErrorCount} structural error(s). Fix the validation messages above.",
+                "DC solve blocked by structural errors.");
+            return false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ShowElectricalSolveError(
+                "Cannot build the DC netlist: " + exception.Message,
+                "DC netlist construction failed.");
+            return false;
+        }
+
+        DcSolution solution;
+        try
+        {
+            solution = netlist.Solve();
+        }
+        catch (DcSolveException exception)
+        {
+            ShowElectricalSolveError(
+                $"Solve failed ({FailureLabel(exception.Failure)}): {exception.Message}",
+                $"DC solve failed ({exception.Failure}).");
+            return false;
+        }
+
+        ElectricalNodeResults.Clear();
+        foreach (ElectricalNode node in circuit.Nodes)
+        {
+            double? volts = solution.NodeVoltages.TryGetValue(node.Id, out double value) ? value : null;
+            ElectricalNodeResults.Add(new ElectricalNodeResultItem(node, volts));
+        }
+
+        ElectricalElementResults.Clear();
+        foreach (DcElement element in netlist.Elements)
+        {
+            ElectricalElementResults.Add(new ElectricalElementResultItem(
+                element,
+                circuit.FindComponent(element.Id),
+                solution));
+        }
+
+        HasElectricalSolveResult = true;
+        HasElectricalSolveError = false;
+        ElectricalSolveSummary = $"Solved '{circuit.Id}' · {ElectricalNodeResults.Count} nodes · {ElectricalElementResults.Count} elements.";
+        StatusText = $"Solved DC operating point for '{circuit.Id}'";
+        return true;
+    }
+
+    /// <summary>
+    /// Builds a JSON document from the solve preview exactly as displayed. The
+    /// solver is not called again, so copied values cannot diverge from the panel.
+    /// </summary>
+    public bool TryBuildElectricalSolveJson(out string json)
+    {
+        json = string.Empty;
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (!HasElectricalSolveResult || circuit is null)
+        {
+            return false;
+        }
+
+        var report = new
+        {
+            format = "radix-dc-solve",
+            version = 1,
+            circuit = circuit.Id,
+            circuitName = circuit.Name,
+            ground = circuit.GroundNodeId,
+            convention = new
+            {
+                voltage = "node voltage relative to ground, in volts",
+                current = "positive current flows from node a to node b, in amperes",
+                power = "absorbed power in watts; negative means the element delivers energy",
+            },
+            nodes = ElectricalNodeResults.Select(node => new
+            {
+                id = node.Id,
+                name = node.Name,
+                solved = node.HasVoltage,
+                volts = node.Volts,
+            }),
+            elements = ElectricalElementResults.Select(element => new
+            {
+                id = element.Id,
+                name = element.Name,
+                kind = element.KindId,
+                nodeA = element.NodeA,
+                nodeB = element.NodeB,
+                value = element.Value,
+                unit = element.Unit,
+                volts = element.Volts,
+                amperes = element.Amperes,
+                absorbedPowerWatts = element.AbsorbedPowerWatts,
+            }),
+        };
+
+        json = JsonSerializer.Serialize(report, ElectricalSolveJsonOptions);
+        return true;
+    }
+
+    /// <summary>
+    /// Builds one CSV document with a node row per authored node and an element
+    /// row per solved element. Numeric fields are unquoted round-trip values.
+    /// </summary>
+    public bool TryBuildElectricalSolveCsv(out string csv)
+    {
+        csv = string.Empty;
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (!HasElectricalSolveResult || circuit is null)
+        {
+            return false;
+        }
+
+        var builder = new StringBuilder();
+        builder.Append("circuit,type,id,name,kind,node_a,node_b,value,unit,volts,amperes,absorbed_power_watts,solved\n");
+        foreach (ElectricalNodeResultItem node in ElectricalNodeResults)
+        {
+            AppendCsvRow(
+                builder,
+                CsvText(circuit.Id),
+                "node",
+                CsvText(node.Id),
+                CsvText(node.Name),
+                CsvText(string.Empty),
+                CsvText(string.Empty),
+                CsvText(string.Empty),
+                CsvText(string.Empty),
+                CsvText(string.Empty),
+                CsvNumber(node.Volts),
+                CsvText(string.Empty),
+                CsvText(string.Empty),
+                node.HasVoltage ? "true" : "false");
+        }
+
+        foreach (ElectricalElementResultItem element in ElectricalElementResults)
+        {
+            AppendCsvRow(
+                builder,
+                CsvText(circuit.Id),
+                "element",
+                CsvText(element.Id),
+                CsvText(element.Name),
+                CsvText(element.KindId),
+                CsvText(element.NodeA),
+                CsvText(element.NodeB),
+                CsvNumber(element.Value),
+                CsvText(element.Unit),
+                CsvNumber(element.Volts),
+                CsvNumber(element.Amperes),
+                CsvNumber(element.AbsorbedPowerWatts),
+                "true");
+        }
+
+        csv = builder.ToString();
+        return true;
+    }
+
+    private static void AppendCsvRow(StringBuilder builder, params string[] fields) =>
+        builder.Append(string.Join(",", fields)).Append('\n');
+
+    private static string CsvText(string? value) =>
+        $"\"{(value ?? string.Empty).Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    private static string CsvNumber(double? value) =>
+        value?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private void ClearElectricalSolveResult()
+    {
+        ElectricalNodeResults.Clear();
+        ElectricalElementResults.Clear();
+        HasElectricalSolveResult = false;
+        HasElectricalSolveError = false;
+        ElectricalSolveSummary = "Choose Solve to compute the DC operating point.";
+    }
+
+    private void ShowElectricalSolveError(string summary, string status)
+    {
+        ClearElectricalSolveResult();
+        HasElectricalSolveError = true;
+        ElectricalSolveSummary = summary;
+        StatusText = status;
+    }
+
+    private static string FailureLabel(DcSolveFailure failure) =>
+        failure switch
+        {
+            DcSolveFailure.NoGround => "no ground reference",
+            DcSolveFailure.SingularMatrix => "singular system",
+            DcSolveFailure.NonFiniteResult => "non-finite result",
+            _ => failure.ToString(),
+        };
+
+    private void RefreshElectricalDiagnostics(ElectricalCircuit circuit)
+    {
+        DiagnosticBag report = ElectricalCircuitValidator.Validate(circuit);
+        ElectricalDiagnostics.Clear();
+        foreach (Diagnostic diagnostic in report)
+        {
+            ElectricalDiagnostics.Add(new ElectricalDiagnosticItem(diagnostic));
+        }
+
+        ElectricalValidationSummary = report.Count == 0
+            ? "Valid authored circuit."
+            : string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{report.ErrorCount} errors · {report.WarningCount} warnings");
+    }
+
+    private void RaiseElectricalStateChanged()
+    {
+        RaisePropertyChanged(nameof(SelectedElectricalCircuit));
+        RaisePropertyChanged(nameof(SelectedElectricalNode));
+        RaisePropertyChanged(nameof(SelectedElectricalComponent));
+        RaisePropertyChanged(nameof(SelectedElectricalGround));
+        RaisePropertyChanged(nameof(SelectedElectricalComponentKind));
+        RaisePropertyChanged(nameof(SelectedElectricalCircuitId));
+        RaisePropertyChanged(nameof(SelectedElectricalNodeId));
+        RaisePropertyChanged(nameof(SelectedElectricalComponentId));
+        RaisePropertyChanged(nameof(SelectedElectricalCircuitModel));
+        RaisePropertyChanged(nameof(HasElectricalCircuits));
+        RaisePropertyChanged(nameof(HasSelectedElectricalCircuit));
+        RaisePropertyChanged(nameof(HasElectricalNodes));
+        RaisePropertyChanged(nameof(HasElectricalComponents));
+        RaisePropertyChanged(nameof(HasSelectedElectricalComponent));
+        RaisePropertyChanged(nameof(HasSelectedElectricalNode));
+        RaisePropertyChanged(nameof(HasElectricalTerminals));
+        RaisePropertyChanged(nameof(HasElectricalDiagnostics));
+    }
+
+    private bool RenameElectricalCircuit(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        string trimmed = value.Trim();
+        if (circuit is null || trimmed.Length == 0 || string.Equals(circuit.Name, trimmed, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        PushUndo();
+        circuit.Name = trimmed;
+        AfterElectricalMutation($"Renamed electrical circuit to '{trimmed}'");
+        return true;
+    }
+
+    private bool SetElectricalCircuitDescription(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        string? description = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (circuit is null || string.Equals(circuit.Description, description, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        PushUndo();
+        circuit.Description = description;
+        AfterElectricalMutation($"Updated '{circuit.Id}' description");
+        return true;
+    }
+
+    private bool RenameElectricalNode(string circuitId, string nodeId, string value)
+    {
+        ElectricalNode? node = _project.FindElectricalCircuit(circuitId)?.FindNode(nodeId);
+        string trimmed = value.Trim();
+        if (node is null || trimmed.Length == 0 || string.Equals(node.Name, trimmed, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        PushUndo();
+        node.Name = trimmed;
+        AfterElectricalMutation($"Renamed electrical node '{nodeId}'");
+        return true;
+    }
+
+    private bool RenameElectricalComponent(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        string trimmed = value.Trim();
+        if (component is null || trimmed.Length == 0 || string.Equals(component.Name, trimmed, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Name = trimmed;
+        AfterElectricalMutation($"Renamed electrical component '{componentId}'");
+        return true;
+    }
+
+    private bool SetElectricalComponentValue(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null ||
+            !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ||
+            !double.IsFinite(parsed))
+        {
+            StatusText = "Component value must be a finite number.";
+            return false;
+        }
+
+        if (Math.Abs(component.Value - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Value = parsed;
+        AfterElectricalMutation($"Updated '{component.Id}' value to {FormatElectricalValue(parsed)} {component.Unit}");
+        return true;
+    }
+
+    private void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
+    {
+        component.Terminals.Clear();
+        foreach (ElectricalTerminalTemplate template in ElectricalComponentMetadata.Terminals(component.Kind))
+        {
+            component.Terminals.Add(new ElectricalTerminal
+            {
+                Id = template.Id,
+                Name = template.Name,
+                Polarity = template.Polarity,
+                NodeId = string.Equals(template.Id, "a", StringComparison.Ordinal) ? nodeA : nodeB,
+            });
+        }
+    }
+
+    private string UniqueElectricalCircuitId()
+    {
+        for (int index = 1; ; index++)
+        {
+            string id = $"dc{index}";
+            if (_project.FindElectricalCircuit(id) is null)
+            {
+                return id;
+            }
+        }
+    }
+
+    private static string UniqueElectricalNodeId(ElectricalCircuit circuit)
+    {
+        for (int index = 1; ; index++)
+        {
+            string id = $"n{index}";
+            if (circuit.FindNode(id) is null)
+            {
+                return id;
+            }
+        }
+    }
+
+    private static string UniqueElectricalComponentId(ElectricalCircuit circuit, ElectricalComponentKind kind)
+    {
+        string prefix = kind switch
+        {
+            ElectricalComponentKind.Resistor => "r",
+            ElectricalComponentKind.VoltageSource => "v",
+            _ => "i",
+        };
+        for (int index = 1; ; index++)
+        {
+            string id = $"{prefix}{index}";
+            if (circuit.FindComponent(id) is null)
+            {
+                return id;
+            }
+        }
+    }
+
+    private static double DefaultElectricalValue(ElectricalComponentKind kind) =>
+        kind switch
+        {
+            ElectricalComponentKind.Resistor => 1_000,
+            ElectricalComponentKind.VoltageSource => 5,
+            _ => 0.001,
+        };
+
+    private static string FormatElectricalValue(double value) =>
+        value.ToString("0.###############", CultureInfo.InvariantCulture);
 
     private void RefreshInspector()
     {
