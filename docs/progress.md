@@ -190,6 +190,19 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     determined and ambiguous lookups, gate and delay transitions, multi-tick explicit
     delays, and undriven gate outputs at time zero.
     Verification: core tests 428/428, release build 0 warnings and 0 errors.
+27. Closed the terminal-drain and multi-undriven gaps in the mixed-domain explicit-delay
+    oracle. The original 48-case campaign now advances both the engine and reference
+    after the final all-undriven stimulus until both queues are empty, capped at 32
+    ticks, and compares every gate output and explicit-delay output at every tail tick.
+    Added a second seeded campaign of 16 cases over 3-5 gates with two or three external
+    inputs and two or three feedback taps per gate; each external input has its own
+    domain-specific port, so a lookup can genuinely evaluate several undriven inputs at
+    once. Link delays span 1-4 ticks. The reference now counts multi-wildcard determined
+    and ambiguous evaluations. Coverage assertions require a several-undriven-input
+    lookup that determines an output, one that holds on disagreement, all four domains
+    at gate and external inputs, multi-tick delays, an all-undriven gate stimulus, and
+    terminal-drain progress plus at least one fully settled case in each campaign.
+    Verification: core tests 429/429, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
 
