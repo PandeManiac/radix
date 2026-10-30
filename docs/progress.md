@@ -152,6 +152,18 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     tracked across steps, and the test asserts that both determined and ambiguous
     steps occur, so it cannot pass by exercising only one path.
     Verification: core tests 425/425, release build 0 warnings and 0 errors.
+24. Extended the oracle campaign to multi-lookup cascades with transport delays and
+    feedback. Added `RandomizedLookupCascadeOracleTests`: 80 seeded cases of a ring
+    of 3-6 lookup gates. Each gate combines the previous gate's binary output with a
+    random external domain (binary, ternary, quaternary, or four-state) and has a
+    1-3 tick delay; the last output feeds back through an initialized net. Twenty-
+    four stimulus steps cover fully driven, partially driven, and fully undriven
+    inputs. An independent event-model oracle schedules evaluations and delayed
+    commits, scans each table directly for all completions, and compares every gate
+    output at every tick, so oscillatory networks are valid. Coverage assertions
+    require determined and ambiguous lookups, output transitions, feedback changes,
+    positive-delay undriven outputs, and a multi-tick delay.
+    Verification: core tests 426/426, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
 
