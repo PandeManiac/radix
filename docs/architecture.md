@@ -37,6 +37,7 @@ Consequences:
 | CLI | `src/Radix.Cli` | Headless validation, simulation, reports, generated part libraries, benchmarks |
 | Test scripts | `src/Radix.Core/Testing` | Deterministic drive/assert experiments over the public engine |
 | Input sweep | `src/Radix.Core/Analysis` | Exhaustive, domain-agnostic input/output observation |
+| DC electrical solver | `src/Radix.Core/Electrical` | Independent linear netlists, MNA, analytical electrical tests |
 | Editor | `src/Radix.Editor` | Mutable project state, layout, rendering, gesture handling |
 
 Dependencies point inward: the editor and CLI depend on Core; Core does not depend on Avalonia or the standard library.
@@ -477,16 +478,27 @@ Requires:
 
 This is deliberate: primitives are the kernel trust boundary. User-defined components do not require code and are the intended extension path for architectures.
 
-### Analog/electrical simulation
+### DC electrical solver boundary
 
-Not implemented. The discrete engine is the wrong substrate for continuous electrical analysis: nets would need energy state, integration timesteps, nonlinear device models, and a different convergence solver. A future physical layer should:
+`Radix.Core.Electrical` now contains a separate DC linear solver for ideal
+resistors, independent voltage and current sources, and one ground reference. It
+uses modified nodal analysis and dense Gaussian elimination with partial
+pivoting, reports node voltages and element currents/voltages/power, and rejects
+missing ground references, singular systems, and invalid values. The analytical
+case matrix is in [electrical.md](electrical.md).
 
-- reuse the project and UI but introduce an explicit physical-model asset type and unit system;
-- use a numerical solver (modified nodal analysis or similar) with documented integration and tolerances;
-- translate digital/analog boundaries explicitly, not by pretending domain indices are voltages;
-- keep the discrete event engine unchanged for digital designs.
+This subsystem is deliberately not connected to the digital event engine, the
+`.radix` format, the editor, or ERC. A future integrated physical layer still
+needs:
 
-This is an architectural boundary in the project format and UI, not a promise that discrete signals approximate electrical behavior.
+- an explicit physical-model asset type, terminals, units, and component metadata;
+- an approved mapping between authored circuit structure and electrical nodes;
+- sparse/large-system strategy, integration timesteps, and nonlinear convergence;
+- explicit digital/analog boundary translation, never a claim that a domain index is a voltage;
+- the discrete event engine kept unchanged for digital designs.
+
+See [electrical.md](electrical.md) for supported elements, sign conventions,
+numerical limits, and unsupported phenomena.
 
 ### Buses and numeric encodings
 
@@ -513,6 +525,7 @@ The engine is single-threaded by design so event order remains obvious and repro
 ## 13. Testing strategy
 
 - **Unit tests** for domains, resolution, model validation, engine semantics, serialization, numeric formats, and script parsing.
+- **Analytical electrical tests**: `DcLinearSolverTests` compares MNA against closed-form dividers, parallel networks, source-direction cases, series sources, a balanced bridge, known singular systems, missing ground, invalid values, and a 100-channel network.
 - **Structural tests** for compiler flattening, port mapping, hierarchy, hierarchy-graph grouping and stable text/JSON/DOT projections, all-definition validation, and diagnostics.
 - **Behavioral circuits**: NAND truth table, delay timing, DFF edge capture/hold, ternary half/full adders and both the balanced and unsigned hierarchical 2-trit adders over every trit pair, ternary latch hold/capture, trit flip-flop edge sampling, the ternary mux over all select values, the two-trit ternary register's load/hold behaviour, the two-trit ternary counter over all nine states, the ternary accumulator's load/add/hold/wrap sequence, the ternary program machine's ten-edge instruction loop, the branch machine's nine-edge store/branch/load-memory loop, the balanced ternary latch/flip-flop/register load and hold behaviour, the balanced accumulator's signed load/add/hold/wrap sequence, the ternary RAM writing every word and holding the others, both the 3:1 selector's 81 input combinations and the 9×2 RAM's nine-word write/read/hold path, the call machine's nested CALL/RET trace with its stack-pointer walk, the stack machine's push/swap/add/dup/pop/output loop, branch-on-zero behaviour, and both fault directions, the four-state bus's Z/value/X resolution and conflict observation, the quaternary load selector, register, full adder over every digit triple, 2-digit adder over every operand pair, accumulator load/add/hold/wrap behaviour, the 4:1 selector over every input/select combination, all four RAM words with asynchronous reads and WE hold behavior, the quaternary program machine's five-instruction fetch/execute loop through a PC wrap, generated registers at 1/8/13/32 bits with capture/hold/clear, generated ripple adders at 1/8/16/32 bits against integer addition, generated ALUs over every operation at 1/4/8/16/32 bits with carry/zero flags, generated counters at 1/4/8 bits with load/hold/enable/wrap/clear, generated muxes at 1/8/16/32 bits, generated unsigned comparators at 1/4/8/16/32 bits, generated RAMs writing and reading every word, generated ROMs at several word/width shapes returning programmed and zero-filled words, the generated-ROM/RAM 8-bit machine through arithmetic, indirect memory, taken and untaken branches, HLT, reset, and a jump loop, full adder, four-bit counter.
 - **Exhaustive sweeps**: `InputSweep` compiles a definition, drives every combination of its input-port values using each pin's own domain, resets the engine per row, advances an explicit settle time, and reads the output ports. It is exposed as `radix sweep` and as the workbench's **Sweep** tab; both render through `InputSweepTable`, so a row is formatted identically in either place. The row limit is checked before allocating or simulating. The editor runs the sweep on a separate engine, leaves the live simulation untouched, and clears the table when a structural edit commits. It is observation over the public engine, not a second evaluator, and it makes no combinational assumptions: sequential definitions are swept from their power-on state on every row. A workbench sweep is asynchronous: the project is serialized on the UI thread, reloaded as a private snapshot, and simulated on a background thread. `SweepProgress` reports at most roughly one hundred updates, a `CancellationToken` is checked before every row, and a generation counter prevents a cancelled or superseded run from publishing a stale table. The UI keeps its live project and simulation, so dragging a part during a sweep remains responsive; an edit that changes structure invalidates the run instead of racing it.

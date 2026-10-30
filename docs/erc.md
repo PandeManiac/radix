@@ -79,14 +79,17 @@ RADIX does **not** yet model or claim to detect:
 Those checks require real electrical component metadata and a solver. RADIX
 must not infer them from ideal digital values.
 
-## Next solver boundary
+## Electrical solver boundary
 
-The smallest credible next step is a separate DC linear resistive network
-solver for ideal resistors, independent voltage sources, independent current
-sources, and ground, validated against analytical circuits. It should not be
-wired into the digital engine until its node/ground conventions, units,
-singular-matrix behavior, and unsupported-component handling are defined.
-Transient and nonlinear devices come after that foundation.
+A separate core DC linear solver now covers ideal resistors, independent voltage
+sources, independent current sources, and one ground reference. It has explicit
+units, node/ground conventions, singular-system failures, and analytical tests;
+see [electrical.md](electrical.md). It is not yet connected to ERC, the digital
+engine, the `.radix` format, or the editor.
+
+The next step is explicit electrical terminals and component metadata with a
+documented mapping to electrical nodes. Transient, nonlinear, and component-rating
+analysis come after that boundary, not by interpreting digital values as volts.
 
 ## Verification
 

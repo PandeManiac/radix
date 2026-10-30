@@ -193,6 +193,21 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     tests 181/181, and all 24 bundled example projects validated without ERC,
     `RAD080`, `RAD081`, or `RAD119` false positives.
 
+30. Added a separate DC linear electrical solver under `Radix.Core.Electrical`.
+    The netlist API supports ideal resistors, independent voltage sources,
+    independent current sources, and one explicit ground reference; it solves
+    with modified nodal analysis and partial-pivot Gaussian elimination and
+    returns node voltages plus element currents, voltages, and absorbed power.
+    Construction rejects invalid or duplicate elements; solving reports missing
+    ground references, singular systems, and non-finite results. The solver is
+    intentionally not connected to the digital engine, `.radix` format, editor,
+    or ERC. Added `DcLinearSolverTests` against analytical dividers, parallel
+    networks, current-source directions, series sources, a balanced Wheatstone
+    bridge, singular and ground-reference failures, invalid inputs, and a
+    100-channel network; documented conventions and boundaries in
+    `docs/electrical.md`.
+    Verification: core tests 451/451, release build 0 warnings and 0 errors.
+
 ## Known issues and limitations
 
 - Editor tests need fontconfig, freetype, libpng and a font on Linux. This VM's
@@ -203,7 +218,8 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
   archive.ubuntu.com, extract with `dpkg-deb -x`, then set `LD_LIBRARY_PATH` to
   the extracted `usr/lib/x86_64-linux-gnu` and `FONTCONFIG_FILE` to a config that
   points at the extracted fonts. Core tests are unaffected.
-- Everything under "Explicit limitations" in `README.md` still applies (no analog
+- Everything under "Explicit limitations" in `README.md` still applies (the DC
+  solver is core-only and not editor-integrated, no AC/transient/nonlinear
   solver, no JIT, fixed-width generated parts, and so on).
 
 ## Next meaningful steps
@@ -212,4 +228,6 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    quieter host, or install/use `dotnet-trace` to capture a bounded CPU profile;
    this VM has no profiler tool installed and the repeated runs remain noisy.
 2. Continue the roadmap: large-definition scalability, richer hierarchy/library
-   workflows, and the documented electrical-simulation boundary.
+   workflows, and the electrical-solver integration boundary. The next electrical
+   step is explicit terminal/component metadata and a documented mapping to a
+   sparse or transient solver, not an implicit interpretation of digital values.
