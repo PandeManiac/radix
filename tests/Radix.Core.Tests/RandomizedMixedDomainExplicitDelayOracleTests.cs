@@ -29,6 +29,7 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
     private const int MultiUndrivenStepCount = 20;
     private const int ZeroDelaySeed = 0x3ED1C9;
     private const int ZeroDelayCaseCount = 16;
+    private const int ZeroDelayChainLength = 3;
 
     private static readonly (string Id, int Radix)[] DomainChoices =
     [
@@ -785,6 +786,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         int terminalTailEvents = 0;
         int settledDuringTail = 0;
         int traceEvents = 0;
+        int sameTimestampDelayToGatePairs = 0;
+        int sameTimestampGateChainCases = 0;
         var gateDomainIds = new HashSet<string>(StringComparer.Ordinal);
         var externalDomainIds = new HashSet<string>(StringComparer.Ordinal);
 
@@ -862,7 +865,20 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
                 fanIn,
                 linkSources,
                 linkDelays,
-                linkInitials);
+                linkInitials,
+                chainLength: ZeroDelayChainLength);
+            var chainNets = new int[ZeroDelayChainLength];
+            for (int chain = 0; chain < chainNets.Length; chain++)
+            {
+                if (!engine.Circuit.TryGetNet(
+                    new NetLocation(string.Empty, $"c{chain}"),
+                    out chainNets[chain]))
+                {
+                    throw new InvalidOperationException(
+                        $"Compiled circuit did not expose zero-delay chain net 'c{chain}'.");
+                }
+            }
+
             var reference = new MixedDomainExplicitDelayReference(
                 gateDomains.Select(domain => domain.Radix).ToArray(),
                 externalDomains.Select(domain => new[] { domain.Radix }).ToArray(),
@@ -873,6 +889,9 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
                 linkDestinations,
                 linkDelays,
                 linkInitials);
+            var chainValues = Enumerable.Repeat(
+                SignalValue.UndrivenIndex,
+                chainNets.Length).ToArray();
 
             void CompareState(int compareStep, int?[] compareDrives)
             {
@@ -976,6 +995,20 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
                             seed: ZeroDelaySeed));
                     }
                 }
+
+                int expectedChain = expectedGates[0] >= 0 ? expectedGates[0] : chainValues[0];
+                for (int chain = 0; chain < chainNets.Length; chain++)
+                {
+                    int actualChain = engine.GetNetValue(chainNets[chain]);
+                    if (actualChain != expectedChain)
+                    {
+                        Assert.Fail(
+                            $"seed 0x{ZeroDelaySeed:X8}, case {caseIndex}, step {compareStep}: " +
+                            $"zero-delay chain c{chain} expected {expectedChain}, actual {actualChain}");
+                    }
+
+                    chainValues[chain] = expectedChain;
+                }
             }
 
             for (int step = 0; step < StepCount; step++)
@@ -1018,6 +1051,15 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
             }
 
             traceEvents += AssertTraceMatches(engine, reference, linkNets, gateCount, ZeroDelaySeed, caseIndex);
+            sameTimestampDelayToGatePairs += CountSameTimestampDelayToGatePairs(
+                engine,
+                linkNets,
+                linkDestinations,
+                gateCount);
+            if (HasSameTimestampGateChain(engine, chainNets))
+            {
+                sameTimestampGateChainCases++;
+            }
 
             determinedEvaluations += reference.DeterminedEvaluations;
             ambiguousEvaluations += reference.AmbiguousEvaluations;
@@ -1042,6 +1084,12 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         Assert.True(terminalTailEvents > 0, "the terminal drain processed no delayed events");
         Assert.True(settledDuringTail > 0, "no zero-delay case settled during the terminal drain");
         Assert.True(traceEvents > 0, "the zero-delay trace comparison saw no gate or delay transitions");
+        Assert.True(
+            sameTimestampDelayToGatePairs > 0,
+            "the zero-delay campaign never observed a delay transition and its destination gate transition at the same timestamp");
+        Assert.True(
+            sameTimestampGateChainCases == ZeroDelayCaseCount,
+            $"only {sameTimestampGateChainCases} of {ZeroDelayCaseCount} zero-delay cases observed an ordered gate-to-gate chain at one timestamp");
         Assert.True(
             gateDomainIds.Count == DomainChoices.Length,
             $"zero-delay gate domains covered [{string.Join(", ", gateDomainIds)}]");
@@ -1141,7 +1189,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         int fanIn,
         int[] linkSources,
         long[] linkDelays,
-        int[] linkInitials)
+        int[] linkInitials,
+        int chainLength = 0)
     {
         int gateCount = gateDomains.Length;
         int externalCount = externalDomains[0].Length;
@@ -1176,6 +1225,12 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
             root.SetInitial(linkNets[link], linkInitials[link]);
         }
 
+        var chainNets = new Net[chainLength];
+        for (int chain = 0; chain < chainNets.Length; chain++)
+        {
+            chainNets[chain] = root.AddNet($"c{chain}", gateDomains[0].Id);
+        }
+
         for (int gate = 0; gate < gateCount; gate++)
         {
             string instance = $"g{gate}";
@@ -1203,6 +1258,20 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
             string instance = $"d{link}";
             root.Connect(outputNets[linkSources[link]], root.Pin(instance, "in0"));
             root.Connect(linkNets[link], root.Pin(instance, "out"));
+        }
+
+        // This feed-forward chain is deliberately separate from the feedback
+        // reference. It gives the zero-delay campaign a direct gate-to-gate path,
+        // while every feedback edge above still goes through a positive Delay.
+        Net chainInput = outputNets[0];
+        int[] chainBuffer = Enumerable.Range(0, gateDomains[0].Radix).ToArray();
+        for (int chain = 0; chain < chainNets.Length; chain++)
+        {
+            string instance = $"c{chain}";
+            root.AddPrimitive(instance, new LookupSpec(1, chainBuffer, 0));
+            root.Connect(chainInput, root.Pin(instance, "in0"));
+            root.Connect(chainNets[chain], root.Pin(instance, "out"));
+            chainInput = chainNets[chain];
         }
 
         SimulationEngine engine = TestFixtures.Simulate(builder.Build("root"), "root");
@@ -1284,6 +1353,100 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         }
 
         return actual.Count;
+    }
+
+    private static int CountSameTimestampDelayToGatePairs(
+        SimulationEngine engine,
+        int[] linkNets,
+        int[] linkDestinations,
+        int gateCount)
+    {
+        var gateNetToGate = new Dictionary<int, int>(gateCount);
+        for (int gate = 0; gate < gateCount; gate++)
+        {
+            gateNetToGate[engine.Circuit.Ports[engine.Port($"y{gate}")].Net] = gate;
+        }
+
+        var gateTransitions = new HashSet<(long Time, int Gate)>();
+        foreach (NetChange change in engine.Trace)
+        {
+            if (gateNetToGate.TryGetValue(change.Net, out int gate))
+            {
+                gateTransitions.Add((change.Time, gate));
+            }
+        }
+
+        int pairs = 0;
+        for (int link = 0; link < linkNets.Length; link++)
+        {
+            foreach (NetChange change in engine.Trace)
+            {
+                if (change.Net != linkNets[link] ||
+                    (change.Time == 0 && change.OldValue == SignalValue.UndrivenIndex))
+                {
+                    continue;
+                }
+
+                if (gateTransitions.Contains((change.Time, linkDestinations[link])))
+                {
+                    pairs++;
+                }
+            }
+        }
+
+        return pairs;
+    }
+
+    private static bool HasSameTimestampGateChain(
+        SimulationEngine engine,
+        int[] chainNets)
+    {
+        int sourceNet = engine.Circuit.Ports[engine.Port("y0")].Net;
+        var positionsByNet = new Dictionary<int, int>(chainNets.Length + 1)
+        {
+            [sourceNet] = 0,
+        };
+        for (int chain = 0; chain < chainNets.Length; chain++)
+        {
+            positionsByNet[chainNets[chain]] = chain + 1;
+        }
+
+        var eventsByTime = new Dictionary<long, List<int>>();
+        foreach (NetChange change in engine.Trace)
+        {
+            if (!positionsByNet.TryGetValue(change.Net, out int position))
+            {
+                continue;
+            }
+
+            if (!eventsByTime.TryGetValue(change.Time, out List<int>? positions))
+            {
+                positions = [];
+                eventsByTime.Add(change.Time, positions);
+            }
+
+            positions.Add(position);
+        }
+
+        foreach (List<int> positions in eventsByTime.Values)
+        {
+            int expected = 0;
+            foreach (int position in positions)
+            {
+                if (position != expected)
+                {
+                    continue;
+                }
+
+                expected++;
+                if (expected == chainNets.Length + 1)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static string DescribeCase(
