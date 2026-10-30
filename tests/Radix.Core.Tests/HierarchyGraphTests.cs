@@ -40,6 +40,15 @@ public sealed class HierarchyGraphTests
     }
 
     [Fact]
+    public void TextReportUsesDeterministicLineFeedEndings()
+    {
+        string text = HierarchyReport.ToText(HierarchyGraph.Build(BuildExample(out _)));
+
+        Assert.DoesNotContain('\r', text);
+        Assert.EndsWith("\n", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TreeMarksSharedSubtreeOnceAndHonorsDepthLimit()
     {
         CircuitProject project = BuildExample(out _);

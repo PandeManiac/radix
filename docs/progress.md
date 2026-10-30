@@ -123,6 +123,13 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     Verification: release build 0 warnings, core tests 416/416, editor tests 180/180,
     `radix test examples/binary-counter.radix examples/tests/counter-counts.radixtest`
     passes, and a bounded CLI run reports `eventsProcessed=1000` with `RAD152`.
+21. Fixed the first Windows-only CI failure. `HierarchyReport.ToText` used
+    `StringBuilder.AppendLine`, so the same project rendered CRLF on windows-latest
+    and `TreeMarksSharedSubtreeOnceAndHonorsDepthLimit` failed on an exact line
+    comparison (Ubuntu passed). The text report now emits `\n` explicitly, and
+    `TextReportUsesDeterministicLineFeedEndings` asserts no `\r` and a final `\n`.
+    CI runs on both platforms; this is a real portability defect, not a test-only
+    normalization.
 
 ## Known issues and limitations
 
