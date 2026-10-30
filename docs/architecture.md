@@ -131,7 +131,17 @@ A lookup table is an explicit behavioral primitive. A NAND is a project definiti
 
 The cost is that a lookup evaluation computes a table index rather than executing a specialized Boolean instruction. Benchmarks show the managed event overhead dominates for event-driven designs, and the tradeoff preserves extensibility. A future optimizing compiler may recognize common lookup shapes without changing semantics.
 
-### 5.2 Delay models
+### 5.2 Undriven lookup inputs
+
+An undriven input is not a domain value and is never used directly as a table index. When a lookup has undriven inputs, the runtime enumerates every completion of those inputs with values from their connected domains. If all completions select a table entry with the same output, that output is committed after the primitive's normal transport delay. If completions disagree, the lookup holds its previous output and produces no new commit. This conservative completion semantics is the three-valued rule for lookups: an input that cannot affect the result is ignored, while an ambiguous result never fabricates a value.
+
+For example, a 2:1 mux with a driven select and a driven selected data input produces the selected value even if the unselected data input is floating. An AND gate with a driven 0 produces 0 regardless of its other input, and an OR gate with a driven 1 produces 1. A floating buffer input remains ambiguous because the two completions produce different outputs.
+
+A domain's explicit values, including four-state `X` and `Z`, are ordinary driven values and index the table normally. The rule applies only to the kernel's out-of-domain undriven marker. An unconnected primitive input has no domain to complete from, so it holds the output; a one-value domain has exactly one completion and is therefore never ambiguous.
+
+Compiler validation bounds every connected lookup at 1,048,576 table entries, which also bounds the completion space. The scan runs only while at least one input is undriven and stops at the first disagreeing completion, so fully driven circuits keep the ordinary direct-index path.
+
+### 5.3 Delay models
 
 - A lookup's output commit is scheduled at `now + DelayTicks`.
 - A delay primitive initializes its output at its declared initial value and schedules each accepted input commit at `now + DelayTicks`.
@@ -141,7 +151,7 @@ This is a **transport-delay, event-driven** model with zero-delay logical evalua
 
 Simulation time is a non-negative signed 64-bit tick count. If an output or timer would be scheduled beyond `Int64.MaxValue`, the engine halts, clears pending events, and emits runtime error `RAD142`; it never wraps time or lets an overflow exception escape the event loop. This is a representational boundary, not a physical time limit.
 
-### 5.3 Worked example: the tiny program-driven CPU
+### 5.4 Worked example: the tiny program-driven CPU
 
 `examples/tiny-cpu.radix` demonstrates that a processor is ordinary project structure. It contains no new primitive kinds and required no kernel change:
 
@@ -223,8 +233,10 @@ A net transition is the unit of trace history. Pin values that do not change nev
 ### 6.4 Convergence and oscillation
 
 - Every component evaluation increments an evaluation count for the current timestamp.
-- If a component exceeds `MaxEvaluationsPerComponentPerTimestamp` (default 64), the engine halts with `RAD100` and a message naming the instance and timestamp.
+- The count covers one settle cycle: when the event queue drains, the next event at that timestamp starts from fresh counts. Repeated testbench stimuli at the same simulated time therefore do not accumulate into a false `RAD100`.
+- If a component exceeds `MaxEvaluationsPerComponentPerTimestamp` (default 64) within one settle cycle, the engine halts with `RAD100` and a message naming the instance and timestamp.
 - Independently of per-timestamp convergence, the event queue has a configurable pending-event cap (`MaxPendingEvents`, default 1,000,000; `0` disables it). Reaching the cap halts with `RAD150` and clears the queue, so event production that outpaces draining is reported instead of consuming memory until allocation fails.
+- A cumulative event budget (`MaxEventsProcessed`, default `0` = disabled) bounds the total work of one run. Reaching it halts with `RAD152` after the last processed event and clears queued work; the partial state, trace, and counters remain inspectable. It is a workload bound, not a convergence finding: a long run of a correct periodic circuit can legitimately reach it. `radix simulate` applies a 100,000,000-event default that `--max-events` overrides (`0` disables).
 - Runtime warnings are capped at `MaxRuntimeDiagnostics` (default 1,000) per reset. Further warnings are counted in `SuppressedRuntimeDiagnostics`, and the editor reports the count as `RAD151`; halt diagnostics bypass the cap so a stopping reason is never dropped.
 - Legitimate sequential feedback uses delays/latches and does not spin at one timestamp; those designs converge normally.
 - A component evaluation that changes no outputs does not schedule more work and naturally settles.

@@ -2249,7 +2249,13 @@ public sealed class EditorViewModel : ObservableObject
                 () =>
                 {
                     CircuitProject snapshot = ProjectSerializer.LoadFromString(snapshotJson, validate: false);
-                    return InputSweep.Run(snapshot, definitionId, settle, maxRows, sink, linked.Token);
+                    return InputSweep.Run(
+                        snapshot,
+                        definitionId,
+                        settle,
+                        maxRows,
+                        sink,
+                        cancellationToken: linked.Token);
                 },
                 linked.Token);
             linked.Token.ThrowIfCancellationRequested();

@@ -35,6 +35,13 @@ public sealed class SimulationEngine
     /// </summary>
     public const string SuppressedDiagnosticsCode = "RAD151";
 
+    /// <summary>
+    /// Reported when the cumulative event budget (<see cref="SimulationOptions.MaxEventsProcessed"/>)
+    /// is exhausted. Unlike <see cref="EventLimitCode"/> this bounds total work, not
+    /// queue occupancy, and leaves the partial simulation state inspectable.
+    /// </summary>
+    public const string EventBudgetCode = "RAD152";
+
     private readonly CompiledCircuit _circuit;
     private readonly SimulationOptions _options;
     private readonly int[] _pinValues;
@@ -264,6 +271,14 @@ public sealed class SimulationEngine
 
     private void ProcessNextEvent()
     {
+        if (_options.MaxEventsProcessed > 0 && EventsProcessed >= _options.MaxEventsProcessed)
+        {
+            Halt(
+                EventBudgetCode,
+                $"The event budget of {_options.MaxEventsProcessed} was exhausted after {EventsProcessed} events at time {_now}; increase the budget or set it to 0 to disable it.");
+            return;
+        }
+
         SimEvent ev = _queue.Pop();
         _now = ev.Time;
         EventsProcessed++;
@@ -308,6 +323,15 @@ public sealed class SimulationEngine
             case SimEventKind.PrimitiveTimer:
                 _runtimes[ev.Target].OnTimer(this, component!, ev.Value);
                 break;
+        }
+
+        if (_queue.Count == 0)
+        {
+            // An empty queue means the current timestamp has settled. Starting the
+            // convergence counters afresh keeps a later stimulus at the same simulated
+            // time from inheriting the previous settle's evaluation counts and being
+            // misreported as zero-delay feedback that never converged.
+            _evaluationTimestamp = -1;
         }
     }
 

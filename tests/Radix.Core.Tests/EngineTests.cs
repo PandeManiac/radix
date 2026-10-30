@@ -355,6 +355,31 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void RepeatedStimuliAtOneTimestampDoNotAccumulateConvergenceCounters()
+    {
+        var builder = new ProjectBuilder("same-time stimuli");
+        DefinitionBuilder root = builder.Define("root", "Root");
+        Net a = root.AddPin("a", "A", PinDirection.Input, StandardDomains.BinaryId);
+        Net y = root.AddPin("y", "Y", PinDirection.Output, StandardDomains.BinaryId);
+        root.AddPrimitive("g", new LookupSpec(1, [0, 1]));
+        root.Connect(a, root.Pin("g", "in0"));
+        root.Connect(y, root.Pin("g", "out"));
+
+        SimulationEngine engine = Engine(builder.Build("root"));
+        engine.AdvanceTo(0);
+
+        for (int i = 0; i < 200; i++)
+        {
+            engine.Drive("a", i % 2);
+            engine.AdvanceTo(0);
+            Assert.False(engine.IsHalted, $"stimulus {i}: {engine.HaltReason}");
+            Assert.Equal(i % 2, engine.Read("y"));
+        }
+
+        Assert.False(engine.IsHalted, engine.HaltReason);
+    }
+
+    [Fact]
     public void RuntimeDiagnosticsAreReset()
     {
         var builder = new ProjectBuilder("conflict reset");

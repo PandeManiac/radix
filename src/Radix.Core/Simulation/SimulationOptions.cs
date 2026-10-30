@@ -6,8 +6,10 @@ namespace Radix.Core.Simulation;
 public sealed class SimulationOptions
 {
     /// <summary>
-    /// Maximum evaluations of a single component at one simulated timestamp.
-    /// Exceeding this indicates zero-delay feedback that does not converge.
+    /// Maximum evaluations of a single component during one settle cycle at a simulated
+    /// timestamp. A settle cycle ends when the event queue drains, so a later stimulus at
+    /// the same timestamp starts with fresh counters. Exceeding the limit within one
+    /// settle indicates zero-delay feedback that does not converge.
     /// </summary>
     public int MaxEvaluationsPerComponentPerTimestamp { get; init; } = 64;
 
@@ -17,6 +19,13 @@ public sealed class SimulationOptions
     /// that produces events faster than they drain exhaust memory.
     /// </summary>
     public int MaxPendingEvents { get; init; } = 1_000_000;
+
+    /// <summary>
+    /// Cumulative event budget for one run, counted from the last reset. Zero disables
+    /// the budget. Reaching it halts with <c>RAD152</c>, so a fast periodic workload
+    /// cannot keep a headless run busy indefinitely. Partial results stay inspectable.
+    /// </summary>
+    public long MaxEventsProcessed { get; init; }
 
     /// <summary>
     /// Maximum runtime warnings retained for inspection. Zero disables the cap.
@@ -31,12 +40,16 @@ public sealed class SimulationOptions
     public bool RecordTrace { get; init; } = true;
 
     public static SimulationOptions FromSettings(ProjectSettings settings)
+        => FromSettings(settings, maxEventsProcessed: 0);
+
+    public static SimulationOptions FromSettings(ProjectSettings settings, long maxEventsProcessed)
     {
         ArgumentNullException.ThrowIfNull(settings);
         return new SimulationOptions
         {
             MaxEvaluationsPerComponentPerTimestamp = Math.Max(1, settings.MaxEvaluationsPerComponentPerTimestamp),
             MaxPendingEvents = Math.Max(0, settings.MaxPendingEvents),
+            MaxEventsProcessed = Math.Max(0, maxEventsProcessed),
             MaxRecordedChanges = Math.Max(0, settings.MaxRecordedNetChanges),
             RecordTrace = settings.MaxRecordedNetChanges > 0 && settings.TraceAllNets,
         };

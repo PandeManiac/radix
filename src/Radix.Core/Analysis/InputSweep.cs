@@ -68,12 +68,18 @@ public static class InputSweep
 {
     public const int DefaultMaxRows = 4096;
 
+    /// <param name="engineObserver">
+    /// Optional hook invoked once with the engine the sweep reuses for every row. It lets
+    /// headless callers attach observers such as <see cref="SimulationEngine.NetChanged"/>
+    /// without reaching into the sweep's internals.
+    /// </param>
     public static InputSweepResult Run(
         CircuitProject project,
         string? definitionId = null,
         long settleTicks = 0,
         int maxRows = DefaultMaxRows,
         IProgress<SweepProgress>? progress = null,
+        Action<SimulationEngine>? engineObserver = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -136,6 +142,7 @@ public static class InputSweep
             RecordTrace = false,
         };
         var engine = new SimulationEngine(circuit, options);
+        engineObserver?.Invoke(engine);
         int totalRows = (int)rowCount;
         int reportEvery = Math.Max(1, totalRows / 100);
         var rows = new List<SweepRow>(totalRows);

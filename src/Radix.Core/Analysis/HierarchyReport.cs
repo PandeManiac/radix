@@ -39,20 +39,21 @@ public static class HierarchyReport
             throw new ArgumentOutOfRangeException(nameof(maxDepth), $"Depth must be at most {MaxDepth}.");
         }
 
+        // Text output is compared and diffed across platforms, so emit line feeds
+        // explicitly instead of letting StringBuilder.AppendLine pick the OS newline.
         var text = new StringBuilder();
-        text.Append("Project: ").AppendLine(graph.ProjectName);
-        text.Append("Root:    ").AppendLine(graph.RootDefinitionId);
+        text.Append("Project: ").Append(graph.ProjectName).Append('\n');
+        text.Append("Root:    ").Append(graph.RootDefinitionId).Append('\n');
         text.Append("Graph:   ")
             .Append(graph.Nodes.Count.ToString(CultureInfo.InvariantCulture))
             .Append(" definitions, ")
             .Append(graph.Edges.Count.ToString(CultureInfo.InvariantCulture))
-            .AppendLine(" references");
-        text.AppendLine();
+            .Append(" references\n\n");
 
         HierarchyNode? root = graph.Root;
         if (root is null)
         {
-            text.Append("Root [").Append(graph.RootDefinitionId).AppendLine("] — missing definition");
+            text.Append("Root [").Append(graph.RootDefinitionId).Append("] — missing definition\n");
             return text.ToString();
         }
 
@@ -90,7 +91,7 @@ public static class HierarchyReport
                 text.Append(" (depth limit)");
             }
 
-            text.AppendLine();
+            text.Append('\n');
             if (repeated || depth >= maxDepth)
             {
                 return;
@@ -104,7 +105,7 @@ public static class HierarchyReport
                     text.Append(new string(' ', (depth + 1) * 2))
                         .Append(edge.ChildDefinitionId)
                         .Append(" ×").Append(edge.Count.ToString(CultureInfo.InvariantCulture))
-                        .AppendLine(" — missing definition");
+                        .Append(" — missing definition\n");
                     continue;
                 }
 
