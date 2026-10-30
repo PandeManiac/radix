@@ -1,4 +1,4 @@
-# RADIX project format, version 7
+# RADIX project format, version 8
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,7 +9,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 5,
+  "version": 8,
   "name": "Example",
   "description": "optional",
   "root": "main",
@@ -17,14 +17,15 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
   "view": { "...": "..." },
   "domains": [ "...": "..." ],
   "customNumericFormats": [ "...": "..." ],
-  "definitions": [ "...": "..." ]
+  "definitions": [ "...": "..." ],
+  "electricalCircuits": [ "...": "..." ]
 }
 ```
 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `7`. Versions 1–7 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `8`. Versions 1–8 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
@@ -33,6 +34,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | `domains` | yes | At least one domain required for a valid project |
 | `customNumericFormats` | no | Project-owned display formats; omitted when none exist |
 | `definitions` | yes | One or more definitions; root must be present |
+| `electricalCircuits` | no | Optional authored DC circuits with explicit nodes, terminals, and component metadata; omitted when none exist |
 
 Property names are camelCase. JSON comments and trailing commas are accepted when loading.
 
@@ -331,9 +333,57 @@ This project has one definition, one input port, one lookup inverter, and one ou
 - The CLI reports diagnostics with `RAD###` codes and exits nonzero for errors.
 - The editor can load structurally invalid projects only through internal snapshots; the public open path surfaces an error and leaves the current project unchanged. (Undo snapshots are loaded with `validate:false` because they already passed through the same editor.)
 
+## Electrical circuits
+
+`electricalCircuits` is an optional array of independent DC assets. It does not
+reuse digital definitions or nets, and it never enters the compiler or event
+engine. A circuit has its own ground reference, nodes, and components:
+
+```json
+"electricalCircuits": [
+  {
+    "id": "divider",
+    "name": "Voltage divider",
+    "ground": "gnd",
+    "nodes": [
+      { "id": "gnd", "name": "Ground" },
+      { "id": "in", "name": "Input" },
+      { "id": "out", "name": "Output" }
+    ],
+    "components": [
+      {
+        "id": "R1",
+        "name": "Upper resistor",
+        "kind": "resistor",
+        "value": 1000,
+        "terminals": [
+          { "id": "a", "name": "A", "polarity": "passive", "node": "in" },
+          { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+        ]
+      }
+    ]
+  }
+]
+```
+
+Component kinds and terminal contracts:
+
+| `kind` | Required terminals | `value` unit |
+| --- | --- | --- |
+| `resistor` | `a`/`b`, both `passive` | ohm |
+| `voltage-source` | `a` `positive`, `b` `negative` | V |
+| `current-source` | `a` `positive`, `b` `negative` | A |
+
+The `value` is the component parameter, not a digital signal index. Terminal
+nodes must exist in the same circuit. `radix dc` validates an authored circuit
+with `RAD-ELEC-*` diagnostics before solving; digital `validate` and compile do
+not inspect these assets. The solver's report includes the selected `circuit`
+ID. A project with multiple circuits requires `--circuit <id>`; a project with
+one circuit selects it automatically.
+
 ## Versioning and migration
 
-Versions 1 through 7 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 8 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

@@ -37,7 +37,7 @@ Consequences:
 | CLI | `src/Radix.Cli` | Headless validation, simulation, reports, generated part libraries, benchmarks |
 | Test scripts | `src/Radix.Core/Testing` | Deterministic drive/assert experiments over the public engine |
 | Input sweep | `src/Radix.Core/Analysis` | Exhaustive, domain-agnostic input/output observation |
-| DC electrical solver | `src/Radix.Core/Electrical` | Independent linear netlists, MNA, analytical electrical tests |
+| DC electrical solver | `src/Radix.Core/Electrical` | Authored electrical assets, explicit terminals, MNA, analytical electrical tests |
 | Editor | `src/Radix.Editor` | Mutable project state, layout, rendering, gesture handling |
 
 Dependencies point inward: the editor and CLI depend on Core; Core does not depend on Avalonia or the standard library.
@@ -484,9 +484,11 @@ This is deliberate: primitives are the kernel trust boundary. User-defined compo
 resistors, independent voltage and current sources, and one ground reference. It
 uses modified nodal analysis and dense Gaussian elimination with partial
 pivoting, reports node voltages and element currents/voltages/power, and rejects
-missing ground references, singular systems, and invalid values. The CLI exposes
-it as `radix dc <netlist.json> [--json]`, with a strict versioned input document
-and a machine-readable report. The analytical case matrix is in
+missing ground references, singular systems, and invalid values. Project format
+v8 stores optional `electricalCircuits` with explicit nodes, terminal metadata,
+polarity, and node bindings; `radix dc project.radix [--circuit <id>]` validates
+and bridges one to the solver. Standalone JSON netlists remain supported, and
+both paths emit a machine-readable report. The analytical case matrix is in
 [electrical.md](electrical.md).
 
 This subsystem is deliberately not connected to the digital event engine, the

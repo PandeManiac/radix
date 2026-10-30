@@ -410,7 +410,7 @@ public sealed class SerializationTests
         Assert.Equal(6, loaded.FormatVersion);
         Assert.Equal(1_000_000, loaded.Settings.MaxPendingEvents);
         JsonNode saved = JsonNode.Parse(ProjectSerializer.SaveToString(loaded))!;
-        Assert.Equal(7, saved["version"]!.GetValue<int>());
+        Assert.Equal(ProjectSerializer.CurrentVersion, saved["version"]!.GetValue<int>());
     }
 
     [Fact]

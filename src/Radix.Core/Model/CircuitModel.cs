@@ -1,4 +1,5 @@
 using System.Globalization;
+using Radix.Core.Electrical;
 using Radix.Core.Interpretation;
 using Radix.Core.Signals;
 
@@ -307,7 +308,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 7;
+    public const int CurrentFormatVersion = 8;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 
@@ -324,6 +325,12 @@ public sealed class CircuitProject
     public List<NumericFormatDefinition> CustomNumericFormats { get; } = [];
 
     public List<CircuitDefinition> Definitions { get; } = [];
+
+    /// <summary>
+    /// Authored DC electrical circuits. They are separate from digital definitions and
+    /// never enter compilation or the event engine.
+    /// </summary>
+    public List<ElectricalCircuit> ElectricalCircuits { get; } = [];
 
     public ProjectSettings Settings { get; } = new();
 
@@ -344,6 +351,12 @@ public sealed class CircuitProject
 
     public CircuitDefinition RequireDefinition(string definitionId) =>
         FindDefinition(definitionId) ?? throw new KeyNotFoundException($"Definition '{definitionId}' was not found.");
+
+    public ElectricalCircuit? FindElectricalCircuit(string? circuitId) =>
+        circuitId is null
+            ? null
+            : ElectricalCircuits.FirstOrDefault(circuit =>
+                string.Equals(circuit.Id, circuitId, StringComparison.Ordinal));
 
     /// <summary>Resolves a pin descriptor for an instance, or null when the pin does not exist.</summary>
     public PinDescriptor? FindInstancePin(ComponentInstance instance, string pinId)

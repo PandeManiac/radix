@@ -21,6 +21,55 @@ internal sealed class ProjectDto
     public List<NumericFormatDto>? CustomNumericFormats { get; set; }
 
     public List<DefinitionDto>? Definitions { get; set; }
+
+    /// <summary>Optional authored DC electrical circuits; omitted when none exist.</summary>
+    public List<ElectricalCircuitDto>? ElectricalCircuits { get; set; }
+}
+
+internal sealed class ElectricalCircuitDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? Ground { get; set; }
+
+    public List<ElectricalNodeDto>? Nodes { get; set; }
+
+    public List<ElectricalComponentDto>? Components { get; set; }
+}
+
+internal sealed class ElectricalNodeDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+}
+
+internal sealed class ElectricalComponentDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Kind { get; set; }
+
+    public double? Value { get; set; }
+
+    public List<ElectricalTerminalDto>? Terminals { get; set; }
+}
+
+internal sealed class ElectricalTerminalDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Polarity { get; set; }
+
+    public string? Node { get; set; }
 }
 
 internal sealed class NumericFormatDto

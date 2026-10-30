@@ -1,0 +1,69 @@
+{
+  "format": "radix-project",
+  "version": 8,
+  "name": "DC voltage divider",
+  "root": "main",
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": ["0", "1"],
+      "drivers": { "kind": "single" }
+    }
+  ],
+  "definitions": [
+    {
+      "id": "main",
+      "name": "Main",
+      "pins": [],
+      "instances": [],
+      "nets": [],
+      "ports": []
+    }
+  ],
+  "electricalCircuits": [
+    {
+      "id": "divider",
+      "name": "10 V divider",
+      "description": "A 10 V source across two equal resistors.",
+      "ground": "gnd",
+      "nodes": [
+        { "id": "gnd", "name": "Ground" },
+        { "id": "in", "name": "Input" },
+        { "id": "out", "name": "Output" }
+      ],
+      "components": [
+        {
+          "id": "V1",
+          "name": "10 V source",
+          "kind": "voltage-source",
+          "value": 10,
+          "terminals": [
+            { "id": "a", "name": "Positive", "polarity": "positive", "node": "in" },
+            { "id": "b", "name": "Negative", "polarity": "negative", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "R1",
+          "name": "Upper resistor",
+          "kind": "resistor",
+          "value": 1000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "in" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+          ]
+        },
+        {
+          "id": "R2",
+          "name": "Lower resistor",
+          "kind": "resistor",
+          "value": 1000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "out" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "gnd" }
+          ]
+        }
+      ]
+    }
+  ]
+}

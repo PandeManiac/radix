@@ -102,7 +102,8 @@ public static class DcNetlistJson
     public static string ToReportJson(
         string? source,
         DcNetlist netlist,
-        DcSolution solution)
+        DcSolution solution,
+        string? circuit = null)
     {
         ArgumentNullException.ThrowIfNull(netlist);
         ArgumentNullException.ThrowIfNull(solution);
@@ -127,6 +128,7 @@ public static class DcNetlistJson
             ReportFormatName,
             FormatVersion,
             source,
+            circuit,
             Solved: true,
             Failure: null,
             Message: null,
@@ -140,13 +142,15 @@ public static class DcNetlistJson
         string? source,
         string? ground,
         DcSolveFailure failure,
-        string message)
+        string message,
+        string? circuit = null)
     {
         ArgumentNullException.ThrowIfNull(message);
         return Serialize(new ReportDto(
             ReportFormatName,
             FormatVersion,
             source,
+            circuit,
             Solved: false,
             FailureName(failure),
             message,
@@ -276,6 +280,7 @@ public static class DcNetlistJson
         string Format,
         int Version,
         string? Source,
+        string? Circuit,
         bool Solved,
         string? Failure,
         string? Message,

@@ -222,6 +222,21 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     Verification: core tests 456/456, release build 0 warnings and 0 errors, and
     manual CLI checks for success, singular failure, and malformed input.
 
+32. Added explicit authored DC electrical circuits to project format v8. Each
+    circuit owns named nodes, a ground reference, and components with explicit
+    `a`/`b` terminal bindings, terminal polarity, a kind-specific parameter, and
+    unit. `ElectricalComponentMetadata` defines the reusable terminal contracts
+    and units; `ElectricalCircuitValidator` reports stable `RAD-ELEC-*` errors for
+    missing/duplicate/unknown terminals, polarity mismatches, invalid values,
+    self-loops, missing grounds, and ungrounded circuits. The solver bridge refuses
+    invalid circuits and maps authored terminals to `DcNetlist`. `radix dc` now
+    accepts a `.radix` project (with `--circuit` when needed) as well as standalone
+    JSON, and reports the selected circuit ID. Electrical assets remain separate
+    from digital compilation and the event engine.
+    Verification: core tests 462/462, release build 0 warnings and 0 errors, and
+    manual CLI checks for authored `.radix` and standalone `.json` success plus JSON
+    reports.
+
 ## Known issues and limitations
 
 - Editor tests need fontconfig, freetype, libpng and a font on Linux. This VM's

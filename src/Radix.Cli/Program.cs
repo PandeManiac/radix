@@ -105,7 +105,9 @@ internal static class Program
               validate <project.radix>       Validate structure and compile the project
                   [--all]                    Also compile every definition as a root
                   [--json]                   Emit one machine-readable JSON report
-              dc <netlist.json>              Solve a DC linear electrical netlist
+              dc <netlist.json|project.radix>
+                                             Solve a DC linear electrical circuit
+                  [--circuit <id>]           Choose an authored circuit in a project
                   [--json]                   Emit one machine-readable DC report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
@@ -243,22 +245,46 @@ internal static class Program
 
     private static int DcCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, [], ["json"]);
+        (var positional, var options) = Parse(args, ["circuit"], ["json"]);
         if (positional.Count != 1)
         {
-            Console.Error.WriteLine("usage: radix dc <netlist.json> [--json]");
+            Console.Error.WriteLine("usage: radix dc <netlist.json|project.radix> [--circuit <id>] [--json]");
             return 2;
         }
 
         bool json = options.ContainsKey("json");
+        string? requestedCircuit = GetOption(options, "circuit");
+        string source = positional[0];
+        string? circuitId = null;
         DcNetlist netlist;
         try
         {
-            netlist = DcNetlistJson.Load(positional[0]);
+            if (string.Equals(Path.GetExtension(source), ".radix", StringComparison.OrdinalIgnoreCase))
+            {
+                CircuitProject project = ProjectSerializer.Load(source, validate: false);
+                ElectricalCircuit circuit = SelectElectricalCircuit(project, requestedCircuit);
+                circuitId = circuit.Id;
+                netlist = circuit.ToDcNetlist();
+            }
+            else
+            {
+                if (requestedCircuit is not null)
+                {
+                    Console.Error.WriteLine("--circuit is only valid when solving an authored .radix project.");
+                    return 2;
+                }
+
+                netlist = DcNetlistJson.Load(source);
+            }
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            PrintDiagnostics(exception.Diagnostics, Console.Error);
+            return 2;
         }
         catch (ProjectFormatException exception)
         {
-            Console.Error.WriteLine($"netlist format error: {exception.Message}");
+            Console.Error.WriteLine($"DC input error: {exception.Message}");
             return 2;
         }
 
@@ -267,11 +293,11 @@ internal static class Program
             DcSolution solution = netlist.Solve();
             if (json)
             {
-                Console.WriteLine(DcNetlistJson.ToReportJson(positional[0], netlist, solution));
+                Console.WriteLine(DcNetlistJson.ToReportJson(source, netlist, solution, circuitId));
             }
             else
             {
-                PrintDcSolution(positional[0], netlist, solution);
+                PrintDcSolution(source, circuitId, netlist, solution);
             }
 
             return 0;
@@ -281,10 +307,11 @@ internal static class Program
             if (json)
             {
                 Console.WriteLine(DcNetlistJson.ToFailureJson(
-                    positional[0],
+                    source,
                     netlist.GroundNodeId,
                     exception.Failure,
-                    exception.Message));
+                    exception.Message,
+                    circuitId));
             }
             else
             {
@@ -293,6 +320,31 @@ internal static class Program
 
             return 1;
         }
+    }
+
+    private static ElectricalCircuit SelectElectricalCircuit(
+        CircuitProject project,
+        string? requestedCircuit)
+    {
+        if (requestedCircuit is not null)
+        {
+            return project.FindElectricalCircuit(requestedCircuit)
+                ?? throw new ProjectFormatException(
+                    $"Project has no electrical circuit '{requestedCircuit}'. Available: {string.Join(", ", project.ElectricalCircuits.Select(circuit => circuit.Id))}");
+        }
+
+        if (project.ElectricalCircuits.Count == 1)
+        {
+            return project.ElectricalCircuits[0];
+        }
+
+        if (project.ElectricalCircuits.Count == 0)
+        {
+            throw new ProjectFormatException("Project has no authored electrical circuits.");
+        }
+
+        throw new ProjectFormatException(
+            $"Project has multiple electrical circuits; choose one with --circuit: {string.Join(", ", project.ElectricalCircuits.Select(circuit => circuit.Id))}");
     }
 
     private static int SimulateCommand(string[] args)
@@ -1391,9 +1443,18 @@ internal static class Program
         return checked((int)value);
     }
 
-    private static void PrintDcSolution(string source, DcNetlist netlist, DcSolution solution)
+    private static void PrintDcSolution(
+        string source,
+        string? circuitId,
+        DcNetlist netlist,
+        DcSolution solution)
     {
-        Console.WriteLine($"netlist: {source}");
+        Console.WriteLine($"source:  {source}");
+        if (circuitId is not null)
+        {
+            Console.WriteLine($"circuit: {circuitId}");
+        }
+
         Console.WriteLine($"ground:  {netlist.GroundNodeId}");
         Console.WriteLine("convention: element current flows nodeA -> nodeB; power is absorbed");
         Console.WriteLine($"nodes ({netlist.Nodes.Count}):");

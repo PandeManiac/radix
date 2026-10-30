@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Radix.Core.Electrical;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Signals;
@@ -22,8 +23,10 @@ public static class ProjectSerializer
     /// adds optional definition-scoped numeric lanes. Version 4 adds optional custom
     /// numeric-format descriptors. Version 5 adds optional editor view metadata.
     /// Version 6 adds optional per-definition waveform pin selections inside that view.
-    /// Older files load unchanged; every version up to <see cref="CurrentVersion"/> is
-    /// accepted, and saving always writes the current version.
+    /// Version 7 adds the pending-event limit. Version 8 adds optional authored
+    /// electrical circuits. Older files load unchanged; every version up to
+    /// <see cref="CurrentVersion"/> is accepted, and saving always writes the current
+    /// version.
     /// </summary>
     public const int CurrentVersion = CircuitProject.CurrentFormatVersion;
 
@@ -240,8 +243,90 @@ public static class ProjectSerializer
             project.Definitions.Add(MapDefinition(definitionDto));
         }
 
+        foreach (ElectricalCircuitDto circuitDto in dto.ElectricalCircuits ?? [])
+        {
+            project.ElectricalCircuits.Add(MapElectricalCircuit(circuitDto));
+        }
+
         return project;
     }
+
+    private static ElectricalCircuit MapElectricalCircuit(ElectricalCircuitDto dto)
+    {
+        string id = dto.Id ?? throw new ProjectFormatException("Electrical circuit is missing 'id'.");
+        var circuit = new ElectricalCircuit
+        {
+            Id = id,
+            Name = string.IsNullOrWhiteSpace(dto.Name) ? id : dto.Name,
+            Description = dto.Description,
+            GroundNodeId = dto.Ground ?? throw new ProjectFormatException($"Electrical circuit '{id}' is missing 'ground'."),
+        };
+
+        foreach (ElectricalNodeDto nodeDto in dto.Nodes ?? [])
+        {
+            circuit.Nodes.Add(new ElectricalNode
+            {
+                Id = nodeDto.Id ?? throw new ProjectFormatException($"Electrical circuit '{id}' has a node without 'id'."),
+                Name = nodeDto.Name ?? nodeDto.Id ?? string.Empty,
+            });
+        }
+
+        foreach (ElectricalComponentDto componentDto in dto.Components ?? [])
+        {
+            circuit.Components.Add(MapElectricalComponent(componentDto, id));
+        }
+
+        return circuit;
+    }
+
+    private static ElectricalComponent MapElectricalComponent(ElectricalComponentDto dto, string circuitId)
+    {
+        string id = dto.Id ?? throw new ProjectFormatException($"Electrical circuit '{circuitId}' has a component without 'id'.");
+        ElectricalComponentKind kind = ParseElectricalKind(dto.Kind, circuitId, id);
+        var component = new ElectricalComponent
+        {
+            Id = id,
+            Name = string.IsNullOrWhiteSpace(dto.Name) ? id : dto.Name,
+            Kind = kind,
+            Value = dto.Value ?? throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' is missing 'value'."),
+        };
+
+        foreach (ElectricalTerminalDto terminalDto in dto.Terminals ?? [])
+        {
+            component.Terminals.Add(new ElectricalTerminal
+            {
+                Id = terminalDto.Id ?? throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' has a terminal without 'id'."),
+                Name = terminalDto.Name ?? terminalDto.Id ?? string.Empty,
+                Polarity = ParseElectricalPolarity(terminalDto.Polarity, circuitId, id),
+                NodeId = terminalDto.Node ?? throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' has a terminal without 'node'."),
+            });
+        }
+
+        return component;
+    }
+
+    private static ElectricalComponentKind ParseElectricalKind(string? value, string circuitId, string componentId) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "resistor" => ElectricalComponentKind.Resistor,
+            "voltage-source" => ElectricalComponentKind.VoltageSource,
+            "current-source" => ElectricalComponentKind.CurrentSource,
+            null => throw new ProjectFormatException($"Electrical component '{circuitId}.{componentId}' is missing 'kind'."),
+            _ => throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{componentId}' has unknown kind '{value}'."),
+        };
+
+    private static ElectricalTerminalPolarity ParseElectricalPolarity(string? value, string circuitId, string componentId) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "passive" => ElectricalTerminalPolarity.Passive,
+            "positive" => ElectricalTerminalPolarity.Positive,
+            "negative" => ElectricalTerminalPolarity.Negative,
+            null => throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{componentId}' has a terminal without 'polarity'."),
+            _ => throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{componentId}' has unknown terminal polarity '{value}'."),
+        };
 
     private static SignalDomain MapDomain(DomainDto dto)
     {
@@ -549,10 +634,52 @@ public static class ProjectSerializer
                 ? null
                 : project.CustomNumericFormats.Select(MapNumericFormatDto).ToList(),
             Definitions = project.Definitions.Select(MapDefinitionDto).ToList(),
+            ElectricalCircuits = project.ElectricalCircuits.Count == 0
+                ? null
+                : project.ElectricalCircuits.Select(MapElectricalCircuitDto).ToList(),
         };
 
         return dto;
     }
+
+    private static ElectricalCircuitDto MapElectricalCircuitDto(ElectricalCircuit circuit) => new()
+    {
+        Id = circuit.Id,
+        Name = circuit.Name,
+        Description = circuit.Description,
+        Ground = circuit.GroundNodeId,
+        Nodes = circuit.Nodes.Select(node => new ElectricalNodeDto
+        {
+            Id = node.Id,
+            Name = node.Name,
+        }).ToList(),
+        Components = circuit.Components.Select(component => new ElectricalComponentDto
+        {
+            Id = component.Id,
+            Name = component.Name,
+            Kind = component.Kind switch
+            {
+                ElectricalComponentKind.Resistor => "resistor",
+                ElectricalComponentKind.VoltageSource => "voltage-source",
+                ElectricalComponentKind.CurrentSource => "current-source",
+                _ => throw new ArgumentOutOfRangeException(nameof(component)),
+            },
+            Value = component.Value,
+            Terminals = component.Terminals.Select(terminal => new ElectricalTerminalDto
+            {
+                Id = terminal.Id,
+                Name = terminal.Name,
+                Polarity = terminal.Polarity switch
+                {
+                    ElectricalTerminalPolarity.Passive => "passive",
+                    ElectricalTerminalPolarity.Positive => "positive",
+                    ElectricalTerminalPolarity.Negative => "negative",
+                    _ => throw new ArgumentOutOfRangeException(nameof(terminal)),
+                },
+                Node = terminal.NodeId,
+            }).ToList(),
+        }).ToList(),
+    };
 
     private static DomainDto MapDomainDto(SignalDomain domain)
     {

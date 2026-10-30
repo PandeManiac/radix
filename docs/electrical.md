@@ -8,11 +8,12 @@ electrical-analysis layer:
 - ideal independent current sources;
 - one explicit ground reference.
 
-It is **not** connected to the digital event engine, the editor, the `.radix`
-project format, or the ERC checker. It is an independent netlist API under
-`Radix.Core.Electrical`, exposed through the headless `radix dc` command, with
-analytical tests rather than a claim that existing digital designs now have
-analog behavior.
+It is **not** connected to the digital event engine, the editor, or the ERC
+checker. Authored electrical circuits are stored as separate `.radix` project
+assets; they never reuse digital nets or interpret signal-domain indices as
+volts. The solver is an independent netlist API under `Radix.Core.Electrical`,
+exposed through the headless `radix dc` command, with analytical tests rather
+than a claim that existing digital designs now have analog behavior.
 
 ## Netlist API
 
@@ -33,6 +34,64 @@ double sourcePower = solution.ElementPowers["V1"]; // -50 mW (delivered)
 `DcSolution` returns node voltages, element currents, element voltages, and
 absorbed element power. All dictionaries are keyed by the stable IDs supplied to
 the netlist. Ground is present in `NodeVoltages` with value zero.
+
+## Authored electrical circuits
+
+Projects may contain one or more `electricalCircuits` (project format v8). Each
+circuit owns its own nodes and components:
+
+```csharp
+var circuit = new ElectricalCircuit
+{
+    Id = "divider",
+    Name = "Voltage divider",
+    GroundNodeId = "gnd",
+};
+circuit.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
+circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+circuit.Components.Add(new ElectricalComponent
+{
+    Id = "R1",
+    Kind = ElectricalComponentKind.Resistor,
+    Value = 1_000,
+    Terminals =
+    {
+        new ElectricalTerminal { Id = "a", Polarity = ElectricalTerminalPolarity.Passive, NodeId = "in" },
+        new ElectricalTerminal { Id = "b", Polarity = ElectricalTerminalPolarity.Passive, NodeId = "out" },
+    },
+});
+
+DcSolution solution = circuit.ToDcNetlist().Solve();
+```
+
+`ElectricalComponentMetadata` defines the reusable terminal shape, parameter
+name, and unit for each kind:
+
+| Kind | Terminals | Parameter | Unit |
+| --- | --- | --- | --- |
+| `resistor` | `a`/`b`, passive | resistance | ohm |
+| `voltage-source` | `a` positive, `b` negative | voltage | V |
+| `current-source` | `a` positive, `b` negative | current | A |
+
+Terminals are explicit bindings to circuit node IDs. The validator checks
+missing, duplicate, unknown, misplaced, and self-looped terminals; invalid
+values; missing grounds; and ungrounded circuits with stable `RAD-ELEC-*` codes.
+This validation is separate from digital project validation, so an electrical
+error does not silently change digital compile behavior. `ToDcNetlist` refuses to
+run when validation has errors.
+
+Use the authored example:
+
+```bash
+radix dc examples/dc-divider.radix
+radix dc examples/dc-divider.radix --json
+radix dc examples/dc-divider.radix --circuit divider
+```
+
+If a project has exactly one electrical circuit, `--circuit` may be omitted. A
+project with several circuits requires it. Standalone JSON netlists remain
+supported for tools that do not author a project.
 
 ## Sign and unit conventions
 
@@ -107,7 +166,7 @@ Not supported:
 - temperature, thermal limits, component tolerances, or datasheet ratings;
 - wire resistance, parasitic elements, or physical layout;
 - short-circuit current, overcurrent, or fuse-trip prediction;
-- automatic mapping of `.radix` digital nets or domain indices to volts;
+- automatic mapping of digital `.radix` nets or domain indices to volts;
 - editor instruments or a graphical analog canvas.
 
 A digital domain index is not a voltage. Any future integration must introduce
@@ -121,8 +180,10 @@ The CLI reads a versioned `radix-dc-netlist` document and writes either a human
 report or a `radix-dc-report` JSON object:
 
 ```bash
+radix dc examples/dc-divider.radix
+radix dc examples/dc-divider.radix --json
+radix dc examples/dc-divider.radix --circuit divider
 radix dc examples/dc-divider.json
-radix dc examples/dc-divider.json --json
 ```
 
 Input shape:
@@ -156,7 +217,8 @@ values under stable camel-case fields:
 {
   "format": "radix-dc-report",
   "version": 1,
-  "source": "examples/dc-divider.json",
+  "source": "examples/dc-divider.radix",
+  "circuit": "divider",
   "solved": true,
   "ground": "gnd",
   "nodes": [ { "id": "out", "volts": 5 } ],
