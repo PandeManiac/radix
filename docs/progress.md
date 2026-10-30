@@ -206,6 +206,17 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     and compare the exact time, order, old value, and new value of every transition
     against a reference-side transition log, including the terminal drain.
     Verification: core tests 429/429, release build 0 warnings and 0 errors.
+28. Added zero-delay lookup cases between explicit delays. A third seeded campaign of
+    16 cases uses 3-6 gates, two or three feedback taps, mixed binary/ternary/
+    quaternary/four-state domains, and 1-4 tick delay edges, but every lookup commits
+    at the same timestamp as its evaluation. The reference counts zero-delay gate
+    commits and requires every gate transition to come from one. Twenty-eight stimulus
+    steps plus a bounded 32-tick terminal drain compare every gate and delay output at
+    every tick, and the ordered gate/delay trace is compared against the reference.
+    Coverage requires determined and ambiguous lookups, zero-delay gate changes,
+    explicit-delay transitions, multi-tick delays, trace activity, a settled tail, and
+    all four domains at gate outputs and external inputs.
+    Verification: core tests 430/430, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
 

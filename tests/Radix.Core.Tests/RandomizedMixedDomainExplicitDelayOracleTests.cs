@@ -11,10 +11,12 @@ namespace Radix.Core.Tests;
 /// gate domains and wider fan-in. The primary campaign combines two or three distinct
 /// delayed feedback taps with one external input per gate. A second campaign adds two
 /// or three independent external inputs per gate so lookups genuinely evaluate several
-/// undriven inputs at once. Every link is a separate Delay primitive, and both gate
-/// outputs and every internal delay output are compared at every tick against an
-/// independent mixed-radix event model, and every gate/delay transition is compared
-/// in time order against a reference trace, including the bounded terminal drain.
+/// undriven inputs at once. A third holds lookup delays at zero while keeping positive
+/// Delay primitives on every feedback edge, exercising same-timestamp evaluation and
+/// commit chains. Every link is a separate Delay primitive. Gate outputs and delay
+/// outputs are compared at every tick against an independent mixed-radix event model,
+/// and every gate/delay transition is compared in time order against a reference trace,
+/// including the bounded terminal drain.
 /// </summary>
 public sealed class RandomizedMixedDomainExplicitDelayOracleTests
 {
@@ -25,6 +27,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
     private const int MultiUndrivenSeed = 0x3ED1B7;
     private const int MultiUndrivenCaseCount = 16;
     private const int MultiUndrivenStepCount = 20;
+    private const int ZeroDelaySeed = 0x3ED1C9;
+    private const int ZeroDelayCaseCount = 16;
 
     private static readonly (string Id, int Radix)[] DomainChoices =
     [
@@ -768,6 +772,284 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
             $"multi-undriven external domains covered [{string.Join(", ", externalDomainIds)}]");
     }
 
+    [Fact]
+    public void RandomizedMixedDomainZeroDelayBetweenExplicitDelaysMatchesReference()
+    {
+        var random = new Random(ZeroDelaySeed);
+        int determinedEvaluations = 0;
+        int ambiguousEvaluations = 0;
+        int gateTransitions = 0;
+        int zeroDelayGateCommits = 0;
+        int linkTransitions = 0;
+        int multiTickLinkDelayCases = 0;
+        int terminalTailEvents = 0;
+        int settledDuringTail = 0;
+        int traceEvents = 0;
+        var gateDomainIds = new HashSet<string>(StringComparer.Ordinal);
+        var externalDomainIds = new HashSet<string>(StringComparer.Ordinal);
+
+        for (int caseIndex = 0; caseIndex < ZeroDelayCaseCount; caseIndex++)
+        {
+            int gateCount = random.Next(3, 7);
+            int fanIn = gateCount == 3 ? 2 : random.Next(2, 4);
+            var gateDomains = new (string Id, int Radix)[gateCount];
+            for (int gate = 0; gate < gateCount; gate++)
+            {
+                gateDomains[gate] = DomainChoices[(caseIndex + gate) % DomainChoices.Length];
+                gateDomainIds.Add(gateDomains[gate].Id);
+            }
+
+            var externalDomains = new (string Id, int Radix)[gateCount];
+            for (int gate = 0; gate < gateCount; gate++)
+            {
+                externalDomains[gate] = DomainChoices[(caseIndex + gate + 1) % DomainChoices.Length];
+                externalDomainIds.Add(externalDomains[gate].Id);
+            }
+
+            var gateDelays = new long[gateCount];
+            var feedbackSources = new int[gateCount][];
+            for (int gate = 0; gate < gateCount; gate++)
+            {
+                feedbackSources[gate] = PickFeedbackSources(random, gate, gateCount, fanIn);
+            }
+
+            int linkCount = gateCount * fanIn;
+            var linkSources = new int[linkCount];
+            var linkDestinations = new int[linkCount];
+            var linkDelays = new long[linkCount];
+            var linkInitials = new int[linkCount];
+            bool hasMultiTickLinkDelay = false;
+            for (int gate = 0; gate < gateCount; gate++)
+            {
+                for (int tap = 0; tap < fanIn; tap++)
+                {
+                    int link = (gate * fanIn) + tap;
+                    int source = feedbackSources[gate][tap];
+                    linkSources[link] = source;
+                    linkDestinations[link] = gate;
+                    linkDelays[link] = random.Next(1, 5);
+                    linkInitials[link] = random.Next(gateDomains[source].Radix);
+                    hasMultiTickLinkDelay |= linkDelays[link] > 1;
+                }
+            }
+
+            if (hasMultiTickLinkDelay)
+            {
+                multiTickLinkDelayCases++;
+            }
+
+            var tables = new int[gateCount][];
+            for (int gate = 0; gate < gateCount; gate++)
+            {
+                int entries = externalDomains[gate].Radix;
+                for (int tap = 0; tap < fanIn; tap++)
+                {
+                    entries *= gateDomains[feedbackSources[gate][tap]].Radix;
+                }
+
+                tables[gate] = new int[entries];
+                for (int entry = 0; entry < entries; entry++)
+                {
+                    tables[gate][entry] = random.Next(gateDomains[gate].Radix);
+                }
+            }
+
+            (SimulationEngine engine, int[] linkNets) = BuildFeedbackCircuit(
+                gateDomains,
+                externalDomains.Select(domain => new[] { domain }).ToArray(),
+                tables,
+                gateDelays,
+                fanIn,
+                linkSources,
+                linkDelays,
+                linkInitials);
+            var reference = new MixedDomainExplicitDelayReference(
+                gateDomains.Select(domain => domain.Radix).ToArray(),
+                externalDomains.Select(domain => new[] { domain.Radix }).ToArray(),
+                tables,
+                gateDelays,
+                fanIn,
+                linkSources,
+                linkDestinations,
+                linkDelays,
+                linkInitials);
+
+            void CompareState(int compareStep, int?[] compareDrives)
+            {
+                if (engine.IsHalted)
+                {
+                    Assert.Fail(DescribeCase(
+                        "engine halted",
+                        caseIndex,
+                        compareStep,
+                        fanIn,
+                        gateDomains,
+                        externalDomains,
+                        gateDelays,
+                        linkSources,
+                        linkDestinations,
+                        linkDelays,
+                        linkInitials,
+                        tables,
+                        compareDrives,
+                        reference.GateOutputs(),
+                        Array.Empty<int>(),
+                        reference.LinkOutputs(),
+                        Array.Empty<int>(),
+                        engine,
+                        "none",
+                        expected: 0,
+                        actual: 0,
+                        seed: ZeroDelaySeed));
+                }
+
+                int[] expectedGates = reference.GateOutputs();
+                int[] expectedLinks = reference.LinkOutputs();
+                var actualGates = new int[gateCount];
+                var actualLinks = new int[linkCount];
+                for (int gate = 0; gate < gateCount; gate++)
+                {
+                    actualGates[gate] = engine.Read($"y{gate}");
+                }
+
+                for (int link = 0; link < linkCount; link++)
+                {
+                    actualLinks[link] = engine.GetNetValue(linkNets[link]);
+                }
+
+                for (int gate = 0; gate < gateCount; gate++)
+                {
+                    if (actualGates[gate] != expectedGates[gate])
+                    {
+                        Assert.Fail(DescribeCase(
+                            "gate output mismatch",
+                            caseIndex,
+                            compareStep,
+                            fanIn,
+                            gateDomains,
+                            externalDomains,
+                            gateDelays,
+                            linkSources,
+                            linkDestinations,
+                            linkDelays,
+                            linkInitials,
+                            tables,
+                            compareDrives,
+                            expectedGates,
+                            actualGates,
+                            expectedLinks,
+                            actualLinks,
+                            engine,
+                            $"g{gate}",
+                            expectedGates[gate],
+                            actualGates[gate],
+                            seed: ZeroDelaySeed));
+                    }
+                }
+
+                for (int link = 0; link < linkCount; link++)
+                {
+                    if (actualLinks[link] != expectedLinks[link])
+                    {
+                        Assert.Fail(DescribeCase(
+                            "explicit delay output mismatch",
+                            caseIndex,
+                            compareStep,
+                            fanIn,
+                            gateDomains,
+                            externalDomains,
+                            gateDelays,
+                            linkSources,
+                            linkDestinations,
+                            linkDelays,
+                            linkInitials,
+                            tables,
+                            compareDrives,
+                            expectedGates,
+                            actualGates,
+                            expectedLinks,
+                            actualLinks,
+                            engine,
+                            $"d{link}",
+                            expectedLinks[link],
+                            actualLinks[link],
+                            seed: ZeroDelaySeed));
+                    }
+                }
+            }
+
+            for (int step = 0; step < StepCount; step++)
+            {
+                if (step > 0)
+                {
+                    engine.AdvanceTo(step);
+                    reference.AdvanceTo(step);
+                }
+
+                int?[] drives = MakeDrives(random, externalDomains, step);
+                for (int gate = 0; gate < gateCount; gate++)
+                {
+                    int value = drives[gate] ?? SignalValue.UndrivenIndex;
+                    engine.Drive($"in{gate}", value);
+                    reference.Drive(gate, value);
+                }
+
+                engine.AdvanceTo(step);
+                reference.AdvanceTo(step);
+                CompareState(step, drives);
+            }
+
+            long eventsBeforeTail = engine.EventsProcessed;
+            var tailDrives = Enumerable.Repeat<int?>(null, gateCount).ToArray();
+            int tailStep = StepCount;
+            while ((engine.HasPendingEvents || reference.HasPendingEvents) &&
+                   tailStep < StepCount + TailStepCount)
+            {
+                tailStep++;
+                engine.AdvanceTo(tailStep);
+                reference.AdvanceTo(tailStep);
+                CompareState(tailStep, tailDrives);
+            }
+
+            terminalTailEvents += (int)(engine.EventsProcessed - eventsBeforeTail);
+            if (!engine.HasPendingEvents && !reference.HasPendingEvents)
+            {
+                settledDuringTail++;
+            }
+
+            traceEvents += AssertTraceMatches(engine, reference, linkNets, gateCount, ZeroDelaySeed, caseIndex);
+
+            determinedEvaluations += reference.DeterminedEvaluations;
+            ambiguousEvaluations += reference.AmbiguousEvaluations;
+            gateTransitions += reference.GateTransitions;
+            zeroDelayGateCommits += reference.ZeroDelayGateCommits;
+            linkTransitions += reference.LinkTransitions;
+
+            Assert.True(
+                engine.RuntimeDiagnostics.Count == 0,
+                $"seed 0x{ZeroDelaySeed:X8}, case {caseIndex}: unexpected runtime diagnostics: " +
+                string.Join("; ", engine.RuntimeDiagnostics.Select(d => $"{d.Code}: {d.Message}")));
+        }
+
+        Assert.True(determinedEvaluations > 0, "the zero-delay campaign never exercised a determined lookup");
+        Assert.True(ambiguousEvaluations > 0, "the zero-delay campaign never exercised an ambiguous lookup");
+        Assert.True(gateTransitions > 0, "the zero-delay campaign never observed a lookup transition");
+        Assert.True(
+            zeroDelayGateCommits == gateTransitions,
+            $"only {zeroDelayGateCommits} of {gateTransitions} gate transitions came from zero-delay lookups");
+        Assert.True(linkTransitions > 0, "the zero-delay campaign never observed a delay transition");
+        Assert.True(multiTickLinkDelayCases > 0, "the zero-delay campaign never used a delay above one tick");
+        Assert.True(terminalTailEvents > 0, "the terminal drain processed no delayed events");
+        Assert.True(settledDuringTail > 0, "no zero-delay case settled during the terminal drain");
+        Assert.True(traceEvents > 0, "the zero-delay trace comparison saw no gate or delay transitions");
+        Assert.True(
+            gateDomainIds.Count == DomainChoices.Length,
+            $"zero-delay gate domains covered [{string.Join(", ", gateDomainIds)}]");
+        Assert.True(
+            externalDomainIds.Count == DomainChoices.Length,
+            $"zero-delay external domains covered [{string.Join(", ", externalDomainIds)}]");
+    }
+
     private static int[] PickFeedbackSources(Random random, int gate, int gateCount, int fanIn)
     {
         int[] candidates = Enumerable.Range(0, gateCount)
@@ -1025,7 +1307,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
         SimulationEngine engine,
         string target,
         int expected,
-        int actual)
+        int actual,
+        int seed = Seed)
     {
         string driveText = string.Join(
             ",",
@@ -1051,7 +1334,7 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
                 $"d{link}:source=g{linkSources[link]},destination=g{linkDestinations[link]}," +
                 $"delay={linkDelays[link]},init={linkInitials[link]}"));
 
-        return $"seed 0x{Seed:X8}, case {caseIndex}, step {step}, reason {reason}, " +
+        return $"seed 0x{seed:X8}, case {caseIndex}, step {step}, reason {reason}, " +
                $"fan-in {fanIn}, drives [{driveText}], " +
                $"expected gates [{string.Join(",", expectedGates)}], " +
                $"actual gates [{string.Join(",", actualGates)}], " +
@@ -1241,6 +1524,8 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
 
         public int LinkTransitions { get; private set; }
 
+        public int ZeroDelayGateCommits { get; private set; }
+
         public int MultiWildcardEvaluations { get; private set; }
 
         public int MultiWildcardDeterminedEvaluations { get; private set; }
@@ -1357,6 +1642,10 @@ public sealed class RandomizedMixedDomainExplicitDelayOracleTests
             _gateValues[gate] = value;
             _trace.Add(new ReferenceNetChange(_now, $"g{gate}", oldValue, value));
             GateTransitions++;
+            if (_gateDelays[gate] == 0)
+            {
+                ZeroDelayGateCommits++;
+            }
             for (int link = 0; link < _linkCount; link++)
             {
                 if (_linkSources[link] == gate)
