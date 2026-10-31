@@ -40,6 +40,48 @@ double sourcePower = solution.ElementPowers["V1"]; // -50 mW (delivered)
 absorbed element power. All dictionaries are keyed by the stable IDs supplied to
 the netlist. Ground is present in `NodeVoltages` with value zero.
 
+## Numerical method and failure classification
+
+The unknown vector contains every non-ground node voltage in ordinal node-ID
+order, followed by one branch current per ideal voltage source. Resistors are
+stamped as conductances, current sources into the right-hand side, and voltage
+sources as their modified-nodal branch rows.
+
+The dense linear system is factorized with **scaled partial pivoting**: each
+pivot candidate is compared with the largest coefficient in its own row, not
+with one global matrix magnitude. This matters for real circuits with wide
+parameter spreads: a 1 GΩ branch next to a 1 mΩ branch is weak, not singular. A
+pivot is rejected only when it is below `1e-12` of its row scale.
+
+After back-substitution the solver computes the relative backward error
+`max|Ax - b| / max(||b||∞, ||A||∞ ||x||∞)` and exposes it as
+`DcSolution.RelativeResidual`. If the residual exceeds `1e-8`, the solve is
+refused with `IllConditioned` instead of returning a plausible-looking wrong
+answer. The residual is a backward-error measure; it does not bound forward
+error, so a severely ill-conditioned but solvable circuit can still lose digits.
+The randomized ladder tests state their accuracy expectations explicitly for
+that reason.
+
+Failures are classified before or after factorization:
+
+| Failure | Meaning |
+| --- | --- |
+| `NoGround` | no element references the declared ground node |
+| `FloatingNetwork` | one or more nodes form an island with no path to ground; the message names them |
+| `InconsistentSourceConstraints` | ideal voltage sources impose contradictory voltage differences; the message names the conflicting source |
+| `SingularMatrix` | the system is underdetermined, e.g. a current source into an open node or a *consistent but redundant* ideal-source loop whose branch currents are not unique |
+| `NonFiniteResult` | a coefficient, node voltage, or branch current became infinite or NaN |
+| `IllConditioned` | the system solved but its residual is too large to trust |
+
+A consistent redundant source loop is deliberately not reported as
+inconsistent: its node voltages are well defined even though the individual
+source currents are not. The solver refuses the whole solve rather than choosing
+an arbitrary current distribution.
+
+The implementation is a dense `double` factorization: time and memory grow as
+O(n³) and O(n²). It is intended for interactive, small and medium netlists; it is
+not a sparse or large-scale production simulator.
+
 ## Authored electrical circuits
 
 Projects may contain one or more `electricalCircuits` (project format v8). Each

@@ -328,3 +328,38 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    explicit terminals, and a read-only DC solve preview are now available in the
    workbench; the next electrical step is a sparse/transient solver or richer
    result visualization, not an implicit interpretation of digital values.
+
+## Session 2026-10-31 (agent/radix-dc-numerics)
+
+This branch is stacked on `agent/radix-erc` (PR #3) because the independent DC
+solver it hardens is not merged into `main` yet. It does not change that branch.
+
+29. Repaired two numerical defects in the DC solver's linear algebra:
+    - Pivot rejection used one global matrix magnitude as its scale, so a valid
+      circuit with a weak branch could be rejected as singular. A divider made of
+      two 1 GΩ resistors failed with `SingularMatrix`; now it solves to 0.5 V.
+      Pivot candidates are compared with their own row's magnitude (scaled partial
+      pivoting), and a pivot is rejected only below `1e-12` of that scale.
+    - The solver now computes the relative backward error
+      `max|Ax-b| / max(||b||∞, ||A||∞||x||∞)`, exposes it as
+      `DcSolution.RelativeResidual`, and refuses a solve whose residual exceeds
+      `1e-8` with the new `IllConditioned` failure instead of returning an
+      untrustworthy operating point.
+30. Added failure classification that was previously collapsed into a generic
+    singular-matrix error: `FloatingNetwork` names the nodes in an island with no
+    path to ground, `InconsistentSourceConstraints` names a contradicting ideal
+    voltage source, and a *consistent but redundant* source loop stays
+    `SingularMatrix` because its branch currents are genuinely not unique. The
+    headless JSON report and editor failure labels map the new values.
+31. Added `DcSolverNumericalTests` (11 tests): PΩ/TΩ and mΩ dividers, extreme
+    conductance spread on independent branches, floating-island and conflicting-
+    source classification, consistent-redundant-source distinction, KCL at every
+    node, KVL around a bridge mesh, absorbed-power conservation, element-order
+    invariance, and two seeded randomized ladder campaigns. Expected ladder
+    voltages come from a decimal closed-form recurrence, so the solver is not its
+    own oracle. The nine-decade campaign asserts `1e-6` forward accuracy and a
+    moderate three-decade campaign asserts `1e-10`; both check power conservation
+    and require a residual below `1e-12`.
+
+Verification: release build 0 warnings/0 errors; the full Core suite and editor
+suite results are recorded in the final handoff for this session.

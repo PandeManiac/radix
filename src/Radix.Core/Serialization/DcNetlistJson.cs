@@ -174,6 +174,9 @@ public static class DcNetlistJson
             DcSolveFailure.NoGround => "no-ground",
             DcSolveFailure.SingularMatrix => "singular-matrix",
             DcSolveFailure.NonFiniteResult => "non-finite-result",
+            DcSolveFailure.FloatingNetwork => "floating-network",
+            DcSolveFailure.InconsistentSourceConstraints => "inconsistent-source-constraints",
+            DcSolveFailure.IllConditioned => "ill-conditioned",
             _ => throw new ArgumentOutOfRangeException(nameof(failure)),
         };
 

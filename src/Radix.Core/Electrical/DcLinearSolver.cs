@@ -70,6 +70,15 @@ public enum DcSolveFailure
     NoGround,
     SingularMatrix,
     NonFiniteResult,
+
+    /// <summary>Some nodes are not connected to the ground reference by any element.</summary>
+    FloatingNetwork,
+
+    /// <summary>Ideal voltage sources impose mutually contradictory voltage differences.</summary>
+    InconsistentSourceConstraints,
+
+    /// <summary>The linear system solved, but its residual is too large to trust the result.</summary>
+    IllConditioned,
 }
 
 /// <summary>Thrown when a DC netlist has no well-defined linear operating point.</summary>
@@ -175,9 +184,12 @@ public sealed class DcNetlist
                 $"No element references the ground node '{GroundNodeId}'; the DC operating point has no voltage reference.");
         }
 
-        string[] nodeIds = _nodes
+        string[] sortedNodes = _nodes.OrderBy(node => node, StringComparer.Ordinal).ToArray();
+        EnsureNoFloatingIslands(sortedNodes);
+        EnsureVoltageSourceConsistency();
+
+        string[] nodeIds = sortedNodes
             .Where(node => !string.Equals(node, GroundNodeId, StringComparison.Ordinal))
-            .OrderBy(node => node, StringComparer.Ordinal)
             .ToArray();
         var nodeIndex = new Dictionary<string, int>(nodeIds.Length, StringComparer.Ordinal);
         for (int index = 0; index < nodeIds.Length; index++)
@@ -211,7 +223,7 @@ public sealed class DcNetlist
             StampVoltageSource(matrix, rhs, nodeIndex, source, row);
         }
 
-        double[] solution = SolveLinearSystem(matrix, rhs);
+        (double[] solution, double relativeResidual) = SolveLinearSystem(matrix, rhs);
         var voltages = new Dictionary<string, double>(nodeIndex.Count + 1, StringComparer.Ordinal)
         {
             [GroundNodeId] = 0,
@@ -247,8 +259,156 @@ public sealed class DcNetlist
             powers[element.Id] = voltage * current;
         }
 
-        return new DcSolution(voltages, currents, elementVoltages, powers);
+        return new DcSolution(voltages, currents, elementVoltages, powers)
+        {
+            RelativeResidual = relativeResidual,
+        };
     }
+
+    /// <summary>
+    /// Rejects a netlist whose graph is not a single ground-referenced component.
+    /// A floating island makes the node-voltage system underdetermined; naming the
+    /// island is more useful than a generic singular-matrix message.
+    /// </summary>
+    private void EnsureNoFloatingIslands(IReadOnlyList<string> sortedNodes)
+    {
+        var adjacency = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (DcElement element in _elements)
+        {
+            Connect(adjacency, element.NodeA, element.NodeB);
+            Connect(adjacency, element.NodeB, element.NodeA);
+        }
+
+        var visited = new HashSet<string>(StringComparer.Ordinal) { GroundNodeId };
+        var pending = new Queue<string>();
+        pending.Enqueue(GroundNodeId);
+        while (pending.Count > 0)
+        {
+            string node = pending.Dequeue();
+            if (!adjacency.TryGetValue(node, out List<string>? neighbors))
+            {
+                continue;
+            }
+
+            foreach (string neighbor in neighbors)
+            {
+                if (visited.Add(neighbor))
+                {
+                    pending.Enqueue(neighbor);
+                }
+            }
+        }
+
+        string[] floating = sortedNodes
+            .Where(node => !visited.Contains(node))
+            .ToArray();
+        if (floating.Length == 0)
+        {
+            return;
+        }
+
+        const int shown = 5;
+        string names = string.Join(", ", floating.Take(shown).Select(node => $"'{node}'"));
+        if (floating.Length > shown)
+        {
+            names += $", and {floating.Length - shown} more";
+        }
+
+        throw new DcSolveException(
+            DcSolveFailure.FloatingNetwork,
+            $"Nodes {names} are not connected to the ground node '{GroundNodeId}' by any element; a floating network has no unique DC operating point.");
+    }
+
+    /// <summary>
+    /// Checks that every ideal voltage source in a connected source group agrees with
+    /// the voltage differences implied by the other sources in that group. A
+    /// contradiction has no solution; a consistent but redundant loop still leaves the
+    /// branch currents underdetermined and is reported later as a singular system.
+    /// </summary>
+    private void EnsureVoltageSourceConsistency()
+    {
+        var adjacency = new Dictionary<string, List<SourceEdge>>(StringComparer.Ordinal);
+        foreach (DcVoltageSource source in _elements.OfType<DcVoltageSource>())
+        {
+            ConnectSource(adjacency, source.NodeA, source.NodeB, -source.Volts, source.Id);
+            ConnectSource(adjacency, source.NodeB, source.NodeA, source.Volts, source.Id);
+        }
+
+        var potentials = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (DcVoltageSource source in _elements.OfType<DcVoltageSource>())
+        {
+            if (potentials.ContainsKey(source.NodeA))
+            {
+                continue;
+            }
+
+            potentials[source.NodeA] = 0;
+            var pending = new Queue<string>();
+            pending.Enqueue(source.NodeA);
+            while (pending.Count > 0)
+            {
+                string node = pending.Dequeue();
+                if (!adjacency.TryGetValue(node, out List<SourceEdge>? edges))
+                {
+                    continue;
+                }
+
+                foreach (SourceEdge edge in edges)
+                {
+                    double candidate = potentials[node] + edge.Delta;
+                    if (potentials.TryGetValue(edge.Node, out double existing))
+                    {
+                        double tolerance = Math.Max(
+                            1e-9 * Math.Max(Math.Abs(existing), Math.Abs(candidate)),
+                            1e-15);
+                        if (Math.Abs(existing - candidate) > tolerance)
+                        {
+                            throw new DcSolveException(
+                                DcSolveFailure.InconsistentSourceConstraints,
+                                $"Ideal voltage source '{edge.SourceId}' conflicts with the voltage differences imposed by the other sources at node '{edge.Node}' ({FormatVolts(existing)} V versus {FormatVolts(candidate)} V); the ideal-source constraints have no solution.");
+                        }
+                    }
+                    else
+                    {
+                        potentials[edge.Node] = candidate;
+                        pending.Enqueue(edge.Node);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void Connect(Dictionary<string, List<string>> adjacency, string from, string to)
+    {
+        if (!adjacency.TryGetValue(from, out List<string>? neighbors))
+        {
+            neighbors = [];
+            adjacency[from] = neighbors;
+        }
+
+        neighbors.Add(to);
+    }
+
+    private static void ConnectSource(
+        Dictionary<string, List<SourceEdge>> adjacency,
+        string from,
+        string to,
+        double delta,
+        string sourceId)
+    {
+        if (!adjacency.TryGetValue(from, out List<SourceEdge>? edges))
+        {
+            edges = [];
+            adjacency[from] = edges;
+        }
+
+        edges.Add(new SourceEdge(to, delta, sourceId));
+    }
+
+    private static string FormatVolts(double volts) =>
+        volts.ToString("G12", CultureInfo.InvariantCulture);
+
+    private readonly record struct SourceEdge(string Node, double Delta, string SourceId);
 
     private DcNetlist Add(DcElement element)
     {
@@ -349,43 +509,80 @@ public sealed class DcNetlist
         }
     }
 
-    private static double[] SolveLinearSystem(double[,] matrix, double[] rhs)
+    /// <summary>
+    /// Solves the dense modified-nodal system with scaled partial pivoting. Pivot
+    /// selection compares each candidate with the magnitude of its own row, so a weak
+    /// but well-defined branch is not mistaken for a singular system just because
+    /// another part of the circuit uses much larger conductances. The returned residual
+    /// is the backward error of the computed solution, <c>max|Ax-b|</c> relative to the
+    /// magnitudes involved.
+    /// </summary>
+    private static (double[] Solution, double RelativeResidual) SolveLinearSystem(
+        double[,] matrix,
+        double[] rhs)
     {
         int size = rhs.Length;
         if (size == 0)
         {
-            return [];
+            return ([], 0);
         }
 
-        double scale = 0;
+        // The original system is kept for the residual check after elimination.
+        var original = (double[,])matrix.Clone();
+        var originalRhs = (double[])rhs.Clone();
+        var rowScale = new double[size];
+        double rhsScale = 0;
+        double matrixScale = 0;
         for (int row = 0; row < size; row++)
         {
+            double scale = 0;
             for (int column = 0; column < size; column++)
             {
-                scale = Math.Max(scale, Math.Abs(matrix[row, column]));
+                double magnitude = Math.Abs(matrix[row, column]);
+                if (!double.IsFinite(magnitude))
+                {
+                    throw new DcSolveException(
+                        DcSolveFailure.NonFiniteResult,
+                        "The DC linear system contains a non-finite coefficient.");
+                }
+
+                scale = Math.Max(scale, magnitude);
             }
+
+            rowScale[row] = scale;
+            matrixScale = Math.Max(matrixScale, scale);
+            rhsScale = Math.Max(rhsScale, Math.Abs(rhs[row]));
         }
 
-        double tolerance = Math.Max(scale * 1e-12, 1e-15);
+        // A pivot is only treated as zero when it is negligible compared with its own
+        // row. The floor is far above double precision (2.2e-16) but far below any
+        // physically meaningful conductance ratio.
+        const double relativePivotFloor = 1e-12;
         for (int column = 0; column < size; column++)
         {
-            int pivotRow = column;
-            double pivotMagnitude = Math.Abs(matrix[column, column]);
-            for (int row = column + 1; row < size; row++)
+            int pivotRow = -1;
+            double bestRatio = 0;
+            for (int row = column; row < size; row++)
             {
-                double candidate = Math.Abs(matrix[row, column]);
-                if (candidate > pivotMagnitude)
+                if (rowScale[row] <= 0)
                 {
-                    pivotMagnitude = candidate;
+                    continue;
+                }
+
+                double ratio = Math.Abs(matrix[row, column]) / rowScale[row];
+                if (ratio > bestRatio)
+                {
+                    bestRatio = ratio;
                     pivotRow = row;
                 }
             }
 
-            if (pivotMagnitude <= tolerance)
+            if (pivotRow < 0 ||
+                Math.Abs(matrix[pivotRow, column]) <= rowScale[pivotRow] * relativePivotFloor)
             {
                 throw new DcSolveException(
                     DcSolveFailure.SingularMatrix,
-                    "The DC linear system is singular: check for a floating node, an open current-source path, or a loop of ideal voltage sources.");
+                    "The DC linear system is singular: check for an open current-source path, an undriven node, or a redundant loop of ideal voltage sources.");
             }
 
             if (pivotRow != column)
@@ -397,6 +594,7 @@ public sealed class DcNetlist
                 }
 
                 (rhs[column], rhs[pivotRow]) = (rhs[pivotRow], rhs[column]);
+                (rowScale[column], rowScale[pivotRow]) = (rowScale[pivotRow], rowScale[column]);
             }
 
             double pivot = matrix[column, column];
@@ -418,6 +616,24 @@ public sealed class DcNetlist
             }
         }
 
+        double[] solution = SolveUpperTriangular(matrix, rhs);
+        double solutionScale = solution.Max(Math.Abs);
+        double maxResidual = MaxResidual(original, originalRhs, solution);
+        double denominator = Math.Max(rhsScale, matrixScale * solutionScale);
+        double relativeResidual = denominator > 0 ? maxResidual / denominator : maxResidual;
+        if (!double.IsFinite(relativeResidual) || relativeResidual > 1e-8)
+        {
+            throw new DcSolveException(
+                DcSolveFailure.IllConditioned,
+                $"The DC linear system has a relative residual of {relativeResidual.ToString("G6", CultureInfo.InvariantCulture)}, so the computed operating point cannot be trusted; check for nearly redundant sources or extreme parameter ratios.");
+        }
+
+        return (solution, relativeResidual);
+    }
+
+    private static double[] SolveUpperTriangular(double[,] matrix, double[] rhs)
+    {
+        int size = rhs.Length;
         var solution = new double[size];
         for (int row = size - 1; row >= 0; row--)
         {
@@ -439,13 +655,33 @@ public sealed class DcNetlist
         return solution;
     }
 
+    private static double MaxResidual(double[,] matrix, double[] rhs, double[] solution)
+    {
+        double maxResidual = 0;
+        for (int row = 0; row < rhs.Length; row++)
+        {
+            double sum = 0;
+            for (int column = 0; column < rhs.Length; column++)
+            {
+                sum += matrix[row, column] * solution[column];
+            }
+
+            maxResidual = Math.Max(maxResidual, Math.Abs(sum - rhs[row]));
+        }
+
+        return maxResidual;
+    }
+
     private DcSolution EmptySolution()
     {
         return new DcSolution(
             new Dictionary<string, double>(StringComparer.Ordinal) { [GroundNodeId] = 0 },
             new Dictionary<string, double>(StringComparer.Ordinal),
             new Dictionary<string, double>(StringComparer.Ordinal),
-            new Dictionary<string, double>(StringComparer.Ordinal));
+            new Dictionary<string, double>(StringComparer.Ordinal))
+        {
+            RelativeResidual = 0,
+        };
     }
 }
 
@@ -458,4 +694,13 @@ public sealed record DcSolution(
     IReadOnlyDictionary<string, double> NodeVoltages,
     IReadOnlyDictionary<string, double> ElementCurrents,
     IReadOnlyDictionary<string, double> ElementVoltages,
-    IReadOnlyDictionary<string, double> ElementPowers);
+    IReadOnlyDictionary<string, double> ElementPowers)
+{
+    /// <summary>
+    /// Backward error of the solved linear system: <c>max|Ax-b|</c> divided by the
+    /// combined magnitude of the right-hand side and the matrix-vector product.
+    /// Values near double precision indicate that the reported operating point
+    /// satisfies the assembled circuit equations; they are not a forward-error bound.
+    /// </summary>
+    public double RelativeResidual { get; init; }
+}
