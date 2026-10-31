@@ -6308,6 +6308,7 @@ public sealed class EditorViewModel : ObservableObject
             DcSolveFailure.FloatingNetwork => "floating network",
             DcSolveFailure.InconsistentSourceConstraints => "inconsistent ideal sources",
             DcSolveFailure.IllConditioned => "numerically ill-conditioned system",
+            DcSolveFailure.NonConvergent => "non-convergent nonlinear solve",
             _ => failure.ToString(),
         };
 

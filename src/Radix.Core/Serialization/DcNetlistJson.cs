@@ -112,16 +112,22 @@ public static class DcNetlistJson
             .Select(node => new NodeDto(node, solution.NodeVoltages[node]))
             .ToArray();
         ElementResultDto[] elements = netlist.Elements
-            .Select(element => new ElementResultDto(
-                element.Id,
-                KindName(element),
-                element.NodeA,
-                element.NodeB,
-                element.Value,
-                element.Unit,
-                solution.ElementVoltages[element.Id],
-                solution.ElementCurrents[element.Id],
-                solution.ElementPowers[element.Id]))
+            .Select(element =>
+            {
+                DcDiode? diode = element as DcDiode;
+                return new ElementResultDto(
+                    element.Id,
+                    KindName(element),
+                    element.NodeA,
+                    element.NodeB,
+                    element.Value,
+                    element.Unit,
+                    solution.ElementVoltages[element.Id],
+                    solution.ElementCurrents[element.Id],
+                    solution.ElementPowers[element.Id],
+                    diode?.EmissionCoefficient,
+                    diode?.ThermalVoltage);
+            })
             .ToArray();
 
         return Serialize(new ReportDto(
@@ -165,6 +171,7 @@ public static class DcNetlistJson
             DcElementKind.Resistor => "resistor",
             DcElementKind.VoltageSource => "voltage-source",
             DcElementKind.CurrentSource => "current-source",
+            DcElementKind.Diode => "diode",
             _ => throw new ArgumentOutOfRangeException(nameof(element)),
         };
 
@@ -177,6 +184,7 @@ public static class DcNetlistJson
             DcSolveFailure.FloatingNetwork => "floating-network",
             DcSolveFailure.InconsistentSourceConstraints => "inconsistent-source-constraints",
             DcSolveFailure.IllConditioned => "ill-conditioned",
+            DcSolveFailure.NonConvergent => "non-convergent",
             _ => throw new ArgumentOutOfRangeException(nameof(failure)),
         };
 
@@ -199,20 +207,42 @@ public static class DcNetlistJson
             switch (type)
             {
                 case "resistor":
-                    RejectUnused(element, id, "resistor", ["volts", "amperes"]);
+                    RejectUnused(
+                        element,
+                        id,
+                        "resistor",
+                        ["volts", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage"]);
                     netlist.AddResistor(id, nodeA, nodeB, RequireValue(element.Ohms, id, "ohms"));
                     break;
                 case "voltage-source":
-                    RejectUnused(element, id, "voltage-source", ["ohms", "amperes"]);
+                    RejectUnused(
+                        element,
+                        id,
+                        "voltage-source",
+                        ["ohms", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage"]);
                     netlist.AddVoltageSource(id, nodeA, nodeB, RequireValue(element.Volts, id, "volts"));
                     break;
                 case "current-source":
-                    RejectUnused(element, id, "current-source", ["ohms", "volts"]);
+                    RejectUnused(
+                        element,
+                        id,
+                        "current-source",
+                        ["ohms", "volts", "saturationCurrent", "emissionCoefficient", "thermalVoltage"]);
                     netlist.AddCurrentSource(id, nodeA, nodeB, RequireValue(element.Amperes, id, "amperes"));
+                    break;
+                case "diode":
+                    RejectUnused(element, id, "diode", ["ohms", "volts", "amperes"]);
+                    netlist.AddDiode(
+                        id,
+                        nodeA,
+                        nodeB,
+                        RequireValue(element.SaturationCurrent, id, "saturationCurrent"),
+                        element.EmissionCoefficient ?? 1.0,
+                        element.ThermalVoltage ?? DcDiode.DefaultThermalVoltage);
                     break;
                 default:
                     throw new ProjectFormatException(
-                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, or current-source.");
+                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, current-source, or diode.");
             }
         }
         catch (ArgumentException exception)
@@ -254,6 +284,9 @@ public static class DcNetlistJson
                 "ohms" => element.Ohms is not null,
                 "volts" => element.Volts is not null,
                 "amperes" => element.Amperes is not null,
+                "saturationCurrent" => element.SaturationCurrent is not null,
+                "emissionCoefficient" => element.EmissionCoefficient is not null,
+                "thermalVoltage" => element.ThermalVoltage is not null,
                 _ => false,
             };
             if (present)
@@ -277,7 +310,10 @@ public static class DcNetlistJson
         string? NodeB,
         double? Ohms,
         double? Volts,
-        double? Amperes);
+        double? Amperes,
+        double? SaturationCurrent,
+        double? EmissionCoefficient,
+        double? ThermalVoltage);
 
     private sealed record ReportDto(
         string Format,
@@ -302,5 +338,7 @@ public static class DcNetlistJson
         string Unit,
         double Volts,
         double Amperes,
-        double AbsorbedPowerWatts);
+        double AbsorbedPowerWatts,
+        double? EmissionCoefficient,
+        double? ThermalVoltage);
 }

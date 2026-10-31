@@ -59,6 +59,9 @@ After back-substitution the solver computes the relative backward error
 refused with `IllConditioned` instead of returning a plausible-looking wrong
 answer. The residual is a backward-error measure; it does not bound forward
 error, so a severely ill-conditioned but solvable circuit can still lose digits.
+For a netlist containing diodes, `RelativeResidual` instead reports the largest
+nonlinear KCL/source residual as a fraction of its acceptance bound, so a value at
+or below 1 means Newton converged.
 The randomized ladder tests state their accuracy expectations explicitly for
 that reason.
 
@@ -87,6 +90,63 @@ are warnings so an electrical asset never blocks digital compilation.
 The implementation is a dense `double` factorization: time and memory grow as
 O(n³) and O(n²). It is intended for interactive, small and medium netlists; it is
 not a sparse or large-scale production simulator.
+
+## Nonlinear diode model
+
+The netlist also supports a two-terminal Shockley diode:
+
+```
+I(V) = Is * (exp(V / (N * Vt)) - 1)
+```
+
+`NodeA` is the anode and `NodeB` the cathode, so the reported current flows from
+anode to cathode and the reported voltage is `V(anode) - V(cathode)`. `Is` is the
+saturation current in amperes, `N` the dimensionless emission coefficient, and
+`Vt` the thermal voltage in volts. The default thermal voltage is 25.852 mV,
+corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep. The
+model is isothermal and has no reverse breakdown, junction capacitance, series
+resistance, or high-injection effects.
+
+Diodes are solved with a damped Newton iteration. Each iteration linearizes every
+junction around its current voltage, solves the same scaled-pivot MNA system used
+for linear circuits, and applies standard pn-junction limiting when a forward step
+exceeds two junction voltages. A result is accepted only when the junction
+voltages stop moving and the nonlinear KCL/source residual is within a relative
+`1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. The absolute
+floors matter at picoamp reverse currents, where subtracting nearly equal node
+voltages limits how small a KCL residual is representable. Failure to converge within 100 iterations raises `NonConvergent` rather
+than returning a partial operating point. The linear fast path is unchanged when
+a netlist has no diodes.
+
+The exponential argument is capped at 80 (about 2 V per junction at `N = 1`).
+That keeps the arithmetic finite but means the ideal model must not be used at
+large forward bias without series resistance; it is a modelling limit, not a
+convergence tolerance.
+
+Standalone netlists can express a diode:
+
+```json
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 5 },
+    { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
+    { "id": "D1", "type": "diode", "nodeA": "out", "nodeB": "gnd",
+      "saturationCurrent": 1e-12, "emissionCoefficient": 1, "thermalVoltage": 0.025852 }
+  ]
+}
+```
+
+`emissionCoefficient` and `thermalVoltage` are optional and default to `1` and
+`0.025852` V. The report adds `emissionCoefficient` and `thermalVoltage` to diode
+element objects. Authored `electricalCircuits` in project files do not expose
+diodes yet; that needs a second component parameter in the project format.
+
+```bash
+radix dc examples/dc-diode.json
+```
 
 ## Authored electrical circuits
 

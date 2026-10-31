@@ -2,12 +2,13 @@ using System.Globalization;
 
 namespace Radix.Core.Electrical;
 
-/// <summary>The kind of a two-terminal element in a DC linear netlist.</summary>
+/// <summary>The kind of a two-terminal element in a DC netlist.</summary>
 public enum DcElementKind
 {
     Resistor,
     VoltageSource,
     CurrentSource,
+    Diode,
 }
 
 /// <summary>
@@ -65,6 +66,51 @@ public sealed record DcCurrentSource(string Id, string NodeA, string NodeB, doub
     public override string Unit => "A";
 }
 
+/// <summary>
+/// A two-terminal Shockley diode: <c>I = Is * (exp(V / (N * Vt)) - 1)</c>, with
+/// current flowing from <see cref="DcElement.NodeA"/> (anode) to
+/// <see cref="DcElement.NodeB"/> (cathode). Reverse breakdown, junction
+/// capacitance, series resistance, and self-heating are not modelled.
+/// </summary>
+/// <remarks>
+/// <see cref="DefaultThermalVoltage"/> is <c>kT/q</c> at 300.15 K (25.852 mV).
+/// The exponential argument is capped at 80 so arithmetic stays finite; that cap
+/// is reached around 2 V per junction for <c>N = 1</c>, far beyond a realistic
+/// forward drop without series resistance, and the model must not be used there.
+/// </remarks>
+public sealed record DcDiode(
+    string Id,
+    string NodeA,
+    string NodeB,
+    double SaturationCurrent,
+    double EmissionCoefficient,
+    double ThermalVoltage)
+    : DcElement(Id, NodeA, NodeB)
+{
+    public const double DefaultThermalVoltage = 0.025852;
+
+    private const double MaximumExponentialArgument = 80;
+
+    public override DcElementKind Kind => DcElementKind.Diode;
+
+    /// <summary>The saturation current in amperes.</summary>
+    public override double Value => SaturationCurrent;
+
+    public override string Unit => "A";
+
+    /// <summary>The junction voltage scale <c>N * Vt</c> in volts.</summary>
+    public double JunctionVoltage => EmissionCoefficient * ThermalVoltage;
+
+    public double CurrentAt(double volts) =>
+        SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
+
+    public double ConductanceAt(double volts) =>
+        (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+
+    private double ExponentialArgument(double volts) =>
+        Math.Min(volts / JunctionVoltage, MaximumExponentialArgument);
+}
+
 public enum DcSolveFailure
 {
     NoGround,
@@ -79,6 +125,9 @@ public enum DcSolveFailure
 
     /// <summary>The linear system solved, but its residual is too large to trust the result.</summary>
     IllConditioned,
+
+    /// <summary>Newton iteration did not reach a consistent nonlinear operating point.</summary>
+    NonConvergent,
 }
 
 /// <summary>Why a DC netlist cannot have a unique, physically meaningful solution.</summary>
@@ -187,9 +236,51 @@ public sealed class DcNetlist
     }
 
     /// <summary>
-    /// Solves the DC operating point with modified nodal analysis. The matrix is
-    /// assembled from node-voltage unknowns plus one branch-current unknown per
-    /// independent voltage source.
+    /// Adds a Shockley diode. <paramref name="saturationCurrent"/> is in amperes,
+    /// <paramref name="emissionCoefficient"/> is dimensionless, and
+    /// <paramref name="thermalVoltage"/> is in volts.
+    /// </summary>
+    public DcNetlist AddDiode(
+        string id,
+        string nodeA,
+        string nodeB,
+        double saturationCurrent,
+        double emissionCoefficient = 1.0,
+        double thermalVoltage = DcDiode.DefaultThermalVoltage)
+    {
+        ValidateElement(id, nodeA, nodeB);
+        if (!double.IsFinite(saturationCurrent) || saturationCurrent <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(saturationCurrent),
+                saturationCurrent,
+                "Saturation current must be finite and greater than zero.");
+        }
+
+        if (!double.IsFinite(emissionCoefficient) || emissionCoefficient <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(emissionCoefficient),
+                emissionCoefficient,
+                "Emission coefficient must be finite and greater than zero.");
+        }
+
+        if (!double.IsFinite(thermalVoltage) || thermalVoltage <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(thermalVoltage),
+                thermalVoltage,
+                "Thermal voltage must be finite and greater than zero.");
+        }
+
+        return Add(new DcDiode(
+            id, nodeA, nodeB, saturationCurrent, emissionCoefficient, thermalVoltage));
+    }
+
+    /// <summary>
+    /// Solves the DC operating point with modified nodal analysis. Linear netlists
+    /// use one factorization; netlists containing diodes use a damped Newton
+    /// iteration with junction-voltage limiting.
     /// </summary>
     public DcSolution Solve()
     {
@@ -224,9 +315,7 @@ public sealed class DcNetlist
             };
         }
 
-        string[] sortedNodes = _nodes.OrderBy(node => node, StringComparer.Ordinal).ToArray();
-
-        string[] nodeIds = sortedNodes
+        string[] nodeIds = Nodes
             .Where(node => !string.Equals(node, GroundNodeId, StringComparison.Ordinal))
             .ToArray();
         var nodeIndex = new Dictionary<string, int>(nodeIds.Length, StringComparer.Ordinal);
@@ -261,7 +350,299 @@ public sealed class DcNetlist
             StampVoltageSource(matrix, rhs, nodeIndex, source, row);
         }
 
+        DcDiode[] diodes = _elements.OfType<DcDiode>().ToArray();
+        return diodes.Length == 0
+            ? SolveLinear(nodeIds, nodeIndex, voltageSources, voltageSourceRows, matrix, rhs)
+            : SolveNonlinear(
+                nodeIds,
+                nodeIndex,
+                voltageSources,
+                voltageSourceRows,
+                matrix,
+                rhs,
+                diodes);
+    }
+
+    private DcSolution SolveLinear(
+        string[] nodeIds,
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[,] matrix,
+        double[] rhs)
+    {
         (double[] solution, double relativeResidual) = SolveLinearSystem(matrix, rhs);
+        return BuildSolution(
+            nodeIds,
+            nodeIndex,
+            voltageSources,
+            voltageSourceRows,
+            solution,
+            relativeResidual);
+    }
+
+    /// <summary>
+    /// Newton iteration over the diode junction voltages. Each iteration linearizes
+    /// every diode around its current junction voltage, solves the resulting linear
+    /// MNA system, limits a large forward jump (the standard pn-junction limiting
+    /// used to keep the exponential from overshooting), and stops only when the
+    /// solution is self-consistent and the nonlinear KCL/branch residual is small.
+    /// </summary>
+    private DcSolution SolveNonlinear(
+        string[] nodeIds,
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[,] baseMatrix,
+        double[] baseRhs,
+        DcDiode[] diodes)
+    {
+        const int maxIterations = 100;
+        const double voltageTolerance = 1e-9;
+
+        int size = baseRhs.Length;
+        var diodeVoltages = new double[diodes.Length];
+        var nextDiodeVoltages = new double[diodes.Length];
+        var previous = new double[size];
+        var solution = new double[size];
+        double residual = double.PositiveInfinity;
+
+        for (int iteration = 1; iteration <= maxIterations; iteration++)
+        {
+            var matrix = (double[,])baseMatrix.Clone();
+            var rhs = (double[])baseRhs.Clone();
+            for (int index = 0; index < diodes.Length; index++)
+            {
+                StampDiode(matrix, rhs, nodeIndex, diodes[index], diodeVoltages[index]);
+            }
+
+            (solution, _) = SolveLinearSystem(matrix, rhs);
+
+            double maxChange = 0;
+            double maxValue = 0;
+            for (int index = 0; index < size; index++)
+            {
+                maxChange = Math.Max(maxChange, Math.Abs(solution[index] - previous[index]));
+                maxValue = Math.Max(maxValue, Math.Abs(solution[index]));
+            }
+
+            double maxLimitError = 0;
+            for (int index = 0; index < diodes.Length; index++)
+            {
+                double raw = VoltageAcross(solution, nodeIndex, diodes[index].NodeA, diodes[index].NodeB);
+                double limited = LimitJunction(raw, diodeVoltages[index], diodes[index]);
+                maxLimitError = Math.Max(maxLimitError, Math.Abs(raw - limited));
+                maxChange = Math.Max(maxChange, Math.Abs(limited - diodeVoltages[index]));
+                maxValue = Math.Max(maxValue, Math.Abs(limited));
+                nextDiodeVoltages[index] = limited;
+            }
+
+            residual = NonlinearResidual(nodeIndex, voltageSources, voltageSourceRows, solution);
+            double tolerance = voltageTolerance * Math.Max(1, maxValue);
+            if (maxChange <= tolerance &&
+                maxLimitError <= tolerance &&
+                residual <= 1)
+            {
+                return BuildSolution(
+                    nodeIds,
+                    nodeIndex,
+                    voltageSources,
+                    voltageSourceRows,
+                    solution,
+                    residual);
+            }
+
+            Array.Copy(solution, previous, size);
+            Array.Copy(nextDiodeVoltages, diodeVoltages, diodes.Length);
+        }
+
+        throw new DcSolveException(
+            DcSolveFailure.NonConvergent,
+            $"The nonlinear DC operating point did not converge after {maxIterations} Newton iterations (last normalized residual {residual.ToString("G6", CultureInfo.InvariantCulture)}); check diode parameters, series resistance, and whether the operating point is physically bounded.");
+    }
+
+    private static void StampDiode(
+        double[,] matrix,
+        double[] rhs,
+        Dictionary<string, int> nodeIndex,
+        DcDiode diode,
+        double volts)
+    {
+        double conductance = diode.ConductanceAt(volts);
+        double equivalentCurrent = diode.CurrentAt(volts) - (conductance * volts);
+        int nodeA = IndexOf(nodeIndex, diode.NodeA);
+        int nodeB = IndexOf(nodeIndex, diode.NodeB);
+        Add(matrix, nodeA, nodeA, conductance);
+        Add(matrix, nodeB, nodeB, conductance);
+        Add(matrix, nodeA, nodeB, -conductance);
+        Add(matrix, nodeB, nodeA, -conductance);
+        if (nodeA >= 0)
+        {
+            rhs[nodeA] -= equivalentCurrent;
+        }
+
+        if (nodeB >= 0)
+        {
+            rhs[nodeB] += equivalentCurrent;
+        }
+    }
+
+    /// <summary>
+    /// Standard pn-junction limiting. A forward jump larger than two junction
+    /// voltages is compressed logarithmically so Newton cannot overshoot into the
+    /// exponential's overflow region; a solution only counts as converged once the
+    /// limit no longer changes the junction voltage.
+    /// </summary>
+    private static double LimitJunction(double vnew, double vold, DcDiode diode)
+    {
+        double junctionVoltage = diode.JunctionVoltage;
+        double critical = junctionVoltage / (Math.Sqrt(2) * diode.SaturationCurrent);
+        if (critical <= 1)
+        {
+            return vnew;
+        }
+
+        double vcrit = junctionVoltage * Math.Log(critical);
+        if (vnew <= vcrit || Math.Abs(vnew - vold) <= 2 * junctionVoltage)
+        {
+            return vnew;
+        }
+
+        if (vold > 0)
+        {
+            double argument = 1 + ((vnew - vold) / junctionVoltage);
+            return argument > 0
+                ? vold + (junctionVoltage * Math.Log(argument))
+                : vcrit;
+        }
+
+        return junctionVoltage * Math.Log(vnew / junctionVoltage);
+    }
+
+    /// <summary>
+    /// Residual violation ratio of the actual nonlinear equations: KCL at every
+    /// non-ground node and every ideal-source branch equation. Each row is compared
+    /// with a relative tolerance plus an absolute floor, because subtracting nearly
+    /// equal node voltages can leave a KCL error larger than a purely relative
+    /// picoamp threshold can express. A ratio at or below 1 is acceptable.
+    /// </summary>
+    private double NonlinearResidual(
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[] solution)
+    {
+        var residual = new double[solution.Length];
+        double currentScale = 1e-12;
+        double voltageScale = 1;
+
+        foreach (DcElement element in _elements)
+        {
+            double voltage = VoltageAcross(solution, nodeIndex, element.NodeA, element.NodeB);
+            switch (element)
+            {
+                case DcResistor resistor:
+                {
+                    double current = voltage / resistor.Ohms;
+                    AddNodeCurrent(residual, nodeIndex, element.NodeA, element.NodeB, current);
+                    currentScale = Math.Max(currentScale, Math.Abs(current));
+                    break;
+                }
+
+                case DcCurrentSource currentSource:
+                    AddNodeCurrent(
+                        residual,
+                        nodeIndex,
+                        element.NodeA,
+                        element.NodeB,
+                        currentSource.Amperes);
+                    currentScale = Math.Max(currentScale, Math.Abs(currentSource.Amperes));
+                    break;
+
+                case DcDiode diode:
+                {
+                    double current = diode.CurrentAt(voltage);
+                    AddNodeCurrent(residual, nodeIndex, element.NodeA, element.NodeB, current);
+                    currentScale = Math.Max(currentScale, Math.Abs(current));
+                    break;
+                }
+
+                case DcVoltageSource source:
+                {
+                    int row = voltageSourceRows[source.Id];
+                    double branchCurrent = solution[row];
+                    AddNodeCurrent(
+                        residual,
+                        nodeIndex,
+                        element.NodeA,
+                        element.NodeB,
+                        branchCurrent);
+                    residual[row] = voltage - source.Volts;
+                    currentScale = Math.Max(currentScale, Math.Abs(branchCurrent));
+                    voltageScale = Math.Max(voltageScale, Math.Max(Math.Abs(voltage), Math.Abs(source.Volts)));
+                    break;
+                }
+            }
+        }
+
+        const double currentTolerance = 1e-9;
+        const double voltageTolerance = 1e-9;
+        const double absoluteCurrentFloor = 1e-15;
+        const double absoluteVoltageFloor = 1e-12;
+
+        double worst = 0;
+        double allowedCurrent = (currentTolerance * currentScale) + absoluteCurrentFloor;
+        for (int index = 0; index < nodeIndex.Count; index++)
+        {
+            worst = Math.Max(worst, Math.Abs(residual[index]) / allowedCurrent);
+        }
+
+        double allowedVoltage = (voltageTolerance * voltageScale) + absoluteVoltageFloor;
+        foreach (DcVoltageSource source in voltageSources)
+        {
+            int row = voltageSourceRows[source.Id];
+            worst = Math.Max(worst, Math.Abs(residual[row]) / allowedVoltage);
+        }
+
+        return worst;
+    }
+
+    private static void AddNodeCurrent(
+        double[] target,
+        Dictionary<string, int> nodeIndex,
+        string nodeA,
+        string nodeB,
+        double current)
+    {
+        int indexA = IndexOf(nodeIndex, nodeA);
+        int indexB = IndexOf(nodeIndex, nodeB);
+        if (indexA >= 0)
+        {
+            target[indexA] += current;
+        }
+
+        if (indexB >= 0)
+        {
+            target[indexB] -= current;
+        }
+    }
+
+    private static double VoltageAcross(
+        double[] solution,
+        Dictionary<string, int> nodeIndex,
+        string nodeA,
+        string nodeB) =>
+        (nodeIndex.TryGetValue(nodeA, out int indexA) ? solution[indexA] : 0) -
+        (nodeIndex.TryGetValue(nodeB, out int indexB) ? solution[indexB] : 0);
+
+    private DcSolution BuildSolution(
+        string[] nodeIds,
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[] solution,
+        double relativeResidual)
+    {
         var voltages = new Dictionary<string, double>(nodeIndex.Count + 1, StringComparer.Ordinal)
         {
             [GroundNodeId] = 0,
@@ -282,6 +663,7 @@ public sealed class DcNetlist
                 DcResistor resistor => voltage / resistor.Ohms,
                 DcCurrentSource currentSource => currentSource.Amperes,
                 DcVoltageSource => solution[voltageSourceRows[element.Id]],
+                DcDiode diode => diode.CurrentAt(voltage),
                 _ => throw new InvalidOperationException($"Unsupported DC element '{element.Id}'."),
             };
 
@@ -759,10 +1141,12 @@ public sealed record DcSolution(
     IReadOnlyDictionary<string, double> ElementPowers)
 {
     /// <summary>
-    /// Backward error of the solved linear system: <c>max|Ax-b|</c> divided by the
-    /// combined magnitude of the right-hand side and the matrix-vector product.
-    /// Values near double precision indicate that the reported operating point
-    /// satisfies the assembled circuit equations; they are not a forward-error bound.
+    /// For a linear netlist, the backward error of the solved system: <c>max|Ax-b|</c>
+    /// divided by the combined magnitude of the right-hand side and the matrix-vector
+    /// product. For a netlist containing diodes, the largest nonlinear KCL or
+    /// ideal-source residual as a fraction of its acceptance bound; a value at or
+    /// below 1 means the Newton iteration converged. Neither quantity is a
+    /// forward-error bound.
     /// </summary>
     public double RelativeResidual { get; init; }
 }

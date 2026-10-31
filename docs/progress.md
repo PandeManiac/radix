@@ -373,3 +373,16 @@ suite results are recorded in the final handoff for this session.
     digital compilation is unaffected. Added `ElectricalCircuitRuleTests`
     covering valid, floating, contradictory, redundant, structurally invalid,
     and serialized projects.
+33. Added a Shockley diode model to the independent DC netlist solver, scoped
+    to the netlist/JSON/CLI path so no project-format change was required.
+    `DcDiode` uses `I = Is(exp(V/(N*Vt))-1)` with anode/cathode terminals, a fixed
+    default thermal voltage of 25.852 mV (300.15 K), and no breakdown,
+    capacitance, series resistance, or self-heating. Netlists containing diodes
+    use a damped Newton loop with pn-junction limiting, a nonlinear KCL/source
+    residual check, and a `NonConvergent` failure after 100 iterations; linear
+    netlists keep the single-factorization fast path. The versioned JSON netlist
+    accepts `type: "diode"` with `saturationCurrent`, optional
+    `emissionCoefficient`, and optional `thermalVoltage`; the report exposes the
+    model parameters. Added `DcDiodeSolverTests`, including forward, reverse,
+    series, emission-coefficient, parameter-validation, JSON, KCL, and power
+    checks against an independent scalar bisection rather than the solver.
