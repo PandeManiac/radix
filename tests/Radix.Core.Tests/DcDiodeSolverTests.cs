@@ -165,6 +165,82 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void ReverseBreakdownMatchesIndependentBisection()
+    {
+        foreach (double seriesResistance in new[] { 0.0, 0.1, 10.0, 100.0 })
+        {
+            DcSolution solution = SolveZener(seriesResistance);
+            DcDiode diode = new DcNetlist("gnd")
+                .AddDiode(
+                    "D1",
+                    "gnd",
+                    "out",
+                    DefaultIs,
+                    seriesResistance: seriesResistance,
+                    breakdownVoltage: 5.1,
+                    breakdownCurrent: 1e-3)
+                .Elements
+                .OfType<DcDiode>()
+                .Single();
+
+            (double junction, double nodeVoltage, double current) =
+                BisectBreakdown(9, 1_000, diode);
+
+            AssertClose(nodeVoltage, solution.NodeVoltages["out"], 1e-6);
+            AssertClose(current, solution.ElementCurrents["D1"], 1e-6);
+            AssertClose(
+                junction,
+                diode.JunctionVoltageFor(
+                    solution.NodeVoltages["gnd"] - solution.NodeVoltages["out"]),
+                1e-6);
+            AssertClose(
+                junction + (seriesResistance * current),
+                -solution.NodeVoltages["out"],
+                1e-6);
+            Assert.InRange(nodeVoltage, 5.0, 5.6);
+            Assert.True(solution.RelativeResidual <= 1);
+        }
+    }
+
+    [Fact]
+    public void ReverseBiasWithoutBreakdownStaysBlocked()
+    {
+        DcSolution solution = new DcNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 9)
+            .AddResistor("R1", "in", "out", 1_000)
+            .AddDiode("D1", "gnd", "out", DefaultIs)
+            .Solve();
+
+        Assert.True(solution.NodeVoltages["out"] > 8.999);
+        Assert.InRange(solution.ElementCurrents["D1"], -2e-12, 0);
+    }
+
+    [Fact]
+    public void LargerSeriesResistanceSoftensBreakdownCurrent()
+    {
+        DcSolution stiff = SolveZener(0);
+        DcSolution soft = SolveZener(100);
+
+        Assert.True(soft.NodeVoltages["out"] > stiff.NodeVoltages["out"]);
+        Assert.True(soft.ElementCurrents["D1"] > stiff.ElementCurrents["D1"]);
+        Assert.True(soft.ElementCurrents["D1"] < 0);
+    }
+
+    [Fact]
+    public void InvalidBreakdownParametersAreRejected()
+    {
+        var netlist = new DcNetlist("gnd");
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: 5.1, breakdownCurrent: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: 5.1, breakdownCurrent: double.NaN));
+    }
+
+    [Fact]
     public void NegativeSeriesResistanceIsRejected()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -250,6 +326,95 @@ public sealed class DcDiodeSolverTests
               ]
             }
             """));
+    }
+
+    [Fact]
+    public void JsonNetlistLoadsAndReportsBreakdownParameters()
+    {
+        DcNetlist netlist = DcNetlistJson.LoadFromString("""
+            {
+              "format": "radix-dc-netlist", "version": 1, "ground": "gnd",
+              "elements": [
+                { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 9 },
+                { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
+                { "id": "D1", "type": "diode", "nodeA": "gnd", "nodeB": "out",
+                  "saturationCurrent": 1e-12, "breakdownVoltage": 5.1, "breakdownCurrent": 0.001 }
+              ]
+            }
+            """);
+
+        string json = DcNetlistJson.ToReportJson("zener.json", netlist, netlist.Solve());
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement diode = document.RootElement.GetProperty("elements").EnumerateArray()
+            .Single(element => element.GetProperty("id").GetString() == "D1");
+        Assert.Equal(5.1, diode.GetProperty("breakdownVoltage").GetDouble());
+        Assert.Equal(0.001, diode.GetProperty("breakdownCurrent").GetDouble());
+
+        Assert.Throws<ProjectFormatException>(() => DcNetlistJson.LoadFromString("""
+            {
+              "format": "radix-dc-netlist", "version": 1, "ground": "gnd",
+              "elements": [
+                { "id": "D1", "type": "diode", "nodeA": "a", "nodeB": "gnd",
+                  "saturationCurrent": 1e-12, "breakdownCurrent": 0.001 }
+              ]
+            }
+            """));
+        Assert.Throws<ProjectFormatException>(() => DcNetlistJson.LoadFromString("""
+            {
+              "format": "radix-dc-netlist", "version": 1, "ground": "gnd",
+              "elements": [
+                { "id": "R1", "type": "resistor", "nodeA": "a", "nodeB": "gnd",
+                  "ohms": 1000, "breakdownVoltage": 5.1 }
+              ]
+            }
+            """));
+    }
+
+    private static DcSolution SolveZener(double seriesResistance) =>
+        new DcNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 9)
+            .AddResistor("R1", "in", "out", 1_000)
+            .AddDiode(
+                "D1",
+                "gnd",
+                "out",
+                DefaultIs,
+                seriesResistance: seriesResistance,
+                breakdownVoltage: 5.1,
+                breakdownCurrent: 1e-3)
+            .Solve();
+
+    /// <summary>
+    /// Independent solution of a 9 V source feeding a grounded-anode breakdown
+    /// diode through a resistor. With I = JunctionCurrent(Vj) and
+    /// V(gnd) - V(out) = Vj + Rs*I, KCL gives Vj + Vs + (R + Rs)*I = 0, which is
+    /// monotonic in Vj and is bisected here without using the solver.
+    /// </summary>
+    private static (double Junction, double NodeVoltage, double Current) BisectBreakdown(
+        double source,
+        double resistance,
+        DcDiode diode)
+    {
+        double low = -source;
+        double high = 0;
+        for (int iteration = 0; iteration < 200; iteration++)
+        {
+            double mid = (low + high) / 2;
+            double residual = mid + source +
+                ((resistance + diode.SeriesResistance) * diode.JunctionCurrent(mid));
+            if (residual > 0)
+            {
+                high = mid;
+            }
+            else
+            {
+                low = mid;
+            }
+        }
+
+        double junction = (low + high) / 2;
+        double current = diode.JunctionCurrent(junction);
+        return (junction, source + (resistance * current), current);
     }
 
     private static DcSolution SolveWithSeriesResistance(double seriesResistance) =>

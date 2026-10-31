@@ -69,8 +69,9 @@ public sealed record DcCurrentSource(string Id, string NodeA, string NodeB, doub
 /// <summary>
 /// A two-terminal Shockley diode: <c>I = Is * (exp(V / (N * Vt)) - 1)</c>, with
 /// current flowing from <see cref="DcElement.NodeA"/> (anode) to
-/// <see cref="DcElement.NodeB"/> (cathode). Reverse breakdown, junction
-/// capacitance, series resistance, and self-heating are not modelled.
+/// <see cref="DcElement.NodeB"/> (cathode). An optional reverse breakdown branch
+/// <c>-Ibv * exp(-(V + BV) / (N * Vt))</c> conducts below <c>-BV</c>. Junction
+/// capacitance and self-heating are not modelled.
 /// </summary>
 /// <remarks>
 /// <see cref="DefaultThermalVoltage"/> is <c>kT/q</c> at 300.15 K (25.852 mV).
@@ -85,10 +86,15 @@ public sealed record DcDiode(
     double SaturationCurrent,
     double EmissionCoefficient,
     double ThermalVoltage,
-    double SeriesResistance = 0)
+    double SeriesResistance = 0,
+    double BreakdownVoltage = 0,
+    double BreakdownCurrent = 0.001)
     : DcElement(Id, NodeA, NodeB)
 {
     public const double DefaultThermalVoltage = 0.025852;
+
+    /// <summary>Reverse current at the breakdown knee when that branch is enabled.</summary>
+    public const double DefaultBreakdownCurrent = 1e-3;
 
     private const double MaximumExponentialArgument = 80;
 
@@ -102,16 +108,38 @@ public sealed record DcDiode(
     /// <summary>The junction voltage scale <c>N * Vt</c> in volts.</summary>
     public double JunctionVoltage => EmissionCoefficient * ThermalVoltage;
 
+    /// <summary>Whether a reverse breakdown branch is enabled.</summary>
+    public bool HasBreakdown => BreakdownVoltage > 0;
+
     /// <summary>
     /// The junction current at a junction voltage, before series resistance: the
-    /// Shockley law <c>Is * (exp(V / (N * Vt)) - 1)</c>.
+    /// Shockley law <c>Is * (exp(V / (N * Vt)) - 1)</c>, minus the optional
+    /// reverse breakdown term <c>Ibv * exp(-(V + BV) / (N * Vt))</c>.
     /// </summary>
-    public double JunctionCurrent(double volts) =>
-        SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
+    public double JunctionCurrent(double volts)
+    {
+        double current = SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
+        if (HasBreakdown)
+        {
+            current -= BreakdownCurrent * Math.Exp(BreakdownArgument(volts));
+        }
+
+        return current;
+    }
 
     /// <summary>The junction small-signal conductance <c>dI/dV</c>.</summary>
-    public double JunctionConductance(double volts) =>
-        (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+    public double JunctionConductance(double volts)
+    {
+        double conductance =
+            (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+        if (HasBreakdown)
+        {
+            conductance +=
+                (BreakdownCurrent / JunctionVoltage) * Math.Exp(BreakdownArgument(volts));
+        }
+
+        return conductance;
+    }
 
     /// <summary>The terminal current after accounting for series resistance.</summary>
     public double CurrentAt(double terminalVolts) =>
@@ -176,6 +204,13 @@ public sealed record DcDiode(
 
     private double ExponentialArgument(double volts) =>
         Math.Min(volts / JunctionVoltage, MaximumExponentialArgument);
+
+    /// <summary>
+    /// Exponent of the reverse branch, <c>-(V + BV) / (N * Vt)</c>, capped like the
+    /// forward exponent so a runaway reverse step cannot overflow.
+    /// </summary>
+    private double BreakdownArgument(double volts) =>
+        Math.Min(-(volts + BreakdownVoltage) / JunctionVoltage, MaximumExponentialArgument);
 }
 
 public enum DcSolveFailure
@@ -305,7 +340,9 @@ public sealed class DcNetlist
     /// <summary>
     /// Adds a Shockley diode. <paramref name="saturationCurrent"/> is in amperes,
     /// <paramref name="emissionCoefficient"/> is dimensionless, and
-    /// <paramref name="thermalVoltage"/> is in volts.
+    /// <paramref name="thermalVoltage"/> is in volts. A positive
+    /// <paramref name="breakdownVoltage"/> enables a reverse knee at that magnitude
+    /// in volts, carrying <paramref name="breakdownCurrent"/> at the knee.
     /// </summary>
     public DcNetlist AddDiode(
         string id,
@@ -314,7 +351,9 @@ public sealed class DcNetlist
         double saturationCurrent,
         double emissionCoefficient = 1.0,
         double thermalVoltage = DcDiode.DefaultThermalVoltage,
-        double seriesResistance = 0)
+        double seriesResistance = 0,
+        double breakdownVoltage = 0,
+        double breakdownCurrent = DcDiode.DefaultBreakdownCurrent)
     {
         ValidateElement(id, nodeA, nodeB);
         if (!double.IsFinite(saturationCurrent) || saturationCurrent <= 0)
@@ -349,6 +388,22 @@ public sealed class DcNetlist
                 "Series resistance must be finite and non-negative.");
         }
 
+        if (!double.IsFinite(breakdownVoltage) || breakdownVoltage < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(breakdownVoltage),
+                breakdownVoltage,
+                "Breakdown voltage must be finite and non-negative; zero disables breakdown.");
+        }
+
+        if (!double.IsFinite(breakdownCurrent) || breakdownCurrent <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(breakdownCurrent),
+                breakdownCurrent,
+                "Breakdown current must be finite and greater than zero.");
+        }
+
         return Add(new DcDiode(
             id,
             nodeA,
@@ -356,7 +411,9 @@ public sealed class DcNetlist
             saturationCurrent,
             emissionCoefficient,
             thermalVoltage,
-            seriesResistance));
+            seriesResistance,
+            breakdownVoltage,
+            breakdownCurrent));
     }
 
     /// <summary>
@@ -583,12 +640,27 @@ public sealed class DcNetlist
     }
 
     /// <summary>
-    /// Standard pn-junction limiting. A forward jump larger than two junction
-    /// voltages is compressed logarithmically so Newton cannot overshoot into the
-    /// exponential's overflow region; a solution only counts as converged once the
-    /// limit no longer changes the junction voltage.
+    /// Standard pn-junction limiting. A jump larger than two junction voltages is
+    /// compressed logarithmically so Newton cannot overshoot into an exponential's
+    /// overflow region; a solution only counts as converged once the limit no
+    /// longer changes the junction voltage. When breakdown is enabled the reverse
+    /// overdrive <c>-(V + BV)</c> is limited with the same rule and mapped back, so
+    /// a first step cannot land far below the knee.
     /// </summary>
     private static double LimitJunction(double vnew, double vold, DcDiode diode)
+    {
+        double limited = LimitForwardJunction(vnew, vold, diode);
+        if (!diode.HasBreakdown)
+        {
+            return limited;
+        }
+
+        double knee = -diode.BreakdownVoltage;
+        double limitedOverdrive = LimitForwardJunction(knee - limited, knee - vold, diode);
+        return knee - limitedOverdrive;
+    }
+
+    private static double LimitForwardJunction(double vnew, double vold, DcDiode diode)
     {
         double junctionVoltage = diode.JunctionVoltage;
         double critical = junctionVoltage / (Math.Sqrt(2) * diode.SaturationCurrent);

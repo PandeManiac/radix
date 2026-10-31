@@ -110,13 +110,27 @@ An optional series resistance `Rs` adds the terminal relation
 terminal voltage by a monotonic scalar bisection, and the circuit-level Newton
 iteration linearizes the combined terminal conductance
 `Gj / (1 + Rs * Gj)`. `Rs = 0` (the default) is the ideal junction. The model is
-isothermal and has no reverse breakdown, junction capacitance, or high-injection
-effects.
+isothermal and has no junction capacitance or high-injection effects.
+
+An optional reverse breakdown branch models a Zener or avalanche knee at `-BV`:
+
+```
+I(V) = Is * (exp(V / (N * Vt)) - 1) - Ibv * exp(-(V + BV) / (N * Vt))
+```
+
+`BV > 0` is the knee magnitude in volts and `Ibv` the reverse current at that
+knee (`1 mA` by default). At `V = -BV` the branch carries `-Ibv`; below the knee
+it grows exponentially, and above it the term is negligible. Both branches are
+monotonic, so the series-resistance junction solve stays a single bisection.
+Newton applies the same junction limiting to the overdrive `-(V + BV)`, which
+keeps a large reverse step from landing far below the knee. Omitting `BV` or
+setting it to zero disables breakdown and preserves the plain Shockley model.
 
 Diodes are solved with a damped Newton iteration. Each iteration linearizes every
 junction around its current voltage, solves the same scaled-pivot MNA system used
-for linear circuits, and applies standard pn-junction limiting when a forward step
-exceeds two junction voltages. A result is accepted only when the junction
+for linear circuits, and applies standard pn-junction limiting when a forward or
+reverse step exceeds two junction voltages; reverse steps are limited in the
+breakdown overdrive. A result is accepted only when the junction
 voltages stop moving and the nonlinear KCL/source residual is within a relative
 `1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. The absolute
 floors matter at picoamp reverse currents, where subtracting nearly equal node
@@ -124,10 +138,10 @@ voltages limits how small a KCL residual is representable. Failure to converge w
 than returning a partial operating point. The linear fast path is unchanged when
 a netlist has no diodes.
 
-The exponential argument is capped at 80 (about 2 V per junction at `N = 1`).
-That keeps the arithmetic finite but means the ideal model must not be used at
-large forward bias without series resistance; it is a modelling limit, not a
-convergence tolerance.
+The forward and breakdown exponential arguments are both capped at 80 (about 2 V
+per junction at `N = 1`). That keeps the arithmetic finite but means the ideal
+model must not be used at large forward bias, or far below the breakdown knee,
+without series resistance; it is a modelling limit, not a convergence tolerance.
 
 Standalone netlists can express a diode:
 
@@ -145,13 +159,16 @@ Standalone netlists can express a diode:
 }
 ```
 
-`emissionCoefficient`, `thermalVoltage`, and `seriesResistance` are optional and
-default to `1`, `0.025852` V, and `0` Ω. The report adds all three model
-parameters to diode element objects. Authored `electricalCircuits` in project files do not expose
-diodes yet; that needs a second component parameter in the project format.
+`emissionCoefficient`, `thermalVoltage`, `seriesResistance`, `breakdownVoltage`,
+and `breakdownCurrent` are optional and default to `1`, `0.025852` V, `0` Ω,
+`0` (disabled), and `1 mA`. The report adds all five model parameters, omitting
+the two breakdown fields when breakdown is disabled. Authored
+`electricalCircuits` in project files do not expose diodes yet; that needs a
+second component parameter in the project format.
 
 ```bash
 radix dc examples/dc-diode.json
+radix dc examples/dc-zener.json
 ```
 
 ## Authored electrical circuits

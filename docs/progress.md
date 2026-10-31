@@ -394,3 +394,15 @@ suite results are recorded in the final handoff for this session.
     accepts and reports `seriesResistance`; the headless diode example now models
     a realistic 10 Ω series resistance. Added independent bisection tests over
     several resistance values, plus monotonicity and parameter-validation cases.
+35. Added an optional reverse breakdown branch to the diode model:
+    `I = Is(exp(V/(N*Vt))-1) - Ibv*exp(-(V+BV)/(N*Vt))`. `BV` is the knee
+    magnitude and `Ibv` the current at the knee (default 1 mA); `BV = 0`
+    disables the branch so existing netlists are unchanged. Both branches are
+    monotonic, so series-resistance junction recovery stays bisection-based.
+    Newton limiting is applied symmetrically: a large reverse step is limited in
+    the overdrive `-(V + BV)` so the first iteration cannot overshoot the knee.
+    The netlist JSON accepts and reports `breakdownVoltage` and
+    `breakdownCurrent`, rejects `breakdownCurrent` without `breakdownVoltage`,
+    and rejects both on non-diode elements. Added `examples/dc-zener.json` (9 V
+    source, 1 kΩ, 5.1 V knee, 10 Ω series resistance) and independent bisection,
+    blocking, monotonicity, validation, and JSON tests.
