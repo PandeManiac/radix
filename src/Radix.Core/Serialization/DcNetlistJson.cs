@@ -14,6 +14,7 @@ public static class DcNetlistJson
 {
     public const string NetlistFormatName = "radix-dc-netlist";
     public const string ReportFormatName = "radix-dc-report";
+    public const string SweepReportFormatName = "radix-dc-sweep";
     public const int FormatVersion = 1;
 
     /// <summary>Largest netlist file accepted by <see cref="Load"/>.</summary>
@@ -168,6 +169,41 @@ public static class DcNetlistJson
             []));
     }
 
+    /// <summary>Serializes a DC voltage-source sweep as a stable JSON report.</summary>
+    public static string ToSweepJson(
+        string? source,
+        string? circuit,
+        string sourceId,
+        string? nodeId,
+        double start,
+        double stop,
+        IReadOnlyList<DcSweepPoint> points)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        ArgumentNullException.ThrowIfNull(points);
+
+        SweepPointDto[] results = points
+            .Select(point => new SweepPointDto(
+                point.SourceValue,
+                nodeId is null ? null : point.Solution?.NodeVoltages[nodeId],
+                point.Solution?.ElementCurrents[sourceId],
+                point.Solved,
+                point.Failure is null ? null : FailureName(point.Failure.Value),
+                point.Message))
+            .ToArray();
+        return Serialize(new SweepReportDto(
+            SweepReportFormatName,
+            FormatVersion,
+            source,
+            circuit,
+            sourceId,
+            nodeId,
+            start,
+            stop,
+            points.Count,
+            results));
+    }
+
     public static string KindName(DcElement element) =>
         element.Kind switch
         {
@@ -191,7 +227,7 @@ public static class DcNetlistJson
             _ => throw new ArgumentOutOfRangeException(nameof(failure)),
         };
 
-    private static string Serialize(ReportDto report) =>
+    private static string Serialize<T>(T report) =>
         JsonSerializer.Serialize(report, JsonOptions);
 
     private static void AddElement(DcNetlist netlist, ElementDto element)
@@ -362,4 +398,24 @@ public static class DcNetlistJson
         double? SeriesResistance,
         double? BreakdownVoltage,
         double? BreakdownCurrent);
+
+    private sealed record SweepReportDto(
+        string Format,
+        int Version,
+        string? Source,
+        string? Circuit,
+        string SourceId,
+        string? Node,
+        double Start,
+        double Stop,
+        int Points,
+        IReadOnlyList<SweepPointDto> Results);
+
+    private sealed record SweepPointDto(
+        double SourceValue,
+        double? NodeVolts,
+        double? SourceAmperes,
+        bool Solved,
+        string? Failure,
+        string? Message);
 }

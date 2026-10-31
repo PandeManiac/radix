@@ -417,6 +417,32 @@ public sealed class DcNetlist
     }
 
     /// <summary>
+    /// Returns a copy of this netlist with one ideal voltage source's value
+    /// replaced. The original netlist is unchanged, so a sweep can solve
+    /// independent operating points without sharing mutable state.
+    /// </summary>
+    public DcNetlist WithVoltageSource(string id, double volts)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        if (!double.IsFinite(volts))
+        {
+            throw new ArgumentOutOfRangeException(nameof(volts), volts, "Voltage must be finite.");
+        }
+
+        DcVoltageSource source = _elements
+            .OfType<DcVoltageSource>()
+            .FirstOrDefault(element => string.Equals(element.Id, id, StringComparison.Ordinal))
+            ?? throw new ArgumentException($"Netlist has no voltage source '{id}'.", nameof(id));
+        var copy = new DcNetlist(GroundNodeId);
+        foreach (DcElement element in _elements)
+        {
+            copy.Add(ReferenceEquals(element, source) ? source with { Volts = volts } : element);
+        }
+
+        return copy;
+    }
+
+    /// <summary>
     /// Solves the DC operating point with modified nodal analysis. Linear netlists
     /// use one factorization; netlists containing diodes use a damped Newton
     /// iteration with junction-voltage limiting.

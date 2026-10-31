@@ -406,3 +406,14 @@ suite results are recorded in the final handoff for this session.
     and rejects both on non-diode elements. Added `examples/dc-zener.json` (9 V
     source, 1 kΩ, 5.1 V knee, 10 Ω series resistance) and independent bisection,
     blocking, monotonicity, validation, and JSON tests.
+36. Added DC voltage-source sweeps. `DcSweep.VoltageSource` solves a uniform,
+    endpoint-inclusive range using a fresh netlist copy per point via
+    `DcNetlist.WithVoltageSource`, so points never share mutable state and a
+    failed bias is recorded (`DcSweepPoint.Failure`) instead of aborting the
+    curve. Added the headless `radix dc-sweep` command with `--source`,
+    `--start`, `--stop`, `--points`, optional `--node`, authored `--circuit`
+    selection, and a versioned `radix-dc-sweep` JSON report. The command exits 1
+    when any point fails. Added `DcSweepTests` checking every point against an
+    independent single solve, Zener clamp monotonicity and knee value, failure
+    recording for contradictory/redundant sources, argument validation,
+    immutability of the source netlist, and the JSON report shape.

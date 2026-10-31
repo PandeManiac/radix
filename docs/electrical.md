@@ -171,6 +171,32 @@ radix dc examples/dc-diode.json
 radix dc examples/dc-zener.json
 ```
 
+## DC sweeps
+
+`radix dc-sweep` solves one voltage source across a uniform range and reports
+each operating point. It is a design aid for transfer curves and I-V knees (for
+example, finding where a Zener clamps), not a transient or AC analysis.
+
+```bash
+radix dc-sweep examples/dc-zener.json --source V1 --start 0 --stop 9 --points 10 --node out
+radix dc-sweep examples/dc-divider.radix --circuit divider --source V1 --start 0 --stop 10 --points 6 --node out --json
+```
+
+`--start` and `--stop` are inclusive and `--points` must be between 2 and 10000.
+Every point solves a fresh copy of the netlist, so results do not depend on the
+previous bias. A point with no solution is reported with its failure kind and
+message instead of aborting the sweep; the command then exits with status 1.
+`--node` adds that node's voltage to each row and to the JSON report.
+
+`DcSweep.VoltageSource` exposes the same behaviour in Core, and
+`DcNetlist.WithVoltageSource` returns an independent copy. Neither mutates the
+input netlist, so a sweep can run without shared state.
+
+The JSON report uses format `radix-dc-sweep`, version 1, with `sourceId`,
+`node`, `start`, `stop`, `points`, and a `results` array. Each result carries
+`sourceValue`, `solved`, optional `failure`/`message`, and, when solved and
+requested, `nodeVolts` and `sourceAmperes`.
+
 ## Authored electrical circuits
 
 Projects may contain one or more `electricalCircuits` (project format v8). Each
