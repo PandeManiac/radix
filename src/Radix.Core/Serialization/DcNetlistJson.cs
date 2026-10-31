@@ -14,6 +14,7 @@ public static class DcNetlistJson
 {
     public const string NetlistFormatName = "radix-dc-netlist";
     public const string ReportFormatName = "radix-dc-report";
+    public const string SweepReportFormatName = "radix-dc-sweep";
     public const int FormatVersion = 1;
 
     /// <summary>Largest netlist file accepted by <see cref="Load"/>.</summary>
@@ -112,16 +113,25 @@ public static class DcNetlistJson
             .Select(node => new NodeDto(node, solution.NodeVoltages[node]))
             .ToArray();
         ElementResultDto[] elements = netlist.Elements
-            .Select(element => new ElementResultDto(
-                element.Id,
-                KindName(element),
-                element.NodeA,
-                element.NodeB,
-                element.Value,
-                element.Unit,
-                solution.ElementVoltages[element.Id],
-                solution.ElementCurrents[element.Id],
-                solution.ElementPowers[element.Id]))
+            .Select(element =>
+            {
+                DcDiode? diode = element as DcDiode;
+                return new ElementResultDto(
+                    element.Id,
+                    KindName(element),
+                    element.NodeA,
+                    element.NodeB,
+                    element.Value,
+                    element.Unit,
+                    solution.ElementVoltages[element.Id],
+                    solution.ElementCurrents[element.Id],
+                    solution.ElementPowers[element.Id],
+                    diode?.EmissionCoefficient,
+                    diode?.ThermalVoltage,
+                    diode?.SeriesResistance,
+                    diode is { HasBreakdown: true } ? diode.BreakdownVoltage : null,
+                    diode is { HasBreakdown: true } ? diode.BreakdownCurrent : null);
+            })
             .ToArray();
 
         return Serialize(new ReportDto(
@@ -159,12 +169,48 @@ public static class DcNetlistJson
             []));
     }
 
+    /// <summary>Serializes a DC voltage-source sweep as a stable JSON report.</summary>
+    public static string ToSweepJson(
+        string? source,
+        string? circuit,
+        string sourceId,
+        string? nodeId,
+        double start,
+        double stop,
+        IReadOnlyList<DcSweepPoint> points)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        ArgumentNullException.ThrowIfNull(points);
+
+        SweepPointDto[] results = points
+            .Select(point => new SweepPointDto(
+                point.SourceValue,
+                nodeId is null ? null : point.Solution?.NodeVoltages[nodeId],
+                point.Solution?.ElementCurrents[sourceId],
+                point.Solved,
+                point.Failure is null ? null : FailureName(point.Failure.Value),
+                point.Message))
+            .ToArray();
+        return Serialize(new SweepReportDto(
+            SweepReportFormatName,
+            FormatVersion,
+            source,
+            circuit,
+            sourceId,
+            nodeId,
+            start,
+            stop,
+            points.Count,
+            results));
+    }
+
     public static string KindName(DcElement element) =>
         element.Kind switch
         {
             DcElementKind.Resistor => "resistor",
             DcElementKind.VoltageSource => "voltage-source",
             DcElementKind.CurrentSource => "current-source",
+            DcElementKind.Diode => "diode",
             _ => throw new ArgumentOutOfRangeException(nameof(element)),
         };
 
@@ -174,10 +220,14 @@ public static class DcNetlistJson
             DcSolveFailure.NoGround => "no-ground",
             DcSolveFailure.SingularMatrix => "singular-matrix",
             DcSolveFailure.NonFiniteResult => "non-finite-result",
+            DcSolveFailure.FloatingNetwork => "floating-network",
+            DcSolveFailure.InconsistentSourceConstraints => "inconsistent-source-constraints",
+            DcSolveFailure.IllConditioned => "ill-conditioned",
+            DcSolveFailure.NonConvergent => "non-convergent",
             _ => throw new ArgumentOutOfRangeException(nameof(failure)),
         };
 
-    private static string Serialize(ReportDto report) =>
+    private static string Serialize<T>(T report) =>
         JsonSerializer.Serialize(report, JsonOptions);
 
     private static void AddElement(DcNetlist netlist, ElementDto element)
@@ -196,20 +246,51 @@ public static class DcNetlistJson
             switch (type)
             {
                 case "resistor":
-                    RejectUnused(element, id, "resistor", ["volts", "amperes"]);
+                    RejectUnused(
+                        element,
+                        id,
+                        "resistor",
+                        ["volts", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
                     netlist.AddResistor(id, nodeA, nodeB, RequireValue(element.Ohms, id, "ohms"));
                     break;
                 case "voltage-source":
-                    RejectUnused(element, id, "voltage-source", ["ohms", "amperes"]);
+                    RejectUnused(
+                        element,
+                        id,
+                        "voltage-source",
+                        ["ohms", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
                     netlist.AddVoltageSource(id, nodeA, nodeB, RequireValue(element.Volts, id, "volts"));
                     break;
                 case "current-source":
-                    RejectUnused(element, id, "current-source", ["ohms", "volts"]);
+                    RejectUnused(
+                        element,
+                        id,
+                        "current-source",
+                        ["ohms", "volts", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
                     netlist.AddCurrentSource(id, nodeA, nodeB, RequireValue(element.Amperes, id, "amperes"));
+                    break;
+                case "diode":
+                    RejectUnused(element, id, "diode", ["ohms", "volts", "amperes"]);
+                    if (element.BreakdownCurrent is not null && element.BreakdownVoltage is null)
+                    {
+                        throw new ProjectFormatException(
+                            $"Element '{id}' sets 'breakdownCurrent' without 'breakdownVoltage'.");
+                    }
+
+                    netlist.AddDiode(
+                        id,
+                        nodeA,
+                        nodeB,
+                        RequireValue(element.SaturationCurrent, id, "saturationCurrent"),
+                        element.EmissionCoefficient ?? 1.0,
+                        element.ThermalVoltage ?? DcDiode.DefaultThermalVoltage,
+                        element.SeriesResistance ?? 0,
+                        element.BreakdownVoltage ?? 0,
+                        element.BreakdownCurrent ?? DcDiode.DefaultBreakdownCurrent);
                     break;
                 default:
                     throw new ProjectFormatException(
-                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, or current-source.");
+                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, current-source, or diode.");
             }
         }
         catch (ArgumentException exception)
@@ -251,6 +332,12 @@ public static class DcNetlistJson
                 "ohms" => element.Ohms is not null,
                 "volts" => element.Volts is not null,
                 "amperes" => element.Amperes is not null,
+                "saturationCurrent" => element.SaturationCurrent is not null,
+                "emissionCoefficient" => element.EmissionCoefficient is not null,
+                "thermalVoltage" => element.ThermalVoltage is not null,
+                "seriesResistance" => element.SeriesResistance is not null,
+                "breakdownVoltage" => element.BreakdownVoltage is not null,
+                "breakdownCurrent" => element.BreakdownCurrent is not null,
                 _ => false,
             };
             if (present)
@@ -274,7 +361,13 @@ public static class DcNetlistJson
         string? NodeB,
         double? Ohms,
         double? Volts,
-        double? Amperes);
+        double? Amperes,
+        double? SaturationCurrent,
+        double? EmissionCoefficient,
+        double? ThermalVoltage,
+        double? SeriesResistance,
+        double? BreakdownVoltage,
+        double? BreakdownCurrent);
 
     private sealed record ReportDto(
         string Format,
@@ -299,5 +392,30 @@ public static class DcNetlistJson
         string Unit,
         double Volts,
         double Amperes,
-        double AbsorbedPowerWatts);
+        double AbsorbedPowerWatts,
+        double? EmissionCoefficient,
+        double? ThermalVoltage,
+        double? SeriesResistance,
+        double? BreakdownVoltage,
+        double? BreakdownCurrent);
+
+    private sealed record SweepReportDto(
+        string Format,
+        int Version,
+        string? Source,
+        string? Circuit,
+        string SourceId,
+        string? Node,
+        double Start,
+        double Stop,
+        int Points,
+        IReadOnlyList<SweepPointDto> Results);
+
+    private sealed record SweepPointDto(
+        double SourceValue,
+        double? NodeVolts,
+        double? SourceAmperes,
+        bool Solved,
+        string? Failure,
+        string? Message);
 }

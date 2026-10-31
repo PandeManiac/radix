@@ -328,3 +328,92 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
    explicit terminals, and a read-only DC solve preview are now available in the
    workbench; the next electrical step is a sparse/transient solver or richer
    result visualization, not an implicit interpretation of digital values.
+
+## Session 2026-10-31 (agent/radix-dc-numerics)
+
+This branch is stacked on `agent/radix-erc` (PR #3) because the independent DC
+solver it hardens is not merged into `main` yet. It does not change that branch.
+
+29. Repaired two numerical defects in the DC solver's linear algebra:
+    - Pivot rejection used one global matrix magnitude as its scale, so a valid
+      circuit with a weak branch could be rejected as singular. A divider made of
+      two 1 GΩ resistors failed with `SingularMatrix`; now it solves to 0.5 V.
+      Pivot candidates are compared with their own row's magnitude (scaled partial
+      pivoting), and a pivot is rejected only below `1e-12` of that scale.
+    - The solver now computes the relative backward error
+      `max|Ax-b| / max(||b||∞, ||A||∞||x||∞)`, exposes it as
+      `DcSolution.RelativeResidual`, and refuses a solve whose residual exceeds
+      `1e-8` with the new `IllConditioned` failure instead of returning an
+      untrustworthy operating point.
+30. Added failure classification that was previously collapsed into a generic
+    singular-matrix error: `FloatingNetwork` names the nodes in an island with no
+    path to ground, `InconsistentSourceConstraints` names a contradicting ideal
+    voltage source, and a *consistent but redundant* source loop stays
+    `SingularMatrix` because its branch currents are genuinely not unique. The
+    headless JSON report and editor failure labels map the new values.
+31. Added `DcSolverNumericalTests` (11 tests): PΩ/TΩ and mΩ dividers, extreme
+    conductance spread on independent branches, floating-island and conflicting-
+    source classification, consistent-redundant-source distinction, KCL at every
+    node, KVL around a bridge mesh, absorbed-power conservation, element-order
+    invariance, and two seeded randomized ladder campaigns. Expected ladder
+    voltages come from a decimal closed-form recurrence, so the solver is not its
+    own oracle. The nine-decade campaign asserts `1e-6` forward accuracy and a
+    moderate three-decade campaign asserts `1e-10`; both check power conservation
+    and require a residual below `1e-12`.
+
+Verification: release build 0 warnings/0 errors; the full Core suite and editor
+suite results are recorded in the final handoff for this session.
+32. Extended ERC to authored electrical circuits. `DcNetlist.AnalyzeTopology`
+    is now a public, solve-independent projection used by both the solver and the
+    rule checker, so connectivity is analysed once. `RAD-ERC-101` reports a
+    floating electrical island with its node names, `RAD-ERC-102` reports
+    contradictory ideal voltage sources with the conflicting source, and
+    `RAD-ERC-103` reports a consistent but redundant source loop whose branch
+    currents are not unique. They are warnings with paths and assumptions, so
+    digital compilation is unaffected. Added `ElectricalCircuitRuleTests`
+    covering valid, floating, contradictory, redundant, structurally invalid,
+    and serialized projects.
+33. Added a Shockley diode model to the independent DC netlist solver, scoped
+    to the netlist/JSON/CLI path so no project-format change was required.
+    `DcDiode` uses `I = Is(exp(V/(N*Vt))-1)` with anode/cathode terminals, a fixed
+    default thermal voltage of 25.852 mV (300.15 K), and no breakdown,
+    capacitance, series resistance, or self-heating. Netlists containing diodes
+    use a damped Newton loop with pn-junction limiting, a nonlinear KCL/source
+    residual check, and a `NonConvergent` failure after 100 iterations; linear
+    netlists keep the single-factorization fast path. The versioned JSON netlist
+    accepts `type: "diode"` with `saturationCurrent`, optional
+    `emissionCoefficient`, and optional `thermalVoltage`; the report exposes the
+    model parameters. Added `DcDiodeSolverTests`, including forward, reverse,
+    series, emission-coefficient, parameter-validation, JSON, KCL, and power
+    checks against an independent scalar bisection rather than the solver.
+34. Added optional series resistance to the diode model. `DcDiode.SeriesResistance`
+    relates terminal and junction voltage by `Vterminal = Vjunction + Rs*I`;
+    junction voltage is recovered by monotonic scalar bisection, and the Newton
+    stamp uses the combined conductance `Gj/(1+Rs*Gj)`. `Rs = 0` preserves the
+    ideal-junction behavior and the existing tests unchanged. The netlist JSON
+    accepts and reports `seriesResistance`; the headless diode example now models
+    a realistic 10 Ω series resistance. Added independent bisection tests over
+    several resistance values, plus monotonicity and parameter-validation cases.
+35. Added an optional reverse breakdown branch to the diode model:
+    `I = Is(exp(V/(N*Vt))-1) - Ibv*exp(-(V+BV)/(N*Vt))`. `BV` is the knee
+    magnitude and `Ibv` the current at the knee (default 1 mA); `BV = 0`
+    disables the branch so existing netlists are unchanged. Both branches are
+    monotonic, so series-resistance junction recovery stays bisection-based.
+    Newton limiting is applied symmetrically: a large reverse step is limited in
+    the overdrive `-(V + BV)` so the first iteration cannot overshoot the knee.
+    The netlist JSON accepts and reports `breakdownVoltage` and
+    `breakdownCurrent`, rejects `breakdownCurrent` without `breakdownVoltage`,
+    and rejects both on non-diode elements. Added `examples/dc-zener.json` (9 V
+    source, 1 kΩ, 5.1 V knee, 10 Ω series resistance) and independent bisection,
+    blocking, monotonicity, validation, and JSON tests.
+36. Added DC voltage-source sweeps. `DcSweep.VoltageSource` solves a uniform,
+    endpoint-inclusive range using a fresh netlist copy per point via
+    `DcNetlist.WithVoltageSource`, so points never share mutable state and a
+    failed bias is recorded (`DcSweepPoint.Failure`) instead of aborting the
+    curve. Added the headless `radix dc-sweep` command with `--source`,
+    `--start`, `--stop`, `--points`, optional `--node`, authored `--circuit`
+    selection, and a versioned `radix-dc-sweep` JSON report. The command exits 1
+    when any point fails. Added `DcSweepTests` checking every point against an
+    independent single solve, Zener clamp monotonicity and knee value, failure
+    recording for contradictory/redundant sources, argument validation,
+    immutability of the source netlist, and the JSON report shape.

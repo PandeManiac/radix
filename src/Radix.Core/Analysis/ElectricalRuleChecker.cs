@@ -1,3 +1,4 @@
+using Radix.Core.Electrical;
 using Radix.Core.Model;
 using Radix.Core.Signals;
 
@@ -13,6 +14,15 @@ public static class ElectricalRuleChecker
 {
     public const string FloatingInputNetCode = "RAD-ERC-001";
     public const string InputPortDrivenCode = "RAD-ERC-002";
+
+    /// <summary>Authored electrical nodes with no conductive path to ground.</summary>
+    public const string ElectricalFloatingNodesCode = "RAD-ERC-101";
+
+    /// <summary>Ideal voltage sources that impose contradictory voltage differences.</summary>
+    public const string ElectricalContradictorySourcesCode = "RAD-ERC-102";
+
+    /// <summary>A consistent ideal-source loop whose individual currents are not unique.</summary>
+    public const string ElectricalRedundantSourceLoopCode = "RAD-ERC-103";
 
     /// <summary>
     /// Adds high-confidence structural diagnostics. Existing input-pin and
@@ -117,6 +127,62 @@ public static class ElectricalRuleChecker
                         Nature = DiagnosticNature.Structural,
                     });
                 }
+            }
+        }
+
+        CheckElectricalCircuits(project, diagnostics);
+    }
+
+    private static void CheckElectricalCircuits(CircuitProject project, DiagnosticBag diagnostics)
+    {
+        foreach (ElectricalCircuit circuit in project.ElectricalCircuits)
+        {
+            DcNetlist netlist;
+            try
+            {
+                netlist = circuit.ToDcNetlist();
+            }
+            catch (ElectricalCircuitValidationException)
+            {
+                // Structural terminal/node errors are reported by the electrical
+                // validator; a topology rule cannot add anything reliable here.
+                continue;
+            }
+
+            foreach (DcTopologyIssue issue in netlist.AnalyzeTopology())
+            {
+                string code = issue.Kind switch
+                {
+                    DcTopologyIssueKind.FloatingNodes => ElectricalFloatingNodesCode,
+                    DcTopologyIssueKind.ContradictoryVoltageSources => ElectricalContradictorySourcesCode,
+                    DcTopologyIssueKind.RedundantVoltageSourceLoop => ElectricalRedundantSourceLoopCode,
+                    _ => throw new ArgumentOutOfRangeException(nameof(issue)),
+                };
+                (string assumption, string suggestion) = issue.Kind switch
+                {
+                    DcTopologyIssueKind.FloatingNodes => (
+                        "An island with no conductive path to the declared ground node has no unique DC operating point. This is an authored-topology finding, not a calculated short-circuit current or a claim about a digital signal.",
+                        "Connect the island to ground, remove it, or leave the circuit incomplete until its reference is decided."),
+                    DcTopologyIssueKind.ContradictoryVoltageSources => (
+                        "Ideal voltage sources enforce exact voltage differences. Contradictory loops cannot be satisfied by any node voltages; real sources would require series resistance and a non-ideal model.",
+                        "Correct one source polarity or value, or model source resistance instead of an ideal source."),
+                    DcTopologyIssueKind.RedundantVoltageSourceLoop => (
+                        "The loop is consistent, so the node voltages are determined, but the individual ideal-source currents are not unique.",
+                        "Remove one redundant source or model source resistance to make the branch currents unique."),
+                    _ => throw new ArgumentOutOfRangeException(nameof(issue)),
+                };
+
+                diagnostics.AddUnique(new Diagnostic(
+                    code,
+                    DiagnosticSeverity.Warning,
+                    issue.Message,
+                    Path: $"electrical/{circuit.Id}")
+                {
+                    Assumption = assumption,
+                    Suggestion = suggestion,
+                    SimulationRemainsValid = true,
+                    Nature = DiagnosticNature.Structural,
+                });
             }
         }
     }
