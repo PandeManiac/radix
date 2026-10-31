@@ -81,6 +81,29 @@ public enum DcSolveFailure
     IllConditioned,
 }
 
+/// <summary>Why a DC netlist cannot have a unique, physically meaningful solution.</summary>
+public enum DcTopologyIssueKind
+{
+    /// <summary>One or more nodes have no conductive path to the ground reference.</summary>
+    FloatingNodes,
+
+    /// <summary>Ideal voltage sources impose mutually contradictory voltage differences.</summary>
+    ContradictoryVoltageSources,
+
+    /// <summary>Ideal voltage sources form a consistent loop whose branch currents are not unique.</summary>
+    RedundantVoltageSourceLoop,
+}
+
+/// <summary>
+/// A topology finding independent of any numerical solve. Nodes and source IDs are
+/// stable identifiers from the netlist that produced the issue.
+/// </summary>
+public sealed record DcTopologyIssue(
+    DcTopologyIssueKind Kind,
+    IReadOnlyList<string> Nodes,
+    IReadOnlyList<string> SourceIds,
+    string Message);
+
 /// <summary>Thrown when a DC netlist has no well-defined linear operating point.</summary>
 public sealed class DcSolveException : Exception
 {
@@ -184,9 +207,24 @@ public sealed class DcNetlist
                 $"No element references the ground node '{GroundNodeId}'; the DC operating point has no voltage reference.");
         }
 
+        foreach (DcTopologyIssue issue in AnalyzeTopology())
+        {
+            throw issue.Kind switch
+            {
+                DcTopologyIssueKind.FloatingNodes => new DcSolveException(
+                    DcSolveFailure.FloatingNetwork,
+                    issue.Message),
+                DcTopologyIssueKind.ContradictoryVoltageSources => new DcSolveException(
+                    DcSolveFailure.InconsistentSourceConstraints,
+                    issue.Message),
+                DcTopologyIssueKind.RedundantVoltageSourceLoop => new DcSolveException(
+                    DcSolveFailure.SingularMatrix,
+                    issue.Message),
+                _ => new DcSolveException(DcSolveFailure.SingularMatrix, issue.Message),
+            };
+        }
+
         string[] sortedNodes = _nodes.OrderBy(node => node, StringComparer.Ordinal).ToArray();
-        EnsureNoFloatingIslands(sortedNodes);
-        EnsureVoltageSourceConsistency();
 
         string[] nodeIds = sortedNodes
             .Where(node => !string.Equals(node, GroundNodeId, StringComparison.Ordinal))
@@ -266,12 +304,16 @@ public sealed class DcNetlist
     }
 
     /// <summary>
-    /// Rejects a netlist whose graph is not a single ground-referenced component.
-    /// A floating island makes the node-voltage system underdetermined; naming the
-    /// island is more useful than a generic singular-matrix message.
+    /// Finds topology problems that no choice of node voltages can satisfy. The
+    /// solver consumes the blocking issues; electrical rule checking can report them
+    /// before a solve. One analysis keeps the solver and the rule checker from
+    /// disagreeing about connectivity.
     /// </summary>
-    private void EnsureNoFloatingIslands(IReadOnlyList<string> sortedNodes)
+    public IReadOnlyList<DcTopologyIssue> AnalyzeTopology()
     {
+        var issues = new List<DcTopologyIssue>();
+        string[] sortedNodes = _nodes.OrderBy(node => node, StringComparer.Ordinal).ToArray();
+
         var adjacency = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (DcElement element in _elements)
         {
@@ -302,36 +344,20 @@ public sealed class DcNetlist
         string[] floating = sortedNodes
             .Where(node => !visited.Contains(node))
             .ToArray();
-        if (floating.Length == 0)
+        if (floating.Length > 0)
         {
-            return;
+            issues.Add(new DcTopologyIssue(
+                DcTopologyIssueKind.FloatingNodes,
+                floating,
+                [],
+                FloatingMessage(floating)));
         }
 
-        const int shown = 5;
-        string names = string.Join(", ", floating.Take(shown).Select(node => $"'{node}'"));
-        if (floating.Length > shown)
-        {
-            names += $", and {floating.Length - shown} more";
-        }
-
-        throw new DcSolveException(
-            DcSolveFailure.FloatingNetwork,
-            $"Nodes {names} are not connected to the ground node '{GroundNodeId}' by any element; a floating network has no unique DC operating point.");
-    }
-
-    /// <summary>
-    /// Checks that every ideal voltage source in a connected source group agrees with
-    /// the voltage differences implied by the other sources in that group. A
-    /// contradiction has no solution; a consistent but redundant loop still leaves the
-    /// branch currents underdetermined and is reported later as a singular system.
-    /// </summary>
-    private void EnsureVoltageSourceConsistency()
-    {
-        var adjacency = new Dictionary<string, List<SourceEdge>>(StringComparer.Ordinal);
+        var sourceAdjacency = new Dictionary<string, List<SourceEdge>>(StringComparer.Ordinal);
         foreach (DcVoltageSource source in _elements.OfType<DcVoltageSource>())
         {
-            ConnectSource(adjacency, source.NodeA, source.NodeB, -source.Volts, source.Id);
-            ConnectSource(adjacency, source.NodeB, source.NodeA, source.Volts, source.Id);
+            ConnectSource(sourceAdjacency, source.NodeA, source.NodeB, -source.Volts, source.Id);
+            ConnectSource(sourceAdjacency, source.NodeB, source.NodeA, source.Volts, source.Id);
         }
 
         var potentials = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -343,40 +369,76 @@ public sealed class DcNetlist
             }
 
             potentials[source.NodeA] = 0;
-            var pending = new Queue<string>();
-            pending.Enqueue(source.NodeA);
-            while (pending.Count > 0)
+            var groupNodes = new HashSet<string>(StringComparer.Ordinal) { source.NodeA };
+            var groupSources = new HashSet<string>(StringComparer.Ordinal);
+            var groupPending = new Queue<string>();
+            bool conflict = false;
+            groupPending.Enqueue(source.NodeA);
+            while (!conflict && groupPending.Count > 0)
             {
-                string node = pending.Dequeue();
-                if (!adjacency.TryGetValue(node, out List<SourceEdge>? edges))
+                string node = groupPending.Dequeue();
+                if (!sourceAdjacency.TryGetValue(node, out List<SourceEdge>? edges))
                 {
                     continue;
                 }
 
                 foreach (SourceEdge edge in edges)
                 {
+                    groupSources.Add(edge.SourceId);
                     double candidate = potentials[node] + edge.Delta;
                     if (potentials.TryGetValue(edge.Node, out double existing))
                     {
-                        double tolerance = Math.Max(
-                            1e-9 * Math.Max(Math.Abs(existing), Math.Abs(candidate)),
-                            1e-15);
-                        if (Math.Abs(existing - candidate) > tolerance)
+                        if (Math.Abs(existing - candidate) > VoltageTolerance(existing, candidate))
                         {
-                            throw new DcSolveException(
-                                DcSolveFailure.InconsistentSourceConstraints,
-                                $"Ideal voltage source '{edge.SourceId}' conflicts with the voltage differences imposed by the other sources at node '{edge.Node}' ({FormatVolts(existing)} V versus {FormatVolts(candidate)} V); the ideal-source constraints have no solution.");
+                            issues.Add(new DcTopologyIssue(
+                                DcTopologyIssueKind.ContradictoryVoltageSources,
+                                [edge.Node],
+                                [edge.SourceId],
+                                $"Ideal voltage source '{edge.SourceId}' conflicts with the voltage differences imposed by the other sources at node '{edge.Node}' ({FormatVolts(existing)} V versus {FormatVolts(candidate)} V); the ideal-source constraints have no solution."));
+                            conflict = true;
+                            break;
                         }
+
+                        continue;
                     }
-                    else
-                    {
-                        potentials[edge.Node] = candidate;
-                        pending.Enqueue(edge.Node);
-                    }
+
+                    potentials[edge.Node] = candidate;
+                    groupNodes.Add(edge.Node);
+                    groupPending.Enqueue(edge.Node);
                 }
             }
+
+            if (!conflict && groupSources.Count >= groupNodes.Count)
+            {
+                string[] sources = groupSources.Order(StringComparer.Ordinal).ToArray();
+                issues.Add(new DcTopologyIssue(
+                    DcTopologyIssueKind.RedundantVoltageSourceLoop,
+                    groupNodes.Order(StringComparer.Ordinal).ToArray(),
+                    sources,
+                    $"Ideal voltage sources {FormatIds(sources)} form a consistent but redundant loop; the node voltages are determined, but the individual source currents are not unique."));
+            }
         }
+
+        return issues;
     }
+
+    private static string FloatingMessage(IReadOnlyList<string> floating)
+    {
+        const int shown = 5;
+        string names = string.Join(", ", floating.Take(shown).Select(node => $"'{node}'"));
+        if (floating.Count > shown)
+        {
+            names += $", and {floating.Count - shown} more";
+        }
+
+        return $"Nodes {names} are not connected to a ground node by any element; a floating network has no unique DC operating point.";
+    }
+
+    private static string FormatIds(IReadOnlyList<string> ids) =>
+        string.Join(", ", ids.Select(id => $"'{id}'"));
+
+    private static double VoltageTolerance(double left, double right) =>
+        Math.Max(1e-9 * Math.Max(Math.Abs(left), Math.Abs(right)), 1e-15);
 
     private static void Connect(Dictionary<string, List<string>> adjacency, string from, string to)
     {

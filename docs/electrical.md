@@ -78,6 +78,12 @@ inconsistent: its node voltages are well defined even though the individual
 source currents are not. The solver refuses the whole solve rather than choosing
 an arbitrary current distribution.
 
+`radix validate`, the editor **Diagnostics** tab, and electrical rule checking
+share this topology analysis. An island with no ground path, a contradictory
+ideal-source loop, and a consistent but redundant source loop are reported as
+`RAD-ERC-101`–`RAD-ERC-103` warnings before a solve (see [erc.md](erc.md)). They
+are warnings so an electrical asset never blocks digital compilation.
+
 The implementation is a dense `double` factorization: time and memory grow as
 O(n³) and O(n²). It is intended for interactive, small and medium netlists; it is
 not a sparse or large-scale production simulator.

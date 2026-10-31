@@ -363,3 +363,13 @@ solver it hardens is not merged into `main` yet. It does not change that branch.
 
 Verification: release build 0 warnings/0 errors; the full Core suite and editor
 suite results are recorded in the final handoff for this session.
+32. Extended ERC to authored electrical circuits. `DcNetlist.AnalyzeTopology`
+    is now a public, solve-independent projection used by both the solver and the
+    rule checker, so connectivity is analysed once. `RAD-ERC-101` reports a
+    floating electrical island with its node names, `RAD-ERC-102` reports
+    contradictory ideal voltage sources with the conflicting source, and
+    `RAD-ERC-103` reports a consistent but redundant source loop whose branch
+    currents are not unique. They are warnings with paths and assumptions, so
+    digital compilation is unaffected. Added `ElectricalCircuitRuleTests`
+    covering valid, floating, contradictory, redundant, structurally invalid,
+    and serialized projects.
