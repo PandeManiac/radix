@@ -177,6 +177,46 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
     multi-tick explicit delays, distinct feedback sources, and gate outputs that stay
     undriven until their first delayed commit.
     Verification: core tests 427/427, release build 0 warnings and 0 errors.
+26. Extended the explicit-delay oracle to heterogeneous gate domains and wider
+    fan-in. Added a separate seeded campaign of 48 cases over 3-6 gates whose output
+    domains span binary, ternary, quaternary, and four-state signals. Each gate now
+    combines two or three distinct feedback taps with an external input, and every
+    tap remains an independent `Delay` primitive with a 1-3 tick delay and initialized
+    output. Twenty-eight steps mix fully driven, partially driven, and fully undriven
+    external inputs. The independent reference indexes each lookup by per-input
+    radices, enumerates undriven completions directly, and compares every gate output
+    and every internal delay output at every tick. Coverage assertions require all
+    four domains at gate outputs and external inputs, a gate with three feedback taps,
+    determined and ambiguous lookups, gate and delay transitions, multi-tick explicit
+    delays, and undriven gate outputs at time zero.
+    Verification: core tests 428/428, release build 0 warnings and 0 errors.
+27. Closed the terminal-drain and multi-undriven gaps in the mixed-domain explicit-delay
+    oracle. The original 48-case campaign now advances both the engine and reference
+    after the final all-undriven stimulus until both queues are empty, capped at 32
+    ticks, and compares every gate output and explicit-delay output at every tail tick.
+    Added a second seeded campaign of 16 cases over 3-5 gates with two or three external
+    inputs and two or three feedback taps per gate; each external input has its own
+    domain-specific port, so a lookup can genuinely evaluate several undriven inputs at
+    once. Link delays span 1-4 ticks. The reference now counts multi-wildcard determined
+    and ambiguous evaluations. Coverage assertions require a several-undriven-input
+    lookup that determines an output, one that holds on disagreement, all four domains
+    at gate and external inputs, multi-tick delays, an all-undriven gate stimulus, and
+    terminal-drain progress plus at least one fully settled case in each campaign.
+    Both campaigns also project the engine's net trace onto gate outputs and delay nets
+    and compare the exact time, order, old value, and new value of every transition
+    against a reference-side transition log, including the terminal drain.
+    Verification: core tests 429/429, release build 0 warnings and 0 errors.
+28. Added zero-delay lookup cases between explicit delays. A third seeded campaign of
+    16 cases uses 3-6 gates, two or three feedback taps, mixed binary/ternary/
+    quaternary/four-state domains, and 1-4 tick delay edges, but every lookup commits
+    at the same timestamp as its evaluation. The reference counts zero-delay gate
+    commits and requires every gate transition to come from one. Twenty-eight stimulus
+    steps plus a bounded 32-tick terminal drain compare every gate and delay output at
+    every tick, and the ordered gate/delay trace is compared against the reference.
+    Coverage requires determined and ambiguous lookups, zero-delay gate changes,
+    explicit-delay transitions, multi-tick delays, trace activity, a settled tail, and
+    all four domains at gate outputs and external inputs.
+    Verification: core tests 430/430, release build 0 warnings and 0 errors.
 
 ## Known issues and limitations
 
