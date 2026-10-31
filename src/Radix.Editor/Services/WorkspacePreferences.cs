@@ -42,7 +42,7 @@ public static class WorkspacePreferences
 
     public const double MaxWindowHeight = 10000;
 
-    public const int MaxInspectorTabIndex = 5;
+    public const int MaxInspectorTabIndex = 6;
 
     public const int MaxRecentProjects = 8;
 
