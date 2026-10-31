@@ -103,9 +103,15 @@ I(V) = Is * (exp(V / (N * Vt)) - 1)
 anode to cathode and the reported voltage is `V(anode) - V(cathode)`. `Is` is the
 saturation current in amperes, `N` the dimensionless emission coefficient, and
 `Vt` the thermal voltage in volts. The default thermal voltage is 25.852 mV,
-corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep. The
-model is isothermal and has no reverse breakdown, junction capacitance, series
-resistance, or high-injection effects.
+corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep.
+
+An optional series resistance `Rs` adds the terminal relation
+`Vterminal = Vjunction + Rs * I`. The junction voltage is recovered from the
+terminal voltage by a monotonic scalar bisection, and the circuit-level Newton
+iteration linearizes the combined terminal conductance
+`Gj / (1 + Rs * Gj)`. `Rs = 0` (the default) is the ideal junction. The model is
+isothermal and has no reverse breakdown, junction capacitance, or high-injection
+effects.
 
 Diodes are solved with a damped Newton iteration. Each iteration linearizes every
 junction around its current voltage, solves the same scaled-pivot MNA system used
@@ -139,9 +145,9 @@ Standalone netlists can express a diode:
 }
 ```
 
-`emissionCoefficient` and `thermalVoltage` are optional and default to `1` and
-`0.025852` V. The report adds `emissionCoefficient` and `thermalVoltage` to diode
-element objects. Authored `electricalCircuits` in project files do not expose
+`emissionCoefficient`, `thermalVoltage`, and `seriesResistance` are optional and
+default to `1`, `0.025852` V, and `0` Ω. The report adds all three model
+parameters to diode element objects. Authored `electricalCircuits` in project files do not expose
 diodes yet; that needs a second component parameter in the project format.
 
 ```bash

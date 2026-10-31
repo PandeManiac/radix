@@ -119,6 +119,63 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void SeriesResistanceMatchesIndependentBisection()
+    {
+        foreach (double seriesResistance in new[] { 0.1, 10.0, 100.0 })
+        {
+            var netlist = new DcNetlist("gnd")
+                .AddVoltageSource("V1", "in", "gnd", 5)
+                .AddResistor("R1", "in", "out", 1_000)
+                .AddDiode(
+                    "D1",
+                    "out",
+                    "gnd",
+                    DefaultIs,
+                    seriesResistance: seriesResistance);
+            DcSolution solution = netlist.Solve();
+            DcDiode diode = Assert.IsType<DcDiode>(netlist.Elements[2]);
+
+            (double junction, double terminal, double current) =
+                BisectWithSeries(5, 1_000, diode);
+
+            AssertClose(terminal, solution.NodeVoltages["out"], 1e-6);
+            AssertClose(current, solution.ElementCurrents["D1"], 1e-6);
+            AssertClose(
+                junction,
+                diode.JunctionVoltageFor(solution.NodeVoltages["out"]),
+                1e-6);
+            AssertClose(
+                junction + (seriesResistance * current),
+                solution.NodeVoltages["out"],
+                1e-6);
+            Assert.True(solution.RelativeResidual <= 1);
+        }
+    }
+
+    [Fact]
+    public void SeriesResistanceReducesCurrentAndRaisesTerminalVoltage()
+    {
+        DcSolution ideal = SolveWithSeriesResistance(0);
+        DcSolution resistive = SolveWithSeriesResistance(100);
+
+        Assert.True(resistive.NodeVoltages["out"] > ideal.NodeVoltages["out"]);
+        Assert.True(resistive.ElementCurrents["D1"] < ideal.ElementCurrents["D1"]);
+        Assert.True(ideal.NodeVoltages["out"] < 1);
+        Assert.True(resistive.NodeVoltages["out"] < 2);
+    }
+
+    [Fact]
+    public void NegativeSeriesResistanceIsRejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new DcNetlist("gnd").AddDiode(
+                "D1", "a", "gnd", DefaultIs, seriesResistance: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new DcNetlist("gnd").AddDiode(
+                "D1", "a", "gnd", DefaultIs, seriesResistance: double.NaN));
+    }
+
+    [Fact]
     public void InvalidDiodeParametersAreRejectedAtConstruction()
     {
         var netlist = new DcNetlist("gnd");
@@ -144,7 +201,8 @@ public sealed class DcDiodeSolverTests
                 { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 5 },
                 { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
                 { "id": "D1", "type": "diode", "nodeA": "out", "nodeB": "gnd",
-                  "saturationCurrent": 1e-12, "emissionCoefficient": 1.5, "thermalVoltage": 0.025852 }
+                  "saturationCurrent": 1e-12, "emissionCoefficient": 1.5, "thermalVoltage": 0.025852,
+                  "seriesResistance": 10 }
               ]
             }
             """);
@@ -158,6 +216,7 @@ public sealed class DcDiodeSolverTests
         Assert.Equal("diode", diode.GetProperty("kind").GetString());
         Assert.Equal(1.5, diode.GetProperty("emissionCoefficient").GetDouble());
         Assert.Equal(0.025852, diode.GetProperty("thermalVoltage").GetDouble());
+        Assert.Equal(10, diode.GetProperty("seriesResistance").GetDouble());
         Assert.InRange(diode.GetProperty("volts").GetDouble(), 0.6, 1.2);
         Assert.True(diode.GetProperty("volts").GetDouble() > 0);
     }
@@ -191,6 +250,52 @@ public sealed class DcDiodeSolverTests
               ]
             }
             """));
+    }
+
+    private static DcSolution SolveWithSeriesResistance(double seriesResistance) =>
+        new DcNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 5)
+            .AddResistor("R1", "in", "out", 1_000)
+            .AddDiode(
+                "D1",
+                "out",
+                "gnd",
+                DefaultIs,
+                seriesResistance: seriesResistance)
+            .Solve();
+
+    /// <summary>
+    /// Independent scalar solution for a source, series resistor, and diode with
+    /// series resistance: bisect the junction voltage against
+    /// I = (Vs - Vj)/(R + Rs) = Is(exp(Vj/(N Vt)) - 1).
+    /// </summary>
+    private static (double Junction, double Terminal, double Current) BisectWithSeries(
+        double source,
+        double resistance,
+        DcDiode diode)
+    {
+        double low = -1;
+        double high = source;
+        for (int iteration = 0; iteration < 200; iteration++)
+        {
+            double mid = (low + high) / 2;
+            double current = (source - mid) / (resistance + diode.SeriesResistance);
+            if (current - diode.JunctionCurrent(mid) > 0)
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+
+        double junction = (low + high) / 2;
+        double branchCurrent = (source - junction) / (resistance + diode.SeriesResistance);
+        return (
+            junction,
+            junction + (diode.SeriesResistance * branchCurrent),
+            branchCurrent);
     }
 
     /// <summary>Solves (Vs - Vd)/R = Is(exp(Vd/(N Vt)) - 1) by bisection.</summary>

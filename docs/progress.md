@@ -386,3 +386,11 @@ suite results are recorded in the final handoff for this session.
     model parameters. Added `DcDiodeSolverTests`, including forward, reverse,
     series, emission-coefficient, parameter-validation, JSON, KCL, and power
     checks against an independent scalar bisection rather than the solver.
+34. Added optional series resistance to the diode model. `DcDiode.SeriesResistance`
+    relates terminal and junction voltage by `Vterminal = Vjunction + Rs*I`;
+    junction voltage is recovered by monotonic scalar bisection, and the Newton
+    stamp uses the combined conductance `Gj/(1+Rs*Gj)`. `Rs = 0` preserves the
+    ideal-junction behavior and the existing tests unchanged. The netlist JSON
+    accepts and reports `seriesResistance`; the headless diode example now models
+    a realistic 10 Ω series resistance. Added independent bisection tests over
+    several resistance values, plus monotonicity and parameter-validation cases.

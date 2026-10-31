@@ -126,7 +126,8 @@ public static class DcNetlistJson
                     solution.ElementCurrents[element.Id],
                     solution.ElementPowers[element.Id],
                     diode?.EmissionCoefficient,
-                    diode?.ThermalVoltage);
+                    diode?.ThermalVoltage,
+                    diode?.SeriesResistance);
             })
             .ToArray();
 
@@ -211,7 +212,7 @@ public static class DcNetlistJson
                         element,
                         id,
                         "resistor",
-                        ["volts", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage"]);
+                        ["volts", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance"]);
                     netlist.AddResistor(id, nodeA, nodeB, RequireValue(element.Ohms, id, "ohms"));
                     break;
                 case "voltage-source":
@@ -219,7 +220,7 @@ public static class DcNetlistJson
                         element,
                         id,
                         "voltage-source",
-                        ["ohms", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage"]);
+                        ["ohms", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance"]);
                     netlist.AddVoltageSource(id, nodeA, nodeB, RequireValue(element.Volts, id, "volts"));
                     break;
                 case "current-source":
@@ -227,7 +228,7 @@ public static class DcNetlistJson
                         element,
                         id,
                         "current-source",
-                        ["ohms", "volts", "saturationCurrent", "emissionCoefficient", "thermalVoltage"]);
+                        ["ohms", "volts", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance"]);
                     netlist.AddCurrentSource(id, nodeA, nodeB, RequireValue(element.Amperes, id, "amperes"));
                     break;
                 case "diode":
@@ -238,7 +239,8 @@ public static class DcNetlistJson
                         nodeB,
                         RequireValue(element.SaturationCurrent, id, "saturationCurrent"),
                         element.EmissionCoefficient ?? 1.0,
-                        element.ThermalVoltage ?? DcDiode.DefaultThermalVoltage);
+                        element.ThermalVoltage ?? DcDiode.DefaultThermalVoltage,
+                        element.SeriesResistance ?? 0);
                     break;
                 default:
                     throw new ProjectFormatException(
@@ -287,6 +289,7 @@ public static class DcNetlistJson
                 "saturationCurrent" => element.SaturationCurrent is not null,
                 "emissionCoefficient" => element.EmissionCoefficient is not null,
                 "thermalVoltage" => element.ThermalVoltage is not null,
+                "seriesResistance" => element.SeriesResistance is not null,
                 _ => false,
             };
             if (present)
@@ -313,7 +316,8 @@ public static class DcNetlistJson
         double? Amperes,
         double? SaturationCurrent,
         double? EmissionCoefficient,
-        double? ThermalVoltage);
+        double? ThermalVoltage,
+        double? SeriesResistance);
 
     private sealed record ReportDto(
         string Format,
@@ -340,5 +344,6 @@ public static class DcNetlistJson
         double Amperes,
         double AbsorbedPowerWatts,
         double? EmissionCoefficient,
-        double? ThermalVoltage);
+        double? ThermalVoltage,
+        double? SeriesResistance);
 }

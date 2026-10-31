@@ -84,7 +84,8 @@ public sealed record DcDiode(
     string NodeB,
     double SaturationCurrent,
     double EmissionCoefficient,
-    double ThermalVoltage)
+    double ThermalVoltage,
+    double SeriesResistance = 0)
     : DcElement(Id, NodeA, NodeB)
 {
     public const double DefaultThermalVoltage = 0.025852;
@@ -101,11 +102,77 @@ public sealed record DcDiode(
     /// <summary>The junction voltage scale <c>N * Vt</c> in volts.</summary>
     public double JunctionVoltage => EmissionCoefficient * ThermalVoltage;
 
-    public double CurrentAt(double volts) =>
+    /// <summary>
+    /// The junction current at a junction voltage, before series resistance: the
+    /// Shockley law <c>Is * (exp(V / (N * Vt)) - 1)</c>.
+    /// </summary>
+    public double JunctionCurrent(double volts) =>
         SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
 
-    public double ConductanceAt(double volts) =>
+    /// <summary>The junction small-signal conductance <c>dI/dV</c>.</summary>
+    public double JunctionConductance(double volts) =>
         (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+
+    /// <summary>The terminal current after accounting for series resistance.</summary>
+    public double CurrentAt(double terminalVolts) =>
+        JunctionCurrent(JunctionVoltageFor(terminalVolts));
+
+    /// <summary>The terminal small-signal conductance after accounting for series resistance.</summary>
+    public double ConductanceAt(double terminalVolts)
+    {
+        double junction = JunctionConductance(JunctionVoltageFor(terminalVolts));
+        return SeriesResistance <= 0
+            ? junction
+            : junction / (1 + (SeriesResistance * junction));
+    }
+
+    /// <summary>
+    /// Solves <c>Vterminal = Vjunction + Rs * I(Vjunction)</c> for the internal
+    /// junction voltage. The scalar function is monotonic, so bisection is used
+    /// instead of nesting another Newton iteration inside the circuit-level one.
+    /// </summary>
+    public double JunctionVoltageFor(double terminalVolts)
+    {
+        if (SeriesResistance <= 0)
+        {
+            return terminalVolts;
+        }
+
+        double low = Math.Min(terminalVolts, 0) - 1;
+        double high = Math.Max(terminalVolts, 0) + 1;
+        for (int index = 0; index < 80 && JunctionResidual(low, terminalVolts) > 0; index++)
+        {
+            low -= Math.Max(1, Math.Abs(low));
+        }
+
+        for (int index = 0; index < 80 && JunctionResidual(high, terminalVolts) < 0; index++)
+        {
+            high += Math.Max(1, Math.Abs(high));
+        }
+
+        if (JunctionResidual(low, terminalVolts) > 0 || JunctionResidual(high, terminalVolts) < 0)
+        {
+            return terminalVolts;
+        }
+
+        for (int index = 0; index < 120; index++)
+        {
+            double mid = (low + high) / 2;
+            if (JunctionResidual(mid, terminalVolts) > 0)
+            {
+                high = mid;
+            }
+            else
+            {
+                low = mid;
+            }
+        }
+
+        return (low + high) / 2;
+    }
+
+    private double JunctionResidual(double junctionVolts, double terminalVolts) =>
+        junctionVolts + (SeriesResistance * JunctionCurrent(junctionVolts)) - terminalVolts;
 
     private double ExponentialArgument(double volts) =>
         Math.Min(volts / JunctionVoltage, MaximumExponentialArgument);
@@ -246,7 +313,8 @@ public sealed class DcNetlist
         string nodeB,
         double saturationCurrent,
         double emissionCoefficient = 1.0,
-        double thermalVoltage = DcDiode.DefaultThermalVoltage)
+        double thermalVoltage = DcDiode.DefaultThermalVoltage,
+        double seriesResistance = 0)
     {
         ValidateElement(id, nodeA, nodeB);
         if (!double.IsFinite(saturationCurrent) || saturationCurrent <= 0)
@@ -273,8 +341,22 @@ public sealed class DcNetlist
                 "Thermal voltage must be finite and greater than zero.");
         }
 
+        if (!double.IsFinite(seriesResistance) || seriesResistance < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(seriesResistance),
+                seriesResistance,
+                "Series resistance must be finite and non-negative.");
+        }
+
         return Add(new DcDiode(
-            id, nodeA, nodeB, saturationCurrent, emissionCoefficient, thermalVoltage));
+            id,
+            nodeA,
+            nodeB,
+            saturationCurrent,
+            emissionCoefficient,
+            thermalVoltage,
+            seriesResistance));
     }
 
     /// <summary>
@@ -401,7 +483,7 @@ public sealed class DcNetlist
         const double voltageTolerance = 1e-9;
 
         int size = baseRhs.Length;
-        var diodeVoltages = new double[diodes.Length];
+        var diodeJunctionVoltages = new double[diodes.Length];
         var nextDiodeVoltages = new double[diodes.Length];
         var previous = new double[size];
         var solution = new double[size];
@@ -413,7 +495,7 @@ public sealed class DcNetlist
             var rhs = (double[])baseRhs.Clone();
             for (int index = 0; index < diodes.Length; index++)
             {
-                StampDiode(matrix, rhs, nodeIndex, diodes[index], diodeVoltages[index]);
+                StampDiode(matrix, rhs, nodeIndex, diodes[index], diodeJunctionVoltages[index]);
             }
 
             (solution, _) = SolveLinearSystem(matrix, rhs);
@@ -429,10 +511,18 @@ public sealed class DcNetlist
             double maxLimitError = 0;
             for (int index = 0; index < diodes.Length; index++)
             {
-                double raw = VoltageAcross(solution, nodeIndex, diodes[index].NodeA, diodes[index].NodeB);
-                double limited = LimitJunction(raw, diodeVoltages[index], diodes[index]);
-                maxLimitError = Math.Max(maxLimitError, Math.Abs(raw - limited));
-                maxChange = Math.Max(maxChange, Math.Abs(limited - diodeVoltages[index]));
+                double rawTerminal = VoltageAcross(
+                    solution,
+                    nodeIndex,
+                    diodes[index].NodeA,
+                    diodes[index].NodeB);
+                double rawJunction = diodes[index].JunctionVoltageFor(rawTerminal);
+                double limited = LimitJunction(
+                    rawJunction,
+                    diodeJunctionVoltages[index],
+                    diodes[index]);
+                maxLimitError = Math.Max(maxLimitError, Math.Abs(rawJunction - limited));
+                maxChange = Math.Max(maxChange, Math.Abs(limited - diodeJunctionVoltages[index]));
                 maxValue = Math.Max(maxValue, Math.Abs(limited));
                 nextDiodeVoltages[index] = limited;
             }
@@ -453,7 +543,7 @@ public sealed class DcNetlist
             }
 
             Array.Copy(solution, previous, size);
-            Array.Copy(nextDiodeVoltages, diodeVoltages, diodes.Length);
+            Array.Copy(nextDiodeVoltages, diodeJunctionVoltages, diodes.Length);
         }
 
         throw new DcSolveException(
@@ -466,10 +556,15 @@ public sealed class DcNetlist
         double[] rhs,
         Dictionary<string, int> nodeIndex,
         DcDiode diode,
-        double volts)
+        double junctionVolts)
     {
-        double conductance = diode.ConductanceAt(volts);
-        double equivalentCurrent = diode.CurrentAt(volts) - (conductance * volts);
+        double junctionCurrent = diode.JunctionCurrent(junctionVolts);
+        double junctionConductance = diode.JunctionConductance(junctionVolts);
+        double terminalVolts = junctionVolts + (diode.SeriesResistance * junctionCurrent);
+        double conductance = diode.SeriesResistance <= 0
+            ? junctionConductance
+            : junctionConductance / (1 + (diode.SeriesResistance * junctionConductance));
+        double equivalentCurrent = junctionCurrent - (conductance * terminalVolts);
         int nodeA = IndexOf(nodeIndex, diode.NodeA);
         int nodeB = IndexOf(nodeIndex, diode.NodeB);
         Add(matrix, nodeA, nodeA, conductance);
