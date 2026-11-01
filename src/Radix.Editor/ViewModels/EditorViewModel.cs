@@ -4769,14 +4769,15 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
+        string? statusBefore = StatusText;
         bool applied = field.Apply(field.Value);
         if (applied)
         {
             field.LastCommitted = field.Value;
         }
-
-        if (!applied)
+        else if (string.Equals(StatusText, statusBefore, StringComparison.Ordinal))
         {
+            // Keep the editor-specific reason when the callback supplied one.
             StatusText = $"Could not apply '{field.Label}'.";
         }
 
@@ -6094,9 +6095,24 @@ public sealed class EditorViewModel : ObservableObject
                         hint: "Blank uses the DC operating point; applied only by a transient run",
                         apply: value => SetElectricalComponentInitialValue(circuit.Id, component.Id, value)));
                 }
+
+                if (ElectricalComponentMetadata.SupportsWaveform(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Waveform",
+                        FormatElectricalWaveform(component),
+                        hint: $"Comma-separated time={component.Unit} breakpoints in seconds; blank keeps the source constant, and a DC solve always uses the value",
+                        apply: value => SetElectricalComponentWaveform(circuit.Id, component.Id, value)));
+                }
             }
         }
     }
+
+    private static string FormatElectricalWaveform(ElectricalComponent component) =>
+        string.Join(
+            ", ",
+            component.Waveform.Select(point =>
+                $"{FormatElectricalValue(point.Time)}={FormatElectricalValue(point.Value)}"));
 
     /// <summary>
     /// Solves the selected authored circuit through the same netlist bridge used by
@@ -6484,6 +6500,83 @@ public sealed class EditorViewModel : ObservableObject
             $"'{component.Id}' starts at {FormatElectricalValue(parsed)} {component.Unit}");
         return true;
     }
+
+    private bool SetElectricalComponentWaveform(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.SupportsWaveform(component.Kind))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (component.Waveform.Count == 0)
+            {
+                return false;
+            }
+
+            PushUndo();
+            component.Waveform.Clear();
+            AfterElectricalMutation($"Cleared the waveform of '{component.Id}'");
+            return true;
+        }
+
+        var points = new List<ElectricalWaveformPoint>();
+        foreach (string entry in value.Split(
+            [',', ';'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int separator = entry.IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0 ||
+                separator == entry.Length - 1 ||
+                !TryParseElectricalNumber(entry[..separator], out double time) ||
+                !TryParseElectricalNumber(entry[(separator + 1)..], out double pointValue))
+            {
+                StatusText = $"Waveform entry '{entry}' is not a finite time=value pair.";
+                return false;
+            }
+
+            if (points.Count > 0 && time <= points[^1].Time)
+            {
+                StatusText =
+                    $"Waveform times must strictly increase; {FormatElectricalValue(time)} follows {FormatElectricalValue(points[^1].Time)}.";
+                return false;
+            }
+
+            points.Add(new ElectricalWaveformPoint { Time = time, Value = pointValue });
+        }
+
+        if (points.Count < 2)
+        {
+            StatusText = "A waveform needs at least two time=value breakpoints.";
+            return false;
+        }
+
+        if (SameElectricalWaveform(component.Waveform, points))
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Waveform.Clear();
+        component.Waveform.AddRange(points);
+        AfterElectricalMutation(
+            $"Set the waveform of '{component.Id}' to {points.Count} breakpoints");
+        return true;
+    }
+
+    private static bool TryParseElectricalNumber(string text, out double value) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+        double.IsFinite(value);
+
+    private static bool SameElectricalWaveform(
+        IReadOnlyList<ElectricalWaveformPoint> current,
+        IReadOnlyList<ElectricalWaveformPoint> updated) =>
+        current.Count == updated.Count &&
+        current.Zip(updated).All(pair =>
+            Math.Abs(pair.First.Time - pair.Second.Time) <= double.Epsilon &&
+            Math.Abs(pair.First.Value - pair.Second.Value) <= double.Epsilon);
 
     private void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
     {

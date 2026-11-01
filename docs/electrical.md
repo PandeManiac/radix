@@ -441,7 +441,10 @@ radix transient examples/transient-pulse.radix --circuit rc-step --stop 0.003 --
 An independent source may carry a `waveform` array of absolute-time breakpoints
 in its own unit. The transient solver interpolates linearly between breakpoints
 and clamps outside the range, which makes steps, ramps, and pulses a data
-edit rather than a new component. A DC solve ignores the waveform and uses the
+edit rather than a new component. The inspector edits the same drive as a
+comma-separated `time=value` list in the source's unit; an edit with fewer than
+two breakpoints, a non-finite number, or non-increasing times is rejected with a
+reason and leaves the circuit unchanged. A DC solve ignores the waveform and uses the
 source's `value`, so the DC operating point stays the steady-state one. See
 [project-format.md](project-format.md#electrical-circuits) for the validation
 rules (`RAD-ELEC-017` to `RAD-ELEC-020`).
@@ -545,7 +548,8 @@ Supported now:
 - series, parallel, bridge, divider, and multi-source linear networks;
 - analytical node voltages, element currents, element voltages, and power;
 - authoring capacitors and inductors, with optional initial capacitor voltage or
-  inductor current, in the editor's Electrical inspector;
+  inductor current, and independent-source piecewise-linear waveforms, in the
+  editor's Electrical inspector;
 - transient analysis of authored `.radix` circuits through `radix transient`,
   including reactive components, initial values, and authored piecewise-linear
   source waveforms;

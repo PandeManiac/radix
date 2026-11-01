@@ -91,6 +91,63 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void SourceWaveformsCanBeAuthoredThroughThePanel()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.VoltageSource);
+        ElectricalComponent source = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        Assert.Equal(ElectricalComponentKind.VoltageSource, source.Kind);
+
+        EditableField empty = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        Assert.Equal(string.Empty, empty.Value);
+
+        empty.Value = "0=0, 0.001=5";
+        Assert.True(viewModel.ApplyField(empty));
+        Assert.Equal(2, source.Waveform.Count);
+        Assert.Equal(0.001, source.Waveform[1].Time);
+        Assert.Equal(5, source.Waveform[1].Value);
+
+        EditableField formatted = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        Assert.Equal("0=0, 0.001=5", formatted.Value);
+
+        EditableField decreasing = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        decreasing.Value = "0.002=1, 0.001=2";
+        Assert.False(viewModel.ApplyField(decreasing));
+        Assert.Equal(2, source.Waveform.Count);
+        Assert.Equal(0, source.Waveform[0].Time);
+
+        EditableField single = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        single.Value = "0=0";
+        Assert.False(viewModel.ApplyField(single));
+        Assert.Equal(2, source.Waveform.Count);
+
+        EditableField garbled = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        garbled.Value = "0=0, nope";
+        Assert.False(viewModel.ApplyField(garbled));
+        Assert.Equal(2, source.Waveform.Count);
+
+        EditableField cleared = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        cleared.Value = string.Empty;
+        Assert.True(viewModel.ApplyField(cleared));
+        Assert.Empty(source.Waveform);
+
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Resistor);
+        Assert.DoesNotContain(
+            viewModel.ElectricalComponentFields,
+            field => field.Label == "Waveform");
+    }
+
+    [Fact]
     public void ComponentMetadataAndExplicitTerminalsAreEditable()
     {
         EditorViewModel viewModel = CreateEmptyEditor();

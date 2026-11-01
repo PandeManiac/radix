@@ -498,9 +498,18 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     Tests assert the analytic `C·V²` delivery and `½C·V²` storage, the tank's
     conserved stored energy with zero dissipation, both convergence orders, the
     absent ledger on a failed initial state, and the JSON fields.
+46. Added waveform authoring to the Electrical inspector: an independent source now
+    exposes a `Waveform` field that reads and writes comma-separated `time=value`
+    breakpoints in the source's own unit, validates them (finite numbers, at least
+    two breakpoints, strictly increasing times), applies the change as one undo
+    step, and clears with a blank value. `ApplyField` keeps an editor-specific
+    rejection message instead of overwriting it with a generic one, so a bad
+    waveform says why. Tests cover authoring, round-trip formatting, rejection of
+    decreasing/repeated/short/garbled input without mutation, clearing, and the
+    field's absence on a resistor.
 
 Verification: release build 0 warnings/0 errors; core tests 552/552; editor
-tests 193/193; `radix transient` runs all three examples with exit 0 and
+tests 194/194; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

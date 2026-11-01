@@ -401,8 +401,9 @@ strictly increasing times (`RAD-ELEC-020`), and rejects a waveform on anything
 but an independent source (`RAD-ELEC-017`). Because breakpoint times must
 strictly increase, a near-ideal step needs two closely spaced breakpoints (for
 example `0.000999 -> 0` and `0.001 -> 5`) rather than a repeated time. The
-waveform lives in the component model, so the editor round-trips it untouched
-even though it has no waveform UI yet.
+inspector edits the same drive as a comma-separated `time=value` list, so a
+waveform survives every other edit and save, and a rejected edit leaves the
+circuit unchanged.
 
 The `value` is the component parameter, not a digital signal index. Terminal
 nodes must exist in the same circuit. `radix dc` validates an authored circuit
