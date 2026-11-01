@@ -478,15 +478,21 @@ quoted with CSV escaping.
 
 **Run transient** integrates the selected circuit with the same solver and report
 builder as `radix transient`, using the panel's own settings: **Transient stop
-(s)**, **Transient steps**, and **Transient method** (`backward-euler` or
-`trapezoidal`). Those three values are view state, not project data: they are not
+(s)**, **Transient steps**, **Transient method** (`backward-euler` or
+`trapezoidal`), and **Transient tolerance**. A blank tolerance runs the fixed
+step count; a positive relative tolerance switches the run to adaptive stepping
+with a bounded budget, so a stiff circuit does not silently report a coarse fixed
+step as accurate. Those four values are view state, not project data: they are not
 saved, they are not undo steps, and changing one clears the previous result
 because the numbers on screen would describe an older circuit.
 
 The panel lists solved points as time plus node voltages, sampled evenly when a
 run has more than 300 points, shows the run's energy ledger, and offers **Copy
 JSON** and **Save JSON…** for the same `radix-transient-report` document the CLI
-writes, including the `circuit` id and `energy` object. Editing the circuit,
+writes, including the `circuit` id and `energy` object. **Copy CSV** and **Save
+CSV…** write a wide table with a `time_s` column and one column per node, using
+invariant round-trip numbers, and they always contain every solved point rather
+than the sampled subset the panel displays. Editing the circuit,
 switching circuits, or running a DC solve clears the preview instead of leaving
 stale values, and a structural error or failed integration is reported in the
 panel and the status bar instead of producing a result.

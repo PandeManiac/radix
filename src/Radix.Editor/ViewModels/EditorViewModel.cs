@@ -169,6 +169,8 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientStopText = "0.005";
     private string _electricalTransientStepsText = "200";
     private string _electricalTransientMethodName = "backward-euler";
+    private string _electricalTransientToleranceText = string.Empty;
+    private int _electricalTransientPointCount;
     private TransientNetlist? _electricalTransientNetlist;
     private TransientResult? _electricalTransientResult;
 
@@ -1244,6 +1246,16 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasElectricalTransientResult;
         private set => SetField(ref _hasElectricalTransientResult, value);
+    }
+
+    /// <summary>
+    /// Solved points in the last run. The panel shows a sampled subset of these,
+    /// while the JSON and CSV exports always contain every one.
+    /// </summary>
+    public int ElectricalTransientPointCount
+    {
+        get => _electricalTransientPointCount;
+        private set => SetField(ref _electricalTransientPointCount, value);
     }
 
     public bool HasElectricalTransientError
@@ -6107,6 +6119,11 @@ public sealed class EditorViewModel : ObservableObject
             _electricalTransientMethodName,
             hint: "backward-euler or trapezoidal",
             apply: SetElectricalTransientMethod));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient tolerance",
+            _electricalTransientToleranceText,
+            hint: "Blank runs the fixed step count; a positive relative tolerance enables adaptive stepping",
+            apply: SetElectricalTransientTolerance));
 
         ElectricalNodeFields.Clear();
         if (_selectedElectricalNode is not null)
@@ -6315,12 +6332,30 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
+        double? tolerance = null;
+        if (!string.IsNullOrWhiteSpace(_electricalTransientToleranceText))
+        {
+            if (!TryParseElectricalNumber(_electricalTransientToleranceText, out double parsed) ||
+                parsed <= 0)
+            {
+                ShowElectricalTransientError(
+                    "Transient tolerance must be a positive number, or blank for a fixed step.",
+                    "Invalid transient tolerance.");
+                return false;
+            }
+
+            tolerance = parsed;
+        }
+
         TransientResult result = netlist.Run(new TransientOptions
         {
             StartTime = 0,
             StopTime = stop,
             Steps = steps,
             Method = method,
+            AdaptiveTolerance = tolerance,
+            // Bound one panel run so a tight tolerance cannot hang the UI.
+            MaximumStepCount = tolerance is null ? 100_000 : 20_000,
         });
 
         _electricalTransientNetlist = netlist;
@@ -6340,13 +6375,17 @@ public sealed class EditorViewModel : ObservableObject
                 result.Points.Count - 1, result.Points[^1]));
         }
 
+        ElectricalTransientPointCount = result.Points.Count;
         HasElectricalTransientResult = true;
         HasElectricalTransientError = !result.Completed;
         string shown = stride == 1
             ? $"{result.Points.Count} points"
             : $"{ElectricalTransientResults.Count} of {result.Points.Count} points";
+        string mode = tolerance is double relativeTolerance
+            ? $"adaptive rtol {FormatElectricalValue(relativeTolerance)}"
+            : $"{steps} {TransientNetlistJson.MethodName(method)} steps";
         ElectricalTransientSummary = result.Completed
-            ? $"Integrated '{circuit.Id}' · {shown} · {steps} {TransientNetlistJson.MethodName(method)} steps to {FormatElectricalValue(stop)} s."
+            ? $"Integrated '{circuit.Id}' · {shown} · {mode} to {FormatElectricalValue(stop)} s."
             : $"Integration failed in '{circuit.Id}' near t={FormatElectricalValue(result.FinalPoint?.Time ?? 0)} s: {result.Message}";
         ElectricalTransientEnergyText = result.Energy is TransientEnergyBalance energy
             ? string.Create(
@@ -6377,6 +6416,51 @@ public sealed class EditorViewModel : ObservableObject
 
         json = TransientNetlistJson.ToReportJson(
             null, _electricalTransientNetlist, _electricalTransientResult, circuit.Id);
+        return true;
+    }
+
+    /// <summary>
+    /// Builds a wide CSV table from the displayed transient result: one row per
+    /// solved point with its time and every node voltage, so the file plots directly.
+    /// Values use the same invariant round-trip numbers as the DC export.
+    /// </summary>
+    public bool TryBuildElectricalTransientCsv(out string csv)
+    {
+        csv = string.Empty;
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (!HasElectricalTransientResult || circuit is null || _electricalTransientResult is null)
+        {
+            return false;
+        }
+
+        string[] nodes = _electricalTransientResult.Points
+            .SelectMany(point => point.NodeVoltages.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        var builder = new StringBuilder();
+        builder.Append("time_s");
+        foreach (string node in nodes)
+        {
+            builder.Append(',').Append(CsvText(node));
+        }
+
+        builder.Append('\n');
+        foreach (TransientPoint point in _electricalTransientResult.Points)
+        {
+            builder.Append(CsvNumber(point.Time));
+            foreach (string node in nodes)
+            {
+                builder.Append(',');
+                builder.Append(CsvNumber(
+                    point.NodeVoltages.TryGetValue(node, out double volts) ? volts : null));
+            }
+
+            builder.Append('\n');
+        }
+
+        csv = builder.ToString();
         return true;
     }
 
@@ -6432,6 +6516,26 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         _electricalTransientMethodName = name;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private bool SetElectricalTransientTolerance(string value)
+    {
+        string trimmed = value.Trim();
+        if (trimmed.Length > 0 &&
+            (!TryParseElectricalNumber(trimmed, out double tolerance) || tolerance <= 0))
+        {
+            StatusText = "Transient tolerance must be a positive number, or blank for a fixed step.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientToleranceText, trimmed, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientToleranceText = trimmed;
         ClearElectricalTransientResult();
         return true;
     }
@@ -6588,6 +6692,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientResults.Clear();
         _electricalTransientNetlist = null;
         _electricalTransientResult = null;
+        ElectricalTransientPointCount = 0;
         HasElectricalTransientResult = false;
         HasElectricalTransientError = false;
         ElectricalTransientSummary = "Choose Run transient to integrate the circuit over time.";

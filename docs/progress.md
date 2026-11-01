@@ -519,9 +519,19 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     the DC names. Tests cover the point table, summary, energy text, exported JSON
     (circuit id, completion, delivered energy), method normalisation, rejection of
     a non-numeric step count, and invalidation on a settings change.
+48. Completed the panel's transient parity with the CLI: a **Transient tolerance**
+    field (blank keeps the fixed step count, a positive relative tolerance enables
+    adaptive stepping with a bounded trial budget) and **Copy CSV** / **Save CSV…**
+    exports. The CSV is a wide `time_s` table with one column per node, invariant
+    round-trip numbers, and every solved point; only the on-screen table is sampled
+    above 300 points, so the export never depends on display limits. A new read-only
+    `ElectricalTransientPointCount` exposes the solved count so the panel summary
+    and tests can distinguish the two. Tests cover adaptive mode selection,
+    rejection of a non-positive tolerance, the CSV header and first row, the export
+    carrying more rows than the sampled table, and returning to fixed stepping.
 
 Verification: release build 0 warnings/0 errors; core tests 552/552; editor
-tests 195/195; `radix transient` runs all three examples with exit 0 and
+tests 196/196; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

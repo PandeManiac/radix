@@ -1187,6 +1187,8 @@
                   <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalTransientResult}">
                     <Button x:Name="ElectricalTransientCopyJsonButton" Content="Copy JSON" Click="ElectricalTransientCopyJson_Click" ToolTip.Tip="Copy the displayed transient report as JSON" />
                     <Button x:Name="ElectricalTransientSaveJsonButton" Content="Save JSON…" Click="ElectricalTransientSaveJson_Click" ToolTip.Tip="Save the displayed transient report as JSON" />
+                    <Button x:Name="ElectricalTransientCopyCsvButton" Content="Copy CSV" Click="ElectricalTransientCopyCsv_Click" ToolTip.Tip="Copy the displayed points as a wide CSV table of time and node voltages" />
+                    <Button x:Name="ElectricalTransientSaveCsvButton" Content="Save CSV…" Click="ElectricalTransientSaveCsv_Click" ToolTip.Tip="Save the displayed points as a wide CSV table" />
                   </StackPanel>
                   <Border
                       IsVisible="{Binding HasElectricalTransientResult}"

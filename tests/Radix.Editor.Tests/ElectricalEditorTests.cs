@@ -143,6 +143,56 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void TransientRunCanUseAdaptiveControlAndExportCsv()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        EditableField tolerance = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient tolerance");
+        tolerance.Value = "-1";
+        Assert.False(viewModel.ApplyField(tolerance));
+        Assert.Contains("positive", viewModel.StatusText);
+
+        EditableField adaptive = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient tolerance");
+        adaptive.Value = "1e-6";
+        Assert.True(viewModel.ApplyField(adaptive));
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Contains("adaptive rtol", viewModel.ElectricalTransientSummary);
+        Assert.True(viewModel.ElectricalTransientResults.Count > 2);
+        Assert.Equal(0.005, viewModel.ElectricalTransientResults[^1].Time, 9);
+
+        Assert.True(viewModel.TryBuildElectricalTransientCsv(out string csv));
+        string[] lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal("time_s,\"gnd\",\"in\",\"out\"", lines[0]);
+        Assert.Equal(viewModel.ElectricalTransientPointCount + 1, lines.Length);
+        // The table is sampled for the panel; the export always carries every point.
+        Assert.True(lines.Length > viewModel.ElectricalTransientResults.Count);
+        Assert.StartsWith("0,0,5,0", lines[1]);
+
+        EditableField fixedStep = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient tolerance");
+        fixedStep.Value = string.Empty;
+        Assert.True(viewModel.ApplyField(fixedStep));
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Contains("steps", viewModel.ElectricalTransientSummary);
+        Assert.Equal(201, viewModel.ElectricalTransientResults.Count);
+    }
+
+    [Fact]
     public void SourceWaveformsCanBeAuthoredThroughThePanel()
     {
         EditorViewModel viewModel = CreateEmptyEditor();

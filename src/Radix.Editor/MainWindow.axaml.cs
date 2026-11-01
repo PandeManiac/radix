@@ -396,6 +396,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalTransientCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied transient points as CSV");
+        }
+    }
+
+    private async void ElectricalTransientSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, csv, "csv", CsvFileType, "transient points", "transient");
+        }
+    }
+
     private async void ElectricalTransientSaveJson_Click(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientJson(out string json))
