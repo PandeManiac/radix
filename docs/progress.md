@@ -767,8 +767,18 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     with it. Tests cover the CSV comment block and column list, the JSON format/element/circuit and
     row count, the empty case, and disappearance after an invalidating edit.
 
+73. Brought comparison into the panel: **Compare…** reads an archived report through a file picker
+    and `CompareElectricalSweepWithArchived` runs the same `TransientSweepComparison` as `--compare`,
+    so the two front ends agree on what changed. Differences are listed per value, node and metric
+    with `-` for a side that lacks the row, plus explicit `removed`/`added` rows for values held by
+    only one study; an `rtol` box sets the relative tolerance and is validated before any report is
+    read; a foreign format/version or a study of a different element is refused with a sentence.
+    Editing anything that clears the run clears the comparison with it. Tests cover an identical
+    study, added and removed values, foreign reports, a mismatched element, an invalid tolerance, and
+    invalidation by an edit.
+
 Verification: release build 0 warnings/0 errors; core tests 625/625; editor
-tests 219/219; `radix transient` runs all three examples with exit 0 and
+tests 222/222; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

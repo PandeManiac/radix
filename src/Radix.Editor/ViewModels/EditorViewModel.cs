@@ -183,6 +183,8 @@ public sealed class EditorViewModel : ObservableObject
         new SortedDictionary<string, double>(StringComparer.Ordinal);
     private int _electricalTransientPointCount;
     private IReadOnlyList<TransientSweepRow>? _electricalSweepResult;
+    private string _electricalSweepToleranceText = "0";
+    private string _electricalSweepComparisonSummary = string.Empty;
     private string _electricalSweepElementId = string.Empty;
     private string _electricalSweepElementText = string.Empty;
     private string _electricalSweepValuesText = string.Empty;
@@ -446,6 +448,26 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _electricalSweepValuesText;
         set => SetField(ref _electricalSweepValuesText, value ?? string.Empty);
+    }
+
+    /// <summary>Rows of the last comparison against an archived study.</summary>
+    public ObservableCollection<ElectricalSweepDifferenceItem> ElectricalSweepDifferences { get; } = [];
+
+    /// <summary>Whether there are comparison rows to show.</summary>
+    public bool HasElectricalSweepComparison => ElectricalSweepDifferences.Count > 0;
+
+    /// <summary>Relative tolerance for comparing studies, as typed; 0 means exact.</summary>
+    public string ElectricalSweepToleranceText
+    {
+        get => _electricalSweepToleranceText;
+        set => SetField(ref _electricalSweepToleranceText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the comparison, or why it could not run.</summary>
+    public string ElectricalSweepComparisonSummary
+    {
+        get => _electricalSweepComparisonSummary;
+        private set => SetField(ref _electricalSweepComparisonSummary, value);
     }
 
     /// <summary>One line describing the sweep, or why it could not run.</summary>
@@ -6704,6 +6726,107 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Compares the displayed study with an archived <c>radix-transient-sweep</c> report. The
+    /// comparison itself is the command line's, so a panel diff and a CLI diff of the same two
+    /// studies agree; the panel only formats the result. Nothing is exported or stored: the archived
+    /// study is read, checked to sweep the same element, and compared.
+    /// </summary>
+    public bool CompareElectricalSweepWithArchived(string json, string? label = null)
+    {
+        ElectricalSweepDifferences.Clear();
+        RaisePropertyChanged(nameof(HasElectricalSweepComparison));
+
+        if (_electricalSweepResult is not { Count: > 0 } rows)
+        {
+            ElectricalSweepComparisonSummary = "Run a sweep before comparing it with an archived study.";
+            StatusText = "Compare needs a sweep.";
+            return false;
+        }
+
+        if (!TryParseElectricalSweepTolerance(out double tolerance, out string toleranceError))
+        {
+            ElectricalSweepComparisonSummary = toleranceError;
+            StatusText = "Invalid comparison tolerance.";
+            return false;
+        }
+
+        TransientSweepReport archived;
+        try
+        {
+            archived = TransientSweepReport.LoadFromString(json);
+        }
+        catch (ProjectFormatException exception)
+        {
+            ElectricalSweepComparisonSummary = exception.Message;
+            StatusText = "Archived study could not be read.";
+            return false;
+        }
+
+        if (!string.Equals(archived.Element, _electricalSweepElementId, StringComparison.Ordinal))
+        {
+            ElectricalSweepComparisonSummary =
+                $"The archived study swept '{archived.Element}', this one sweeps '{_electricalSweepElementId}'.";
+            StatusText = "Cannot compare studies of different elements.";
+            return false;
+        }
+
+        SweepComparison comparison = TransientSweepComparison.Compare(archived, rows, tolerance);
+        foreach (double removed in comparison.RemovedValues)
+        {
+            ElectricalSweepDifferences.Add(new ElectricalSweepDifferenceItem(
+                removed, "(value)", "removed", null, null));
+        }
+
+        foreach (double added in comparison.AddedValues)
+        {
+            ElectricalSweepDifferences.Add(new ElectricalSweepDifferenceItem(
+                added, "(value)", "added", null, null));
+        }
+
+        foreach (SweepDifference difference in comparison.Differences)
+        {
+            ElectricalSweepDifferences.Add(new ElectricalSweepDifferenceItem(
+                difference.Value,
+                difference.NodeId.Length == 0 ? "(run)" : difference.NodeId,
+                difference.Metric,
+                difference.Before,
+                difference.After));
+        }
+
+        RaisePropertyChanged(nameof(HasElectricalSweepComparison));
+        string against = label ?? "the archived study";
+        ElectricalSweepComparisonSummary = comparison.IsIdentical
+            ? $"Identical to {against}: no metric differs."
+            : $"{comparison.Differences.Count} difference(s) across {comparison.ChangedValues} value(s) versus {against}.";
+        StatusText = comparison.IsIdentical
+            ? "Archived sweep matches the displayed one."
+            : $"Archived sweep differs in {comparison.Differences.Count} metric(s).";
+        return true;
+    }
+
+    private bool TryParseElectricalSweepTolerance(out double tolerance, out string error)
+    {
+        tolerance = 0;
+        error = string.Empty;
+        string text = (ElectricalSweepToleranceText ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            return true;
+        }
+
+        if (!TryParseElectricalNumber(text, out tolerance) ||
+            !double.IsFinite(tolerance) ||
+            tolerance < 0 ||
+            tolerance >= 1)
+        {
+            error = "Comparison tolerance must be a fraction from 0 (exact) to below 1.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Parses the panel's sweep values: <c>800,1000,1200</c> or <c>800:1200:5</c>. The spelling is
     /// kept here so a typo produces a sentence instead of a stack trace, and the same shapes work
     /// as on the command line.
@@ -7272,6 +7395,9 @@ public sealed class EditorViewModel : ObservableObject
     {
         _electricalSweepResult = null;
         _electricalSweepElementId = string.Empty;
+        ElectricalSweepDifferences.Clear();
+        ElectricalSweepComparisonSummary = string.Empty;
+        RaisePropertyChanged(nameof(HasElectricalSweepComparison));
         if (ElectricalSweepRows.Count > 0)
         {
             ElectricalSweepRows.Clear();

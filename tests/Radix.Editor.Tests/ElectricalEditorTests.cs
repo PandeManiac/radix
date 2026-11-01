@@ -990,6 +990,77 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void ThePanelComparesItsSweepWithAnArchivedStudy()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+        Assert.Contains("Identical", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+        Assert.Empty(viewModel.ElectricalSweepDifferences);
+        Assert.False(viewModel.HasElectricalSweepComparison);
+
+        // A study over a different set of values is a different study, and the panel says which
+        // values each side holds. (Physics changes are covered by the Core comparison tests; at a
+        // 250 us step a doubled capacitance leaves the node metrics bit-identical here.)
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+        Assert.True(viewModel.HasElectricalSweepComparison);
+        Assert.Contains("difference", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+        Assert.Contains(
+            viewModel.ElectricalSweepDifferences,
+            row => row.Metric == "removed" && row.ValueText == "1000");
+        Assert.Contains(
+            viewModel.ElectricalSweepDifferences,
+            row => row.Metric == "added" && row.ValueText == "1500");
+    }
+
+    [Fact]
+    public void AComparisonRefusesAForeignReportOrADifferentElement()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+
+        Assert.False(viewModel.CompareElectricalSweepWithArchived(
+            "{\"format\":\"radix-transient-netlist\",\"version\":1}"));
+        Assert.Contains("radix-transient-sweep", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+
+        string otherElement = archived.Replace(
+            "\"element\": \"R1\"", "\"element\": \"C9\"", StringComparison.Ordinal);
+        Assert.NotEqual(archived, otherElement);
+        Assert.False(viewModel.CompareElectricalSweepWithArchived(otherElement));
+        Assert.Contains("C9", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+        Assert.Empty(viewModel.ElectricalSweepDifferences);
+
+        // An invalid tolerance is refused before any report is read.
+        viewModel.ElectricalSweepToleranceText = "2";
+        Assert.False(viewModel.CompareElectricalSweepWithArchived(archived));
+        Assert.Contains("below 1", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnEditClearsTheComparisonWithTheStudy()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived));
+        Assert.True(viewModel.HasElectricalSweepComparison);
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.02";
+        Assert.True(viewModel.ApplyField(stop));
+
+        Assert.Empty(viewModel.ElectricalSweepDifferences);
+        Assert.False(viewModel.HasElectricalSweepComparison);
+        Assert.Empty(viewModel.ElectricalSweepComparisonSummary);
+    }
+
+    [Fact]
     public void MultipleCircuitsKeepIndependentSelectionsAndUndoRemoval()
     {
         EditorViewModel viewModel = CreateEmptyEditor();
@@ -1014,6 +1085,34 @@ public sealed class ElectricalEditorTests
         viewModel.Undo();
         Assert.Equal(2, viewModel.ElectricalCircuits.Count);
         Assert.NotNull(viewModel.Project.FindElectricalCircuit("dc1"));
+    }
+
+    /// <summary>A run RC circuit with a two-value sweep of R1 already taken.</summary>
+    private static EditorViewModel RcSweepEditor(out ElectricalCircuit circuit)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        // Long enough for the RC to settle; at the 5 ms default nothing settles, so a comparison
+        // would only see the energy ledger move and the test would not exercise the metrics.
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.05";
+        Assert.True(viewModel.ApplyField(stop));
+        Assert.True(viewModel.SolveElectricalTransient());
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.True(viewModel.RunElectricalSweep());
+        return viewModel;
     }
 
     private static ElectricalComponent ElectricalTestComponent(

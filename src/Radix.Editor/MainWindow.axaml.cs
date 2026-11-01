@@ -445,6 +445,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalSweepCompare_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not EditorViewModel viewModel)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Compare with an archived sweep",
+            AllowMultiple = false,
+            FileTypeFilter = [JsonFileType],
+        });
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            string json = await System.IO.File.ReadAllTextAsync(files[0].Path.LocalPath);
+            viewModel.CompareElectricalSweepWithArchived(json, files[0].Name);
+        }
+        catch (System.IO.IOException exception)
+        {
+            viewModel.StatusText = "Could not read the archived study: " + exception.Message;
+        }
+        catch (System.UnauthorizedAccessException exception)
+        {
+            viewModel.StatusText = "Could not read the archived study: " + exception.Message;
+        }
+    }
+
     private async void ElectricalSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepCsv(out string csv))

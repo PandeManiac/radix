@@ -1219,7 +1219,24 @@
                     <Button x:Name="ElectricalSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalSweepSaveCsv_Click" ToolTip.Tip="Save the sweep as CSV" />
                     <Button x:Name="ElectricalSweepCopyJsonButton" Content="Copy sweep JSON" Click="ElectricalSweepCopyJson_Click" ToolTip.Tip="Copy the sweep as a radix-transient-sweep report" />
                     <Button x:Name="ElectricalSweepSaveJsonButton" Content="Save sweep JSON…" Click="ElectricalSweepSaveJson_Click" ToolTip.Tip="Save the sweep as JSON" />
+                    <TextBlock Text="rtol" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding ElectricalSweepToleranceText, Mode=TwoWay}" Width="52" FontSize="9.5" Watermark="0" ToolTip.Tip="Relative tolerance for Compare; 0 is exact" />
+                    <Button x:Name="ElectricalSweepCompareButton" Content="Compare…" Click="ElectricalSweepCompare_Click" ToolTip.Tip="Load an archived sweep report and list every metric that differs from this study" />
                   </StackPanel>
+                  <TextBlock Text="{Binding ElectricalSweepComparisonSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding ElectricalSweepDifferences}" IsVisible="{Binding HasElectricalSweepComparison}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ElectricalSweepDifferenceItem">
+                        <Grid ColumnDefinitions="56,64,86,74,*" ColumnSpacing="6" Margin="0,1">
+                          <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontFamily="monospace" FontSize="9.5" />
+                          <TextBlock Grid.Column="2" Text="{Binding Metric}" FontFamily="monospace" FontSize="9.5" />
+                          <TextBlock Grid.Column="3" Text="{Binding BeforeText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Archived value" />
+                          <TextBlock Grid.Column="4" Text="{Binding AfterText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" ToolTip.Tip="Value in the displayed study" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                   <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalTransientResult}">
                     <Button x:Name="ElectricalTransientCopyJsonButton" Content="Copy JSON" Click="ElectricalTransientCopyJson_Click" ToolTip.Tip="Copy the displayed transient report as JSON" />
                     <Button x:Name="ElectricalTransientSaveJsonButton" Content="Save JSON…" Click="ElectricalTransientSaveJson_Click" ToolTip.Tip="Save the displayed transient report as JSON" />
