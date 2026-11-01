@@ -150,7 +150,8 @@ public static class TransientNetlistJson
                 points,
                 ToEnergyDto(result.Energy),
                 ToMetricsDto(result.Metrics),
-                ToRefinementDto(refinement)),
+                ToRefinementDto(refinement),
+                result.Notes.Count == 0 ? null : result.Notes),
             JsonOptions);
     }
 
@@ -540,7 +541,8 @@ public static class TransientNetlistJson
         IReadOnlyList<PointDto> Points,
         EnergyDto? Energy,
         MetricsDto? Metrics,
-        RefinementDto? Refinement);
+        RefinementDto? Refinement,
+        IReadOnlyList<string>? Notes);
 
     private sealed record RefinementDto(
         bool Completed,

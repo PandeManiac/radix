@@ -224,6 +224,14 @@ public sealed class ElectricalEditorTests
         Assert.True(viewModel.ApplyField(loose));
 
         Assert.True(viewModel.SolveElectricalTransient());
+        // The capacitor starts at 0 V against a 5 V operating point, and the panel says so
+        // instead of leaving the first samples unexplained.
+        Assert.Contains("C1", viewModel.ElectricalTransientNotesText, StringComparison.Ordinal);
+        Assert.Contains(
+            "discontinuity",
+            viewModel.ElectricalTransientNotesText,
+            StringComparison.Ordinal);
+
         ElectricalTransientMetricItem output = viewModel.ElectricalTransientMetrics
             .Single(item => item.NodeId == "out");
         Assert.Contains("settled at", output.SettleText);
@@ -250,6 +258,7 @@ public sealed class ElectricalEditorTests
         tighter.Value = "0.02";
         Assert.True(viewModel.ApplyField(tighter));
         Assert.Empty(viewModel.ElectricalTransientMetrics);
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientNotesText);
         Assert.Null(viewModel.ElectricalTransientPlot);
         Assert.False(viewModel.TryBuildElectricalTransientSvg(out _));
         Assert.False(viewModel.HasElectricalTransientResult);

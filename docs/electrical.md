@@ -366,6 +366,24 @@ where the drive falls below the capacitor voltage rather than where the drive it
 peaks. `radix transient` prints the table, and the JSON report carries it under
 `metrics` with a `settlingBand` and one object per node.
 
+## Initial-condition notes
+
+A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design
+question — but it can start the circuit away from its own DC operating point, and then the first
+samples move faster than the sources alone explain. The solver compares every preset with the
+operating point across that element and reports a note when the two differ beyond rounding
+(`max(|v|) * 1e-9`), for example:
+
+```text
+notes:
+  'C1' starts at 2 V but its DC operating point is 5 V; the run begins with a 3 V discontinuity.
+```
+
+A note never changes a result, a failure classification, or the time grid, and an exact match
+never produces one. `radix transient` prints the notes before the point table, the JSON report
+carries them as `notes` (omitted when there are none), and the panel shows them above the energy
+ledger so a fast first sample is explained rather than mysterious.
+
 ## Plotting a transient run
 
 The **Electrical** tab draws the last run instead of leaving the node voltages as a

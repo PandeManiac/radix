@@ -395,6 +395,13 @@ public sealed record TransientResult(
 
     /// <summary>Per-node peak, swing, and settling behaviour, or null with fewer than two points.</summary>
     public TransientMetrics? Metrics { get; init; }
+
+    /// <summary>
+    /// Informational notes about the run, such as an initial condition that starts the circuit
+    /// away from its own DC operating point. A note never changes a result or its failure
+    /// classification; it explains a jump the numbers alone would not.
+    /// </summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
 }
 
 /// <summary>
@@ -684,6 +691,8 @@ public sealed class TransientNetlist
                 : operatingPoint.ElementCurrents[inductor.Id];
         }
 
+        List<string> notes = InitialConditionNotes(operatingPoint);
+
         DcSolution initialState;
         try
         {
@@ -721,6 +730,7 @@ public sealed class TransientNetlist
         {
             Energy = MeasureEnergy(result.Points),
             Metrics = MeasureMetrics(options, result.Points),
+            Notes = notes,
         };
     }
 
@@ -1471,6 +1481,68 @@ public sealed class TransientNetlist
         }
 
         return stored;
+    }
+
+    /// <summary>
+    /// Reports a preset initial condition that disagrees with the circuit's own DC operating
+    /// point, because the run then begins with a discontinuity instead of a steady start.
+    /// Starting from a pre-charged capacitor is legitimate, so this is a note rather than a
+    /// diagnostic: it tells the reader why the first samples move faster than the sources imply.
+    /// </summary>
+    private List<string> InitialConditionNotes(DcSolution operatingPoint)
+    {
+        var notes = new List<string>();
+        foreach (TransientCapacitor capacitor in _capacitors)
+        {
+            if (!_initialCapacitorVolts.TryGetValue(capacitor.Id, out double preset))
+            {
+                continue;
+            }
+
+            double dc = VoltageAcross(operatingPoint.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
+            if (!StartsAwayFromDc(preset, dc))
+            {
+                continue;
+            }
+
+            notes.Add(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"'{capacitor.Id}' starts at {preset:G6} V but its DC operating point is {dc:G6} V; the run begins with a {Math.Abs(preset - dc):G3} V discontinuity."));
+        }
+
+        foreach (TransientInductor inductor in _inductors)
+        {
+            if (!_initialInductorAmperes.TryGetValue(inductor.Id, out double preset))
+            {
+                continue;
+            }
+
+            double dc = operatingPoint.ElementCurrents.TryGetValue(inductor.Id, out double amperes)
+                ? amperes
+                : 0;
+            if (!StartsAwayFromDc(preset, dc))
+            {
+                continue;
+            }
+
+            notes.Add(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"'{inductor.Id}' starts at {preset:G6} A but its DC operating point is {dc:G6} A; the run begins with a {Math.Abs(preset - dc):G3} A discontinuity."));
+        }
+
+        return notes;
+    }
+
+    /// <summary>
+    /// Whether a preset state differs from the DC value by more than rounding. The threshold is
+    /// relative to the larger magnitude, so a 5 V circuit and a millivolt one are judged the
+    /// same way, and an exact match is never reported.
+    /// </summary>
+    private static bool StartsAwayFromDc(double preset, double operatingPoint)
+    {
+        double scale = Math.Max(Math.Abs(preset), Math.Abs(operatingPoint));
+        return scale > 0 &&
+            Math.Abs(preset - operatingPoint) > Math.Max(scale * 1e-9, 1e-15);
     }
 
     private TransientPoint MakePoint(

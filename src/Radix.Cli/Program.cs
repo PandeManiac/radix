@@ -569,6 +569,15 @@ internal static class Program
             Console.WriteLine($"reactive:  {string.Join(", ", reactive)}");
         }
 
+        if (result.Notes.Count > 0)
+        {
+            Console.WriteLine("notes:");
+            foreach (string note in result.Notes)
+            {
+                Console.WriteLine($"  {note}");
+            }
+        }
+
         string[] nodes = netlist.Nodes.ToArray();
         Console.WriteLine($"points ({result.Points.Count}):");
         Console.WriteLine("  idx  time".PadRight(25) + string.Concat(nodes.Select(node => node.PadRight(16))));

@@ -166,6 +166,7 @@ public sealed class EditorViewModel : ObservableObject
     private bool _hasElectricalTransientError;
     private string _electricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
     private string _electricalTransientEnergyText = string.Empty;
+    private string _electricalTransientNotesText = string.Empty;
     private string _electricalTransientStopText = "0.005";
     private string _electricalTransientStepsText = "200";
     private string _electricalTransientMethodName = "backward-euler";
@@ -424,6 +425,13 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _electricalTransientPlot;
         private set => SetField(ref _electricalTransientPlot, value);
+    }
+
+    /// <summary>Initial-condition notes from the displayed run, empty when there are none.</summary>
+    public string ElectricalTransientNotesText
+    {
+        get => _electricalTransientNotesText;
+        private set => SetField(ref _electricalTransientNotesText, value);
     }
 
     /// <summary>Result of the last step-refinement check, empty until one is requested.</summary>
@@ -6501,6 +6509,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientSummary = result.Completed
             ? $"Integrated '{circuit.Id}' · {shown} · {mode} to {FormatElectricalValue(stop)} s."
             : $"Integration failed in '{circuit.Id}' near t={FormatElectricalValue(result.FinalPoint?.Time ?? 0)} s: {result.Message}";
+        ElectricalTransientNotesText = string.Join(" ", result.Notes);
         ElectricalTransientEnergyText = result.Energy is TransientEnergyBalance energy
             ? string.Create(
                 CultureInfo.InvariantCulture,
@@ -7020,6 +7029,7 @@ public sealed class EditorViewModel : ObservableObject
         HasElectricalTransientError = false;
         ElectricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
         ElectricalTransientEnergyText = string.Empty;
+        ElectricalTransientNotesText = string.Empty;
         ElectricalTransientAccuracyText = string.Empty;
         ElectricalTransientProbeText = string.Empty;
         ElectricalTransientProbeTime = null;

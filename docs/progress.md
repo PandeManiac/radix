@@ -652,7 +652,18 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     stop-time/step-count pairs and a charged initial state, and [docs/benchmarks.md](benchmarks.md)
     records the baseline and its caveats.
 
-Verification: release build 0 warnings/0 errors; core tests 583/583; editor
+61. Added initial-condition notes. A preset `initialValue` is legitimate, but when it disagrees
+    with the circuit's own DC operating point the run begins with a discontinuity that the
+    sources do not explain. The solver now compares every preset with the operating point across
+    that element and records a note such as `'C1' starts at 2 V but its DC operating point is 5 V;
+    the run begins with a 3 V discontinuity.` The comparison is relative (`max(|v|) * 1e-9`), so a
+    matching preset stays silent and a millivolt circuit is judged like a 5 V one; a note never
+    changes the result, the failure classification, or the time grid. `radix transient` prints the
+    notes before the point table, the JSON report carries them as `notes` (omitted when empty),
+    and the panel shows them above the energy ledger, cleared with the run. Tests cover both
+    element kinds, the silent case, the unchanged grid, and the report field.
+
+Verification: release build 0 warnings/0 errors; core tests 588/588; editor
 tests 210/210; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
