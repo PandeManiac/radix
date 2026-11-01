@@ -326,6 +326,28 @@ public sealed record TransientEnergyBalance(
     }
 }
 
+/// <summary>Peak, swing, and settling behaviour of one node over a run.</summary>
+public sealed record TransientNodeMetrics(
+    string NodeId,
+    double MinimumVolts,
+    double MaximumVolts,
+    double FinalVolts,
+    double PeakTimeSeconds,
+    double? SettlingTimeSeconds);
+
+/// <summary>
+/// Summary metrics for a run: for every node, its minimum, maximum, final value, the
+/// time of the maximum, and the time after which it stayed inside
+/// <see cref="SettlingBand"/> of its final value. The band is a fraction of the node's
+/// own swing (floored by its final magnitude), so it means the same thing for a 5 V
+/// step and for a millivolt ripple. A null settling time means the node was still
+/// outside the band at the last solved point, which is what an oscillation or a
+/// diverging run looks like.
+/// </summary>
+public sealed record TransientMetrics(
+    double SettlingBand,
+    IReadOnlyList<TransientNodeMetrics> Nodes);
+
 /// <summary>
 /// Result of a transient run. A run that fails part way keeps every operating
 /// point that was solved, names the step that failed, and reports the same
@@ -355,6 +377,9 @@ public sealed record TransientResult(
     /// exist and no integral can be formed.
     /// </summary>
     public TransientEnergyBalance? Energy { get; init; }
+
+    /// <summary>Per-node peak, swing, and settling behaviour, or null with fewer than two points.</summary>
+    public TransientMetrics? Metrics { get; init; }
 }
 
 /// <summary>
@@ -677,7 +702,11 @@ public sealed class TransientNetlist
         TransientResult result = options.IsAdaptive
             ? RunAdaptive(options, state, points)
             : RunFixed(options, state, points);
-        return result with { Energy = MeasureEnergy(result.Points) };
+        return result with
+        {
+            Energy = MeasureEnergy(result.Points),
+            Metrics = MeasureMetrics(result.Points),
+        };
     }
 
     /// <summary>The reactive state at one integration point. Arrays are replaced, never mutated.</summary>
@@ -1312,6 +1341,72 @@ public sealed class TransientNetlist
             stored,
             lastStored,
             delivered - dissipated - stored);
+    }
+
+    /// <summary>
+    /// Builds the per-node summary. Minima and maxima come from the same reported points
+    /// the caller sees, and settling is measured against the node's own final value, so
+    /// the numbers describe the run rather than a second, independent calculation.
+    /// </summary>
+    private static TransientMetrics? MeasureMetrics(IReadOnlyList<TransientPoint> points)
+    {
+        if (points.Count < 2)
+        {
+            return null;
+        }
+
+        const double settlingBand = 0.02;
+        string[] nodes = points
+            .SelectMany(point => point.NodeVoltages.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var metrics = new List<TransientNodeMetrics>(nodes.Length);
+        foreach (string node in nodes)
+        {
+            double minimum = double.PositiveInfinity;
+            double maximum = double.NegativeInfinity;
+            double peakTime = points[0].Time;
+            foreach (TransientPoint point in points)
+            {
+                double volts = NodeVoltage(point.NodeVoltages, node);
+                minimum = Math.Min(minimum, volts);
+                if (volts > maximum)
+                {
+                    maximum = volts;
+                    peakTime = point.Time;
+                }
+            }
+
+            double final = NodeVoltage(points[^1].NodeVoltages, node);
+            double tolerance = settlingBand * Math.Max(Math.Abs(final), maximum - minimum);
+            double? settling = 0;
+            if (tolerance > 0)
+            {
+                double lastOutside = 0;
+                bool outside = false;
+                foreach (TransientPoint point in points)
+                {
+                    if (Math.Abs(NodeVoltage(point.NodeVoltages, node) - final) > tolerance)
+                    {
+                        lastOutside = point.Time;
+                        outside = true;
+                    }
+                }
+
+                if (outside)
+                {
+                    settling = Math.Abs(NodeVoltage(points[^1].NodeVoltages, node) - final) > tolerance
+                        ? null
+                        : lastOutside;
+                }
+            }
+
+            metrics.Add(new TransientNodeMetrics(
+                node, minimum, maximum, final, peakTime, settling));
+        }
+
+        return new TransientMetrics(settlingBand, metrics);
     }
 
     /// <summary>Delivered source power and dissipated resistor/diode power at one point.</summary>

@@ -542,8 +542,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     assertion allows the added landing points. New tests show a 2 us triangle pulse
     is integrated (it was exactly zero before) and lands on its breakpoints in fixed
     and adaptive runs, matching `(Q/tau) * e^(-(T-t_end)/tau)` within 5% and 2%.
+50. Added per-node peak, swing, and settling metrics to every transient result: min,
+    max, final value, the time of the maximum, and when the node last left a 2% band
+    around its own final value or swing (null if still outside, which is what an
+    oscillation looks like). `radix transient` prints the table and the JSON report
+    carries it under `metrics`. Metrics are read from the reported points, not a
+    second solve. Tests check the first-order settling formula including the finite
+    final value, the analytic underdamped RLC overshoot and quarter-period peak, a
+    pulse peaking where the drive falls below the capacitor voltage, absent metrics
+    on a failed run, and the JSON fields.
 
-Verification: release build 0 warnings/0 errors; core tests 555/555; editor
+Verification: release build 0 warnings/0 errors; core tests 560/560; editor
 tests 196/196; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

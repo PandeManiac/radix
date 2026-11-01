@@ -554,6 +554,23 @@ internal static class Program
                 $"({FormatDcNumber(energy.RelativeResidual)} relative)");
         }
 
+        if (result.Metrics is TransientMetrics metrics)
+        {
+            Console.WriteLine(
+                $"node metrics (settling band {FormatDcNumber(metrics.SettlingBand * 100)}% of each node's swing):");
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                string settling = node.SettlingTimeSeconds is double settled
+                    ? FormatDcNumber(settled)
+                    : "not settled";
+                Console.WriteLine(
+                    $"  {node.NodeId,-14} min {FormatDcNumber(node.MinimumVolts),-14} " +
+                    $"max {FormatDcNumber(node.MaximumVolts),-14} " +
+                    $"final {FormatDcNumber(node.FinalVolts),-14} " +
+                    $"peak@t {FormatDcNumber(node.PeakTimeSeconds),-12} settle {settling}");
+            }
+        }
+
         if (!result.Completed)
         {
             Console.Error.WriteLine(

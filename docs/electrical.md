@@ -343,6 +343,24 @@ a time; it does not estimate a spectral radius or choose between methods. Author
 still expose only resistors and independent sources, and the editor has no
 transient UI: `radix transient` is the supported entry point.
 
+## Peak and settling metrics
+
+Every run also summarises each node: its minimum, maximum, final value, the time of
+the maximum, and the time after which it stayed inside 2% of its own final value or
+swing. The band is a fraction of the node's own numbers, so it means the same thing
+for a 5 V step and a millivolt ripple, and a null settling time is the honest report
+of a node that was still moving at the last solved point, which is what an
+oscillation or a diverging run looks like.
+
+The metrics describe the reported points rather than a second solve, so they cannot
+disagree with the values the caller already has. They are checked against closed
+forms: an RC charge settles where `5*(e^(-t/tau) - e^(-T/tau))` enters the band
+(accounting for the finite final value), an underdamped series RLC peaks at
+`1 + e^(-pi*zeta/sqrt(1-zeta^2))` a quarter period in, and a driven pulse peaks
+where the drive falls below the capacitor voltage rather than where the drive itself
+peaks. `radix transient` prints the table, and the JSON report carries it under
+`metrics` with a `settlingBand` and one object per node.
+
 ## Waveform breakpoints as step boundaries
 
 A piecewise-linear drive changes slope at its breakpoints, so the integrator never

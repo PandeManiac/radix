@@ -147,9 +147,25 @@ public static class TransientNetlistJson
                 result.Message,
                 result.FailedStep,
                 points,
-                ToEnergyDto(result.Energy)),
+                ToEnergyDto(result.Energy),
+                ToMetricsDto(result.Metrics)),
             JsonOptions);
     }
+
+    private static MetricsDto? ToMetricsDto(TransientMetrics? metrics) =>
+        metrics is null
+            ? null
+            : new MetricsDto(
+                metrics.SettlingBand,
+                metrics.Nodes
+                    .Select(node => new NodeMetricsDto(
+                        node.NodeId,
+                        node.MinimumVolts,
+                        node.MaximumVolts,
+                        node.FinalVolts,
+                        node.PeakTimeSeconds,
+                        node.SettlingTimeSeconds))
+                    .ToArray());
 
     private static EnergyDto? ToEnergyDto(TransientEnergyBalance? energy) =>
         energy is null
@@ -490,7 +506,20 @@ public static class TransientNetlistJson
         string? Message,
         int? FailedStep,
         IReadOnlyList<PointDto> Points,
-        EnergyDto? Energy);
+        EnergyDto? Energy,
+        MetricsDto? Metrics);
+
+    private sealed record MetricsDto(
+        double SettlingBand,
+        IReadOnlyList<NodeMetricsDto> Nodes);
+
+    private sealed record NodeMetricsDto(
+        string Id,
+        double MinimumVolts,
+        double MaximumVolts,
+        double FinalVolts,
+        double PeakTimeSeconds,
+        double? SettlingTimeSeconds);
 
     private sealed record EnergyDto(
         double DeliveredJoules,
