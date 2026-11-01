@@ -56,7 +56,9 @@ public sealed class TransientNetlistJsonTests
         TransientDocument rc = TransientNetlistJson.Load(rcPath);
         TransientResult rcResult = rc.Netlist.Run(Assert.IsType<TransientOptions>(rc.Analysis));
         Assert.True(rcResult.Completed, rcResult.Message);
-        Assert.Equal(rc.Analysis!.Steps + 1, rcResult.Points.Count);
+        // The example drives a ramp, so the run lands on its breakpoints and reports more
+        // points than the nominal step count.
+        Assert.InRange(rcResult.Points.Count, rc.Analysis!.Steps + 1, rc.Analysis.Steps + 4);
         Assert.InRange(rcResult.FinalPoint!.NodeVoltages["out"], 3.5, 5);
 
         TransientDocument rlc = TransientNetlistJson.Load(rlcPath);

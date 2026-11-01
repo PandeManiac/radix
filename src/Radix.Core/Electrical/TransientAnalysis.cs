@@ -704,33 +704,100 @@ public sealed class TransientNetlist
         public double[] InductorAmps { get; }
     }
 
-    /// <summary>Runs the uniform step sequence of a fixed-step analysis.</summary>
+    /// <summary>
+    /// Breakpoint times strictly inside the analysed interval, in ascending order. A
+    /// step must not straddle one: the drive changes slope there, so a single step
+    /// across it would apply a source value that never held, and a pulse narrower than
+    /// the step would be sampled only where it is zero and disappear entirely.
+    /// </summary>
+    private double[] InteriorBreakpoints(TransientOptions options)
+    {
+        var times = new List<double>();
+        foreach (TransientWaveform waveform in _waveforms.Values)
+        {
+            foreach (TransientWaveformPoint point in waveform.Points)
+            {
+                if (point.Time > options.StartTime && point.Time < options.StopTime)
+                {
+                    times.Add(point.Time);
+                }
+            }
+        }
+
+        times.Sort();
+        return times.Distinct().ToArray();
+    }
+
+    /// <summary>
+    /// Runs the fixed-step sequence. The requested step size is nominal: a step that
+    /// would cross a waveform breakpoint is shortened to land on it, then the run
+    /// continues at the requested size, so a run with breakpoints reports more points
+    /// than it has steps and never integrates across a drive discontinuity.
+    /// </summary>
     private TransientResult RunFixed(
         TransientOptions options,
         ReactiveState state,
         List<TransientPoint> points)
     {
         double timeStep = options.TimeStep;
-        for (int step = 1; step <= options.Steps; step++)
+        double[] breakpoints = InteriorBreakpoints(options);
+        double time = options.StartTime;
+        int breakpoint = 0;
+        int steps = 0;
+        int maximumSteps = options.Steps + breakpoints.Length + 1;
+        while (time < options.StopTime)
         {
-            double time = step == options.Steps
-                ? options.StopTime
-                : options.StartTime + (step * timeStep);
-            bool trapezoidal = options.Method == TransientMethod.Trapezoidal && step > 1;
+            if (steps++ >= maximumSteps)
+            {
+                return new TransientResult(
+                    options,
+                    points,
+                    DcSolveFailure.NonConvergent,
+                    $"Fixed-step integration did not reach the stop time within {maximumSteps} steps.",
+                    points.Count - 1);
+            }
+
+            double remaining = options.StopTime - time;
+            double step = Math.Min(timeStep, remaining);
+            while (breakpoint < breakpoints.Length && breakpoints[breakpoint] <= time)
+            {
+                breakpoint++;
+            }
+
+            if (breakpoint < breakpoints.Length)
+            {
+                step = Math.Min(step, breakpoints[breakpoint] - time);
+            }
+
+            if (!(step > 0) || !double.IsFinite(step))
+            {
+                step = Math.Min(timeStep, remaining);
+            }
+
+            // Accumulated addition leaves a rounding remainder below the stop time; take it
+            // as the last step instead of emitting a spurious near-zero step afterwards.
+            if (remaining - step <= Math.Abs(options.StopTime) * 1e-14)
+            {
+                step = remaining;
+            }
+
+            double next = step >= remaining ? options.StopTime : time + step;
+            bool trapezoidal = options.Method == TransientMethod.Trapezoidal && points.Count > 1;
             if (!TryAdvance(
-                    time,
-                    timeStep,
+                    next,
+                    next - time,
                     trapezoidal,
                     state,
-                    out ReactiveState? next,
+                    out ReactiveState? advanced,
                     out DcSolution? solution,
                     out DcSolveFailure? failure,
                     out string? message))
             {
-                return new TransientResult(options, points, failure, message, step);
+                return new TransientResult(options, points, failure, message, points.Count - 1);
             }
 
-            state = next!;
+            state = advanced!;
+            time = next;
             points.Add(MakePoint(time, solution!, state));
         }
 
@@ -756,6 +823,8 @@ public sealed class TransientNetlist
             ? options.AdaptiveAbsoluteTolerance
             : tolerance * ReferenceScale(options, state);
         double span = options.StopTime - options.StartTime;
+        double[] breakpoints = InteriorBreakpoints(options);
+        int breakpoint = 0;
         double minimumStep = options.MinimumTimeStep > 0 ? options.MinimumTimeStep : span * 1e-12;
         double maximumStep = options.MaximumTimeStep > 0 ? options.MaximumTimeStep : span;
         double timeStep = Math.Min(
@@ -770,6 +839,21 @@ public sealed class TransientNetlist
         {
             double remaining = options.StopTime - time;
             double trial = Math.Min(timeStep, remaining);
+            while (breakpoint < breakpoints.Length && breakpoints[breakpoint] <= time)
+            {
+                breakpoint++;
+            }
+
+            if (breakpoint < breakpoints.Length)
+            {
+                trial = Math.Min(trial, breakpoints[breakpoint] - time);
+            }
+
+            if (remaining - trial <= Math.Abs(options.StopTime) * 1e-14)
+            {
+                trial = remaining;
+            }
+
             bool trapezoidal = options.Method == TransientMethod.Trapezoidal && !firstStep;
             if (++trials > options.MaximumStepCount)
             {

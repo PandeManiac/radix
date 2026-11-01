@@ -343,6 +343,25 @@ a time; it does not estimate a spectral radius or choose between methods. Author
 still expose only resistors and independent sources, and the editor has no
 transient UI: `radix transient` is the supported entry point.
 
+## Waveform breakpoints as step boundaries
+
+A piecewise-linear drive changes slope at its breakpoints, so the integrator never
+steps across one. A fixed-step run shortens the step that would straddle a
+breakpoint, lands on it, and then continues at the requested size, so `steps` is
+the nominal step size and a run with breakpoints reports more points than it has
+steps. An adaptive run clamps its trial step the same way. Without this, a pulse
+narrower than the step would be sampled only at times where it is zero and would
+vanish from the result, and a ramp kink inside a step would be integrated with a
+source value that never held.
+
+The result's first and last times are still exactly the requested start and stop
+times: the final step absorbs any floating-point remainder instead of emitting a
+nearly zero-length step after the interval ends. The trade-off is that a hard-edged
+stroke is still limited by the integration scheme: backward Euler applies the
+endpoint value across the whole step, and the adaptive absolute floor is
+`tolerance * 1e-6` of the circuit scale, so a very small pulse tail is controlled
+in absolute terms rather than relative to its own tiny magnitude.
+
 ## Energy ledger
 
 Every transient run carries an energy ledger in joules: the energy the independent

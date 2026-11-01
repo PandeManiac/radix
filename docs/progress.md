@@ -529,8 +529,21 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     and tests can distinguish the two. Tests cover adaptive mode selection,
     rejection of a non-positive tolerance, the CSV header and first row, the export
     carrying more rows than the sampled table, and returning to fixed stepping.
+49. Made waveform breakpoints step boundaries in both integrators. A fixed-step run
+    now shortens the step that would straddle a breakpoint, lands on it, and resumes
+    at the requested size, so `steps` is nominal and such runs report extra points;
+    an adaptive run clamps its trial step the same way. Before this, a pulse narrower
+    than the step was sampled only where it is zero and disappeared, and a ramp kink
+    inside a step was integrated with a value that never held. The final step also
+    absorbs floating-point remainder below the stop time instead of emitting a
+    spurious near-zero step (which had added one point to every panel run). Two
+    recurrence tests that used a 1e-12 s drive step now start from explicit initial
+    state, because a breakpoint is no longer crossed; the shipped-example count
+    assertion allows the added landing points. New tests show a 2 us triangle pulse
+    is integrated (it was exactly zero before) and lands on its breakpoints in fixed
+    and adaptive runs, matching `(Q/tau) * e^(-(T-t_end)/tau)` within 5% and 2%.
 
-Verification: release build 0 warnings/0 errors; core tests 552/552; editor
+Verification: release build 0 warnings/0 errors; core tests 555/555; editor
 tests 196/196; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

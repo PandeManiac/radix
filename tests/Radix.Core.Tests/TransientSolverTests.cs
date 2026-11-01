@@ -16,11 +16,14 @@ public sealed class TransientSolverTests
         double h = options.TimeStep;
         double conductance = capacitance / h;
 
+        // Start from rest with an explicit initial voltage rather than a drive step: a
+        // breakpoint is now a step boundary, and a step at 1e-12 s would insert a point
+        // this uniform-grid recurrence does not describe.
         TransientNetlist netlist = new TransientNetlist("gnd")
             .AddVoltageSource("V1", "in", "gnd", supply)
-            .SetWaveform("V1", [new TransientWaveformPoint(0, 0), new TransientWaveformPoint(1e-12, supply)])
             .AddResistor("R1", "in", "out", resistance)
-            .AddCapacitor("C1", "out", "gnd", capacitance);
+            .AddCapacitor("C1", "out", "gnd", capacitance)
+            .SetCapacitorInitialVoltage("C1", 0);
 
         TransientResult result = netlist.Run(options);
 
@@ -131,11 +134,13 @@ public sealed class TransientSolverTests
         var options = new TransientOptions { StopTime = 5 * tau, Steps = 100 };
         double h = options.TimeStep;
 
+        // Start from rest with an explicit inductor current rather than a drive step, so
+        // the run keeps the uniform grid this recurrence is derived on.
         TransientNetlist netlist = new TransientNetlist("gnd")
             .AddVoltageSource("V1", "in", "gnd", supply)
-            .SetWaveform("V1", [new TransientWaveformPoint(0, 0), new TransientWaveformPoint(1e-12, supply)])
             .AddResistor("R1", "in", "mid", resistance)
-            .AddInductor("L1", "mid", "gnd", inductance);
+            .AddInductor("L1", "mid", "gnd", inductance)
+            .SetInductorInitialCurrent("L1", 0);
 
         TransientResult result = netlist.Run(options);
 
