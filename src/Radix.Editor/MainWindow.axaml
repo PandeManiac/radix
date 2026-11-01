@@ -1222,6 +1222,8 @@
                     <TextBlock Text="rtol" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
                     <TextBox Text="{Binding ElectricalSweepToleranceText, Mode=TwoWay}" Width="52" FontSize="9.5" Watermark="0" ToolTip.Tip="Relative tolerance for Compare; 0 is exact" />
                     <Button x:Name="ElectricalSweepCompareButton" Content="Compare…" Click="ElectricalSweepCompare_Click" ToolTip.Tip="Load an archived sweep report and list every metric that differs from this study" />
+                    <Button x:Name="ElectricalSweepCopyComparisonCsvButton" Content="Copy diff CSV" Click="ElectricalSweepCopyComparisonCsv_Click" IsEnabled="{Binding HasElectricalSweepComparison}" ToolTip.Tip="Copy the comparison as CSV" />
+                    <Button x:Name="ElectricalSweepSaveComparisonJsonButton" Content="Save diff JSON…" Click="ElectricalSweepSaveComparisonJson_Click" IsEnabled="{Binding HasElectricalSweepComparison}" ToolTip.Tip="Save the comparison as a versioned report" />
                   </StackPanel>
                   <TextBlock Text="{Binding ElectricalSweepComparisonSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                   <ItemsControl ItemsSource="{Binding ElectricalSweepDifferences}" IsVisible="{Binding HasElectricalSweepComparison}">

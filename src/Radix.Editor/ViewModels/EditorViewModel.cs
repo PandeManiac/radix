@@ -183,6 +183,8 @@ public sealed class EditorViewModel : ObservableObject
         new SortedDictionary<string, double>(StringComparer.Ordinal);
     private int _electricalTransientPointCount;
     private IReadOnlyList<TransientSweepRow>? _electricalSweepResult;
+    private SweepComparison? _electricalSweepComparison;
+    private string? _electricalSweepAgainst;
     private string _electricalSweepToleranceText = "0";
     private string _electricalSweepComparisonSummary = string.Empty;
     private string _electricalSweepElementId = string.Empty;
@@ -6771,6 +6773,8 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         SweepComparison comparison = TransientSweepComparison.Compare(archived, rows, tolerance);
+        _electricalSweepComparison = comparison;
+        _electricalSweepAgainst = label;
         foreach (double removed in comparison.RemovedValues)
         {
             ElectricalSweepDifferences.Add(new ElectricalSweepDifferenceItem(
@@ -6801,6 +6805,43 @@ public sealed class EditorViewModel : ObservableObject
         StatusText = comparison.IsIdentical
             ? "Archived sweep matches the displayed one."
             : $"Archived sweep differs in {comparison.Differences.Count} metric(s).";
+        return true;
+    }
+
+    /// <summary>
+    /// The displayed comparison as CSV, written by the same writer the command line uses, so a diff
+    /// attached to a review is the same artefact as one produced in a terminal.
+    /// </summary>
+    public bool TryBuildElectricalSweepComparisonCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalSweepComparison is not { } comparison)
+        {
+            return false;
+        }
+
+        csv = TransientSweepComparisonCsv.Write(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            comparison,
+            against: _electricalSweepAgainst);
+        return true;
+    }
+
+    /// <summary>The displayed comparison as a versioned JSON report.</summary>
+    public bool TryBuildElectricalSweepComparisonJson(out string json)
+    {
+        json = string.Empty;
+        if (_electricalSweepComparison is not { } comparison)
+        {
+            return false;
+        }
+
+        json = TransientSweepComparisonJson.ToReportJson(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            comparison,
+            against: _electricalSweepAgainst);
         return true;
     }
 
@@ -7394,6 +7435,8 @@ public sealed class EditorViewModel : ObservableObject
     private void ClearElectricalSweep()
     {
         _electricalSweepResult = null;
+        _electricalSweepComparison = null;
+        _electricalSweepAgainst = null;
         _electricalSweepElementId = string.Empty;
         ElectricalSweepDifferences.Clear();
         ElectricalSweepComparisonSummary = string.Empty;

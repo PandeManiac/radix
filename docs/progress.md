@@ -777,8 +777,18 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     study, added and removed values, foreign reports, a mismatched element, an invalid tolerance, and
     invalidation by an edit.
 
-Verification: release build 0 warnings/0 errors; core tests 625/625; editor
-tests 222/222; `radix transient` runs all three examples with exit 0 and
+74. Made comparisons archivable: `TransientSweepComparisonCsv.Write` and
+    `TransientSweepComparisonJson.ToReportJson` write a `radix-transient-sweep-comparison` document
+    naming the element, the study compared against, whether the studies are identical, every
+    difference per value/node/metric, and the added and removed values. `--compare` now accepts
+    `--csv`/`--json` (it refused them before), and the panel gained **Copy diff CSV** and
+    **Save diff JSON…**, both disabled until a comparison exists and cleared with the study. Tests
+    cover the comment block and row count, added/removed rows, the JSON field set, byte-identical
+    repeats, an identical comparison exporting zero rows, and a run-level ledger difference being
+    labelled `(run)` in both formats.
+
+Verification: release build 0 warnings/0 errors; core tests 630/630; editor
+tests 224/224; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

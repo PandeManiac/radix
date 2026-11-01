@@ -513,12 +513,6 @@ internal static class Program
 
             if (compareSpec is not null)
             {
-                if (csv || json)
-                {
-                    Console.Error.WriteLine("--compare prints a table; drop --json or --csv.");
-                    return 2;
-                }
-
                 TransientSweepReport archived;
                 try
                 {
@@ -547,10 +541,24 @@ internal static class Program
                     return 2;
                 }
 
-                PrintSweepComparison(
-                    archived,
-                    TransientSweepComparison.Compare(archived, sweepRows, compareTolerance),
-                    compareTolerance);
+                SweepComparison comparison = TransientSweepComparison.Compare(
+                    archived, sweepRows, compareTolerance);
+                string against = Path.GetFileName(compareSpec);
+                if (csv)
+                {
+                    Console.Write(TransientSweepComparisonCsv.Write(
+                        source, circuitId, comparison, against));
+                }
+                else if (json)
+                {
+                    Console.WriteLine(TransientSweepComparisonJson.ToReportJson(
+                        source, circuitId, comparison, against));
+                }
+                else
+                {
+                    PrintSweepComparison(archived, comparison, compareTolerance);
+                }
+
                 return 0;
             }
 

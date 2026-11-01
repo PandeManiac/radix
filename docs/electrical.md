@@ -445,7 +445,9 @@ from the displayed study, using the same comparison as `--compare`. The `rtol` b
 relative tolerance (0 by default, exact). A report that swept a different element, or one from another
 format or version, is refused with a sentence instead of being compared. A value or node that exists on
 only one side is shown with `-` on the missing side, and editing anything that clears the run clears the
-comparison with it.
+comparison with it. **Copy diff CSV** and **Save diff JSON…** write the comparison itself, naming the
+study it was taken against, so a review of "what changed" can be attached to a change instead of
+living only on screen. `--compare … --csv`/`--json` produce the same files from the command line.
 
 ## Initial-condition notes
 

@@ -1061,6 +1061,51 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void ThePanelExportsItsComparison()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonJson(out _));
+
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+
+        Assert.True(viewModel.TryBuildElectricalSweepComparisonCsv(out string csv));
+        Assert.Contains("# format: radix-transient-sweep-comparison", csv, StringComparison.Ordinal);
+        Assert.Contains("# element: R1", csv, StringComparison.Ordinal);
+        Assert.Contains("# against: base.json", csv, StringComparison.Ordinal);
+        Assert.Contains("value,node,metric,before,after", csv, StringComparison.Ordinal);
+
+        Assert.True(viewModel.TryBuildElectricalSweepComparisonJson(out string json));
+        using JsonDocument report = JsonDocument.Parse(json);
+        Assert.Equal("radix-transient-sweep-comparison", report.RootElement.GetProperty("format").GetString());
+        Assert.Equal("base.json", report.RootElement.GetProperty("against").GetString());
+        Assert.False(report.RootElement.GetProperty("identical").GetBoolean());
+    }
+
+    [Fact]
+    public void TheComparisonExportDisappearsWithTheStudy()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+        Assert.True(viewModel.TryBuildElectricalSweepComparisonCsv(out _));
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.02";
+        Assert.True(viewModel.ApplyField(stop));
+
+        // The study the diff described is gone, so the diff must not be exportable either.
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonJson(out _));
+    }
+
+    [Fact]
     public void MultipleCircuitsKeepIndependentSelectionsAndUndoRemoval()
     {
         EditorViewModel viewModel = CreateEmptyEditor();

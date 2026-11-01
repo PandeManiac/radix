@@ -445,6 +445,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalSweepCopyComparisonCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel &&
+            viewModel.TryBuildElectricalSweepComparisonCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied sweep comparison as CSV");
+        }
+    }
+
+    private async void ElectricalSweepSaveComparisonJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel &&
+            viewModel.TryBuildElectricalSweepComparisonJson(out string json))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, json, "json", JsonFileType, "sweep comparison", "sweep-diff");
+        }
+    }
+
     private async void ElectricalSweepCompare_Click(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is not EditorViewModel viewModel)
