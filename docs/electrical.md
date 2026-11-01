@@ -385,6 +385,15 @@ solved times, so decimation never changes the reported interval. A single sample
 an empty run, or a non-finite value produces no plot rather than a misleading one,
 and the panel says so instead of drawing an empty frame.
 
+A plotted curve answers "what shape" but not "what value at 1.5 ms". **Probe at (s)**
+plus **Probe** reads every node at a chosen time and marks that time with a dashed
+vertical line on the plot. A time that is not a solved sample is interpolated linearly
+between the two points that bracket it, and the readout names those points, so an
+interpolated value is never presented as one the integrator produced. A time outside
+the run is rejected with the valid interval instead of being clamped silently, a
+non-numeric entry says so, and the probe is cleared with the run by any edit or
+settings change, because a readout of a stale run would be worse than none.
+
 ## Estimating error without a closed form
 
 The energy residual and the metrics describe one run; neither says whether halving the

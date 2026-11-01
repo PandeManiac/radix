@@ -289,6 +289,65 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void ThePanelProbesNodeVoltagesAtAChosenTime()
+    {
+        const double supply = 5;
+        const double tau = 1_000 * 1e-6;
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, supply, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        viewModel.ElectricalTransientProbeInput = "0.0012345";
+        Assert.False(viewModel.ProbeElectricalTransient());
+        Assert.Contains("Run a transient", viewModel.StatusText);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.True(viewModel.ProbeElectricalTransient());
+
+        // 200 steps over 0.005 s puts samples at 2.5e-5 s, so this time is interpolated.
+        Assert.Contains("interpolated", viewModel.ElectricalTransientProbeText);
+        Assert.Equal(0.0012345, viewModel.ElectricalTransientProbeTime!.Value, 15);
+        Assert.Equal(3, viewModel.ElectricalTransientProbeValues.Count);
+
+        // The probe reports the solved trace, so it sits within the scheme's own error of
+        // the analytic charge 5*(1 - e^(-t/tau)) at this time.
+        double analytic = supply * (1 - Math.Exp(-0.0012345 / tau));
+        Assert.InRange(viewModel.ElectricalTransientProbeValues["out"], analytic * 0.98, analytic * 1.02);
+        Assert.Equal(supply, viewModel.ElectricalTransientProbeValues["in"], 9);
+
+        viewModel.ElectricalTransientProbeInput = "abc";
+        Assert.False(viewModel.ProbeElectricalTransient());
+        Assert.Contains("number of seconds", viewModel.StatusText);
+
+        viewModel.ElectricalTransientProbeInput = "0.01";
+        Assert.False(viewModel.ProbeElectricalTransient());
+        Assert.Contains("between", viewModel.StatusText);
+
+        viewModel.ElectricalTransientProbeInput = "0.00125";
+        Assert.True(viewModel.ProbeElectricalTransient());
+        Assert.Contains("solved point", viewModel.ElectricalTransientProbeText);
+
+        EditableField band = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        band.Value = "0.1";
+        Assert.True(viewModel.ApplyField(band));
+        Assert.Empty(viewModel.ElectricalTransientProbeValues);
+        Assert.Null(viewModel.ElectricalTransientProbeTime);
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientProbeText);
+    }
+
+    [Fact]
     public void SourceWaveformsCanBeAuthoredThroughThePanel()
     {
         EditorViewModel viewModel = CreateEmptyEditor();

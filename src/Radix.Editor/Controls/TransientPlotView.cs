@@ -16,6 +16,9 @@ public sealed class TransientPlotView : Control
     public static readonly StyledProperty<TransientPlot?> PlotProperty =
         AvaloniaProperty.Register<TransientPlotView, TransientPlot?>(nameof(Plot));
 
+    public static readonly StyledProperty<double?> MarkerTimeProperty =
+        AvaloniaProperty.Register<TransientPlotView, double?>(nameof(MarkerTime));
+
     private static readonly string[] Palette =
     [
         "#2B6CB0",
@@ -33,13 +36,20 @@ public sealed class TransientPlotView : Control
 
     static TransientPlotView()
     {
-        AffectsRender<TransientPlotView>(PlotProperty);
+        AffectsRender<TransientPlotView>(PlotProperty, MarkerTimeProperty);
     }
 
     public TransientPlot? Plot
     {
         get => GetValue(PlotProperty);
         set => SetValue(PlotProperty, value);
+    }
+
+    /// <summary>Time to mark with a vertical line; null or out of range draws nothing.</summary>
+    public double? MarkerTime
+    {
+        get => GetValue(MarkerTimeProperty);
+        set => SetValue(MarkerTimeProperty, value);
     }
 
     public override void Render(DrawingContext context)
@@ -99,6 +109,27 @@ public sealed class TransientPlotView : Control
                 new Pen(muted, 1),
                 new Point(LeftMargin, zeroY),
                 new Point(LeftMargin + width, zeroY));
+        }
+
+        if (MarkerTime is double marker &&
+            double.IsFinite(marker) &&
+            marker >= plot.TimeStart &&
+            marker <= plot.TimeEnd)
+        {
+            double markerX = LeftMargin + (plot.FractionOf(marker) * width);
+            context.DrawLine(
+                new Pen(
+                    ThemeBrushes.Get(this, "App.Accent", "#2B6CB0"),
+                    1,
+                    new DashStyle([3, 3], 0)),
+                new Point(markerX, TopMargin),
+                new Point(markerX, TopMargin + height));
+            FormattedText markerLabel = Text(TransientPlot.FormatTick(marker), 8.5, ink);
+            context.DrawText(
+                markerLabel,
+                new Point(
+                    Math.Clamp(markerX - (markerLabel.Width / 2), LeftMargin, LeftMargin + width - markerLabel.Width),
+                    TopMargin + 2));
         }
 
         for (int index = 0; index < plot.Series.Count; index++)

@@ -153,6 +153,14 @@ public sealed class TransientPlot
     /// <summary>Vertical position in [0, 1] for a value inside the range; 1 is the top.</summary>
     public double NormalizeY(double value) => (value - ValueMin) / (ValueMax - ValueMin);
 
+    /// <summary>
+    /// Horizontal position in [0, 1] for any time, clamped to the plotted range. A probe
+    /// or marker therefore always lands inside the frame, and a non-finite time places
+    /// nothing rather than throwing during a render pass.
+    /// </summary>
+    public double FractionOf(double time) =>
+        double.IsFinite(time) ? Math.Clamp(NormalizeX(time), 0, 1) : 0;
+
     /// <summary>A short invariant label for an axis tick.</summary>
     public static string FormatTick(double value) =>
         value == 0 ? "0" : value.ToString("G3", CultureInfo.InvariantCulture);

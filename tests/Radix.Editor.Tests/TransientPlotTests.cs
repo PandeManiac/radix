@@ -73,6 +73,24 @@ public sealed class TransientPlotTests
     }
 
     [Fact]
+    public void MarkerFractionsStayInsideTheFrame()
+    {
+        TransientPlot plot = Assert.IsType<TransientPlot>(TransientPlot.Create(
+        [
+            Series("ramp", 20, time => time, time => time),
+        ]));
+
+        Assert.Equal(0, plot.FractionOf(0), 12);
+        Assert.Equal(1, plot.FractionOf(19), 12);
+        Assert.Equal(0.5, plot.FractionOf(9.5), 12);
+        // A probe outside the run clamps instead of drawing off-frame, and a non-finite
+        // time must not throw during a render pass.
+        Assert.Equal(0, plot.FractionOf(-5), 12);
+        Assert.Equal(1, plot.FractionOf(1_000), 12);
+        Assert.Equal(0, plot.FractionOf(double.NaN));
+    }
+
+    [Fact]
     public void NothingToDrawProducesNoPlot()
     {
         Assert.Null(TransientPlot.Create([]));

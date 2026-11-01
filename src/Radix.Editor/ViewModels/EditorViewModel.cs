@@ -173,6 +173,11 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientSettlingBandText = "0.02";
     private TransientPlot? _electricalTransientPlot;
     private string _electricalTransientAccuracyText = string.Empty;
+    private string _electricalTransientProbeInput = string.Empty;
+    private string _electricalTransientProbeText = string.Empty;
+    private double? _electricalTransientProbeTime;
+    private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
+        new SortedDictionary<string, double>(StringComparer.Ordinal);
     private int _electricalTransientPointCount;
     private TransientNetlist? _electricalTransientNetlist;
     private TransientResult? _electricalTransientResult;
@@ -289,6 +294,7 @@ public sealed class EditorViewModel : ObservableObject
         RunElectricalTransientCommand = new RelayCommand(() => SolveElectricalTransient());
         CheckElectricalTransientAccuracyCommand =
             new RelayCommand(() => CheckElectricalTransientAccuracy());
+        ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -417,6 +423,34 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _electricalTransientAccuracyText;
         private set => SetField(ref _electricalTransientAccuracyText, value);
+    }
+
+    /// <summary>Time in seconds the user asked to probe, as typed; parsed by the action.</summary>
+    public string ElectricalTransientProbeInput
+    {
+        get => _electricalTransientProbeInput;
+        set => SetField(ref _electricalTransientProbeInput, value ?? string.Empty);
+    }
+
+    /// <summary>Node voltages at the probed time, in ordinal node order.</summary>
+    public IReadOnlyDictionary<string, double> ElectricalTransientProbeValues
+    {
+        get => _electricalTransientProbeValues;
+        private set => SetField(ref _electricalTransientProbeValues, value);
+    }
+
+    /// <summary>Probed time, or null when no probe is active; drawn as a marker on the plot.</summary>
+    public double? ElectricalTransientProbeTime
+    {
+        get => _electricalTransientProbeTime;
+        private set => SetField(ref _electricalTransientProbeTime, value);
+    }
+
+    /// <summary>One line describing the probe, empty until one is taken.</summary>
+    public string ElectricalTransientProbeText
+    {
+        get => _electricalTransientProbeText;
+        private set => SetField(ref _electricalTransientProbeText, value);
     }
 
     public ObservableCollection<ElectricalElementResultItem> ElectricalElementResults { get; } = [];
@@ -1084,6 +1118,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand RunElectricalTransientCommand { get; }
 
     public ICommand CheckElectricalTransientAccuracyCommand { get; }
+
+    public ICommand ProbeElectricalTransientCommand { get; }
 
     public bool IsEditingFormat => _editingFormatId is not null;
 
@@ -6523,6 +6559,84 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Reads every node voltage at a chosen time, interpolating between the two solved
+    /// points that bracket it. The readout names the bracketing points when the time is
+    /// not itself a solved sample, so an interpolated value cannot be mistaken for one
+    /// the integrator actually produced.
+    /// </summary>
+    public bool ProbeElectricalTransient()
+    {
+        if (_electricalTransientResult is not { } result ||
+            !HasElectricalTransientResult ||
+            result.Points.Count == 0)
+        {
+            StatusText = "Run a transient before probing a time.";
+            return false;
+        }
+
+        if (!TryParseElectricalNumber(_electricalTransientProbeInput, out double time) ||
+            !double.IsFinite(time))
+        {
+            StatusText = "Probe time must be a number of seconds.";
+            return false;
+        }
+
+        TransientPoint first = result.Points[0];
+        TransientPoint last = result.Points[^1];
+        if (time < first.Time || time > last.Time)
+        {
+            StatusText =
+                $"Probe time must be between {FormatElectricalValue(first.Time)} and " +
+                $"{FormatElectricalValue(last.Time)} s.";
+            return false;
+        }
+
+        int low = 0;
+        int high = result.Points.Count - 1;
+        while (high - low > 1)
+        {
+            int middle = (low + high) / 2;
+            if (result.Points[middle].Time <= time)
+            {
+                low = middle;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+
+        TransientPoint left = result.Points[low];
+        TransientPoint right = result.Points[high];
+        double span = right.Time - left.Time;
+        double weight = span > 0 ? Math.Clamp((time - left.Time) / span, 0, 1) : 0;
+        bool solved = left.Time == time || right.Time == time;
+        var values = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        foreach (string node in result.Points
+                     .SelectMany(point => point.NodeVoltages.Keys)
+                     .Distinct(StringComparer.Ordinal))
+        {
+            double from = left.NodeVoltages.TryGetValue(node, out double start) ? start : 0;
+            double to = right.NodeVoltages.TryGetValue(node, out double end) ? end : 0;
+            values[node] = from + (weight * (to - from));
+        }
+
+        ElectricalTransientProbeValues = values;
+        ElectricalTransientProbeTime = time;
+        string source = solved
+            ? "solved point"
+            : $"interpolated {FormatElectricalValue(left.Time)}..{FormatElectricalValue(right.Time)} s";
+        ElectricalTransientProbeText =
+            $"At t={FormatElectricalValue(time)} s ({source}): " +
+            string.Join(
+                " · ",
+                values.Select(pair =>
+                    $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V"));
+        StatusText = $"Probed transient values at t={FormatElectricalValue(time)} s";
+        return true;
+    }
+
+    /// <summary>
     /// Serialises the displayed transient result through the same report builder as
     /// <c>radix transient --json</c>, so the panel and the CLI cannot drift apart.
     /// </summary>
@@ -6843,6 +6957,9 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
         ElectricalTransientEnergyText = string.Empty;
         ElectricalTransientAccuracyText = string.Empty;
+        ElectricalTransientProbeText = string.Empty;
+        ElectricalTransientProbeTime = null;
+        ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
     }
 
     private void ShowElectricalTransientError(string summary, string status)

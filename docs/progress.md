@@ -594,9 +594,18 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     one, it explains that an adaptive run has no step to halve, and its text is cleared with
     the run by any edit or settings change so it cannot describe stale numbers. Tests cover the
     refusal, the reported order and worst node, and the clear-on-change behavior.
+55. Added a time probe to the transient plot, so a curve can be read as numbers. **Probe at
+    (s)** plus **Probe** reads every node at a chosen time and draws a dashed marker at that
+    time (`TransientPlot.FractionOf`, clamped to the frame and safe for a non-finite time). A
+    time that is not a solved sample is interpolated between the two points that bracket it and
+    the readout names them, so an interpolated value is never presented as a solved one; a time
+    outside the run is rejected with the valid interval, a non-numeric entry says so, and the
+    probe clears with the run on any edit. Tests cover the clamped marker fractions, the
+    interpolated value against the analytic charge (`5*(1 - e^(-t/tau))` within 2%), the
+    bracketing readout, both rejections, the exact-sample case, and the clear-on-change case.
 
 Verification: release build 0 warnings/0 errors; core tests 572/572; editor
-tests 203/203; `radix transient` runs all three examples with exit 0 and
+tests 205/205; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,
