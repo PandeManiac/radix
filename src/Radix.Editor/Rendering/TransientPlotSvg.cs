@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Radix.Core.Serialization;
 
 namespace Radix.Editor.Rendering;
 
@@ -36,7 +37,8 @@ public static class TransientPlotSvg
         double? markerTime = null,
         string? title = null,
         int width = 640,
-        int height = 280)
+        int height = 280,
+        TransientStamp? stamp = null)
     {
         ArgumentNullException.ThrowIfNull(plot);
         if (plot.IsEmpty)
@@ -47,8 +49,11 @@ public static class TransientPlotSvg
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 160);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 100);
 
+        // A stamped document reserves a caption line below the axis labels, so the picture
+        // carries the same provenance as the table without covering a tick.
+        double captionSpace = stamp is null ? 0 : 14;
         double plotWidth = width - LeftMargin - RightMargin;
-        double plotHeight = height - TopMargin - BottomMargin;
+        double plotHeight = height - TopMargin - BottomMargin - captionSpace;
         if (plotWidth < 40 || plotHeight < 30)
         {
             throw new ArgumentException("The requested size leaves no room for the axes.", nameof(width));
@@ -61,9 +66,21 @@ public static class TransientPlotSvg
         var svg = new StringBuilder();
         svg.AppendLine(
             $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" " +
-            $"viewBox=\"0 0 {width} {height}\" font-family=\"sans-serif\">");
-        svg.AppendLine(
-            $"  <title>{Escape(string.IsNullOrWhiteSpace(title) ? "Transient plot" : title)}</title>");
+            $"viewBox=\"0 0 {width} {height}\" font-family=\"sans-serif\">");        svg.AppendLine($"  <title>{Escape(string.IsNullOrWhiteSpace(title) ? "Transient plot" : title)}</title>");
+        if (stamp is not null)
+        {
+            var attributes = new StringBuilder();
+            foreach (KeyValuePair<string, string> field in stamp.Fields)
+            {
+                attributes
+                    .Append(' ').Append(field.Key)
+                    .Append("=\"").Append(Escape(field.Value)).Append('"');
+            }
+
+            svg.AppendLine("  <metadata>");
+            svg.AppendLine($"    <provenance xmlns=\"https://radix.local/ns/transient\"{attributes}/>");
+            svg.AppendLine("  </metadata>");
+        }
         svg.AppendLine(
             $"  <rect x=\"0\" y=\"0\" width=\"{width}\" height=\"{height}\" fill=\"#F8FAFC\"/>");
 
@@ -133,10 +150,18 @@ public static class TransientPlotSvg
             svg.AppendLine(
                 $"  <text x=\"{N(LeftMargin + (index * 56))}\" y=\"11\" font-size=\"8.5\" " +
                 $"fill=\"{colour}\">{Escape(series.NodeId)}</text>");
+        }        svg.AppendLine($"  <text x=\"2\" y=\"12\" font-size=\"8.5\" fill=\"#1F2A36\">V</text>");
+        if (stamp is not null)
+        {
+            string caption = string.Join(
+                " · ",
+                new[] { stamp.Circuit, stamp.Method, $"{stamp.Steps} steps", $"{stamp.Points} points" }
+                    .Where(part => !string.IsNullOrWhiteSpace(part)));
+            svg.AppendLine(
+                $"  <text x=\"{N(LeftMargin)}\" y=\"{N(height - 4)}\" font-size=\"8.5\" " +
+                $"fill=\"#6F8092\">{Escape(caption)}</text>");
         }
 
-        svg.AppendLine(
-            $"  <text x=\"2\" y=\"12\" font-size=\"8.5\" fill=\"#1F2A36\">V</text>");
         svg.AppendLine("</svg>");
         return svg.ToString();
     }

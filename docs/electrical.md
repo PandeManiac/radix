@@ -380,6 +380,13 @@ wall-clock timestamp on purpose: two exports of the same run are byte-identical,
 diffs and tests honest. A comment value cannot contain a line break, so a label cannot forge a
 header row, and a reader that wants only the table skips lines starting with `#`.
 
+**Copy SVG** / **Save SVG…** stamp the picture too: a `<metadata>` block carries the same
+key/value pairs as a `provenance` element, and a caption line under the axis labels names the
+circuit, method, step count and point count. The caption reserves its own 14 px, so it never
+covers a tick, and the document is deterministic — the same run exported twice is byte-identical.
+Both exports therefore describe a run the same way, whether the reader is looking at a picture or
+parsing a table.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design

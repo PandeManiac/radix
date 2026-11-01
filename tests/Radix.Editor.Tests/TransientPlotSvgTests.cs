@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml.Linq;
+using Radix.Core.Serialization;
 using Radix.Editor.Rendering;
 using Xunit;
 
@@ -69,6 +70,55 @@ public sealed class TransientPlotSvgTests
 
         string outside = TransientPlotSvg.Render(plot, markerTime: 5);
         Assert.DoesNotContain("stroke-dasharray=\"3 3\"", outside, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheStampAppearsAsMetadataAndAsACaption()
+    {
+        TransientPlot plot = BuildPlot();
+        var stamp = new TransientStamp(
+            "examples/rc.radix",
+            "rc-charge",
+            "trapezoidal",
+            0,
+            0.002,
+            40,
+            5e-5,
+            false,
+            null,
+            0.02,
+            41,
+            true);
+
+        string svg = TransientPlotSvg.Render(plot, stamp: stamp);
+
+        XDocument document = XDocument.Parse(svg);
+        XElement provenance = document.Descendants()
+            .Single(element => element.Name.LocalName == "provenance");
+        Assert.Equal("rc-charge", provenance.Attribute("circuit")!.Value);
+        Assert.Equal("trapezoidal", provenance.Attribute("method")!.Value);
+        Assert.Equal("40", provenance.Attribute("steps")!.Value);
+        Assert.Equal("examples/rc.radix", provenance.Attribute("source")!.Value);
+        Assert.Contains("rc-charge · trapezoidal · 40 steps", svg, StringComparison.Ordinal);
+
+        // Deterministic: the same run twice is byte-identical, so a diff stays meaningful.
+        Assert.Equal(svg, TransientPlotSvg.Render(plot, stamp: stamp));
+        // Without a stamp the document carries no provenance at all.
+        Assert.DoesNotContain("provenance", TransientPlotSvg.Render(plot), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StampValuesAreEscapedWithoutBreakingTheDocument()
+    {
+        var stamp = new TransientStamp(
+            "a<b&c\"d", null, "backward-euler", 0, 1e-3, 10, 1e-4, false, null, 0.02, 11, true);
+
+        string svg = TransientPlotSvg.Render(BuildPlot(), stamp: stamp);
+
+        XDocument document = XDocument.Parse(svg);
+        XElement provenance = document.Descendants()
+            .Single(element => element.Name.LocalName == "provenance");
+        Assert.Equal("a<b&c\"d", provenance.Attribute("source")!.Value);
     }
 
     [Fact]

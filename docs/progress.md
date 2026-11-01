@@ -691,8 +691,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     the comment block ahead of an intact table, the no-stamp case, and the newline-is-folded case;
     the panel test now finds the header after the stamp and checks the circuit name.
 
+65. Stamped the SVG export the same way as the CSV. `TransientPlotSvg.Render` takes an optional
+    `TransientStamp` and writes it as a `<metadata><provenance/>` block using the same keys, plus a
+    caption line under the axis labels naming the circuit, method, step count and point count. The
+    caption reserves 14 px of its own so it cannot cover a tick, values are XML-escaped so a label
+    with `<`, `&` or a quote still yields a well-formed document, and two renders of one run are
+    byte-identical. The panel passes the displayed circuit's stamp, so a picture carried into a
+    document names its run as precisely as the table. Tests parse the metadata, check the caption,
+    the escaped value, the determinism, and the absence of the block without a stamp.
+
 Verification: release build 0 warnings/0 errors; core tests 594/594; editor
-tests 211/211; `radix transient` runs all three examples with exit 0 and
+tests 213/213; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

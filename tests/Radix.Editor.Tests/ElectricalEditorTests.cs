@@ -257,6 +257,8 @@ public sealed class ElectricalEditorTests
         Assert.True(viewModel.TryBuildElectricalTransientSvg(out string svg));
         Assert.Contains("<svg", svg, StringComparison.Ordinal);
         Assert.Equal(3, svg.Split("<polyline").Length - 1);
+        // The picture names the circuit it came from, like the CSV export does.
+        Assert.Contains("provenance", svg, StringComparison.Ordinal);
 
         EditableField tighter = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Settling band");

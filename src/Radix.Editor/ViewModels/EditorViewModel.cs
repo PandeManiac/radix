@@ -6712,12 +6712,18 @@ public sealed class EditorViewModel : ObservableObject
         svg = string.Empty;
         if (ElectricalTransientPlot is not { } plot ||
             !HasElectricalTransientResult ||
+            _electricalTransientResult is not { } result ||
             SelectedElectricalCircuitModel is not { } circuit)
         {
             return false;
         }
 
-        svg = TransientPlotSvg.Render(plot, ElectricalTransientProbeTime, $"Transient: {circuit.Id}");
+        // The picture carries the same provenance as the table, so a shared image names its run.
+        svg = TransientPlotSvg.Render(
+            plot,
+            ElectricalTransientProbeTime,
+            $"Transient: {circuit.Id}",
+            stamp: TransientStamp.From(result, circuit: circuit.Id));
         return true;
     }
 
