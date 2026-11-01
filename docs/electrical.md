@@ -436,7 +436,9 @@ list (`500,1000,2000`) or `from:to:count` (`800:1200:5`). It reuses the displaye
 settings, so a study never mixes options, and it lists each node's peak, final value and settling time
 per value with the value printed once per block and ground omitted. A value that cannot solve keeps a
 row, and any edit that invalidates the run also clears the table, so on-screen numbers always describe
-the selected circuit.
+the selected circuit. **Copy sweep CSV/JSON** and **Save sweep CSV/JSON…** write the study through the
+same writers the CLI uses, so a file produced in the app is byte-identical to one produced by
+`radix transient --sweep … --csv`/`--json` for the same circuit and values.
 
 ## Initial-condition notes
 

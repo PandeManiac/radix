@@ -182,6 +182,8 @@ public sealed class EditorViewModel : ObservableObject
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
         new SortedDictionary<string, double>(StringComparer.Ordinal);
     private int _electricalTransientPointCount;
+    private IReadOnlyList<TransientSweepRow>? _electricalSweepResult;
+    private string _electricalSweepElementId = string.Empty;
     private string _electricalSweepElementText = string.Empty;
     private string _electricalSweepValuesText = string.Empty;
     private string _electricalSweepSummary =
@@ -6582,6 +6584,7 @@ public sealed class EditorViewModel : ObservableObject
             _electricalTransientResult is not { } baseline ||
             !HasElectricalTransientResult)
         {
+            _electricalSweepResult = null;
             ElectricalSweepRows.Clear();
             ElectricalSweepSummary = "Run a transient first; the sweep reuses its circuit and settings.";
             RaisePropertyChanged(nameof(HasElectricalSweepResult));
@@ -6611,6 +6614,7 @@ public sealed class EditorViewModel : ObservableObject
         }
         catch (ArgumentException exception)
         {
+            _electricalSweepResult = null;
             ElectricalSweepRows.Clear();
             ElectricalSweepSummary = exception.Message;
             RaisePropertyChanged(nameof(HasElectricalSweepResult));
@@ -6647,6 +6651,10 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
 
+        // Keep the study itself, not the formatted table: the exports must describe the numbers the
+        // solver produced, so they read the rows rather than re-parsing the display strings.
+        _electricalSweepResult = rows;
+        _electricalSweepElementId = elementId;
         RaisePropertyChanged(nameof(HasElectricalSweepResult));
         ElectricalSweepSummary = failed == 0
             ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalSweepRows.Count} rows · settings from the displayed run."
@@ -6655,6 +6663,44 @@ public sealed class EditorViewModel : ObservableObject
             ? $"Swept '{elementId}' over {rows.Count} values"
             : $"Swept '{elementId}': {failed} value(s) failed.";
         return failed == 0;
+    }
+
+    /// <summary>
+    /// The sweep table as CSV, written by the same writer as <c>radix transient --sweep --csv</c>.
+    /// Returning false rather than an empty document keeps "nothing to export" distinct from a
+    /// study that legitimately has no rows.
+    /// </summary>
+    public bool TryBuildElectricalSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalSweepResult is not { Count: > 0 } rows)
+        {
+            return false;
+        }
+
+        csv = TransientSweepCsv.Write(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            elementId: _electricalSweepElementId,
+            rows);
+        return true;
+    }
+
+    /// <summary>The sweep study as a versioned JSON report, for archiving or comparing later.</summary>
+    public bool TryBuildElectricalSweepJson(out string json)
+    {
+        json = string.Empty;
+        if (_electricalSweepResult is not { Count: > 0 } rows)
+        {
+            return false;
+        }
+
+        json = TransientSweepJson.ToReportJson(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            elementId: _electricalSweepElementId,
+            rows);
+        return true;
     }
 
     /// <summary>
@@ -7224,6 +7270,8 @@ public sealed class EditorViewModel : ObservableObject
     /// </summary>
     private void ClearElectricalSweep()
     {
+        _electricalSweepResult = null;
+        _electricalSweepElementId = string.Empty;
         if (ElectricalSweepRows.Count > 0)
         {
             ElectricalSweepRows.Clear();

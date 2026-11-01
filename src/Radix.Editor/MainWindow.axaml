@@ -1214,6 +1214,12 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
+                  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalSweepResult}">
+                    <Button x:Name="ElectricalSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalSweepCopyCsv_Click" ToolTip.Tip="Copy the sweep as the same long CSV table radix transient --sweep --csv writes" />
+                    <Button x:Name="ElectricalSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalSweepSaveCsv_Click" ToolTip.Tip="Save the sweep as CSV" />
+                    <Button x:Name="ElectricalSweepCopyJsonButton" Content="Copy sweep JSON" Click="ElectricalSweepCopyJson_Click" ToolTip.Tip="Copy the sweep as a radix-transient-sweep report" />
+                    <Button x:Name="ElectricalSweepSaveJsonButton" Content="Save sweep JSON…" Click="ElectricalSweepSaveJson_Click" ToolTip.Tip="Save the sweep as JSON" />
+                  </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalTransientResult}">
                     <Button x:Name="ElectricalTransientCopyJsonButton" Content="Copy JSON" Click="ElectricalTransientCopyJson_Click" ToolTip.Tip="Copy the displayed transient report as JSON" />
                     <Button x:Name="ElectricalTransientSaveJsonButton" Content="Save JSON…" Click="ElectricalTransientSaveJson_Click" ToolTip.Tip="Save the displayed transient report as JSON" />

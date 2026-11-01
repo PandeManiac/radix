@@ -445,6 +445,40 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied sweep study as CSV");
+        }
+    }
+
+    private async void ElectricalSweepSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, csv, "csv", CsvFileType, "sweep study", "sweep");
+        }
+    }
+
+    private async void ElectricalSweepCopyJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepJson(out string json))
+        {
+            await CopyElectricalSolveTextAsync(json, "Copied sweep study as JSON");
+        }
+    }
+
+    private async void ElectricalSweepSaveJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepJson(out string json))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, json, "json", JsonFileType, "sweep study", "sweep");
+        }
+    }
+
     private async Task SaveElectricalSolveTextAsync(
         EditorViewModel viewModel,
         string text,

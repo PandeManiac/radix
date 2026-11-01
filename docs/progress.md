@@ -759,8 +759,16 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     than throwing. Tests cover the row count and value-once-per-block layout, an unknown element and
     an unparsable value, and invalidation by an edit.
 
+72. Exported panel studies through the shared writers: the view model keeps the last sweep's
+    `TransientSweepRow` list (not the formatted table), and `TryBuildElectricalSweepCsv/Json` call
+    `TransientSweepCsv.Write` and `TransientSweepJson.ToReportJson` with the circuit id, so the app and
+    the command line cannot describe one study differently. Copy/Save buttons appear only with a
+    study, the export refuses when there is none, and an edit that clears the run clears the export
+    with it. Tests cover the CSV comment block and column list, the JSON format/element/circuit and
+    row count, the empty case, and disappearance after an invalidating edit.
+
 Verification: release build 0 warnings/0 errors; core tests 625/625; editor
-tests 216/216; `radix transient` runs all three examples with exit 0 and
+tests 219/219; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

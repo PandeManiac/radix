@@ -910,6 +910,86 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void ThePanelExportsItsSweepWithTheSharedWriters()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        Assert.True(viewModel.SolveElectricalTransient());
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.True(viewModel.RunElectricalSweep());
+
+        Assert.True(viewModel.TryBuildElectricalSweepCsv(out string csv));
+        Assert.Contains("# format: radix-transient-sweep", csv, StringComparison.Ordinal);
+        Assert.Contains("# element: R1", csv, StringComparison.Ordinal);
+        Assert.Contains("# values: 2", csv, StringComparison.Ordinal);
+        // The export is complete: two values times three nodes, ground included.
+        Assert.Contains("node,peak_v,final_v,settle_s,energy_residual", csv, StringComparison.Ordinal);
+
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string json));
+        using JsonDocument report = JsonDocument.Parse(json);
+        Assert.Equal("radix-transient-sweep", report.RootElement.GetProperty("format").GetString());
+        Assert.Equal("R1", report.RootElement.GetProperty("element").GetString());
+        Assert.Equal(circuit.Id, report.RootElement.GetProperty("circuit").GetString());
+        Assert.Equal(2, report.RootElement.GetProperty("rows").GetArrayLength());
+    }
+
+    [Fact]
+    public void SweepExportIsUnavailableUntilAStudyExists()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+
+        Assert.False(viewModel.TryBuildElectricalSweepCsv(out string csv));
+        Assert.False(viewModel.TryBuildElectricalSweepJson(out string json));
+        Assert.Empty(csv);
+        Assert.Empty(json);
+        // A sweep without a run explains the prerequisite instead of failing silently.
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("Run a transient", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheSweepExportDisappearsWithAnInvalidatingEdit()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        Assert.True(viewModel.SolveElectricalTransient());
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.TryBuildElectricalSweepCsv(out _));
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.02";
+        Assert.True(viewModel.ApplyField(stop));
+
+        // No study, no export: the file would describe a circuit the panel no longer shows.
+        Assert.False(viewModel.TryBuildElectricalSweepCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalSweepJson(out _));
+    }
+
+    [Fact]
     public void MultipleCircuitsKeepIndependentSelectionsAndUndoRemoval()
     {
         EditorViewModel viewModel = CreateEmptyEditor();
