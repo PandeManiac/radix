@@ -402,6 +402,13 @@ public sealed record TransientResult(
     /// classification; it explains a jump the numbers alone would not.
     /// </summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>
+    /// Deterministic fingerprint of the netlist this run solved, or null when it was not
+    /// recorded. It identifies the circuit and its values, so an export can prove which revision
+    /// produced a result even when two circuits share an id.
+    /// </summary>
+    public string? NetlistFingerprint { get; init; }
 }
 
 /// <summary>
@@ -731,6 +738,7 @@ public sealed class TransientNetlist
             Energy = MeasureEnergy(result.Points),
             Metrics = MeasureMetrics(options, result.Points),
             Notes = notes,
+            NetlistFingerprint = Fingerprint(),
         };
     }
 
@@ -1482,6 +1490,91 @@ public sealed class TransientNetlist
 
         return stored;
     }
+
+    /// <summary>
+    /// Deterministic fingerprint of what this netlist will solve: the ground node, every element
+    /// with its type, nodes and values, the reactive elements, their presets and any source
+    /// waveform, each ordered by id so the fingerprint does not depend on construction order.
+    /// It is a SHA-256 over that canonical text, shortened to 16 hex characters; changing any
+    /// value changes it, and two netlists that solve the same equations share it.
+    /// </summary>
+    public string Fingerprint()
+    {
+        var text = new System.Text.StringBuilder();
+        text.Append("ground:").Append(GroundNodeId).Append('\n');
+        foreach (DcElement element in _elements.OrderBy(entry => entry.Id, StringComparer.Ordinal))
+        {
+            text.Append("element:").Append(element.Id).Append('|').Append(element.Kind)
+                .Append('|').Append(element.NodeA).Append('|').Append(element.NodeB);
+            switch (element)
+            {
+                case DcResistor resistor:
+                    text.Append("|r|").Append(Number(resistor.Ohms));
+                    break;
+                case DcVoltageSource source:
+                    text.Append("|v|").Append(Number(source.Value));
+                    break;
+                case DcCurrentSource source:
+                    text.Append("|i|").Append(Number(source.Value));
+                    break;
+                case DcDiode diode:
+                    text.Append("|d|").Append(Number(diode.SaturationCurrent))
+                        .Append('|').Append(Number(diode.EmissionCoefficient))
+                        .Append('|').Append(Number(diode.ThermalVoltage))
+                        .Append('|').Append(Number(diode.SeriesResistance));
+                    break;
+                default:
+                    text.Append("|?|").Append(Number(element.Value));
+                    break;
+            }
+
+            text.Append('\n');
+        }
+
+        foreach (TransientCapacitor capacitor in _capacitors.OrderBy(entry => entry.Id, StringComparer.Ordinal))
+        {
+            text.Append("capacitor:").Append(capacitor.Id).Append('|').Append(capacitor.NodeA)
+                .Append('|').Append(capacitor.NodeB).Append('|').Append(Number(capacitor.Farads))
+                .Append('\n');
+        }
+
+        foreach (TransientInductor inductor in _inductors.OrderBy(entry => entry.Id, StringComparer.Ordinal))
+        {
+            text.Append("inductor:").Append(inductor.Id).Append('|').Append(inductor.NodeA)
+                .Append('|').Append(inductor.NodeB).Append('|').Append(Number(inductor.Henries))
+                .Append('\n');
+        }
+
+        foreach (KeyValuePair<string, double> preset in _initialCapacitorVolts.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            text.Append("preset-capacitor:").Append(preset.Key).Append('|')
+                .Append(Number(preset.Value)).Append('\n');
+        }
+
+        foreach (KeyValuePair<string, double> preset in _initialInductorAmperes.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            text.Append("preset-inductor:").Append(preset.Key).Append('|')
+                .Append(Number(preset.Value)).Append('\n');
+        }
+
+        foreach (KeyValuePair<string, TransientWaveform> waveform in _waveforms.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            text.Append("waveform:").Append(waveform.Key);
+            foreach (TransientWaveformPoint point in waveform.Value.Points)
+            {
+                text.Append('|').Append(Number(point.Time)).Append(':').Append(Number(point.Value));
+            }
+
+            text.Append('\n');
+        }
+
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(text.ToString()));
+        return Convert.ToHexString(hash)[..16].ToLowerInvariant();
+    }
+
+    private static string Number(double value) =>
+        value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Reports a preset initial condition that disagrees with the circuit's own DC operating

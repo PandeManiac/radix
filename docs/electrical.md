@@ -387,6 +387,15 @@ covers a tick, and the document is deterministic — the same run exported twice
 Both exports therefore describe a run the same way, whether the reader is looking at a picture or
 parsing a table.
 
+**Which circuit was solved.** Every export also carries a `netlist` fingerprint: a shortened
+SHA-256 over the solved netlist written in a canonical form — the ground node, each element with
+its type, nodes and values (including diode parameters), the reactive elements, any preset initial
+condition and any source waveform, all ordered by id. Two circuits that solve the same equations
+share it even if they were built in a different order, and changing one value changes it. It
+answers the question an id cannot: `rc-charge` in two revisions of a project is the same name but
+not the same circuit, and a result copied into a report now proves which one produced it. Inspect
+it with `--json` (`"netlist"`), in the CSV comment block, or as a `provenance` attribute in SVG.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design

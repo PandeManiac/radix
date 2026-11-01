@@ -700,7 +700,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     document names its run as precisely as the table. Tests parse the metadata, check the caption,
     the escaped value, the determinism, and the absence of the block without a stamp.
 
-Verification: release build 0 warnings/0 errors; core tests 594/594; editor
+66. Fingerprinted the solved netlist. `TransientNetlist.Fingerprint()` hashes a canonical text
+    form of the circuit — ground node, every element with its type, nodes and values (including
+    diode saturation current, emission coefficient, thermal voltage and series resistance), the
+    reactive elements, presets and waveforms, ordered by id — with SHA-256 and keeps 16 hex
+    characters. `TransientResult` records it, the stamp publishes it as `netlist`, and the JSON
+    report carries the same value, so CSV, SVG and JSON all name the same circuit. Tests prove an
+    order-independent match, a mismatch for a changed resistance (both directions), a preset, a
+    waveform and a differently named ground, and that the value reaches the stamp, the CSV and the
+    report.
+
+Verification: release build 0 warnings/0 errors; core tests 601/601; editor
 tests 213/213; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

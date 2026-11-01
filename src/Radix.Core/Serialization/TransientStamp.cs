@@ -20,7 +20,8 @@ public sealed record TransientStamp(
     double? AdaptiveTolerance,
     double SettlingBand,
     int Points,
-    bool Completed)
+    bool Completed,
+    string? Netlist = null)
 {
     /// <summary>Describes a finished run; <paramref name="source"/> is a path or label, if known.</summary>
     public static TransientStamp From(
@@ -42,7 +43,8 @@ public sealed record TransientStamp(
             options.AdaptiveTolerance,
             options.SettlingBand,
             result.Points.Count,
-            result.Completed);
+            result.Completed,
+            result.NetlistFingerprint);
     }
 
     /// <summary>
@@ -78,6 +80,11 @@ public sealed record TransientStamp(
             if (AdaptiveTolerance is double tolerance)
             {
                 fields.Add(Field("tolerance", Number(tolerance)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(Netlist))
+            {
+                fields.Add(Field("netlist", Netlist!));
             }
 
             return fields;
