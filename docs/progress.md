@@ -619,8 +619,19 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     others are compared against, and the table is cleared with the run like every other view of
     it. The panel test checks three rows, the reference row, and a parseable order near one for
     backward Euler, plus the empty state after a settings change.
+58. Put the refinement study in the JSON report. `TransientNetlistJson.ToReportJson` takes an
+    optional study and emits a `refinement` object: `completed`, `levels` (step count, step,
+    deviation, and the order once two deviations exist), the finest deviation, the study's
+    measured order, the Richardson estimate, and the worst node. A failed study keeps the levels
+    that solved and its `failure`, so "not checked" and "checked and failed" stay distinguishable;
+    the field is omitted when no study is given. `--refine --json` now works instead of being
+    refused, and the panel's JSON export includes the study exactly while its accuracy check is
+    current. Tests parse the report for the levels, the missing order on the reference level, the
+    measured order and estimate, the worst node, and the absent block without a study; the panel
+    test checks the export gains `refinement` after a check and cannot be built once an edit has
+    invalidated the run.
 
-Verification: release build 0 warnings/0 errors; core tests 572/572; editor
+Verification: release build 0 warnings/0 errors; core tests 574/574; editor
 tests 209/209; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

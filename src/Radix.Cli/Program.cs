@@ -437,12 +437,6 @@ internal static class Program
         };
 
         bool refine = options.ContainsKey("refine");
-        if (refine && json)
-        {
-            Console.Error.WriteLine("--refine prints a text-only table; drop --json or --refine.");
-            return 2;
-        }
-
         if (refine && transientOptions.IsAdaptive)
         {
             Console.Error.WriteLine("--refine needs a fixed step; drop --tol or --atol.");
@@ -460,37 +454,36 @@ internal static class Program
             return 2;
         }
 
+        TransientRefinement? refinement = null;
+        if (refine)
+        {
+            try
+            {
+                refinement = TransientRefinement.Analyze(
+                    document.Netlist, transientOptions, baseline: result);
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"invalid refinement options: {exception.Message}");
+                return 2;
+            }
+        }
+
         if (json)
         {
             Console.WriteLine(TransientNetlistJson.ToReportJson(
-                source, document.Netlist, result, circuitId));
+                source, document.Netlist, result, circuitId, refinement));
         }
         else
         {
             PrintTransientResult(source, circuitId, document.Netlist, result, maxRows);
-            if (refine)
+            if (refinement is not null)
             {
-                TransientRefinement study;
-                try
-                {
-                    study = TransientRefinement.Analyze(
-                        document.Netlist, transientOptions, baseline: result);
-                }
-                catch (ArgumentException exception)
-                {
-                    Console.Error.WriteLine($"invalid refinement options: {exception.Message}");
-                    return 2;
-                }
-
-                PrintTransientRefinement(study);
-                if (!study.Completed)
-                {
-                    return 1;
-                }
+                PrintTransientRefinement(refinement);
             }
         }
 
-        return result.Completed ? 0 : 1;
+        return refinement is { Completed: false } || !result.Completed ? 1 : 0;
     }
 
     private static void PrintTransientRefinement(TransientRefinement study)

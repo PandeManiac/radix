@@ -181,6 +181,7 @@ public sealed class EditorViewModel : ObservableObject
     private int _electricalTransientPointCount;
     private TransientNetlist? _electricalTransientNetlist;
     private TransientResult? _electricalTransientResult;
+    private TransientRefinement? _electricalTransientRefinement;
 
 
     public EditorViewModel(CircuitProject project)
@@ -6544,6 +6545,7 @@ public sealed class EditorViewModel : ObservableObject
 
         if (!study.Completed)
         {
+            _electricalTransientRefinement = null;
             ClearElectricalTransientRefinement();
             ElectricalTransientAccuracyText = "Accuracy check failed: " + study.Describe();
             StatusText = $"Accuracy check failed ({FailureLabel(study.Failure ?? DcSolveFailure.NonConvergent)}).";
@@ -6564,6 +6566,7 @@ public sealed class EditorViewModel : ObservableObject
 
         // The table shows where the measured order stops improving, which a single
         // summary line hides.
+        _electricalTransientRefinement = study;
         ElectricalTransientRefinementLevels.Clear();
         for (int index = 0; index < study.Levels.Count; index++)
         {
@@ -6690,7 +6693,11 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         json = TransientNetlistJson.ToReportJson(
-            null, _electricalTransientNetlist, _electricalTransientResult, circuit.Id);
+            null,
+            _electricalTransientNetlist,
+            _electricalTransientResult,
+            circuit.Id,
+            _electricalTransientRefinement);
         return true;
     }
 
@@ -6997,6 +7004,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientProbeText = string.Empty;
         ElectricalTransientProbeTime = null;
         ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        _electricalTransientRefinement = null;
         ClearElectricalTransientRefinement();
     }
 

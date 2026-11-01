@@ -303,12 +303,20 @@ public sealed class ElectricalEditorTests
             out double measuredOrder));
         Assert.InRange(measuredOrder, 0.5, 1.5);
 
+        // The exported report carries the study, so a script sees what the panel shows.
+        Assert.True(viewModel.TryBuildElectricalTransientJson(out string report));
+        Assert.Contains("\"refinement\"", report, StringComparison.Ordinal);
+        Assert.Contains("\"observedOrder\"", report, StringComparison.Ordinal);
+
         // The check describes the displayed run, so a settings change invalidates both.
         EditableField band = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Settling band");
         band.Value = "0.1";
         Assert.True(viewModel.ApplyField(band));
         Assert.Equal(string.Empty, viewModel.ElectricalTransientAccuracyText);
+        // With the run gone there is nothing to export, so the study cannot leak into a
+        // later report either.
+        Assert.False(viewModel.TryBuildElectricalTransientJson(out _));
         Assert.Empty(viewModel.ElectricalTransientRefinementLevels);
         Assert.False(viewModel.HasElectricalTransientRefinement);
         Assert.False(viewModel.HasElectricalTransientResult);

@@ -421,8 +421,16 @@ step is too coarse for the claim to hold, and that is reported rather than round
 
 A failed refined solve stops the study and reports the same `DcSolveFailure`
 classification as the base run. Adaptive runs are rejected: they already choose their
-own step, so there is no nominal step to halve, and the study is text-only because the
-JSON report stays a description of one run.
+own step, so there is no nominal step to halve.
+
+`--refine` also works with `--json`: the report gains a `refinement` object with
+`completed`, `levels` (each with `steps`, `timeStep`, `maximumDeviationVolts`, and
+`observedOrder` once two deviations exist), the finest level's `maximumDeviationVolts`,
+the study's `observedOrder`, `estimatedRelativeError`, and the `worstNode`. A failed
+study still reports the levels that solved plus its `failure`, so a consumer can tell
+"not checked" from "checked and failed"; the field is omitted entirely when no study was
+requested, and the panel includes it in **Copy JSON** / **Save JSON…** exactly when a
+check has been run on the displayed result.
 
 ```bash
 radix transient examples/transient-rc.radix --circuit rc-charge --stop 0.005 --steps 40 --refine

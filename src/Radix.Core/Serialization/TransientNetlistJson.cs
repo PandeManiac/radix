@@ -105,7 +105,8 @@ public static class TransientNetlistJson
         string? source,
         TransientNetlist netlist,
         TransientResult result,
-        string? circuit = null)
+        string? circuit = null,
+        TransientRefinement? refinement = null)
     {
         ArgumentNullException.ThrowIfNull(netlist);
         ArgumentNullException.ThrowIfNull(result);
@@ -148,9 +149,40 @@ public static class TransientNetlistJson
                 result.FailedStep,
                 points,
                 ToEnergyDto(result.Energy),
-                ToMetricsDto(result.Metrics)),
+                ToMetricsDto(result.Metrics),
+                ToRefinementDto(refinement)),
             JsonOptions);
     }
+
+    /// <summary>
+    /// Projects a refinement study for the report. A failed study still reports the levels that
+    /// solved and its failure, so a consumer can tell "not checked" from "checked and failed".
+    /// </summary>
+    private static RefinementDto? ToRefinementDto(TransientRefinement? refinement) =>
+        refinement is null
+            ? null
+            : new RefinementDto(
+                refinement.Completed,
+                refinement.Failure is null ? null : DcNetlistJson.FailureName(refinement.Failure.Value),
+                refinement.Levels
+                    .Select(level => new RefinementLevelDto(
+                        level.Steps,
+                        level.TimeStep,
+                        level.MaximumDeviationVolts,
+                        level.ObservedOrder))
+                    .ToArray(),
+                refinement.Levels.Count == 0 ? 0 : refinement.Levels[^1].MaximumDeviationVolts,
+                refinement.ObservedOrder,
+                refinement.EstimatedRelativeError,
+                refinement.Nodes
+                    .OrderByDescending(node => node.RelativeDeviation)
+                    .Select(node => new RefinementNodeDto(
+                        node.NodeId,
+                        node.MaximumDeviationVolts,
+                        node.WorstTimeSeconds,
+                        node.ReferenceVolts,
+                        node.RelativeDeviation))
+                    .FirstOrDefault());
 
     private static MetricsDto? ToMetricsDto(TransientMetrics? metrics) =>
         metrics is null
@@ -507,7 +539,30 @@ public static class TransientNetlistJson
         int? FailedStep,
         IReadOnlyList<PointDto> Points,
         EnergyDto? Energy,
-        MetricsDto? Metrics);
+        MetricsDto? Metrics,
+        RefinementDto? Refinement);
+
+    private sealed record RefinementDto(
+        bool Completed,
+        string? Failure,
+        IReadOnlyList<RefinementLevelDto> Levels,
+        double MaximumDeviationVolts,
+        double? ObservedOrder,
+        double? EstimatedRelativeError,
+        RefinementNodeDto? WorstNode);
+
+    private sealed record RefinementLevelDto(
+        int Steps,
+        double TimeStep,
+        double MaximumDeviationVolts,
+        double? ObservedOrder);
+
+    private sealed record RefinementNodeDto(
+        string Id,
+        double MaximumDeviationVolts,
+        double WorstTimeSeconds,
+        double ReferenceVolts,
+        double RelativeDeviation);
 
     private sealed record MetricsDto(
         double SettlingBand,
