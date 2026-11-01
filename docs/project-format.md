@@ -373,6 +373,15 @@ Component kinds and terminal contracts:
 | `resistor` | `a`/`b`, both `passive` | ohm |
 | `voltage-source` | `a` `positive`, `b` `negative` | V |
 | `current-source` | `a` `positive`, `b` `negative` | A |
+| `capacitor` | `a`/`b`, both `passive` | F |
+| `inductor` | `a`/`b`, both `passive` | H |
+
+A capacitor or inductor may carry an optional `initialValue`: the initial
+capacitor voltage in volts, or the initial inductor current in amperes, with the
+sign taken from terminal `a` to terminal `b`. Omitting it means the component
+starts at the DC operating point, which is also what `radix dc` reports. The
+field is rejected on any other kind (`RAD-ELEC-015`) and must be finite
+(`RAD-ELEC-016`).
 
 The `value` is the component parameter, not a digital signal index. Terminal
 nodes must exist in the same circuit. `radix dc` validates an authored circuit
@@ -383,7 +392,7 @@ one circuit selects it automatically.
 
 ## Versioning and migration
 
-Versions 1 through 8 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 9 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

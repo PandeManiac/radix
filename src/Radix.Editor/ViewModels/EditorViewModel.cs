@@ -398,6 +398,8 @@ public sealed class EditorViewModel : ObservableObject
         new(ElectricalComponentKind.Resistor),
         new(ElectricalComponentKind.VoltageSource),
         new(ElectricalComponentKind.CurrentSource),
+        new(ElectricalComponentKind.Capacitor),
+        new(ElectricalComponentKind.Inductor),
     ];
 
     public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
@@ -6080,6 +6082,18 @@ public sealed class EditorViewModel : ObservableObject
                     FormatElectricalValue(component.Value),
                     hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; validation is shown below",
                     apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
+                if (ElectricalComponentMetadata.HasState(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        component.Kind == ElectricalComponentKind.Capacitor
+                            ? "Initial voltage (V)"
+                            : "Initial current (A)",
+                        component.InitialValue is double initial
+                            ? FormatElectricalValue(initial)
+                            : string.Empty,
+                        hint: "Blank uses the DC operating point; applied only by a transient run",
+                        apply: value => SetElectricalComponentInitialValue(circuit.Id, component.Id, value)));
+                }
             }
         }
     }
@@ -6431,6 +6445,46 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    private bool SetElectricalComponentInitialValue(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.HasState(component.Kind))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (component.InitialValue is null)
+            {
+                return false;
+            }
+
+            PushUndo();
+            component.InitialValue = null;
+            AfterElectricalMutation($"Cleared the initial value of '{component.Id}'");
+            return true;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ||
+            !double.IsFinite(parsed))
+        {
+            StatusText = "Initial value must be a finite number, or blank for the DC operating point.";
+            return false;
+        }
+
+        if (component.InitialValue is double existing && Math.Abs(existing - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.InitialValue = parsed;
+        AfterElectricalMutation(
+            $"'{component.Id}' starts at {FormatElectricalValue(parsed)} {component.Unit}");
+        return true;
+    }
+
     private void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
     {
         component.Terminals.Clear();
@@ -6476,7 +6530,10 @@ public sealed class EditorViewModel : ObservableObject
         {
             ElectricalComponentKind.Resistor => "r",
             ElectricalComponentKind.VoltageSource => "v",
-            _ => "i",
+            ElectricalComponentKind.CurrentSource => "i",
+            ElectricalComponentKind.Capacitor => "c",
+            ElectricalComponentKind.Inductor => "l",
+            _ => "x",
         };
         for (int index = 1; ; index++)
         {
@@ -6493,6 +6550,8 @@ public sealed class EditorViewModel : ObservableObject
         {
             ElectricalComponentKind.Resistor => 1_000,
             ElectricalComponentKind.VoltageSource => 5,
+            ElectricalComponentKind.Capacitor => 1e-6,
+            ElectricalComponentKind.Inductor => 1e-3,
             _ => 0.001,
         };
 

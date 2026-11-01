@@ -44,6 +44,33 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void CapacitorKindExposesItsUnitAndInitialVoltageField()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Capacitor);
+
+        ElectricalComponent component = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        Assert.Equal(ElectricalComponentKind.Capacitor, component.Kind);
+        Assert.Equal("F", component.Unit);
+        Assert.Equal(ElectricalTerminalPolarity.Passive, component.FindTerminal("a")!.Polarity);
+
+        EditableField initial = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        initial.Value = "2.5";
+        Assert.True(viewModel.ApplyField(initial));
+        Assert.Equal(2.5, component.InitialValue);
+
+        EditableField cleared = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        cleared.Value = string.Empty;
+        Assert.True(viewModel.ApplyField(cleared));
+        Assert.Null(component.InitialValue);
+    }
+
+    [Fact]
     public void ComponentMetadataAndExplicitTerminalsAreEditable()
     {
         EditorViewModel viewModel = CreateEmptyEditor();

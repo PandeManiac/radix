@@ -101,7 +101,11 @@ public static class TransientNetlistJson
     }
 
     /// <summary>Serializes a transient run as a stable JSON report.</summary>
-    public static string ToReportJson(string? source, TransientNetlist netlist, TransientResult result)
+    public static string ToReportJson(
+        string? source,
+        TransientNetlist netlist,
+        TransientResult result,
+        string? circuit = null)
     {
         ArgumentNullException.ThrowIfNull(netlist);
         ArgumentNullException.ThrowIfNull(result);
@@ -129,6 +133,7 @@ public static class TransientNetlistJson
                 ReportFormatName,
                 FormatVersion,
                 source,
+                circuit,
                 netlist.GroundNodeId,
                 MethodName(result.Options.Method),
                 result.Options.StartTime,
@@ -459,6 +464,7 @@ public static class TransientNetlistJson
         string Format,
         int Version,
         string? Source,
+        string? Circuit,
         string Ground,
         string Method,
         double StartTime,

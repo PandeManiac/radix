@@ -110,7 +110,9 @@ internal static class Program
                                              Solve a DC linear electrical circuit
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--json]                   Emit one machine-readable DC report
-              transient <netlist.json>       Solve a time-domain electrical circuit
+              transient <netlist.json|project.radix>
+                                             Solve a time-domain electrical circuit
+                  [--circuit <id>]           Choose an authored circuit in a project
                   [--start <s>]              Start time in seconds (default: file analysis or 0)
                   [--stop <s>]               Stop time in seconds (default: file analysis or 1)
                   [--steps <n>]              Fixed steps, 1..10000 (default: file analysis or 100)
@@ -366,20 +368,53 @@ internal static class Program
         (var positional, var options) = Parse(
             args,
             [
-                "start", "stop", "steps", "method", "max-rows", "tol", "atol",
+                "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
                 "initial-step", "min-step", "max-step", "max-steps",
             ],
             ["json"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json> [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--max-rows <n>] [--json]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--max-rows <n>] [--json]");
             return 2;
         }
 
         bool json = options.ContainsKey("json");
         string source = positional[0];
-        TransientDocument document = TransientNetlistJson.Load(source);
+        string? circuitId = null;
+        TransientDocument document;
+        try
+        {
+            if (string.Equals(Path.GetExtension(source), ".radix", StringComparison.OrdinalIgnoreCase))
+            {
+                CircuitProject project = ProjectSerializer.Load(source, validate: false);
+                ElectricalCircuit circuit = SelectElectricalCircuit(
+                    project, GetOption(options, "circuit"));
+                circuitId = circuit.Id;
+                document = new TransientDocument(circuit.ToTransientNetlist(), null);
+            }
+            else
+            {
+                if (GetOption(options, "circuit") is not null)
+                {
+                    Console.Error.WriteLine("--circuit is only valid when solving an authored .radix project.");
+                    return 2;
+                }
+
+                document = TransientNetlistJson.Load(source);
+            }
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            PrintDiagnostics(exception.Diagnostics, Console.Error);
+            return 2;
+        }
+        catch (ProjectFormatException exception)
+        {
+            Console.Error.WriteLine($"transient input error: {exception.Message}");
+            return 2;
+        }
+
         TransientOptions defaults = document.Analysis ?? new TransientOptions();
         int maxRows = GetIntOption(options, "max-rows", 40, 1, 100_000);
         double? adaptiveTolerance = GetOption(options, "tol") is null
@@ -413,11 +448,12 @@ internal static class Program
 
         if (json)
         {
-            Console.WriteLine(TransientNetlistJson.ToReportJson(source, document.Netlist, result));
+            Console.WriteLine(TransientNetlistJson.ToReportJson(
+                source, document.Netlist, result, circuitId));
         }
         else
         {
-            PrintTransientResult(source, document.Netlist, result, maxRows);
+            PrintTransientResult(source, circuitId, document.Netlist, result, maxRows);
         }
 
         return result.Completed ? 0 : 1;
@@ -441,12 +477,18 @@ internal static class Program
 
     private static void PrintTransientResult(
         string source,
+        string? circuitId,
         TransientNetlist netlist,
         TransientResult result,
         int maxRows)
     {
         TransientOptions options = result.Options;
         Console.WriteLine($"source:    {source}");
+        if (circuitId is not null)
+        {
+            Console.WriteLine($"circuit:   {circuitId}");
+        }
+
         Console.WriteLine($"ground:    {netlist.GroundNodeId}");
         Console.WriteLine($"method:    {TransientNetlistJson.MethodName(options.Method)}");
         Console.WriteLine(

@@ -53,7 +53,7 @@ public sealed class ElectricalCircuitTests
         CircuitProject loaded = ProjectSerializer.LoadFromString(json, validate: false);
         ElectricalCircuit circuit = Assert.Single(loaded.ElectricalCircuits);
 
-        Assert.Equal(8, loaded.FormatVersion);
+        Assert.Equal(9, loaded.FormatVersion);
         Assert.Equal("divider", circuit.Id);
         Assert.Equal(5, circuit.ToDcNetlist().Solve().NodeVoltages["out"]);
         Assert.Equal(ElectricalComponentKind.VoltageSource, loaded.ElectricalCircuits[0].Components[0].Kind);
@@ -140,6 +140,151 @@ public sealed class ElectricalCircuitTests
         Assert.Equal("divider", document.RootElement.GetProperty("circuit").GetString());
     }
 
+    [Fact]
+    public void ReactiveKindsExposePassiveTerminalsUnitsAndState()
+    {
+        Assert.True(ElectricalComponentMetadata.HasPassiveTerminals(ElectricalComponentKind.Capacitor));
+        Assert.True(ElectricalComponentMetadata.HasPassiveTerminals(ElectricalComponentKind.Inductor));
+        Assert.False(ElectricalComponentMetadata.HasPassiveTerminals(ElectricalComponentKind.VoltageSource));
+        Assert.True(ElectricalComponentMetadata.HasState(ElectricalComponentKind.Capacitor));
+        Assert.False(ElectricalComponentMetadata.HasState(ElectricalComponentKind.Resistor));
+        Assert.Equal("F", ElectricalComponentMetadata.Unit(ElectricalComponentKind.Capacitor));
+        Assert.Equal("H", ElectricalComponentMetadata.Unit(ElectricalComponentKind.Inductor));
+        Assert.Equal(
+            "Capacitance",
+            ElectricalComponentMetadata.ParameterName(ElectricalComponentKind.Capacitor));
+        Assert.Equal("inductor", ElectricalComponentMetadata.KindName(ElectricalComponentKind.Inductor));
+        Assert.Equal(
+            ["a", "b"],
+            ElectricalComponentMetadata.Terminals(ElectricalComponentKind.Capacitor)
+                .Select(terminal => terminal.Id));
+    }
+
+    [Fact]
+    public void DcBridgeOpensCapacitorsAndShortsInductors()
+    {
+        ElectricalCircuit capacitive = CreateDivider();
+        ElectricalComponent capacitor = capacitive.FindComponent("R2")!;
+        capacitor.Kind = ElectricalComponentKind.Capacitor;
+        capacitor.Value = 1e-6;
+
+        DcNetlist netlist = capacitive.ToDcNetlist();
+        Assert.Equal(2, netlist.Elements.Count);
+        Assert.Equal(10, netlist.Solve().NodeVoltages["out"]);
+
+        ElectricalCircuit inductive = CreateDivider();
+        ElectricalComponent inductor = inductive.FindComponent("R2")!;
+        inductor.Kind = ElectricalComponentKind.Inductor;
+        inductor.Value = 0.01;
+
+        DcSolution inductiveSolution = inductive.ToDcNetlist().Solve();
+        Assert.Equal(0, inductiveSolution.NodeVoltages["out"]);
+        Assert.Equal(0.01, inductiveSolution.ElementCurrents["R2"]);
+    }
+
+    [Fact]
+    public void TransientBridgeRunsAnAuthoredRcDischargeAgainstTheClosedFormRecurrence()
+    {
+        var circuit = new ElectricalCircuit { Id = "rc", Name = "RC discharge", GroundNodeId = "gnd" };
+        circuit.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Add(Component("R1", ElectricalComponentKind.Resistor, 1_000, "out", "gnd"));
+        ElectricalComponent capacitor = Component(
+            "C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 5;
+        circuit.Components.Add(capacitor);
+
+        var options = new TransientOptions { StopTime = 1e-3, Steps = 50 };
+        TransientResult result = circuit.ToTransientNetlist().Run(options);
+
+        Assert.True(result.Completed, result.Message);
+        Assert.Equal(5, result.InitialPoint!.NodeVoltages["out"]);
+        double expected = 5;
+        double h = options.TimeStep;
+        for (int step = 1; step <= options.Steps; step++)
+        {
+            expected /= 1 + (h / 1e-3);
+            Assert.Equal(expected, result.Points[step].NodeVoltages["out"], 9);
+        }
+    }
+
+    [Fact]
+    public void TransientBridgeSettlesToTheDcOperatingPoint()
+    {
+        ElectricalCircuit circuit = CreateDivider();
+        ElectricalComponent capacitor = Component(
+            "C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        TransientResult result = circuit.ToTransientNetlist().Run(new TransientOptions
+        {
+            StopTime = 0.05,
+            Method = TransientMethod.Trapezoidal,
+            AdaptiveTolerance = 1e-7,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        double dc = circuit.ToDcNetlist().Solve().NodeVoltages["out"];
+        Assert.Equal(dc, result.FinalPoint!.NodeVoltages["out"], 6);
+    }
+
+    [Fact]
+    public void ValidationRejectsInitialValuesOutsideReactiveKinds()
+    {
+        ElectricalCircuit resistor = CreateDivider();
+        resistor.FindComponent("R1")!.InitialValue = 1;
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(resistor),
+            diagnostic => diagnostic.Code == "RAD-ELEC-015");
+
+        ElectricalCircuit nonFinite = CreateDivider();
+        ElectricalComponent capacitor = Component(
+            "C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = double.NaN;
+        nonFinite.Components.Add(capacitor);
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(nonFinite),
+            diagnostic => diagnostic.Code == "RAD-ELEC-016");
+
+        ElectricalCircuit zero = CreateDivider();
+        zero.Components.Add(Component("C1", ElectricalComponentKind.Capacitor, 0, "out", "gnd"));
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(zero),
+            diagnostic => diagnostic.Code == "RAD-ELEC-007");
+    }
+
+    [Fact]
+    public void ProjectRoundTripPreservesReactiveComponentsAndInitialValues()
+    {
+        CircuitProject project = CreateProject();
+        ElectricalCircuit circuit = CreateDivider();
+        circuit.Components.Add(Component("L1", ElectricalComponentKind.Inductor, 0.01, "out", "gnd"));
+        circuit.Components.Add(Component("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        circuit.FindComponent("C1")!.InitialValue = 2.5;
+        circuit.FindComponent("L1")!.InitialValue = 0.004;
+        project.ElectricalCircuits.Add(circuit);
+
+        string json = ProjectSerializer.SaveToString(project);
+        CircuitProject loaded = ProjectSerializer.LoadFromString(json, validate: false);
+        ElectricalCircuit reloaded = Assert.Single(loaded.ElectricalCircuits);
+
+        Assert.Equal(9, loaded.FormatVersion);
+        Assert.Equal(ElectricalComponentKind.Capacitor, reloaded.FindComponent("C1")!.Kind);
+        Assert.Equal(1e-6, reloaded.FindComponent("C1")!.Value);
+        Assert.Equal(2.5, reloaded.FindComponent("C1")!.InitialValue);
+        Assert.Equal(ElectricalComponentKind.Inductor, reloaded.FindComponent("L1")!.Kind);
+        Assert.Equal(0.004, reloaded.FindComponent("L1")!.InitialValue);
+        Assert.True(reloaded.HasReactiveComponents);
+
+        TransientResult result = reloaded.ToTransientNetlist().Run(new TransientOptions
+        {
+            StopTime = 1e-4,
+            Steps = 10,
+        });
+        Assert.True(result.Completed, result.Message);
+    }
+
     private static CircuitProject CreateProject()
     {
         CircuitProject project = CircuitProject.CreateEmpty("DC project");
@@ -194,7 +339,7 @@ public sealed class ElectricalCircuitTests
             Kind = kind,
             Value = value,
         };
-        bool source = kind != ElectricalComponentKind.Resistor;
+        bool source = !ElectricalComponentMetadata.HasPassiveTerminals(kind);
         component.Terminals.Add(new ElectricalTerminal
         {
             Id = "a",

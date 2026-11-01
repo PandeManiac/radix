@@ -58,6 +58,8 @@ internal sealed class ElectricalComponentDto
 
     public double? Value { get; set; }
 
+    public double? InitialValue { get; set; }
+
     public List<ElectricalTerminalDto>? Terminals { get; set; }
 }
 

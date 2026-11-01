@@ -465,11 +465,23 @@ trace showed that at a drive ramp the estimator never accepted a step: those
 42. Refactored the integrator so the fixed and adaptive loops share one
     `TryAdvance` step routine and an immutable `ReactiveState`, and the CLI text
     report distinguishes fixed and adaptive headers.
+43. Added authored `capacitor` and `inductor` components with an optional
+    `initialValue` (initial capacitor voltage in volts, initial inductor current
+    in amperes, positive `a` to `b`), bumping the project format to 9. Metadata
+    drives units (F/H), passive terminal contracts, kind names, and the editor's
+    kind list, ID prefixes, defaults, and initial-value field, which accepts a
+    blank value for the DC operating point. `ElectricalCircuit.ToDcNetlist`
+    keeps its DC meaning (capacitor open and omitted, inductor as a 0 V source
+    short) and `ToTransientNetlist()` feeds the transient solver, so
+    `radix transient examples/transient-rc.radix --circuit rc-charge` integrates
+    an authored circuit and reports its circuit ID in text and JSON. Validation
+    adds `RAD-ELEC-015` (initial value on a non-reactive kind) and `RAD-ELEC-016`
+    (non-finite initial value).
 
-Verification: release build 0 warnings/0 errors; core tests 528/528; editor
-tests 191/191; `radix transient` runs all three examples with exit 0 and
+Verification: release build 0 warnings/0 errors; core tests 543/543; editor
+tests 192/192; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,
-AC/small-signal analysis, adaptive stepping, gmin continuation, and any transient
-editor UI.
+AC/small-signal analysis, gmin continuation, source waveform authoring in the
+project format, and any transient editor UI.

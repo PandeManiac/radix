@@ -381,6 +381,8 @@ name, and unit for each kind:
 | `resistor` | `a`/`b`, passive | resistance | ohm |
 | `voltage-source` | `a` positive, `b` negative | voltage | V |
 | `current-source` | `a` positive, `b` negative | current | A |
+| `capacitor` | `a`/`b`, passive | capacitance | F |
+| `inductor` | `a`/`b`, passive | inductance | H |
 
 Terminals are explicit bindings to circuit node IDs. The validator checks
 missing, duplicate, unknown, misplaced, and self-looped terminals; invalid
@@ -389,12 +391,28 @@ This validation is separate from digital project validation, so an electrical
 error does not silently change digital compile behavior. `ToDcNetlist` refuses to
 run when validation has errors.
 
+Reactive components are authored on the same terms: a `capacitor` (farads) or an
+`inductor` (henries) between two passive terminals, with an optional
+`initialValue` holding the initial capacitor voltage in volts or the initial
+inductor current in amperes, positive from terminal `a` to terminal `b`.
+A blank initial value starts the component at the DC operating point. The
+initial value is rejected on any other kind (`RAD-ELEC-015`) and must be finite
+(`RAD-ELEC-016`).
+
+`radix dc` still solves a circuit that contains reactive components, using the
+standard DC assumptions: a capacitor is an open circuit and is left out of the
+report, while an inductor is stamped as a zero-volt source and appears as one in
+the element list. Use transient analysis to see them. `ToTransientNetlist()`
+exposes the same authored circuit to the transient solver, which is what
+`radix transient <project.radix>` runs:
+
 Use the authored example:
 
 ```bash
 radix dc examples/dc-divider.radix
 radix dc examples/dc-divider.radix --json
 radix dc examples/dc-divider.radix --circuit divider
+radix transient examples/transient-rc.radix --circuit rc-charge --stop 0.005 --steps 60
 ```
 
 If a project has exactly one electrical circuit, `--circuit` may be omitted. A
@@ -495,6 +513,10 @@ Supported now:
 - multiple independent voltage and current sources;
 - series, parallel, bridge, divider, and multi-source linear networks;
 - analytical node voltages, element currents, element voltages, and power;
+- authoring capacitors and inductors, with optional initial capacitor voltage or
+  inductor current, in the editor's Electrical inspector;
+- transient analysis of authored `.radix` circuits through `radix transient`,
+  including reactive components, initial values, and piecewise-linear sources;
 - fixed-step transient analysis of resistors, capacitors, inductors, ideal
   sources with optional piecewise-linear waveforms, and Shockley diodes;
 - backward Euler and trapezoidal integration with an explicit time step,
@@ -508,10 +530,10 @@ Not supported:
 - transistors, MOSFETs, op-amps, regulators, LEDs, or temperature-dependent
   models;
 - junction capacitance, carrier storage, high-injection, self-heating, or noise;
-- adaptive time stepping, local truncation error control, gmin continuation, or
-  SPICE-style built-in source functions beyond piecewise-linear tables;
-- transient analysis of authored `.radix` circuits, or any transient editor UI
-  (the Electrical tab stays a DC inspector and preview);
+- gmin continuation, or SPICE-style built-in source functions beyond
+  piecewise-linear tables;
+- any transient editor UI (the Electrical tab stays a DC inspector and preview;
+  `radix transient` is the headless entry point);
 - temperature, thermal limits, component tolerances, or datasheet ratings;
 - wire resistance, parasitic elements, or physical layout;
 - short-circuit current, overcurrent, or fuse-trip prediction;

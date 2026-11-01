@@ -289,6 +289,7 @@ public static class ProjectSerializer
             Name = string.IsNullOrWhiteSpace(dto.Name) ? id : dto.Name,
             Kind = kind,
             Value = dto.Value ?? throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' is missing 'value'."),
+            InitialValue = dto.InitialValue,
         };
 
         foreach (ElectricalTerminalDto terminalDto in dto.Terminals ?? [])
@@ -311,6 +312,8 @@ public static class ProjectSerializer
             "resistor" => ElectricalComponentKind.Resistor,
             "voltage-source" => ElectricalComponentKind.VoltageSource,
             "current-source" => ElectricalComponentKind.CurrentSource,
+            "capacitor" => ElectricalComponentKind.Capacitor,
+            "inductor" => ElectricalComponentKind.Inductor,
             null => throw new ProjectFormatException($"Electrical component '{circuitId}.{componentId}' is missing 'kind'."),
             _ => throw new ProjectFormatException(
                 $"Electrical component '{circuitId}.{componentId}' has unknown kind '{value}'."),
@@ -657,14 +660,9 @@ public static class ProjectSerializer
         {
             Id = component.Id,
             Name = component.Name,
-            Kind = component.Kind switch
-            {
-                ElectricalComponentKind.Resistor => "resistor",
-                ElectricalComponentKind.VoltageSource => "voltage-source",
-                ElectricalComponentKind.CurrentSource => "current-source",
-                _ => throw new ArgumentOutOfRangeException(nameof(component)),
-            },
+            Kind = ElectricalComponentMetadata.KindName(component.Kind),
             Value = component.Value,
+            InitialValue = component.InitialValue,
             Terminals = component.Terminals.Select(terminal => new ElectricalTerminalDto
             {
                 Id = terminal.Id,

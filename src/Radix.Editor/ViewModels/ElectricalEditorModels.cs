@@ -76,6 +76,8 @@ public sealed class ElectricalComponentKindChoice
             ElectricalComponentKind.Resistor => "Resistor",
             ElectricalComponentKind.VoltageSource => "Voltage source",
             ElectricalComponentKind.CurrentSource => "Current source",
+            ElectricalComponentKind.Capacitor => "Capacitor",
+            ElectricalComponentKind.Inductor => "Inductor",
             _ => kind.ToString(),
         };
         Unit = ElectricalComponentMetadata.Unit(kind);
