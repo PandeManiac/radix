@@ -179,11 +179,16 @@ public sealed class ElectricalEditorTests
 
         Assert.True(viewModel.TryBuildElectricalTransientCsv(out string csv));
         string[] lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal("time_s,\"gnd\",\"in\",\"out\"", lines[0]);
-        Assert.Equal(viewModel.ElectricalTransientPointCount + 1, lines.Length);
+        // The file names the circuit it came from before the table, so a saved export can be
+        // traced back to the run that produced it.
+        Assert.Equal("# circuit: dc1", lines[0]);
+        int header = Array.FindIndex(
+            lines, line => line.StartsWith("time_s", StringComparison.Ordinal));
+        Assert.Equal("time_s,\"gnd\",\"in\",\"out\"", lines[header]);
+        Assert.Equal(viewModel.ElectricalTransientPointCount + 1, lines.Length - header);
         // The table is sampled for the panel; the export always carries every point.
-        Assert.True(lines.Length > viewModel.ElectricalTransientResults.Count);
-        Assert.StartsWith("0,0,5,0", lines[1]);
+        Assert.True(lines.Length - header > viewModel.ElectricalTransientResults.Count);
+        Assert.StartsWith("0,0,5,0", lines[header + 1]);
 
         EditableField fixedStep = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Transient tolerance");

@@ -6760,8 +6760,11 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        // The CLI writes the same table through the same writer, so the two cannot drift.
-        csv = TransientCsv.Write(_electricalTransientResult);
+        // The CLI writes the same table through the same writer, so the two cannot drift, and
+        // the stamp names the circuit and settings the file came from.
+        csv = TransientCsv.Write(
+            _electricalTransientResult,
+            TransientStamp.From(_electricalTransientResult, circuit: circuit.Id));
         return true;
     }
 

@@ -14,8 +14,12 @@ namespace Radix.Core.Serialization;
 /// </summary>
 public static class TransientCsv
 {
-    /// <summary>The full table, header included, with <c>\n</c> row endings.</summary>
-    public static string Write(TransientResult result)
+    /// <summary>
+    /// The full table, header included, with <c>\n</c> row endings. When a <paramref name="stamp"/>
+    /// is given, the settings that produced the table are written first as <c>#</c> comment lines,
+    /// which a CSV reader can skip while a human (or a diff) still sees what the file describes.
+    /// </summary>
+    public static string Write(TransientResult result, TransientStamp? stamp = null)
     {
         ArgumentNullException.ThrowIfNull(result);
 
@@ -26,6 +30,14 @@ public static class TransientCsv
             .ToArray();
 
         var builder = new StringBuilder();
+        if (stamp is not null)
+        {
+            foreach (KeyValuePair<string, string> field in stamp.Fields)
+            {
+                builder.Append("# ").Append(field.Key).Append(": ").Append(SanitizeComment(field.Value)).Append('\n');
+            }
+        }
+
         builder.Append("time_s");
         foreach (string node in nodes)
         {
@@ -50,6 +62,9 @@ public static class TransientCsv
 
         return builder.ToString();
     }
+
+    /// <summary>A comment cannot contain a line break, or it would forge a header row.</summary>
+    private static string SanitizeComment(string value) => value.Replace('\r', ' ').Replace('\n', ' ');
 
     private static string Text(string value) =>
         $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";

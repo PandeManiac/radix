@@ -487,7 +487,8 @@ internal static class Program
 
         if (csv)
         {
-            Console.Write(TransientCsv.Write(result));
+            Console.Write(TransientCsv.Write(
+                result, TransientStamp.From(result, source, circuitId)));
         }
         else if (json)
         {
