@@ -551,9 +551,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     final value, the analytic underdamped RLC overshoot and quarter-period peak, a
     pulse peaking where the drive falls below the capacitor voltage, absent metrics
     on a failed run, and the JSON fields.
+51. Made the settling band configurable and surfaced metrics in the app: the band is
+    now `TransientOptions.SettlingBand` (default 0.02, validated strictly between 0
+    and 1), `--settling-band <fraction>` on the CLI, and a **Settling band** field in
+    the panel, so a typo like `2` is rejected instead of turning every node into an
+    instantly settled one. The panel also lists each node's minimum, maximum, final
+    value, peak time, and settling time above the solved-point table. Tests cover
+    the custom band's settling formula, rejection of 0, 1, and NaN, the panel rows,
+    the field's validation message, and invalidation of the previous run.
 
-Verification: release build 0 warnings/0 errors; core tests 560/560; editor
-tests 196/196; `radix transient` runs all three examples with exit 0 and
+Verification: release build 0 warnings/0 errors; core tests 562/562; editor
+tests 197/197; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

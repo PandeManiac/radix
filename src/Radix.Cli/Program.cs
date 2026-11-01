@@ -369,13 +369,13 @@ internal static class Program
             args,
             [
                 "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
-                "initial-step", "min-step", "max-step", "max-steps",
+                "initial-step", "min-step", "max-step", "max-steps", "settling-band",
             ],
             ["json"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--max-rows <n>] [--json]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--max-rows <n>] [--json]");
             return 2;
         }
 
@@ -433,6 +433,7 @@ internal static class Program
             MinimumTimeStep = GetDoubleOption(options, "min-step", defaults.MinimumTimeStep),
             MaximumTimeStep = GetDoubleOption(options, "max-step", defaults.MaximumTimeStep),
             MaximumStepCount = GetIntOption(options, "max-steps", defaults.MaximumStepCount, 1, 1_000_000),
+            SettlingBand = GetDoubleOption(options, "settling-band", defaults.SettlingBand),
         };
 
         TransientResult result;

@@ -25,6 +25,35 @@ public sealed class ElectricalCircuitListItem
     public override string ToString() => Name;
 }
 
+/// <summary>One node's peak and settling summary, shown beside the transient points.</summary>
+public sealed class ElectricalTransientMetricItem
+{
+    public ElectricalTransientMetricItem(TransientNodeMetrics metrics)
+    {
+        ArgumentNullException.ThrowIfNull(metrics);
+        NodeId = metrics.NodeId;
+        ExtremesText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"min {metrics.MinimumVolts:G4} · max {metrics.MaximumVolts:G4} · final {metrics.FinalVolts:G4}");
+        PeakText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"peak @ {metrics.PeakTimeSeconds:G4} s");
+        SettleText = metrics.SettlingTimeSeconds is double settling
+            ? string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"settled at {settling:G4} s")
+            : "not settled";
+    }
+
+    public string NodeId { get; }
+
+    public string ExtremesText { get; }
+
+    public string PeakText { get; }
+
+    public string SettleText { get; }
+}
+
 /// <summary>One solved point of a transient run: its time and every node voltage.</summary>
 public sealed class ElectricalTransientPointItem
 {

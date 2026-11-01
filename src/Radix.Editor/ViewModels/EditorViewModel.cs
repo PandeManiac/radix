@@ -170,6 +170,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientStepsText = "200";
     private string _electricalTransientMethodName = "backward-euler";
     private string _electricalTransientToleranceText = string.Empty;
+    private string _electricalTransientSettlingBandText = "0.02";
     private int _electricalTransientPointCount;
     private TransientNetlist? _electricalTransientNetlist;
     private TransientResult? _electricalTransientResult;
@@ -396,6 +397,9 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Solved points of the last transient run, formatted for the panel.</summary>
     public ObservableCollection<ElectricalTransientPointItem> ElectricalTransientResults { get; } = [];
+
+    /// <summary>Per-node peak and settling summary of the last transient run.</summary>
+    public ObservableCollection<ElectricalTransientMetricItem> ElectricalTransientMetrics { get; } = [];
 
     public ObservableCollection<ElectricalElementResultItem> ElectricalElementResults { get; } = [];
 
@@ -6124,6 +6128,11 @@ public sealed class EditorViewModel : ObservableObject
             _electricalTransientToleranceText,
             hint: "Blank runs the fixed step count; a positive relative tolerance enables adaptive stepping",
             apply: SetElectricalTransientTolerance));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Settling band",
+            _electricalTransientSettlingBandText,
+            hint: "Fraction between 0 and 1 used as each node's settling tolerance (default 0.02)",
+            apply: SetElectricalTransientSettlingBand));
 
         ElectricalNodeFields.Clear();
         if (_selectedElectricalNode is not null)
@@ -6347,6 +6356,16 @@ public sealed class EditorViewModel : ObservableObject
             tolerance = parsed;
         }
 
+        if (!TryParseElectricalNumber(_electricalTransientSettlingBandText, out double settlingBand) ||
+            settlingBand <= 0 ||
+            settlingBand >= 1)
+        {
+            ShowElectricalTransientError(
+                "Settling band must be a fraction between 0 and 1, exclusive.",
+                "Invalid settling band.");
+            return false;
+        }
+
         TransientResult result = netlist.Run(new TransientOptions
         {
             StartTime = 0,
@@ -6354,6 +6373,7 @@ public sealed class EditorViewModel : ObservableObject
             Steps = steps,
             Method = method,
             AdaptiveTolerance = tolerance,
+            SettlingBand = settlingBand,
             // Bound one panel run so a tight tolerance cannot hang the UI.
             MaximumStepCount = tolerance is null ? 100_000 : 20_000,
         });
@@ -6373,6 +6393,15 @@ public sealed class EditorViewModel : ObservableObject
         {
             ElectricalTransientResults.Add(new ElectricalTransientPointItem(
                 result.Points.Count - 1, result.Points[^1]));
+        }
+
+        ElectricalTransientMetrics.Clear();
+        if (result.Metrics is TransientMetrics metrics)
+        {
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                ElectricalTransientMetrics.Add(new ElectricalTransientMetricItem(node));
+            }
         }
 
         ElectricalTransientPointCount = result.Points.Count;
@@ -6540,6 +6569,25 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    private bool SetElectricalTransientSettlingBand(string value)
+    {
+        string trimmed = value.Trim();
+        if (!TryParseElectricalNumber(trimmed, out double band) || band <= 0 || band >= 1)
+        {
+            StatusText = "Settling band must be a fraction between 0 and 1, exclusive.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientSettlingBandText, trimmed, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientSettlingBandText = trimmed;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
     private static bool TryParseElectricalTransientMethod(string text, out TransientMethod method)
     {
         switch (text?.Trim().ToLowerInvariant())
@@ -6692,6 +6740,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientResults.Clear();
         _electricalTransientNetlist = null;
         _electricalTransientResult = null;
+        ElectricalTransientMetrics.Clear();
         ElectricalTransientPointCount = 0;
         HasElectricalTransientResult = false;
         HasElectricalTransientError = false;

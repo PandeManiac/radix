@@ -135,6 +135,54 @@ public sealed class TransientMetricsTests
     }
 
     [Fact]
+    public void SettlingBandIsConfigurablePerRun()
+    {
+        const double supply = 5;
+        const double tau = 1_000 * 1e-6;
+        double expectedFinal = supply * (1 - Math.Exp(-6));
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", supply)
+            .AddResistor("R1", "in", "out", 1_000)
+            .AddCapacitor("C1", "out", "gnd", 1e-6)
+            .SetCapacitorInitialVoltage("C1", 0);
+        var options = new TransientOptions
+        {
+            StopTime = 6 * tau,
+            Steps = 2_000,
+            Method = TransientMethod.Trapezoidal,
+        };
+
+        TransientResult tight = netlist.Run(options);
+        TransientResult loose = netlist.Run(options with { SettlingBand = 0.1 });
+
+        Assert.Equal(0.02, tight.Metrics!.SettlingBand);
+        Assert.Equal(0.1, loose.Metrics!.SettlingBand);
+        double tightSettling = tight.Metrics.Nodes
+            .Single(node => node.NodeId == "out").SettlingTimeSeconds!.Value;
+        double looseSettling = loose.Metrics.Nodes
+            .Single(node => node.NodeId == "out").SettlingTimeSeconds!.Value;
+        Assert.True(looseSettling < tightSettling, "a wider band must settle earlier");
+
+        double expected = tau * Math.Log(
+            supply / ((0.1 * expectedFinal) + (supply * Math.Exp(-6))));
+        AssertClose(expected, looseSettling, 0.01);
+    }
+
+    [Fact]
+    public void InvalidSettlingBandsAreRejected()
+    {
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 5)
+            .AddResistor("R1", "in", "out", 1_000)
+            .AddCapacitor("C1", "out", "gnd", 1e-6);
+        var options = new TransientOptions { StopTime = 1e-3, Steps = 10 };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => netlist.Run(options with { SettlingBand = 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => netlist.Run(options with { SettlingBand = 1 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => netlist.Run(options with { SettlingBand = double.NaN }));
+    }
+
+    [Fact]
     public void AFailedRunHasNoMetrics()
     {
         TransientNetlist netlist = new TransientNetlist("gnd")

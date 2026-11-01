@@ -193,6 +193,53 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void TransientMetricsAndSettlingBandAreEditableInThePanel()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        EditableField invalid = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        invalid.Value = "2";
+        Assert.False(viewModel.ApplyField(invalid));
+        Assert.Contains("between 0 and 1", viewModel.StatusText);
+
+        EditableField loose = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        loose.Value = "0.1";
+        Assert.True(viewModel.ApplyField(loose));
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        ElectricalTransientMetricItem output = viewModel.ElectricalTransientMetrics
+            .Single(item => item.NodeId == "out");
+        Assert.Contains("settled at", output.SettleText);
+        Assert.Contains("max", output.ExtremesText);
+        Assert.Contains("peak @", output.PeakText);
+        Assert.Contains(
+            viewModel.ElectricalTransientMetrics,
+            item => item.NodeId == "in" && item.SettleText == "settled at 0 s");
+
+        EditableField tighter = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        tighter.Value = "0.02";
+        Assert.True(viewModel.ApplyField(tighter));
+        Assert.Empty(viewModel.ElectricalTransientMetrics);
+        Assert.False(viewModel.HasElectricalTransientResult);
+    }
+
+    [Fact]
     public void SourceWaveformsCanBeAuthoredThroughThePanel()
     {
         EditorViewModel viewModel = CreateEmptyEditor();

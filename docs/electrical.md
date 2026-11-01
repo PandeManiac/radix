@@ -346,14 +346,19 @@ transient UI: `radix transient` is the supported entry point.
 ## Peak and settling metrics
 
 Every run also summarises each node: its minimum, maximum, final value, the time of
-the maximum, and the time after which it stayed inside 2% of its own final value or
-swing. The band is a fraction of the node's own numbers, so it means the same thing
-for a 5 V step and a millivolt ripple, and a null settling time is the honest report
-of a node that was still moving at the last solved point, which is what an
-oscillation or a diverging run looks like.
+the maximum, and the time after which it stayed inside a settling band of its own
+final value or swing. The band defaults to 2% and is configurable through
+`--settling-band <fraction>` on the CLI and the **Settling band** field in the
+panel; both reject a value outside the open interval `(0, 1)`, so a typo cannot
+silently turn a settling report into a trivial one. The band is a fraction of the
+node's own numbers, so it means the same thing for a 5 V step and a millivolt
+ripple, and a null settling time is the honest report of a node that was still
+moving at the last solved point, which is what an oscillation or a diverging run
+looks like.
 
 The metrics describe the reported points rather than a second solve, so they cannot
-disagree with the values the caller already has. They are checked against closed
+disagree with the values the caller already has, and the panel lists them directly
+above the solved-point table. They are checked against closed
 forms: an RC charge settles where `5*(e^(-t/tau) - e^(-T/tau))` enters the band
 (accounting for the finite final value), an underdamped series RLC peaks at
 `1 + e^(-pi*zeta/sqrt(1-zeta^2))` a quarter period in, and a driven pulse peaks

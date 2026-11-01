@@ -139,6 +139,13 @@ public sealed record TransientOptions
     /// <summary>Number of uniform integration steps between start and stop.</summary>
     public int Steps { get; init; } = 100;
 
+    /// <summary>
+    /// Fraction of a node's own final value or swing used as the settling band in
+    /// <see cref="TransientResult.Metrics"/>. Must be strictly between 0 and 1; the
+    /// default is 2%.
+    /// </summary>
+    public double SettlingBand { get; init; } = 0.02;
+
     /// <summary>Integration method. The first step always uses backward Euler.</summary>
     public TransientMethod Method { get; init; } = TransientMethod.BackwardEuler;
 
@@ -201,6 +208,14 @@ public sealed record TransientOptions
         {
             throw new ArgumentOutOfRangeException(
                 nameof(Steps), Steps, $"A transient run needs between 1 and {MaximumSteps} steps.");
+        }
+
+        if (!double.IsFinite(SettlingBand) || SettlingBand <= 0 || SettlingBand >= 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(SettlingBand),
+                SettlingBand,
+                "The settling band must be a fraction between 0 and 1, exclusive.");
         }
 
         if (!double.IsFinite(TimeStep) || TimeStep <= 0)
@@ -705,7 +720,7 @@ public sealed class TransientNetlist
         return result with
         {
             Energy = MeasureEnergy(result.Points),
-            Metrics = MeasureMetrics(result.Points),
+            Metrics = MeasureMetrics(options, result.Points),
         };
     }
 
@@ -1348,14 +1363,16 @@ public sealed class TransientNetlist
     /// the caller sees, and settling is measured against the node's own final value, so
     /// the numbers describe the run rather than a second, independent calculation.
     /// </summary>
-    private static TransientMetrics? MeasureMetrics(IReadOnlyList<TransientPoint> points)
+    private static TransientMetrics? MeasureMetrics(
+        TransientOptions options,
+        IReadOnlyList<TransientPoint> points)
     {
         if (points.Count < 2)
         {
             return null;
         }
 
-        const double settlingBand = 0.02;
+        double settlingBand = options.SettlingBand;
         string[] nodes = points
             .SelectMany(point => point.NodeVoltages.Keys)
             .Distinct(StringComparer.Ordinal)
