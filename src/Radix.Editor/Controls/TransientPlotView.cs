@@ -135,7 +135,7 @@ public sealed class TransientPlotView : Control
         for (int index = 0; index < plot.Series.Count; index++)
         {
             TransientPlotSeries series = plot.Series[index];
-            IBrush brush = Brush.Parse(Palette[index % Palette.Length]);
+            IBrush brush = Brush.Parse(Palette[series.ColorIndex % Palette.Length]);
             var pen = new Pen(brush, 1.4, lineCap: PenLineCap.Round);
             Point previous = Map(series.Points[0].Time, series.Points[0].Value);
             for (int point = 1; point < series.Points.Count; point++)

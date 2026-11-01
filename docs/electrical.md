@@ -403,6 +403,12 @@ solved times, so decimation never changes the reported interval. A single sample
 an empty run, or a non-finite value produces no plot rather than a misleading one,
 and the panel says so instead of drawing an empty frame.
 
+Every node also gets a checkbox under the plot. Hiding a trace is how a designer reads a 50 mV
+ripple next to a 5 V step, and the palette slot of each node is assigned from the full node list
+rather than the drawn order, so hiding one trace never repaints the others — the colours in a
+half-read picture stay meaningful. Hiding every trace produces the same explicit empty state as
+a run with nothing to draw, and a new run starts with every trace shown.
+
 A plotted curve answers "what shape" but not "what value at 1.5 ms". **Probe at (s)**
 plus **Probe** reads every node at a chosen time and marks that time with a dashed
 vertical line on the plot. A time that is not a solved sample is interpolated linearly

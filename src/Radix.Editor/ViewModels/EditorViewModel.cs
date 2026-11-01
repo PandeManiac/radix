@@ -173,6 +173,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientToleranceText = string.Empty;
     private string _electricalTransientSettlingBandText = "0.02";
     private TransientPlot? _electricalTransientPlot;
+    private TransientPlotSeries[] _electricalTransientSeries = [];
     private string _electricalTransientAccuracyText = string.Empty;
     private string _electricalTransientProbeInput = string.Empty;
     private string _electricalTransientRefineLevelsText = "3";
@@ -413,6 +414,9 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Per-node peak and settling summary of the last transient run.</summary>
     public ObservableCollection<ElectricalTransientMetricItem> ElectricalTransientMetrics { get; } = [];
+
+    /// <summary>Per-node visibility of the plotted traces, in ordinal node order.</summary>
+    public ObservableCollection<ElectricalTransientSeriesItem> ElectricalTransientSeries { get; } = [];
 
     /// <summary>Per-level rows of the last step-refinement check, empty until one is taken.</summary>
     public ObservableCollection<ElectricalTransientRefinementItem> ElectricalTransientRefinementLevels { get; } = [];
@@ -6488,14 +6492,26 @@ public sealed class EditorViewModel : ObservableObject
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        ElectricalTransientPlot = TransientPlot.Create(plottedNodes.Select(node =>
-            new TransientPlotSeries(
+        _electricalTransientSeries = plottedNodes
+            .Select((node, index) => new TransientPlotSeries(
                 node,
                 result.Points
                     .Select(point => new TransientPlotPoint(
                         point.Time,
                         point.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0))
-                    .ToArray())));
+                    .ToArray(),
+                index))
+            .ToArray();
+        ElectricalTransientSeries.Clear();
+        foreach (TransientPlotSeries series in _electricalTransientSeries)
+        {
+            ElectricalTransientSeries.Add(new ElectricalTransientSeriesItem(
+                series.NodeId,
+                series.ColorIndex,
+                _ => RebuildElectricalTransientPlot()));
+        }
+
+        RebuildElectricalTransientPlot();
 
         ElectricalTransientPointCount = result.Points.Count;
         HasElectricalTransientResult = true;
@@ -7023,6 +7039,8 @@ public sealed class EditorViewModel : ObservableObject
         _electricalTransientNetlist = null;
         _electricalTransientResult = null;
         ElectricalTransientMetrics.Clear();
+        ElectricalTransientSeries.Clear();
+        _electricalTransientSeries = [];
         ElectricalTransientPlot = null;
         ElectricalTransientPointCount = 0;
         HasElectricalTransientResult = false;
@@ -7047,6 +7065,16 @@ public sealed class EditorViewModel : ObservableObject
 
         ElectricalTransientRefinementLevels.Clear();
         RaisePropertyChanged(nameof(HasElectricalTransientRefinement));
+    }
+
+    /// <summary>
+    /// Rebuilds the plot from the traces the reader left visible. Palette slots come from the
+    /// full node list, so hiding one trace never repaints the others.
+    /// </summary>
+    private void RebuildElectricalTransientPlot()
+    {
+        ElectricalTransientPlot = TransientPlot.Create(_electricalTransientSeries.Where(series =>
+            ElectricalTransientSeries.Any(item => item.IsVisible && item.NodeId == series.NodeId)));
     }
 
     private void ShowElectricalTransientError(string summary, string status)

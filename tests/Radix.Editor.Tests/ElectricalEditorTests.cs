@@ -367,6 +367,56 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void NodesCanBeHiddenFromThePlotWithoutRepaintingTheOthers()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Equal(3, viewModel.ElectricalTransientSeries.Count);
+
+        ElectricalTransientSeriesItem ground =
+            viewModel.ElectricalTransientSeries.Single(item => item.NodeId == "gnd");
+        ground.IsVisible = false;
+
+        TransientPlot plot = Assert.IsType<TransientPlot>(viewModel.ElectricalTransientPlot);
+        Assert.Equal(2, plot.Series.Count);
+        Assert.DoesNotContain(plot.Series, series => series.NodeId == "gnd");
+        // The surviving traces keep their palette slots, so hiding one does not repaint the rest.
+        Assert.Equal(1, plot.Series.Single(series => series.NodeId == "in").ColorIndex);
+        Assert.Equal(2, plot.Series.Single(series => series.NodeId == "out").ColorIndex);
+
+        foreach (ElectricalTransientSeriesItem item in viewModel.ElectricalTransientSeries)
+        {
+            item.IsVisible = false;
+        }
+
+        Assert.Null(viewModel.ElectricalTransientPlot);
+
+        ground.IsVisible = true;
+        viewModel.ElectricalTransientSeries.Single(item => item.NodeId == "in").IsVisible = true;
+        viewModel.ElectricalTransientSeries.Single(item => item.NodeId == "out").IsVisible = true;
+        Assert.Equal(3, Assert.IsType<TransientPlot>(viewModel.ElectricalTransientPlot).Series.Count);
+
+        // A new run starts with every trace shown again.
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Equal(3, viewModel.ElectricalTransientSeries.Count);
+        Assert.All(viewModel.ElectricalTransientSeries, item => Assert.True(item.IsVisible));
+    }
+
+    [Fact]
     public void ThePanelProbesNodeVoltagesAtAChosenTime()
     {
         const double supply = 5;

@@ -55,6 +55,46 @@ public sealed class ElectricalTransientMetricItem
 }
 
 /// <summary>
+/// One node's presence on the transient plot. Hiding a trace keeps its palette slot, so the
+/// remaining traces stay the same colour and a reader's memory of the picture survives.
+/// </summary>
+public sealed class ElectricalTransientSeriesItem : ObservableObject
+{
+    private readonly Action<ElectricalTransientSeriesItem> _changed;
+    private bool _isVisible = true;
+
+    public ElectricalTransientSeriesItem(
+        string nodeId,
+        int colorIndex,
+        Action<ElectricalTransientSeriesItem> changed)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        ArgumentNullException.ThrowIfNull(changed);
+        NodeId = nodeId;
+        ColorIndex = colorIndex;
+        _changed = changed;
+    }
+
+    public string NodeId { get; }
+
+    public int ColorIndex { get; }
+
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set
+        {
+            if (SetField(ref _isVisible, value))
+            {
+                _changed(this);
+            }
+        }
+    }
+
+    public override string ToString() => NodeId;
+}
+
+/// <summary>
 /// One level of a step-refinement study: its step count, its uniform step, the deviation from
 /// the previous level, and the convergence order implied by two successive deviations. The
 /// coarsest level is what the others are compared against, so it reports that instead of a zero

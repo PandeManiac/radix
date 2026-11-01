@@ -120,7 +120,7 @@ public static class TransientPlotSvg
         for (int index = 0; index < plot.Series.Count; index++)
         {
             TransientPlotSeries series = plot.Series[index];
-            string colour = Palette[index % Palette.Length];
+            string colour = Palette[series.ColorIndex % Palette.Length];
             var points = new StringBuilder();
             foreach (TransientPlotPoint point in series.Points)
             {

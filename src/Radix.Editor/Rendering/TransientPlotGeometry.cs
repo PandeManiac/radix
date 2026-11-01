@@ -8,17 +8,28 @@ public readonly record struct TransientPlotPoint(double Time, double Value);
 /// <summary>One node's samples, already reduced to what the plot draws.</summary>
 public sealed class TransientPlotSeries
 {
-    public TransientPlotSeries(string nodeId, IReadOnlyList<TransientPlotPoint> points)
+    public TransientPlotSeries(
+        string nodeId,
+        IReadOnlyList<TransientPlotPoint> points,
+        int colorIndex = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
         ArgumentNullException.ThrowIfNull(points);
+        ArgumentOutOfRangeException.ThrowIfNegative(colorIndex);
         NodeId = nodeId;
         Points = points;
+        ColorIndex = colorIndex;
     }
 
     public string NodeId { get; }
 
     public IReadOnlyList<TransientPlotPoint> Points { get; }
+
+    /// <summary>
+    /// Palette slot for this node, assigned from the full node list rather than the drawn
+    /// order, so hiding one trace does not repaint the others.
+    /// </summary>
+    public int ColorIndex { get; }
 }
 
 /// <summary>
@@ -110,7 +121,7 @@ public sealed class TransientPlot
                 valueMax = Math.Max(valueMax, point.Value);
             }
 
-            prepared.Add(new TransientPlotSeries(candidate.NodeId, points));
+            prepared.Add(new TransientPlotSeries(candidate.NodeId, points, candidate.ColorIndex));
         }
 
         if (prepared.Count == 0 || !(timeEnd > timeStart))
@@ -134,7 +145,8 @@ public sealed class TransientPlot
         int longest = prepared.Max(entry => entry.Points.Count);
         int stride = Math.Max(1, (int)Math.Ceiling(longest / (double)maximumPointsPerSeries));
         TransientPlotSeries[] decimated = prepared
-            .Select(entry => new TransientPlotSeries(entry.NodeId, Decimate(entry.Points, stride)))
+            .Select(entry => new TransientPlotSeries(
+                entry.NodeId, Decimate(entry.Points, stride), entry.ColorIndex))
             .ToArray();
 
         return new TransientPlot(

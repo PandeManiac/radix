@@ -663,8 +663,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     and the panel shows them above the energy ledger, cleared with the run. Tests cover both
     element kinds, the silent case, the unchanged grid, and the report field.
 
+62. Made the plotted traces individually visible. Every node gets a checkbox under the plot, so
+    a designer can read a 50 mV ripple next to a 5 V step instead of choosing between them.
+    `TransientPlotSeries` now carries a palette `colorIndex` assigned from the full node list, so
+    hiding one trace does not repaint the remaining ones and a half-read picture keeps its
+    meaning; the control and the SVG export both colour by that index. Hiding every trace yields
+    the same explicit empty state as a run with nothing to draw, and a new run shows them all
+    again. Tests hide a trace, check the surviving count and the untouched palette slots, hide
+    everything to get no plot, restore all three, and confirm a rerun resets visibility.
+
 Verification: release build 0 warnings/0 errors; core tests 588/588; editor
-tests 210/210; `radix transient` runs all three examples with exit 0 and
+tests 211/211; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

@@ -1212,6 +1212,18 @@
                       Padding="7,5"
                       Margin="0,0,0,6">
                     <StackPanel Spacing="3">
+                      <ItemsControl ItemsSource="{Binding ElectricalTransientSeries}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalTransientSeriesItem">
+                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" Content="{Binding NodeId}" FontSize="9" Margin="0,0,10,0" ToolTip.Tip="Show this node on the plot" />
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
                       <TextBlock Text="{Binding ElectricalTransientNotesText}" Classes="muted" FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource App.Accent}" />
                       <TextBlock Text="{Binding ElectricalTransientEnergyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                       <controls:TransientPlotView Plot="{Binding ElectricalTransientPlot}" MarkerTime="{Binding ElectricalTransientProbeTime}" Height="170" Margin="0,2,0,4" />
