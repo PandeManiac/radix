@@ -22,7 +22,7 @@ The repository currently contains a working simulation kernel, a hierarchical st
 | Editor view persistence | Active definition and canvas zoom/pan save with the project; panning does not mark it dirty |
 | Headless GUI tests and screenshots | Working with Avalonia Headless + Skia |
 | DC electrical solver | Core MNA solver for ideal resistors, independent voltage/current sources, and ground; authored v10 electrical circuits (resistors, independent sources with optional piecewise-linear waveforms, capacitors, inductors) plus JSON netlists; CLI and reports; editor inspector for circuits, nodes, components, and explicit terminals, with an on-demand solve preview; still separate from the digital model |
-| Transient electrical solver | Implicit time-domain analysis of resistors, capacitors, inductors, ideal sources with optional piecewise-linear waveforms, and Shockley diodes; backward Euler and trapezoidal methods, fixed or adaptive step size; `radix transient` over JSON netlists or authored `.radix` circuits with a versioned JSON report; separate from the digital model, no editor UI yet |
+| Transient electrical solver | Implicit time-domain analysis of resistors, capacitors, inductors, ideal sources with optional piecewise-linear waveforms, and Shockley diodes; backward Euler and trapezoidal methods, fixed or adaptive step size; `radix transient` over JSON netlists or authored `.radix` circuits with a versioned JSON report and a per-run energy ledger; separate from the digital model, no editor UI yet |
 | JIT/compiled native evaluation | Not implemented; managed engine benchmarked |
 
 ## Build and test
@@ -327,7 +327,7 @@ docs/                    architecture, ERC, electrical solver, project format, t
 
 ## Testing summary
 
-- Kernel and library tests: **546 tests** (measured on `agent/radix-transient` with .NET SDK 10.0.113).
+- Kernel and library tests: **552 tests** (measured on `agent/radix-transient` with .NET SDK 10.0.113).
 - Electrical rule checking reports floating input nets, input-port/internal-driver conflicts, unconnected required inputs, and single-driver conflicts with assumptions, suggestions, and simulation-validity metadata; see [docs/erc.md](docs/erc.md).
 - The separate DC linear solver is covered by analytical voltage-divider, parallel-resistor, current-source-direction, series-source, Wheatstone-bridge, singular-system, ground-reference, input-validation, and 100-channel cases; see [docs/electrical.md](docs/electrical.md).
 - The transient solver is covered by closed-form backward-Euler recurrences (RC charge, capacitor discharge, inductor current), measured convergence order 1 for backward Euler and 2 for trapezoidal against the analytic RC solution, the analytic underdamped RLC overshoot, LC tank energy conservation versus backward-Euler damping, per-point absorbed-power conservation, element-order and ground-name invariance, initial-condition handling, floating detection, deterministic reruns, waveform interpolation, adaptive step control (tolerance vs accuracy, a time constant far below the interval, the minimum-step failure, determinism, and option validation), strict JSON loading, and three shipped example fixtures. Its editor suite has no transient UI to test.

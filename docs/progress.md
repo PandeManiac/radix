@@ -487,8 +487,19 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     breakpoints), `RAD-ELEC-019` (non-finite time or value), and `RAD-ELEC-020`
     (non-increasing times). `examples/transient-pulse.radix` drives an RC step and
     reaches `5*(1 - e^-1)` one time constant after the step.
+45. Added an energy ledger to every transient run: source-delivered and
+    resistor/diode-dissipated power is integrated over the reported points with the
+    trapezoidal rule, stored `v²C/2 + i²L/2` is compared at the first and last
+    point, and the residual `delivered - dissipated - stored` is printed with its
+    relative size and reported as `energy` in the JSON report. The ledger also acts
+    as an independent accuracy signal: it closes to `1.2e-5` relative for an RC
+    charge at `h/τ = 0.01`, to `1.0e-3` for a lossless LC tank at `hω = 0.032`,
+    refining the step 4x cuts either about 16x, and backward Euler's is first order.
+    Tests assert the analytic `C·V²` delivery and `½C·V²` storage, the tank's
+    conserved stored energy with zero dissipation, both convergence orders, the
+    absent ledger on a failed initial state, and the JSON fields.
 
-Verification: release build 0 warnings/0 errors; core tests 546/546; editor
+Verification: release build 0 warnings/0 errors; core tests 552/552; editor
 tests 193/193; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

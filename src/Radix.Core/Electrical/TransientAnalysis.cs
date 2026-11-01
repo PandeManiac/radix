@@ -297,6 +297,36 @@ public sealed record TransientPoint(
     double RelativeResidual);
 
 /// <summary>
+/// Energy ledger of a run, in joules. Delivered power is integrated over the
+/// reported points with the trapezoidal rule, dissipated power is the same
+/// integral over resistors and diodes, and the stored term is the change in
+/// <c>v²C/2 + i²L/2</c> between the first and last point. The residual is
+/// <c>delivered - dissipated - stored</c>, so it measures how well the reported
+/// element powers and the reactive state agree; with the trapezoidal rule it is
+/// near round-off, while backward Euler's artificial damping appears as a
+/// difference between the power integral and the state energy.
+/// </summary>
+public sealed record TransientEnergyBalance(
+    double DeliveredJoules,
+    double DissipatedJoules,
+    double StoredChangeJoules,
+    double FinalStoredJoules,
+    double ResidualJoules)
+{
+    /// <summary>Residual relative to the largest magnitude in the ledger.</summary>
+    public double RelativeResidual
+    {
+        get
+        {
+            double scale = Math.Max(
+                Math.Max(Math.Abs(DeliveredJoules), Math.Abs(DissipatedJoules)),
+                Math.Max(Math.Abs(StoredChangeJoules), Math.Abs(FinalStoredJoules)));
+            return scale > 0 ? Math.Abs(ResidualJoules) / scale : 0;
+        }
+    }
+}
+
+/// <summary>
 /// Result of a transient run. A run that fails part way keeps every operating
 /// point that was solved, names the step that failed, and reports the same
 /// failure classification the DC solver uses.
@@ -319,6 +349,12 @@ public sealed record TransientResult(
 
     /// <summary>The last solved operating point, which is the final one on success.</summary>
     public TransientPoint? FinalPoint => Points.Count == 0 ? null : Points[^1];
+
+    /// <summary>
+    /// The energy ledger over the solved points, or null when fewer than two points
+    /// exist and no integral can be formed.
+    /// </summary>
+    public TransientEnergyBalance? Energy { get; init; }
 }
 
 /// <summary>
@@ -638,9 +674,10 @@ public sealed class TransientNetlist
             MakePoint(options.StartTime, initialState, state),
         };
 
-        return options.IsAdaptive
+        TransientResult result = options.IsAdaptive
             ? RunAdaptive(options, state, points)
             : RunFixed(options, state, points);
+        return result with { Energy = MeasureEnergy(result.Points) };
     }
 
     /// <summary>The reactive state at one integration point. Arrays are replaced, never mutated.</summary>
@@ -1152,6 +1189,86 @@ public sealed class TransientNetlist
         _waveforms.TryGetValue(element.Id, out TransientWaveform? waveform)
             ? waveform.ValueAt(time)
             : element.Value;
+
+    /// <summary>
+    /// Builds the energy ledger by integrating the reported element powers with the
+    /// trapezoidal rule and comparing the result with the reactive state energy. The
+    /// stored energy uses the same element voltages and currents the report shows, so
+    /// a mismatch can only come from the integration, never from a different state.
+    /// </summary>
+    private TransientEnergyBalance? MeasureEnergy(IReadOnlyList<TransientPoint> points)
+    {
+        if (points.Count < 2)
+        {
+            return null;
+        }
+
+        double delivered = 0;
+        double dissipated = 0;
+        double firstStored = StoredEnergy(points[0]);
+        for (int index = 1; index < points.Count; index++)
+        {
+            double span = points[index].Time - points[index - 1].Time;
+            if (!(span > 0) || !double.IsFinite(span))
+            {
+                continue;
+            }
+
+            (double previousDelivered, double previousDissipated) = PowerFlow(points[index - 1]);
+            (double currentDelivered, double currentDissipated) = PowerFlow(points[index]);
+            delivered += span * (previousDelivered + currentDelivered) / 2;
+            dissipated += span * (previousDissipated + currentDissipated) / 2;
+        }
+
+        double lastStored = StoredEnergy(points[^1]);
+        double stored = lastStored - firstStored;
+        return new TransientEnergyBalance(
+            delivered,
+            dissipated,
+            stored,
+            lastStored,
+            delivered - dissipated - stored);
+    }
+
+    /// <summary>Delivered source power and dissipated resistor/diode power at one point.</summary>
+    private (double Delivered, double Dissipated) PowerFlow(TransientPoint point)
+    {
+        double delivered = 0;
+        double dissipated = 0;
+        foreach (DcElement element in _elements)
+        {
+            double power = point.ElementPowers[element.Id];
+            if (element is DcResistor or DcDiode)
+            {
+                dissipated += power;
+            }
+            else
+            {
+                delivered -= power;
+            }
+        }
+
+        return (delivered, dissipated);
+    }
+
+    /// <summary>Stored reactive energy <c>v²C/2 + i²L/2</c> at one point.</summary>
+    private double StoredEnergy(TransientPoint point)
+    {
+        double stored = 0;
+        foreach (TransientCapacitor capacitor in _capacitors)
+        {
+            double volts = point.ElementVoltages[capacitor.Id];
+            stored += 0.5 * capacitor.Farads * volts * volts;
+        }
+
+        foreach (TransientInductor inductor in _inductors)
+        {
+            double amperes = point.ElementCurrents[inductor.Id];
+            stored += 0.5 * inductor.Henries * amperes * amperes;
+        }
+
+        return stored;
+    }
 
     private TransientPoint MakePoint(
         double time,

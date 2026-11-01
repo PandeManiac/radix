@@ -343,6 +343,28 @@ a time; it does not estimate a spectral radius or choose between methods. Author
 still expose only resistors and independent sources, and the editor has no
 transient UI: `radix transient` is the supported entry point.
 
+## Energy ledger
+
+Every transient run carries an energy ledger in joules: the energy the independent
+sources deliver, the energy resistors and diodes dissipate, and the change in
+stored reactive energy `v²C/2 + i²L/2`, each integrated over the reported points
+with the trapezoidal rule. The residual `delivered - dissipated - stored`
+therefore measures how well the sampled element powers agree with the reactive
+state, rather than restating the solve.
+
+That residual is also an independent accuracy signal. For a 5 V, 1 kΩ, 1 µF charge
+at `h/τ = 0.01` it closes to `1.2e-5` relative; for a lossless `1 mH`/`1 µF` tank
+at `hω = 0.032` it closes to `1.0e-3`; refining the step 4× cuts either residual
+about 16×, which is the trapezoidal rule's second order. A backward-Euler run at
+`h/τ = 0.5` shows `8e-2`, first order in the step. A large residual is therefore
+an honest sign of integration error or of a too-large step, not of a wrong answer
+being reported silently.
+
+`radix transient` prints the ledger after the final operating point, and `--json`
+reports it as `energy` with `deliveredJoules`, `dissipatedJoules`,
+`storedChangeJoules`, `finalStoredJoules`, `residualJoules`, and
+`relativeResidual`.
+
 ## Authored electrical circuits
 
 Projects may contain one or more `electricalCircuits` (project format v8). Each
@@ -530,7 +552,9 @@ Supported now:
 - fixed-step transient analysis of resistors, capacitors, inductors, ideal
   sources with optional piecewise-linear waveforms, and Shockley diodes;
 - backward Euler and trapezoidal integration with an explicit time step,
-  per-element initial conditions, and per-step failure reporting.
+  per-element initial conditions, and per-step failure reporting;
+- a per-run energy ledger (delivered, dissipated, stored, residual) that also
+  measures the integration's own accuracy.
 
 Not supported:
 

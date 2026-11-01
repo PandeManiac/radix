@@ -146,9 +146,21 @@ public static class TransientNetlistJson
                 result.Failure is null ? null : DcNetlistJson.FailureName(result.Failure.Value),
                 result.Message,
                 result.FailedStep,
-                points),
+                points,
+                ToEnergyDto(result.Energy)),
             JsonOptions);
     }
+
+    private static EnergyDto? ToEnergyDto(TransientEnergyBalance? energy) =>
+        energy is null
+            ? null
+            : new EnergyDto(
+                energy.DeliveredJoules,
+                energy.DissipatedJoules,
+                energy.StoredChangeJoules,
+                energy.FinalStoredJoules,
+                energy.ResidualJoules,
+                energy.RelativeResidual);
 
     /// <summary>The JSON name of an integration method, matching <see cref="LoadFromString"/>.</summary>
     public static string MethodName(TransientMethod method) =>
@@ -477,7 +489,16 @@ public static class TransientNetlistJson
         string? Failure,
         string? Message,
         int? FailedStep,
-        IReadOnlyList<PointDto> Points);
+        IReadOnlyList<PointDto> Points,
+        EnergyDto? Energy);
+
+    private sealed record EnergyDto(
+        double DeliveredJoules,
+        double DissipatedJoules,
+        double StoredChangeJoules,
+        double FinalStoredJoules,
+        double ResidualJoules,
+        double RelativeResidual);
 
     private sealed record PointDto(
         double Time,

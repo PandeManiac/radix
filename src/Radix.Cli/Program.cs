@@ -542,6 +542,18 @@ internal static class Program
             Console.WriteLine($"residual:  {FormatDcNumber(final.RelativeResidual)}");
         }
 
+        if (result.Energy is TransientEnergyBalance energy)
+        {
+            Console.WriteLine("energy balance (joules):");
+            Console.WriteLine(
+                $"  delivered {FormatDcNumber(energy.DeliveredJoules),-14} " +
+                $"dissipated {FormatDcNumber(energy.DissipatedJoules),-14} " +
+                $"stored change {FormatDcNumber(energy.StoredChangeJoules)}");
+            Console.WriteLine(
+                $"  residual  {FormatDcNumber(energy.ResidualJoules),-14} " +
+                $"({FormatDcNumber(energy.RelativeResidual)} relative)");
+        }
+
         if (!result.Completed)
         {
             Console.Error.WriteLine(
