@@ -394,6 +394,14 @@ the run is rejected with the valid interval instead of being clamped silently, a
 non-numeric entry says so, and the probe is cleared with the run by any edit or
 settings change, because a readout of a stale run would be worse than none.
 
+**Copy SVG** / **Save SVG…** render the same plot as a standalone document, so a
+result can go into a note or a report without a screenshot. The exporter is a pure
+function over the plot geometry with the control's own margins, so the file shows the
+same frame, ticks, zero line, series colours, and probe marker; node names are escaped,
+so an unusual id cannot produce a malformed file, and a size with no room for the axes
+is rejected rather than silently drawn. Colours are the light palette's, because a
+document has no theme to follow.
+
 ## Estimating error without a closed form
 
 The energy residual and the metrics describe one run; neither says whether halving the

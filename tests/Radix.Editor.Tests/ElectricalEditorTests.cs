@@ -239,12 +239,18 @@ public sealed class ElectricalEditorTests
             $"{series.NodeId} needs a drawable polyline"));
         Assert.Equal(0.005, plot.TimeEnd, 12);
 
+        // The SVG export is the shareable form of the same plot.
+        Assert.True(viewModel.TryBuildElectricalTransientSvg(out string svg));
+        Assert.Contains("<svg", svg, StringComparison.Ordinal);
+        Assert.Equal(3, svg.Split("<polyline").Length - 1);
+
         EditableField tighter = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Settling band");
         tighter.Value = "0.02";
         Assert.True(viewModel.ApplyField(tighter));
         Assert.Empty(viewModel.ElectricalTransientMetrics);
         Assert.Null(viewModel.ElectricalTransientPlot);
+        Assert.False(viewModel.TryBuildElectricalTransientSvg(out _));
         Assert.False(viewModel.HasElectricalTransientResult);
     }
 

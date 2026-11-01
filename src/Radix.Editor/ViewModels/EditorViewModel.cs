@@ -6637,6 +6637,25 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Renders the displayed plot as a standalone SVG document, so a run can be shared without a
+    /// screenshot. It uses the same geometry as the control and the active probe marker, if any,
+    /// and returns false when there is nothing plotted.
+    /// </summary>
+    public bool TryBuildElectricalTransientSvg(out string svg)
+    {
+        svg = string.Empty;
+        if (ElectricalTransientPlot is not { } plot ||
+            !HasElectricalTransientResult ||
+            SelectedElectricalCircuitModel is not { } circuit)
+        {
+            return false;
+        }
+
+        svg = TransientPlotSvg.Render(plot, ElectricalTransientProbeTime, $"Transient: {circuit.Id}");
+        return true;
+    }
+
+    /// <summary>
     /// Serialises the displayed transient result through the same report builder as
     /// <c>radix transient --json</c>, so the panel and the CLI cannot drift apart.
     /// </summary>

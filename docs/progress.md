@@ -603,9 +603,18 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     probe clears with the run on any edit. Tests cover the clamped marker fractions, the
     interpolated value against the analytic charge (`5*(1 - e^(-t/tau))` within 2%), the
     bracketing readout, both rejections, the exact-sample case, and the clear-on-change case.
+56. Added SVG export for the transient plot. `TransientPlotSvg.Render` is a pure function over
+    the plot geometry that reproduces the control's frame, ticks, zero line, series colours,
+    legend, and probe marker as a standalone document; **Copy SVG** and **Save SVG…** expose it
+    beside the JSON and CSV exports. Node names are XML-escaped so an unusual id cannot produce
+    a malformed file, a marker outside the plotted range is omitted rather than clamped into a
+    misleading place, and a size with no room for the axes is rejected. Tests parse the output,
+    check one polyline per node with every coordinate inside the view box, escaped names that
+    still parse, the presence and absence of the marker, and the size guard; the panel test also
+    checks the export exists for a run and disappears with it.
 
 Verification: release build 0 warnings/0 errors; core tests 572/572; editor
-tests 205/205; `radix transient` runs all three examples with exit 0 and
+tests 209/209; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

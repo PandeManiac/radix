@@ -188,6 +188,12 @@ public partial class MainWindow : Window
         MimeTypes = ["text/csv"],
     };
 
+    private static readonly FilePickerFileType SvgFileType = new("SVG")
+    {
+        Patterns = ["*.svg"],
+        MimeTypes = ["image/svg+xml"],
+    };
+
     private static readonly FilePickerFileType TestScriptFileType = new("RADIX test script")
     {
         Patterns = ["*.radixtest"],
@@ -410,6 +416,23 @@ public partial class MainWindow : Window
         {
             await SaveElectricalSolveTextAsync(
                 viewModel, csv, "csv", CsvFileType, "transient points", "transient");
+        }
+    }
+
+    private async void ElectricalTransientCopySvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientSvg(out string svg))
+        {
+            await CopyElectricalSolveTextAsync(svg, "Copied transient plot as SVG");
+        }
+    }
+
+    private async void ElectricalTransientSaveSvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientSvg(out string svg))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, svg, "svg", SvgFileType, "transient plot", "transient-plot");
         }
     }
 
