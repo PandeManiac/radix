@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Radix.Core.Electrical;
 using Radix.Core.Model;
@@ -285,12 +286,31 @@ public sealed class ElectricalEditorTests
             viewModel.ElectricalTransientAccuracyText,
             StringComparison.Ordinal);
 
+        // The per-level table shows where the measured order stops improving.
+        Assert.True(viewModel.HasElectricalTransientRefinement);
+        Assert.Equal(3, viewModel.ElectricalTransientRefinementLevels.Count);
+        ElectricalTransientRefinementItem coarse = viewModel.ElectricalTransientRefinementLevels[0];
+        Assert.Equal("200 steps", coarse.StepsText);
+        Assert.Equal("reference", coarse.DeviationText);
+        Assert.Equal("-", coarse.OrderText);
+
+        ElectricalTransientRefinementItem finest = viewModel.ElectricalTransientRefinementLevels[^1];
+        Assert.Equal("800 steps", finest.StepsText);
+        Assert.True(double.TryParse(
+            finest.OrderText,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out double measuredOrder));
+        Assert.InRange(measuredOrder, 0.5, 1.5);
+
         // The check describes the displayed run, so a settings change invalidates both.
         EditableField band = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Settling band");
         band.Value = "0.1";
         Assert.True(viewModel.ApplyField(band));
         Assert.Equal(string.Empty, viewModel.ElectricalTransientAccuracyText);
+        Assert.Empty(viewModel.ElectricalTransientRefinementLevels);
+        Assert.False(viewModel.HasElectricalTransientRefinement);
         Assert.False(viewModel.HasElectricalTransientResult);
     }
 

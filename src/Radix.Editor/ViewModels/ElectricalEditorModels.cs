@@ -54,6 +54,44 @@ public sealed class ElectricalTransientMetricItem
     public string SettleText { get; }
 }
 
+/// <summary>
+/// One level of a step-refinement study: its step count, its uniform step, the deviation from
+/// the previous level, and the convergence order implied by two successive deviations. The
+/// coarsest level is what the others are compared against, so it reports that instead of a zero
+/// deviation, which would read as if it were exact.
+/// </summary>
+public sealed class ElectricalTransientRefinementItem
+{
+    public ElectricalTransientRefinementItem(TransientRefinementLevel level, bool isReference)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        StepsText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{level.Steps} steps");
+        StepText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{level.TimeStep:G4} s");
+        DeviationText = isReference
+            ? "reference"
+            : string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{level.MaximumDeviationVolts:G4} V");
+        OrderText = level.ObservedOrder is double order
+            ? order.ToString("G3", System.Globalization.CultureInfo.InvariantCulture)
+            : "-";
+    }
+
+    public string StepsText { get; }
+
+    public string StepText { get; }
+
+    public string DeviationText { get; }
+
+    public string OrderText { get; }
+
+    public override string ToString() => $"{StepsText} · {DeviationText}";
+}
+
 /// <summary>One solved point of a transient run: its time and every node voltage.</summary>
 public sealed class ElectricalTransientPointItem
 {

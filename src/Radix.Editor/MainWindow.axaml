@@ -1211,6 +1211,19 @@
                       <controls:TransientPlotView Plot="{Binding ElectricalTransientPlot}" MarkerTime="{Binding ElectricalTransientProbeTime}" Height="170" Margin="0,2,0,4" />
                       <TextBlock Text="{Binding ElectricalTransientAccuracyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                       <TextBlock Text="{Binding ElectricalTransientProbeText}" Classes="muted" FontSize="9" FontFamily="monospace" TextWrapping="Wrap" />
+                      <TextBlock Text="STEP REFINEMENT · MEASURED ORDER" Classes="muted" FontSize="9" FontWeight="SemiBold" IsVisible="{Binding HasElectricalTransientRefinement}" />
+                      <ItemsControl ItemsSource="{Binding ElectricalTransientRefinementLevels}" IsVisible="{Binding HasElectricalTransientRefinement}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalTransientRefinementItem">
+                            <Grid ColumnDefinitions="86,88,*,Auto" ColumnSpacing="6" Margin="0,1">
+                              <TextBlock Text="{Binding StepsText}" FontFamily="monospace" FontSize="9.5" FontWeight="SemiBold" />
+                              <TextBlock Grid.Column="1" Text="{Binding StepText}" FontFamily="monospace" FontSize="9.5" />
+                              <TextBlock Grid.Column="2" Text="{Binding DeviationText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Largest change from the previous level" />
+                              <TextBlock Grid.Column="3" Text="{Binding OrderText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" ToolTip.Tip="Measured convergence order from the last two deviations" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
                       <TextBlock Text="NODE METRICS · PEAK AND SETTLING" Classes="muted" FontSize="9" FontWeight="SemiBold" />
                       <ItemsControl ItemsSource="{Binding ElectricalTransientMetrics}">
                         <ItemsControl.ItemTemplate>

@@ -612,6 +612,13 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     check one polyline per node with every coordinate inside the view box, escaped names that
     still parse, the presence and absence of the marker, and the size guard; the panel test also
     checks the export exists for a run and disappears with it.
+57. Listed the refinement study per level in the panel instead of one summary line: each row
+    gives the step count, the uniform step, the deviation from the coarser level, and the order
+    that deviation implies, so the point where the order stops improving is visible rather than
+    hidden. The coarsest row reads `reference` instead of a zero deviation, since it is what the
+    others are compared against, and the table is cleared with the run like every other view of
+    it. The panel test checks three rows, the reference row, and a parseable order near one for
+    backward Euler, plus the empty state after a settings change.
 
 Verification: release build 0 warnings/0 errors; core tests 572/572; editor
 tests 209/209; `radix transient` runs all three examples with exit 0 and

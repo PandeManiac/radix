@@ -411,6 +411,12 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>Per-node peak and settling summary of the last transient run.</summary>
     public ObservableCollection<ElectricalTransientMetricItem> ElectricalTransientMetrics { get; } = [];
 
+    /// <summary>Per-level rows of the last step-refinement check, empty until one is taken.</summary>
+    public ObservableCollection<ElectricalTransientRefinementItem> ElectricalTransientRefinementLevels { get; } = [];
+
+    /// <summary>Whether the refinement table has rows to show.</summary>
+    public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
+
     /// <summary>Geometry of the displayed transient run, or null when nothing is shown.</summary>
     public TransientPlot? ElectricalTransientPlot
     {
@@ -6538,6 +6544,7 @@ public sealed class EditorViewModel : ObservableObject
 
         if (!study.Completed)
         {
+            ClearElectricalTransientRefinement();
             ElectricalTransientAccuracyText = "Accuracy check failed: " + study.Describe();
             StatusText = $"Accuracy check failed ({FailureLabel(study.Failure ?? DcSolveFailure.NonConvergent)}).";
             return false;
@@ -6554,6 +6561,17 @@ public sealed class EditorViewModel : ObservableObject
             : string.Create(
                 CultureInfo.InvariantCulture,
                 $"Accuracy at {finest}: {study.Describe()} Worst node {worst.NodeId} moved {worst.MaximumDeviationVolts:G3} V at t={worst.WorstTimeSeconds:G3} s.");
+
+        // The table shows where the measured order stops improving, which a single
+        // summary line hides.
+        ElectricalTransientRefinementLevels.Clear();
+        for (int index = 0; index < study.Levels.Count; index++)
+        {
+            ElectricalTransientRefinementLevels.Add(
+                new ElectricalTransientRefinementItem(study.Levels[index], isReference: index == 0));
+        }
+
+        RaisePropertyChanged(nameof(HasElectricalTransientRefinement));
         StatusText = "Checked transient accuracy by halving the step.";
         return true;
     }
@@ -6979,6 +6997,18 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientProbeText = string.Empty;
         ElectricalTransientProbeTime = null;
         ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        ClearElectricalTransientRefinement();
+    }
+
+    private void ClearElectricalTransientRefinement()
+    {
+        if (ElectricalTransientRefinementLevels.Count == 0)
+        {
+            return;
+        }
+
+        ElectricalTransientRefinementLevels.Clear();
+        RaisePropertyChanged(nameof(HasElectricalTransientRefinement));
     }
 
     private void ShowElectricalTransientError(string summary, string status)

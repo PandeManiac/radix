@@ -434,7 +434,11 @@ refines the displayed run and reports the estimate, the measured order, and the 
 moved most, e.g. *Accuracy at 800 steps: estimated error at the finest step: 5.8e-3 relative
 (measured order 0.989) worst node out moved 0.0285 V at t=0.000969 s.* It stays a button
 because it costs three solves, it reuses the displayed run as the coarsest level so the two
-cannot disagree, and it is cleared along with the run by any edit or settings change.
+cannot disagree, and it is cleared along with the run by any edit or settings change. The panel
+also lists one row per level — step count, step size, the deviation from the coarser level, and
+the order that deviation implies — because a single summary hides the point where the order stops
+improving, which is exactly where a coarser claim would be unsupported. The coarsest row says
+`reference` instead of a zero deviation, since it is what the others are measured against.
 
 ## Waveform breakpoints as step boundaries
 
