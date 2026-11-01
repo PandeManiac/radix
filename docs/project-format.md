@@ -383,6 +383,27 @@ starts at the DC operating point, which is also what `radix dc` reports. The
 field is rejected on any other kind (`RAD-ELEC-015`) and must be finite
 (`RAD-ELEC-016`).
 
+An independent source may also carry a `waveform`: a piecewise-linear drive in
+its own unit, given as absolute-time breakpoints. The transient solver
+interpolates between breakpoints and clamps outside their range, so a missing
+first breakpoint at `time: 0` simply holds the first value.
+
+```json
+"waveform": [
+  { "time": 0, "value": 0 },
+  { "time": 0.001, "value": 5 }
+]
+```
+
+A DC solve ignores the waveform and uses `value`. Validation requires at least
+two breakpoints (`RAD-ELEC-018`), finite times and values (`RAD-ELEC-019`),
+strictly increasing times (`RAD-ELEC-020`), and rejects a waveform on anything
+but an independent source (`RAD-ELEC-017`). Because breakpoint times must
+strictly increase, a near-ideal step needs two closely spaced breakpoints (for
+example `0.000999 -> 0` and `0.001 -> 5`) rather than a repeated time. The
+waveform lives in the component model, so the editor round-trips it untouched
+even though it has no waveform UI yet.
+
 The `value` is the component parameter, not a digital signal index. Terminal
 nodes must exist in the same circuit. `radix dc` validates an authored circuit
 with `RAD-ELEC-*` diagnostics before solving; digital `validate` and compile do
@@ -392,7 +413,7 @@ one circuit selects it automatically.
 
 ## Versioning and migration
 
-Versions 1 through 9 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 10 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

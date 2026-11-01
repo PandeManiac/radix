@@ -53,7 +53,7 @@ public sealed class ElectricalCircuitTests
         CircuitProject loaded = ProjectSerializer.LoadFromString(json, validate: false);
         ElectricalCircuit circuit = Assert.Single(loaded.ElectricalCircuits);
 
-        Assert.Equal(9, loaded.FormatVersion);
+        Assert.Equal(10, loaded.FormatVersion);
         Assert.Equal("divider", circuit.Id);
         Assert.Equal(5, circuit.ToDcNetlist().Solve().NodeVoltages["out"]);
         Assert.Equal(ElectricalComponentKind.VoltageSource, loaded.ElectricalCircuits[0].Components[0].Kind);
@@ -269,7 +269,7 @@ public sealed class ElectricalCircuitTests
         CircuitProject loaded = ProjectSerializer.LoadFromString(json, validate: false);
         ElectricalCircuit reloaded = Assert.Single(loaded.ElectricalCircuits);
 
-        Assert.Equal(9, loaded.FormatVersion);
+        Assert.Equal(10, loaded.FormatVersion);
         Assert.Equal(ElectricalComponentKind.Capacitor, reloaded.FindComponent("C1")!.Kind);
         Assert.Equal(1e-6, reloaded.FindComponent("C1")!.Value);
         Assert.Equal(2.5, reloaded.FindComponent("C1")!.InitialValue);
@@ -284,6 +284,105 @@ public sealed class ElectricalCircuitTests
         });
         Assert.True(result.Completed, result.Message);
     }
+
+    [Fact]
+    public void AuthoredWaveformsDriveSourcesThroughTheTransientBridge()
+    {
+        var circuit = new ElectricalCircuit { Id = "step", Name = "RC step", GroundNodeId = "gnd" };
+        circuit.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        ElectricalComponent source = Component(
+            "V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd");
+        // Breakpoint times must strictly increase, so a near-ideal step uses two
+        // breakpoints one microsecond apart instead of a repeated time.
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 0.999e-3, Value = 0 });
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 1e-3, Value = 5 });
+        circuit.Components.Add(source);
+        circuit.Components.Add(Component("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor = Component(
+            "C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        TransientResult result = circuit.ToTransientNetlist().Run(new TransientOptions
+        {
+            StopTime = 3e-3,
+            Steps = 3_000,
+            Method = TransientMethod.Trapezoidal,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        Assert.Equal(0, result.Points[500].NodeVoltages["out"], 12);
+        Assert.True(
+            Math.Abs(result.Points[1_000].NodeVoltages["out"]) < 0.01,
+            $"the capacitor has barely charged when the step ends: {result.Points[1_000].NodeVoltages["out"]} V");
+        // The 1 us ramp injects slightly more charge than an ideal step, so the bound
+        // allows 2 mV (4e-4 of the 5 V drive) on top of the trapezoidal error.
+        double expected = 5 * (1 - Math.Exp(-1));
+        double measured = result.Points[2_000].NodeVoltages["out"];
+        Assert.True(
+            Math.Abs(measured - expected) < 2e-3,
+            $"one time constant after the step: {measured} V, expected {expected} V");
+        Assert.True(result.Points[2_500].NodeVoltages["out"] > measured);
+    }
+
+    [Fact]
+    public void ValidationRejectsMalformedAuthoredWaveforms()
+    {
+        ElectricalCircuit passive = CreateDivider();
+        ElectricalComponent resistor = passive.FindComponent("R1")!;
+        resistor.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 1 });
+        resistor.Waveform.Add(new ElectricalWaveformPoint { Time = 1, Value = 0 });
+        Assert.Contains("RAD-ELEC-017", ValidateCodes(passive));
+
+        ElectricalCircuit single = CreateDivider();
+        single.FindComponent("V1")!.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        Assert.Contains("RAD-ELEC-018", ValidateCodes(single));
+
+        ElectricalCircuit repeated = CreateDivider();
+        ElectricalComponent repeatedSource = repeated.FindComponent("V1")!;
+        repeatedSource.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        repeatedSource.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 5 });
+        Assert.Contains("RAD-ELEC-020", ValidateCodes(repeated));
+
+        ElectricalCircuit nonFinite = CreateDivider();
+        ElectricalComponent infinite = nonFinite.FindComponent("V1")!;
+        infinite.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        infinite.Waveform.Add(new ElectricalWaveformPoint
+        {
+            Time = 1e-3,
+            Value = double.PositiveInfinity,
+        });
+        Assert.Contains("RAD-ELEC-019", ValidateCodes(nonFinite));
+    }
+
+    [Fact]
+    public void ProjectRoundTripPreservesAuthoredWaveforms()
+    {
+        CircuitProject project = CreateProject();
+        ElectricalCircuit circuit = CreateDivider();
+        ElectricalComponent source = circuit.FindComponent("V1")!;
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 2e-3, Value = 10 });
+        project.ElectricalCircuits.Add(circuit);
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(
+            ProjectSerializer.SaveToString(project),
+            validate: false);
+
+        ElectricalComponent reloaded = Assert.Single(loaded.ElectricalCircuits).FindComponent("V1")!;
+        Assert.Equal(10, loaded.FormatVersion);
+        Assert.Equal([0.0, 2e-3], reloaded.Waveform.Select(point => point.Time));
+        Assert.Equal([0.0, 10.0], reloaded.Waveform.Select(point => point.Value));
+        Assert.True(reloaded.Waveform.Count == 2);
+    }
+
+    private static string[] ValidateCodes(ElectricalCircuit circuit) =>
+        ElectricalCircuitValidator.Validate(circuit)
+            .Select(diagnostic => diagnostic.Code)
+            .ToArray();
 
     private static CircuitProject CreateProject()
     {

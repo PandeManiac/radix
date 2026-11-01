@@ -477,9 +477,19 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     an authored circuit and reports its circuit ID in text and JSON. Validation
     adds `RAD-ELEC-015` (initial value on a non-reactive kind) and `RAD-ELEC-016`
     (non-finite initial value).
+44. Added authored piecewise-linear source waveforms (`waveform` breakpoint arrays
+    on independent sources, project format 10) so an authored `.radix` circuit can
+    express a step, ramp, or pulse without hand-writing a JSON netlist.
+    `ToTransientNetlist` forwards the breakpoints to the solver's waveform, while
+    `ToDcNetlist` and the editor keep using the source's `value`, and the model
+    keeps the waveform untouched through editor edits and saves. Validation adds
+    `RAD-ELEC-017` (waveform on a non-source), `RAD-ELEC-018` (fewer than two
+    breakpoints), `RAD-ELEC-019` (non-finite time or value), and `RAD-ELEC-020`
+    (non-increasing times). `examples/transient-pulse.radix` drives an RC step and
+    reaches `5*(1 - e^-1)` one time constant after the step.
 
-Verification: release build 0 warnings/0 errors; core tests 543/543; editor
-tests 192/192; `radix transient` runs all three examples with exit 0 and
+Verification: release build 0 warnings/0 errors; core tests 546/546; editor
+tests 193/193; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

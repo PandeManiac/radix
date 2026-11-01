@@ -413,7 +413,16 @@ radix dc examples/dc-divider.radix
 radix dc examples/dc-divider.radix --json
 radix dc examples/dc-divider.radix --circuit divider
 radix transient examples/transient-rc.radix --circuit rc-charge --stop 0.005 --steps 60
+radix transient examples/transient-pulse.radix --circuit rc-step --stop 0.003 --steps 600
 ```
+
+An independent source may carry a `waveform` array of absolute-time breakpoints
+in its own unit. The transient solver interpolates linearly between breakpoints
+and clamps outside the range, which makes steps, ramps, and pulses a data
+edit rather than a new component. A DC solve ignores the waveform and uses the
+source's `value`, so the DC operating point stays the steady-state one. See
+[project-format.md](project-format.md#electrical-circuits) for the validation
+rules (`RAD-ELEC-017` to `RAD-ELEC-020`).
 
 If a project has exactly one electrical circuit, `--circuit` may be omitted. A
 project with several circuits requires it. Standalone JSON netlists remain
@@ -516,7 +525,8 @@ Supported now:
 - authoring capacitors and inductors, with optional initial capacitor voltage or
   inductor current, in the editor's Electrical inspector;
 - transient analysis of authored `.radix` circuits through `radix transient`,
-  including reactive components, initial values, and piecewise-linear sources;
+  including reactive components, initial values, and authored piecewise-linear
+  source waveforms;
 - fixed-step transient analysis of resistors, capacitors, inductors, ideal
   sources with optional piecewise-linear waveforms, and Shockley diodes;
 - backward Euler and trapezoidal integration with an explicit time step,

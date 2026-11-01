@@ -60,7 +60,16 @@ internal sealed class ElectricalComponentDto
 
     public double? InitialValue { get; set; }
 
+    public List<ElectricalWaveformPointDto>? Waveform { get; set; }
+
     public List<ElectricalTerminalDto>? Terminals { get; set; }
+}
+
+internal sealed class ElectricalWaveformPointDto
+{
+    public double? Time { get; set; }
+
+    public double? Value { get; set; }
 }
 
 internal sealed class ElectricalTerminalDto

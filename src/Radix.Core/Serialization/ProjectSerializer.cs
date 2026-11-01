@@ -292,6 +292,17 @@ public static class ProjectSerializer
             InitialValue = dto.InitialValue,
         };
 
+        foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
+        {
+            component.Waveform.Add(new ElectricalWaveformPoint
+            {
+                Time = pointDto.Time ?? throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' has a waveform breakpoint without 'time'."),
+                Value = pointDto.Value ?? throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' has a waveform breakpoint without 'value'."),
+            });
+        }
+
         foreach (ElectricalTerminalDto terminalDto in dto.Terminals ?? [])
         {
             component.Terminals.Add(new ElectricalTerminal
@@ -663,6 +674,13 @@ public static class ProjectSerializer
             Kind = ElectricalComponentMetadata.KindName(component.Kind),
             Value = component.Value,
             InitialValue = component.InitialValue,
+            Waveform = component.Waveform.Count == 0
+                ? null
+                : component.Waveform.Select(point => new ElectricalWaveformPointDto
+                {
+                    Time = point.Time,
+                    Value = point.Value,
+                }).ToList(),
             Terminals = component.Terminals.Select(terminal => new ElectricalTerminalDto
             {
                 Id = terminal.Id,

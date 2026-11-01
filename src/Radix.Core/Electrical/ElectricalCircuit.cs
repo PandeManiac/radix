@@ -54,6 +54,10 @@ public static class ElectricalComponentMetadata
     public static bool HasState(ElectricalComponentKind kind) =>
         kind is ElectricalComponentKind.Capacitor or ElectricalComponentKind.Inductor;
 
+    /// <summary>Whether the kind is an independent source, so a transient run can drive it.</summary>
+    public static bool SupportsWaveform(ElectricalComponentKind kind) =>
+        kind is ElectricalComponentKind.VoltageSource or ElectricalComponentKind.CurrentSource;
+
     public static string ParameterName(ElectricalComponentKind kind) =>
         kind switch
         {
@@ -116,6 +120,19 @@ public sealed class ElectricalTerminal
     public override string ToString() => $"{Id}->{NodeId}";
 }
 
+/// <summary>
+/// One piecewise-linear breakpoint of an authored source drive: the source value at an
+/// absolute time from the start of the run, in the source's unit.
+/// </summary>
+public sealed class ElectricalWaveformPoint
+{
+    public double Time { get; set; }
+
+    public double Value { get; set; }
+
+    public override string ToString() => $"{Time}:{Value}";
+}
+
 /// <summary>One authored electrical component with an explicit value and terminal bindings.</summary>
 public sealed class ElectricalComponent
 {
@@ -137,6 +154,14 @@ public sealed class ElectricalComponent
     /// circuit's DC operating point. Components without state reject a value.
     /// </summary>
     public double? InitialValue { get; set; }
+
+    /// <summary>
+    /// Optional piecewise-linear drive for an independent source, in the source's unit.
+    /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
+    /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
+    /// outside their range. Capacitors, inductors, and resistors reject a waveform.
+    /// </summary>
+    public List<ElectricalWaveformPoint> Waveform { get; } = [];
 
     public List<ElectricalTerminal> Terminals { get; } = [];
 
@@ -225,8 +250,8 @@ public sealed class ElectricalCircuit
     /// <summary>
     /// Validates and bridges this authored circuit to the transient solver. Capacitors
     /// and inductors become the solver's reactive elements, their optional initial
-    /// values become the solver's initial state, and all other kinds map one to one.
-    /// Sources are constant: authored circuits have no waveform field yet.
+    /// values become the solver's initial state, all other kinds map one to one, and a
+    /// source's optional piecewise-linear waveform drives it in time.
     /// </summary>
     public TransientNetlist ToTransientNetlist()
     {
@@ -248,9 +273,11 @@ public sealed class ElectricalCircuit
                     break;
                 case ElectricalComponentKind.VoltageSource:
                     netlist.AddVoltageSource(component.Id, nodeA, nodeB, component.Value);
+                    ApplyWaveform(netlist, component);
                     break;
                 case ElectricalComponentKind.CurrentSource:
                     netlist.AddCurrentSource(component.Id, nodeA, nodeB, component.Value);
+                    ApplyWaveform(netlist, component);
                     break;
                 case ElectricalComponentKind.Capacitor:
                     netlist.AddCapacitor(component.Id, nodeA, nodeB, component.Value);
@@ -274,6 +301,18 @@ public sealed class ElectricalCircuit
         }
 
         return netlist;
+    }
+
+    private static void ApplyWaveform(TransientNetlist netlist, ElectricalComponent component)
+    {
+        if (component.Waveform.Count == 0)
+        {
+            return;
+        }
+
+        netlist.SetWaveform(
+            component.Id,
+            component.Waveform.Select(point => new TransientWaveformPoint(point.Time, point.Value)));
     }
 
     public override string ToString() => Id;
@@ -382,6 +421,50 @@ public static class ElectricalCircuitValidator
                         "RAD-ELEC-016",
                         $"Component '{component.Id}' has a non-finite initial value.",
                         path: path);
+                }
+            }
+
+            if (component.Waveform.Count > 0)
+            {
+                if (!ElectricalComponentMetadata.SupportsWaveform(component.Kind))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-017",
+                        $"Component '{component.Id}' is a {component.Kind} and cannot have a waveform; only independent sources are driven in time.",
+                        path: path);
+                }
+                else if (component.Waveform.Count < 2)
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-018",
+                        $"Component '{component.Id}' has a waveform with {component.Waveform.Count} breakpoint(s); a piecewise-linear drive needs at least two.",
+                        path: path);
+                }
+                else
+                {
+                    double previousTime = double.NegativeInfinity;
+                    foreach (ElectricalWaveformPoint point in component.Waveform)
+                    {
+                        if (!double.IsFinite(point.Time) || !double.IsFinite(point.Value))
+                        {
+                            diagnostics.Error(
+                                "RAD-ELEC-019",
+                                $"Component '{component.Id}' has a non-finite waveform breakpoint.",
+                                path: path);
+                            break;
+                        }
+
+                        if (point.Time <= previousTime)
+                        {
+                            diagnostics.Error(
+                                "RAD-ELEC-020",
+                                $"Component '{component.Id}' waveform breakpoints must have strictly increasing times; {point.Time} follows {previousTime}.",
+                                path: path);
+                            break;
+                        }
+
+                        previousTime = point.Time;
+                    }
                 }
             }
 

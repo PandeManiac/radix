@@ -71,6 +71,26 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void EditingAValuePreservesAnAuthoredWaveform()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        ElectricalComponent source = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 1e-3, Value = 5 });
+
+        EditableField value = viewModel.ElectricalComponentFields
+            .Single(field => field.Label.StartsWith("Value (", StringComparison.Ordinal));
+        value.Value = "3";
+
+        Assert.True(viewModel.ApplyField(value));
+        Assert.Equal(3, source.Value);
+        Assert.Equal(2, source.Waveform.Count);
+        Assert.Equal(5, source.Waveform[1].Value);
+    }
+
+    [Fact]
     public void ComponentMetadataAndExplicitTerminalsAreEditable()
     {
         EditorViewModel viewModel = CreateEmptyEditor();
