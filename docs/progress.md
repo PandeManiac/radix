@@ -441,6 +441,30 @@ path and changes no `DcLinearSolver` semantics.
 40. Added `examples/transient-rc.json`, `examples/transient-rlc.json`, and
     `examples/transient-pulse.json` and documented the solver, format, failure
     behaviour, and limits in `docs/electrical.md` and `README.md`.
+41. Added adaptive step control (`TransientOptions.AdaptiveTolerance`, CLI
+    `--tol/--initial-step/--min-step/--max-step/--max-steps`, JSON `tolerance`).
+    Control uses step doubling from the same state, normalises by `2^p - 1`, and
+    accepts only when every capacitor and inductor state variable is within
+    `rtol*|value| + rtol*1e-6`. Accepted steps keep the two half steps; rejected
+    steps shrink by `clamp(0.9*err^(-1/(p+1)), 0.2, 4)`. A step that cannot be
+    solved at all is retried smaller, so an over-large step is recoverable
+    instead of fatal, and failing to meet the tolerance above `minStep` is
+    reported as `NonConvergent` rather than a completed run. Six tests cover
+    accuracy vs a fixed run, tolerance monotonicity, a 1 us time constant over a
+    10 ms interval, determinism, the minimum-step failure, and option validation;
+    a JSON test covers loading and reporting adaptive settings.
+    The first implementation controlled the capacitor current and inductor
+    voltage as well, with an absolute floor of `rtol * 1e-6`. A temporary debug
+trace showed that at a drive ramp the estimator never accepted a step: those
+    derived quantities do not shrink with the step at a kink, so the normalised
+    error stayed around 0.8 while the step collapsed to 4e-12 s. The metric now
+    controls only capacitor voltage and inductor current, with
+    `AdaptiveAbsoluteTolerance` derived by default from the circuit's source and
+    initial-state scale. Adaptive accuracy is asserted against the analytic RC
+    solution, not just step counts.
+42. Refactored the integrator so the fixed and adaptive loops share one
+    `TryAdvance` step routine and an immutable `ReactiveState`, and the CLI text
+    report distinguishes fixed and adaptive headers.
 
 Verification: release build 0 warnings/0 errors; core tests 528/528; editor
 tests 191/191; `radix transient` runs all three examples with exit 0 and

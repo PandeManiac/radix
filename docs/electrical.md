@@ -208,13 +208,42 @@ both behaviours instead of assuming them.
 
 ### Time step and determinism
 
-`TransientOptions` fixes one uniform step, `(stop - start) / steps`, with `steps`
+A fixed-step run uses one uniform step, `(stop - start) / steps`, with `steps`
 between 1 and 1,000,000, and the last point lands exactly on `stop`. The run is
-deterministic: identical netlists produce identical samples. There is no
-adaptive step control, no local truncation error estimate, and no automatic
-stiffness detection, so choosing `h` against the smallest time constant or
-period that matters is the user's responsibility; roughly twenty steps per time
-constant is a reasonable starting point.
+deterministic: identical netlists produce identical samples. Choosing `h`
+against the smallest time constant or period that matters is then the user's
+responsibility; roughly twenty steps per time constant is a reasonable starting
+point.
+
+Setting `AdaptiveTolerance` (CLI `--tol`) switches to step-doubling control. At
+each point the solver takes one step of size `h` and two of size `h/2` from the
+same state, compares the state variables, and divides the difference by
+`2^p - 1` for the method order `p`. The step is accepted when that estimate is
+within `atol + rtol * max(|value|, |value of the other solution|)` for every
+state variable, and an accepted step keeps the two half steps. The next step
+size grows or shrinks by `clamp(0.9 * error^(-1/(p+1)), 0.2, 4)`.
+
+Only the true ordinary-differential-equation states are controlled: capacitor
+voltages and inductor currents. The derived capacitor current and inductor
+voltage are deliberately excluded, because at a drive kink their magnitude does
+not fall with the step and a purely relative tolerance on them would collapse
+the step size (an earlier version of this code did exactly that at the start of
+a ramp). `AdaptiveAbsoluteTolerance` (CLI `--atol`) sets `atol`; when zero it is
+derived as `rtol` times the circuit's own scale, the largest source magnitude
+over the interval or initial reactive state, with a floor of 1. That scale is a
+numerical reference shared by voltages and currents, not a physical unit.
+
+A step that cannot be solved at all (singular, non-convergent, or non-finite) is
+retried at half the size, so a Newton failure caused by an over-large step
+becomes a smaller step instead of a failed run. `InitialTimeStep`,
+`MinimumTimeStep`, `MaximumTimeStep`, and `MaximumStepCount` bound the search;
+failing to meet the tolerance above the minimum step is reported as
+`NonConvergent` with the minimum-step message, never as a completed run.
+Adaptive runs are deterministic too, and the trapezoidal rule's first accepted
+step still uses backward Euler.
+
+Adaptive control does not make the solver sparse or fast: each trial step still
+factors a dense MNA system, and step doubling costs three solves per trial.
 
 ### Initial conditions
 
@@ -255,6 +284,7 @@ partially solved run is never presented as a completed one.
 radix transient examples/transient-rc.json
 radix transient examples/transient-rlc.json --method trapezoidal
 radix transient examples/transient-pulse.json --start 0 --stop 0.003 --steps 300 --json
+radix transient examples/transient-rc.json --tol 1e-6 --method trapezoidal --json
 ```
 
 `radix transient` reads a versioned `radix-transient-netlist` document. An
@@ -275,6 +305,10 @@ optional `analysis` block supplies defaults that command-line options override:
 }
 ```
 
+The `analysis` block accepts `start`, `stop`, `steps`, `method`, and, for
+adaptive control, `tolerance`, `absoluteTolerance`, `initialStep`, `minStep`,
+`maxStep`, and `maxSteps`.
+
 | Type | Required | Optional |
 | --- | --- | --- |
 | `resistor` | `ohms` | |
@@ -290,9 +324,9 @@ values, duplicate or non-increasing breakpoint times, and an out-of-range
 analysis block. Input is bounded to 16 MiB.
 
 `--json` emits one `radix-transient-report` (version 1) with the ground node,
-method, start/stop/step count and step size, `completed`, an optional stable
-`failure` name with a message and failing step index, and one point per simulated
-step. Each point carries its time, the solve's `relativeResidual`, node
+method, start/stop/step count and step size, the `adaptive` flag and `tolerance`
+when step control is on, `completed`, an optional stable `failure` name with a
+message and failing step index, and one point per accepted step. Each point carries its time, the solve's `relativeResidual`, node
 voltages, and each element's terminal voltage, current, and absorbed power. Exit
 codes are unchanged: `0` completed, `1` a step failed, `2` malformed input or
 invalid options. The command never writes project or netlist state.
@@ -301,9 +335,11 @@ invalid options. The command never writes project or netlist state.
 
 There is no junction capacitance, carrier storage, high-injection, self-heating,
 noise, temperature dependence, transformer, dependent source, switch, relay, or
-transmission-line model. There is no AC or small-signal analysis, no adaptive
-stepping, no gmin or source continuation, and no SPICE-style built-in source
-functions beyond piecewise-linear tables. Authored `.radix` electrical circuits
+transmission-line model. There is no AC or small-signal analysis, no
+stiffness detection or implicit method switching, no gmin or source
+continuation, and no SPICE-style built-in source functions beyond
+piecewise-linear tables. Adaptive control uses step doubling with one method at
+a time; it does not estimate a spectral radius or choose between methods. Authored `.radix` electrical circuits
 still expose only resistors and independent sources, and the editor has no
 transient UI: `radix transient` is the supported entry point.
 

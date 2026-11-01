@@ -144,6 +144,31 @@ public sealed class TransientNetlistJsonTests
         Assert.Empty(root.GetProperty("points").EnumerateArray());
     }
 
+    [Fact]
+    public void LoadsAndReportsAdaptiveAnalysisSettings()
+    {
+        string json = RcDocument.Replace(
+            "\"method\": \"trapezoidal\"",
+            "\"method\": \"trapezoidal\", \"tolerance\": 1e-6, \"initialStep\": 2e-5, \"maxSteps\": 5000",
+            StringComparison.Ordinal);
+        TransientDocument document = TransientNetlistJson.LoadFromString(json);
+        TransientOptions options = Assert.IsType<TransientOptions>(document.Analysis);
+
+        Assert.True(options.IsAdaptive);
+        Assert.Equal(1e-6, options.AdaptiveTolerance);
+        Assert.Equal(2e-5, options.InitialTimeStep);
+        Assert.Equal(5_000, options.MaximumStepCount);
+
+        TransientResult result = document.Netlist.Run(options);
+        Assert.True(result.Completed, result.Message);
+
+        using JsonDocument report = JsonDocument.Parse(
+            TransientNetlistJson.ToReportJson("rc.json", document.Netlist, result));
+        Assert.True(report.RootElement.GetProperty("adaptive").GetBoolean());
+        Assert.Equal(1e-6, report.RootElement.GetProperty("tolerance").GetDouble());
+        Assert.True(report.RootElement.GetProperty("completed").GetBoolean());
+    }
+
     [Theory]
     [InlineData("""{ "format": "radix-dc-netlist", "version": 1, "ground": "gnd", "elements": [] }""")]
     [InlineData("""{ "format": "radix-transient-netlist", "version": 2, "ground": "gnd", "elements": [] }""")]
@@ -158,6 +183,8 @@ public sealed class TransientNetlistJsonTests
     [InlineData("""{ "format": "radix-transient-netlist", "version": 1, "ground": "gnd", "elements": [], "analysis": { "start": 0, "stop": 0, "steps": 10 } }""")]
     [InlineData("""{ "format": "radix-transient-netlist", "version": 1, "ground": "gnd", "elements": [], "analysis": { "method": "gear" } }""")]
     [InlineData("""{ "format": "radix-transient-netlist", "version": 1, "ground": "gnd", "elements": [], "analysis": { "steps": 0 } }""")]
+    [InlineData("""{ "format": "radix-transient-netlist", "version": 1, "ground": "gnd", "elements": [], "analysis": { "tolerance": 0 } }""")]
+    [InlineData("""{ "format": "radix-transient-netlist", "version": 1, "ground": "gnd", "elements": [], "analysis": { "tolerance": 1e-6, "initialStep": 0.5, "maxStep": 0.1 } }""")]
     [InlineData("not json")]
     public void RejectsInvalidDocuments(string json)
     {

@@ -110,11 +110,17 @@ internal static class Program
                                              Solve a DC linear electrical circuit
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--json]                   Emit one machine-readable DC report
-              transient <netlist.json>       Solve a fixed-step time-domain electrical circuit
+              transient <netlist.json>       Solve a time-domain electrical circuit
                   [--start <s>]              Start time in seconds (default: file analysis or 0)
                   [--stop <s>]               Stop time in seconds (default: file analysis or 1)
-                  [--steps <n>]              Uniform steps, 1..10000 (default: file analysis or 100)
+                  [--steps <n>]              Fixed steps, 1..10000 (default: file analysis or 100)
                   [--method <name>]          backward-euler (default) or trapezoidal
+                  [--tol <x>]                Adaptive step control with this relative tolerance
+                  [--atol <x>]               Absolute adaptive tolerance (default: derived from the circuit)
+                  [--initial-step <s>]       First adaptive step (default: (stop-start)/steps)
+                  [--min-step <s>]           Smallest adaptive step (default: interval * 1e-12)
+                  [--max-step <s>]           Largest adaptive step (default: the whole interval)
+                  [--max-steps <n>]          Adaptive trial-step budget (default 100000)
                   [--max-rows <n>]           Text rows to print (default 40)
                   [--json]                   Emit one machine-readable transient report
               simulate <project.radix>       Compile and run a definition headlessly
@@ -358,7 +364,12 @@ internal static class Program
     private static int TransientCommand(string[] args)
     {
         (var positional, var options) = Parse(
-            args, ["start", "stop", "steps", "method", "max-rows"], ["json"]);
+            args,
+            [
+                "start", "stop", "steps", "method", "max-rows", "tol", "atol",
+                "initial-step", "min-step", "max-step", "max-steps",
+            ],
+            ["json"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
@@ -371,12 +382,22 @@ internal static class Program
         TransientDocument document = TransientNetlistJson.Load(source);
         TransientOptions defaults = document.Analysis ?? new TransientOptions();
         int maxRows = GetIntOption(options, "max-rows", 40, 1, 100_000);
+        double? adaptiveTolerance = GetOption(options, "tol") is null
+            ? defaults.AdaptiveTolerance
+            : GetDoubleOption(options, "tol", 0);
         var transientOptions = new TransientOptions
         {
             StartTime = GetDoubleOption(options, "start", defaults.StartTime),
             StopTime = GetDoubleOption(options, "stop", defaults.StopTime),
             Steps = GetIntOption(options, "steps", defaults.Steps, 1, 10_000),
             Method = ParseTransientMethod(GetOption(options, "method"), defaults.Method),
+            AdaptiveTolerance = adaptiveTolerance,
+            AdaptiveAbsoluteTolerance = GetDoubleOption(
+                options, "atol", defaults.AdaptiveAbsoluteTolerance),
+            InitialTimeStep = GetDoubleOption(options, "initial-step", defaults.InitialTimeStep),
+            MinimumTimeStep = GetDoubleOption(options, "min-step", defaults.MinimumTimeStep),
+            MaximumTimeStep = GetDoubleOption(options, "max-step", defaults.MaximumTimeStep),
+            MaximumStepCount = GetIntOption(options, "max-steps", defaults.MaximumStepCount, 1, 1_000_000),
         };
 
         TransientResult result;
@@ -429,8 +450,12 @@ internal static class Program
         Console.WriteLine($"ground:    {netlist.GroundNodeId}");
         Console.WriteLine($"method:    {TransientNetlistJson.MethodName(options.Method)}");
         Console.WriteLine(
-            $"time step: {FormatDcNumber(result.TimeStep)} s x {options.Steps} steps " +
-            $"({FormatDcNumber(options.StartTime)} -> {FormatDcNumber(options.StopTime)} s)");
+            options.IsAdaptive
+                ? $"step size: adaptive, relative tolerance {FormatDcNumber(options.AdaptiveTolerance!.Value)}, " +
+                  $"{result.Points.Count - 1} accepted steps " +
+                  $"({FormatDcNumber(options.StartTime)} -> {FormatDcNumber(options.StopTime)} s)"
+                : $"time step: {FormatDcNumber(result.TimeStep)} s x {options.Steps} steps " +
+                  $"({FormatDcNumber(options.StartTime)} -> {FormatDcNumber(options.StopTime)} s)");
         Console.WriteLine("convention: element current flows nodeA -> nodeB; power is absorbed");
         if (netlist.Capacitors.Count + netlist.Inductors.Count > 0)
         {

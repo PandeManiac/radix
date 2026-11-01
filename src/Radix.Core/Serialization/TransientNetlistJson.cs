@@ -135,6 +135,8 @@ public static class TransientNetlistJson
                 result.Options.StopTime,
                 result.Options.Steps,
                 result.TimeStep,
+                result.Options.IsAdaptive,
+                result.Options.AdaptiveTolerance,
                 result.Completed,
                 result.Failure is null ? null : DcNetlistJson.FailureName(result.Failure.Value),
                 result.Message,
@@ -177,6 +179,12 @@ public static class TransientNetlistJson
             StopTime = analysis.Stop ?? 1,
             Steps = analysis.Steps ?? 100,
             Method = method,
+            AdaptiveTolerance = analysis.Tolerance,
+            AdaptiveAbsoluteTolerance = analysis.AbsoluteTolerance ?? 0,
+            InitialTimeStep = analysis.InitialStep ?? 0,
+            MinimumTimeStep = analysis.MinStep ?? 0,
+            MaximumTimeStep = analysis.MaxStep ?? 0,
+            MaximumStepCount = analysis.MaxSteps ?? 100_000,
         };
         try
         {
@@ -419,7 +427,13 @@ public static class TransientNetlistJson
         double? Start,
         double? Stop,
         int? Steps,
-        string? Method);
+        string? Method,
+        double? Tolerance,
+        double? AbsoluteTolerance,
+        double? InitialStep,
+        double? MinStep,
+        double? MaxStep,
+        int? MaxSteps);
 
     private sealed record ElementDto(
         string? Id,
@@ -451,6 +465,8 @@ public static class TransientNetlistJson
         double StopTime,
         int Steps,
         double TimeStep,
+        bool Adaptive,
+        double? Tolerance,
         bool Completed,
         string? Failure,
         string? Message,

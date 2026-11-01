@@ -477,6 +477,161 @@ public sealed class TransientSolverTests
             }.Validate());
     }
 
+    [Fact]
+    public void AdaptiveRcChargeMeetsItsToleranceWithFewerPointsThanAFixedRun()
+    {
+        const double supply = 5;
+        const double resistance = 1_000;
+        const double capacitance = 1e-6;
+        double tau = resistance * capacitance;
+        TransientNetlist netlist = RcStepNetlist(supply, resistance, capacitance);
+
+        TransientResult adaptive = netlist.Run(new TransientOptions
+        {
+            StopTime = 5 * tau,
+            AdaptiveTolerance = 1e-6,
+        });
+        TransientResult fixedStep = netlist.Run(new TransientOptions
+        {
+            StopTime = 5 * tau,
+            Steps = 100,
+        });
+
+        Assert.True(adaptive.Completed, adaptive.Message);
+        double exact = supply * (1 - Math.Exp(-5));
+        double adaptiveError = Math.Abs(adaptive.FinalPoint!.NodeVoltages["out"] - exact);
+        double fixedError = Math.Abs(fixedStep.FinalPoint!.NodeVoltages["out"] - exact);
+        Assert.True(adaptiveError < 1e-3, $"adaptive error was {adaptiveError:G6} V.");
+        Assert.True(
+            adaptiveError * 5 < fixedError,
+            $"adaptive error {adaptiveError:G6} V was not clearly better than the 100-step error {fixedError:G6} V.");
+        Assert.True(adaptive.Points.Count < 1_000, $"adaptive run used {adaptive.Points.Count} points.");
+        Assert.Equal(0, adaptive.InitialPoint!.Time);
+        Assert.Equal(5 * tau, adaptive.FinalPoint.Time, 1e-15);
+        for (int index = 1; index < adaptive.Points.Count; index++)
+        {
+            Assert.True(adaptive.Points[index].Time > adaptive.Points[index - 1].Time);
+        }
+
+        foreach (TransientPoint point in adaptive.Points)
+        {
+            double total = point.ElementPowers.Values.Sum();
+            double scale = Math.Max(point.ElementPowers.Values.Sum(power => Math.Abs(power)), 1e-12);
+            Assert.True(Math.Abs(total) <= 1e-9 * scale);
+        }
+    }
+
+    [Fact]
+    public void TighterAdaptiveToleranceReducesErrorAndAddsPoints()
+    {
+        double looseError = AdaptiveRcError(1e-3, out int loosePoints);
+        double tightError = AdaptiveRcError(1e-9, out int tightPoints);
+
+        Assert.True(tightError < looseError, $"tight tolerance error {tightError:G6} was not below {looseError:G6}.");
+        Assert.True(tightPoints > loosePoints, "a tighter tolerance must not use fewer points.");
+    }
+
+    [Fact]
+    public void AdaptiveControlHandlesATimeConstantFarBelowTheWholeInterval()
+    {
+        // tau = 1 us over a 10 ms interval: a fixed run with the default step count
+        // cannot resolve the charge at all, while adaptive control must reach the
+        // analytic final value.
+        var options = new TransientOptions
+        {
+            StopTime = 1e-2,
+            AdaptiveTolerance = 1e-4,
+        };
+
+        TransientResult result = RcStepNetlist(5, 1_000, 1e-9).Run(options);
+
+        Assert.True(result.Completed, result.Message);
+        AssertClose(5, result.FinalPoint!.NodeVoltages["out"], 1e-4);
+        Assert.True(result.Points.Count < options.MaximumStepCount);
+    }
+
+    [Fact]
+    public void AdaptiveRunsAreDeterministic()
+    {
+        var options = new TransientOptions { StopTime = 2e-3, AdaptiveTolerance = 1e-7 };
+        TransientNetlist netlist = RcStepNetlist(5, 1_000, 1e-6);
+
+        TransientResult first = netlist.Run(options);
+        TransientResult second = netlist.Run(options);
+
+        Assert.True(first.Completed, first.Message);
+        Assert.Equal(first.Points.Count, second.Points.Count);
+        for (int index = 0; index < first.Points.Count; index++)
+        {
+            Assert.Equal(first.Points[index].Time, second.Points[index].Time);
+            Assert.Equal(
+                first.Points[index].NodeVoltages["out"],
+                second.Points[index].NodeVoltages["out"]);
+        }
+    }
+
+    [Fact]
+    public void AdaptiveControlReportsWhenTheMinimumStepCannotMeetTheTolerance()
+    {
+        var options = new TransientOptions
+        {
+            StopTime = 1e-3,
+            AdaptiveTolerance = 1e-12,
+            InitialTimeStep = 1e-3,
+            MinimumTimeStep = 1e-3,
+            MaximumStepCount = 1_000,
+        };
+
+        // tau = 10 us, so a 1 ms step cannot meet a 1e-12 tolerance and shrinking is
+        // forbidden by the minimum step.
+        TransientResult result = RcStepNetlist(5, 1_000, 1e-8).Run(options);
+
+        Assert.False(result.Completed);
+        Assert.Equal(DcSolveFailure.NonConvergent, result.Failure);
+        Assert.Contains("minimum step", result.Message, StringComparison.Ordinal);
+        Assert.NotEmpty(result.Points);
+    }
+
+    [Fact]
+    public void AdaptiveOptionsAreValidated()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TransientOptions { StopTime = 1, AdaptiveTolerance = 0 }.Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TransientOptions { StopTime = 1, AdaptiveTolerance = double.NaN }.Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TransientOptions { StopTime = 1, AdaptiveTolerance = 1e-6, MaximumStepCount = 0 }.Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TransientOptions { StopTime = 1, AdaptiveTolerance = 1e-6, InitialTimeStep = double.NaN }.Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TransientOptions { StopTime = 1, AdaptiveTolerance = 1e-6, MinimumTimeStep = -1 }.Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TransientOptions
+            {
+                StopTime = 1,
+                AdaptiveTolerance = 1e-6,
+                InitialTimeStep = 0.1,
+                MaximumTimeStep = 0.01,
+            }.Validate());
+    }
+
+    private static double AdaptiveRcError(double tolerance, out int points)
+    {
+        const double supply = 5;
+        const double resistance = 1_000;
+        const double capacitance = 1e-6;
+        double tau = resistance * capacitance;
+        TransientResult result = RcStepNetlist(supply, resistance, capacitance).Run(new TransientOptions
+        {
+            StopTime = 3 * tau,
+            AdaptiveTolerance = tolerance,
+        });
+        Assert.True(result.Completed, result.Message);
+        points = result.Points.Count;
+        double exact = supply * (1 - Math.Exp(-3));
+        return Math.Abs(result.FinalPoint!.NodeVoltages["out"] - exact);
+    }
+
     private static TransientNetlist RcStepNetlist(double supply, double resistance, double capacitance) =>
         new TransientNetlist("gnd")
             .AddVoltageSource("V1", "in", "gnd", supply)

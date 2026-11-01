@@ -142,6 +142,37 @@ public sealed record TransientOptions
     /// <summary>Integration method. The first step always uses backward Euler.</summary>
     public TransientMethod Method { get; init; } = TransientMethod.BackwardEuler;
 
+    /// <summary>
+    /// Relative local-error tolerance. `null` (the default) keeps the fixed-step
+    /// uniform integration; a positive value enables adaptive step control by step
+    /// doubling. Each state variable uses an absolute floor of
+    /// `tolerance * 1e-6` so values near zero are still controlled.
+    /// </summary>
+    public double? AdaptiveTolerance { get; init; }
+
+    /// <summary>
+    /// Absolute local-error tolerance. Zero (the default) derives it as
+    /// `AdapativeTolerance * scale`, where the scale is the largest magnitude of any
+    /// independent source over the interval or any initial reactive state, with a floor
+    /// of 1. That keeps a state that starts at zero from being controlled against zero.
+    /// </summary>
+    public double AdaptiveAbsoluteTolerance { get; init; }
+
+    /// <summary>First adaptive step in seconds; zero derives it from <see cref="TimeStep"/>.</summary>
+    public double InitialTimeStep { get; init; }
+
+    /// <summary>Smallest adaptive step in seconds; zero derives it from the interval.</summary>
+    public double MinimumTimeStep { get; init; }
+
+    /// <summary>Largest adaptive step in seconds; zero derives it from the interval.</summary>
+    public double MaximumTimeStep { get; init; }
+
+    /// <summary>Bound on trial steps in an adaptive run.</summary>
+    public int MaximumStepCount { get; init; } = 100_000;
+
+    /// <summary>Whether the run controls its own step size.</summary>
+    public bool IsAdaptive => AdaptiveTolerance is not null;
+
     /// <summary>The uniform integration step in seconds.</summary>
     public double TimeStep => (StopTime - StartTime) / Steps;
 
@@ -178,6 +209,76 @@ public sealed record TransientOptions
                 nameof(Steps),
                 Steps,
                 "The requested time range and step count do not produce a finite positive time step.");
+        }
+
+        if (AdaptiveTolerance is not double tolerance)
+        {
+            return;
+        }
+
+        if (!double.IsFinite(tolerance) || tolerance <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AdaptiveTolerance),
+                tolerance,
+                "Adaptive tolerance must be finite and greater than zero.");
+        }
+
+        if (!double.IsFinite(AdaptiveAbsoluteTolerance) || AdaptiveAbsoluteTolerance < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AdaptiveAbsoluteTolerance),
+                AdaptiveAbsoluteTolerance,
+                "The absolute adaptive tolerance must be finite and non-negative; zero derives it from the circuit scale.");
+        }
+
+        if (MaximumStepCount < 1 || MaximumStepCount > MaximumSteps)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaximumStepCount),
+                MaximumStepCount,
+                $"An adaptive run needs between 1 and {MaximumSteps} trial steps.");
+        }
+
+        if (!double.IsFinite(InitialTimeStep) || InitialTimeStep < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(InitialTimeStep),
+                InitialTimeStep,
+                "The initial adaptive step must be finite and non-negative; zero derives it from the step count.");
+        }
+
+        double initial = InitialTimeStep > 0 ? InitialTimeStep : TimeStep;
+        if (!double.IsFinite(initial) || initial <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(InitialTimeStep),
+                InitialTimeStep,
+                "The initial adaptive step must be finite and greater than zero.");
+        }
+
+        if (!double.IsFinite(MinimumTimeStep) || MinimumTimeStep < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MinimumTimeStep),
+                MinimumTimeStep,
+                "The minimum adaptive step must be finite and non-negative.");
+        }
+
+        if (!double.IsFinite(MaximumTimeStep) || MaximumTimeStep < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaximumTimeStep),
+                MaximumTimeStep,
+                "The maximum adaptive step must be finite and non-negative.");
+        }
+
+        if (MaximumTimeStep > 0 && MaximumTimeStep < initial)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaximumTimeStep),
+                MaximumTimeStep,
+                "The maximum adaptive step must not be smaller than the initial step.");
         }
     }
 }
@@ -476,7 +577,6 @@ public sealed class TransientNetlist
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
 
-        double timeStep = options.TimeStep;
         var capacitorVoltages = new double[_capacitors.Count];
         var capacitorCurrents = new double[_capacitors.Count];
         var inductorVoltages = new double[_inductors.Count];
@@ -531,88 +631,377 @@ public sealed class TransientNetlist
                 initialState.NodeVoltages, inductor.NodeA, inductor.NodeB);
         }
 
+        var state = new ReactiveState(
+            capacitorVoltages, capacitorCurrents, inductorVoltages, inductorCurrents);
         var points = new List<TransientPoint>(options.Steps + 1)
         {
-            MakePoint(options.StartTime, initialState, capacitorCurrents, inductorCurrents),
+            MakePoint(options.StartTime, initialState, state),
         };
 
+        return options.IsAdaptive
+            ? RunAdaptive(options, state, points)
+            : RunFixed(options, state, points);
+    }
+
+    /// <summary>The reactive state at one integration point. Arrays are replaced, never mutated.</summary>
+    private sealed class ReactiveState
+    {
+        public ReactiveState(
+            double[] capacitorVolts,
+            double[] capacitorAmps,
+            double[] inductorVolts,
+            double[] inductorAmps)
+        {
+            CapacitorVolts = capacitorVolts;
+            CapacitorAmps = capacitorAmps;
+            InductorVolts = inductorVolts;
+            InductorAmps = inductorAmps;
+        }
+
+        public double[] CapacitorVolts { get; }
+
+        public double[] CapacitorAmps { get; }
+
+        public double[] InductorVolts { get; }
+
+        public double[] InductorAmps { get; }
+    }
+
+    /// <summary>Runs the uniform step sequence of a fixed-step analysis.</summary>
+    private TransientResult RunFixed(
+        TransientOptions options,
+        ReactiveState state,
+        List<TransientPoint> points)
+    {
+        double timeStep = options.TimeStep;
         for (int step = 1; step <= options.Steps; step++)
         {
-            double time = step == options.Steps ? options.StopTime : options.StartTime + (step * timeStep);
+            double time = step == options.Steps
+                ? options.StopTime
+                : options.StartTime + (step * timeStep);
             bool trapezoidal = options.Method == TransientMethod.Trapezoidal && step > 1;
-            if (!TryBuildStepNetlist(
+            if (!TryAdvance(
                     time,
                     timeStep,
                     trapezoidal,
-                    capacitorVoltages,
-                    capacitorCurrents,
-                    inductorVoltages,
-                    inductorCurrents,
-                    out DcNetlist? stepNetlist,
-                    out string? companionProblem))
+                    state,
+                    out ReactiveState? next,
+                    out DcSolution? solution,
+                    out DcSolveFailure? failure,
+                    out string? message))
+            {
+                return new TransientResult(options, points, failure, message, step);
+            }
+
+            state = next!;
+            points.Add(MakePoint(time, solution!, state));
+        }
+
+        return new TransientResult(options, points, null, null, null);
+    }
+
+    /// <summary>
+    /// Runs adaptive step control by step doubling: one full step and two half steps
+    /// from the same state estimate the local error, an accepted step keeps the two
+    /// half steps (the more accurate pair), and a rejected step shrinks the step size.
+    /// A trial step that cannot be solved also shrinks the step, so a Newton failure
+    /// caused by a too-large step is recovered instead of ending the run. The step
+    /// size exponent is `1 / (order + 1)`, which is 1/3 for the trapezoidal rule and
+    /// 1/2 for backward Euler.
+    /// </summary>
+    private TransientResult RunAdaptive(
+        TransientOptions options,
+        ReactiveState state,
+        List<TransientPoint> points)
+    {
+        double tolerance = options.AdaptiveTolerance!.Value;
+        double absoluteTolerance = options.AdaptiveAbsoluteTolerance > 0
+            ? options.AdaptiveAbsoluteTolerance
+            : tolerance * ReferenceScale(options, state);
+        double span = options.StopTime - options.StartTime;
+        double minimumStep = options.MinimumTimeStep > 0 ? options.MinimumTimeStep : span * 1e-12;
+        double maximumStep = options.MaximumTimeStep > 0 ? options.MaximumTimeStep : span;
+        double timeStep = Math.Min(
+            options.InitialTimeStep > 0 ? options.InitialTimeStep : options.TimeStep, maximumStep);
+        double time = options.StartTime;
+        bool firstStep = true;
+        int trials = 0;
+        DcSolveFailure? lastFailure = null;
+        string? lastMessage = null;
+
+        while (time < options.StopTime)
+        {
+            double remaining = options.StopTime - time;
+            double trial = Math.Min(timeStep, remaining);
+            bool trapezoidal = options.Method == TransientMethod.Trapezoidal && !firstStep;
+            if (++trials > options.MaximumStepCount)
             {
                 return new TransientResult(
-                    options, points, DcSolveFailure.NonFiniteResult, companionProblem, step);
+                    options,
+                    points,
+                    DcSolveFailure.NonConvergent,
+                    $"Adaptive integration used its budget of {options.MaximumStepCount} trial steps before reaching the stop time (last step {trial:G6} s); relax the tolerance, raise --max-steps, or allow smaller steps.",
+                    points.Count - 1);
             }
 
-            DcSolution solution;
-            try
+            if (!TryAdvance(
+                    time,
+                    trial,
+                    trapezoidal,
+                    state,
+                    out ReactiveState? coarse,
+                    out _,
+                    out lastFailure,
+                    out lastMessage))
             {
-                solution = stepNetlist!.Solve();
-            }
-            catch (DcSolveException exception)
-            {
-                return new TransientResult(options, points, exception.Failure, exception.Message, step);
-            }
-
-            for (int index = 0; index < _capacitors.Count; index++)
-            {
-                TransientCapacitor capacitor = _capacitors[index];
-                double volts = VoltageAcross(
-                    solution.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
-                double current = trapezoidal
-                    ? ((2 * capacitor.Farads / timeStep) * (volts - capacitorVoltages[index])) -
-                      capacitorCurrents[index]
-                    : (capacitor.Farads / timeStep) * (volts - capacitorVoltages[index]);
-                if (!double.IsFinite(volts) || !double.IsFinite(current))
+                if (Shrink(ref timeStep, trial, minimumStep))
                 {
-                    return NonFiniteAt(step, capacitor.Id);
+                    continue;
                 }
 
-                capacitorVoltages[index] = volts;
-                capacitorCurrents[index] = current;
+                return StepTooSmall();
             }
 
-            for (int index = 0; index < _inductors.Count; index++)
+            double half = trial / 2;
+            if (!TryAdvance(
+                    time,
+                    half,
+                    trapezoidal,
+                    state,
+                    out ReactiveState? firstHalf,
+                    out _,
+                    out lastFailure,
+                    out lastMessage) ||
+                !TryAdvance(
+                    time + half,
+                    half,
+                    trapezoidal,
+                    firstHalf!,
+                    out ReactiveState? fine,
+                    out DcSolution? fineSolution,
+                    out lastFailure,
+                    out lastMessage))
             {
-                TransientInductor inductor = _inductors[index];
-                double volts = VoltageAcross(
-                    solution.NodeVoltages, inductor.NodeA, inductor.NodeB);
-                double current = trapezoidal
-                    ? inductorCurrents[index] +
-                      ((timeStep / (2 * inductor.Henries)) * (volts + inductorVoltages[index]))
-                    : inductorCurrents[index] + ((timeStep / inductor.Henries) * volts);
-                if (!double.IsFinite(volts) || !double.IsFinite(current))
+                if (Shrink(ref timeStep, trial, minimumStep))
                 {
-                    return NonFiniteAt(step, inductor.Id);
+                    continue;
                 }
 
-                inductorVoltages[index] = volts;
-                inductorCurrents[index] = current;
+                return StepTooSmall();
             }
 
-            points.Add(MakePoint(time, solution, capacitorCurrents, inductorCurrents));
+            int order = trapezoidal ? 2 : 1;
+            double error = StateError(fine!, coarse!, tolerance, absoluteTolerance, order);
+            if (error <= 1)
+            {
+                time = trial >= remaining ? options.StopTime : time + trial;
+                state = fine!;
+                firstStep = false;
+                points.Add(MakePoint(time, fineSolution!, state));
+            }
+
+            double factor = error <= 0
+                ? 4
+                : Math.Clamp(0.9 * Math.Pow(error, -1.0 / (order + 1)), 0.2, 4);
+            timeStep = Math.Min(maximumStep, trial * factor);
+            if (timeStep < minimumStep)
+            {
+                if (error > 1)
+                {
+                    return new TransientResult(
+                        options,
+                        points,
+                        DcSolveFailure.NonConvergent,
+                        $"Adaptive integration could not meet the tolerance of {tolerance:G6} before reaching the minimum step of {minimumStep:G6} s near t={time:G6} s; relax the tolerance or allow smaller steps.",
+                        points.Count - 1);
+                }
+
+                timeStep = minimumStep;
+            }
         }
 
         return new TransientResult(options, points, null, null, null);
 
-        TransientResult NonFiniteAt(int failedStep, string elementId) =>
+        bool Shrink(ref double currentStep, double trialStep, double floor)
+        {
+            currentStep = trialStep / 2;
+            return currentStep >= floor && trials <= options.MaximumStepCount;
+        }
+
+        TransientResult StepTooSmall() =>
             new(
                 options,
                 points,
-                DcSolveFailure.NonFiniteResult,
-                $"Element '{elementId}' produced a non-finite voltage or current at transient step {failedStep}; check the element value and the time step.",
-                failedStep);
+                lastFailure ?? DcSolveFailure.NonConvergent,
+                $"Adaptive integration could not take a solvable step of at least {minimumStep:G6} s near t={time:G6} s: {lastMessage ?? "the step would be smaller than the minimum step."}",
+                points.Count - 1);
+    }
+
+    /// <summary>
+    /// Advances the reactive state by one solve of the companion network. A failure
+    /// returns false with its classification and message instead of throwing, so the
+    /// fixed loop can end the run and the adaptive loop can retry with a smaller step.
+    /// </summary>
+    private bool TryAdvance(
+        double time,
+        double timeStep,
+        bool trapezoidal,
+        ReactiveState state,
+        out ReactiveState? next,
+        out DcSolution? solution,
+        out DcSolveFailure? failure,
+        out string? message)
+    {
+        next = null;
+        solution = null;
+        failure = null;
+        message = null;
+
+        if (!TryBuildStepNetlist(time, timeStep, trapezoidal, state, out DcNetlist? netlist, out string? problem))
+        {
+            failure = DcSolveFailure.NonFiniteResult;
+            message = problem;
+            return false;
+        }
+
+        try
+        {
+            solution = netlist!.Solve();
+        }
+        catch (DcSolveException exception)
+        {
+            failure = exception.Failure;
+            message = exception.Message;
+            return false;
+        }
+
+        var capacitorVolts = new double[_capacitors.Count];
+        var capacitorAmps = new double[_capacitors.Count];
+        for (int index = 0; index < _capacitors.Count; index++)
+        {
+            TransientCapacitor capacitor = _capacitors[index];
+            double volts = VoltageAcross(solution.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
+            double current = trapezoidal
+                ? ((2 * capacitor.Farads / timeStep) * (volts - state.CapacitorVolts[index])) -
+                  state.CapacitorAmps[index]
+                : (capacitor.Farads / timeStep) * (volts - state.CapacitorVolts[index]);
+            if (!double.IsFinite(volts) || !double.IsFinite(current))
+            {
+                failure = DcSolveFailure.NonFiniteResult;
+                message =
+                    $"Capacitor '{capacitor.Id}' produced a non-finite voltage or current at a {timeStep:G6} s step; check the element value and the step size.";
+                return false;
+            }
+
+            capacitorVolts[index] = volts;
+            capacitorAmps[index] = current;
+        }
+
+        var inductorVolts = new double[_inductors.Count];
+        var inductorAmps = new double[_inductors.Count];
+        for (int index = 0; index < _inductors.Count; index++)
+        {
+            TransientInductor inductor = _inductors[index];
+            double volts = VoltageAcross(solution.NodeVoltages, inductor.NodeA, inductor.NodeB);
+            double current = trapezoidal
+                ? state.InductorAmps[index] +
+                  ((timeStep / (2 * inductor.Henries)) * (volts + state.InductorVolts[index]))
+                : state.InductorAmps[index] + ((timeStep / inductor.Henries) * volts);
+            if (!double.IsFinite(volts) || !double.IsFinite(current))
+            {
+                failure = DcSolveFailure.NonFiniteResult;
+                message =
+                    $"Inductor '{inductor.Id}' produced a non-finite voltage or current at a {timeStep:G6} s step; check the element value and the step size.";
+                return false;
+            }
+
+            inductorVolts[index] = volts;
+            inductorAmps[index] = current;
+        }
+
+        next = new ReactiveState(capacitorVolts, capacitorAmps, inductorVolts, inductorAmps);
+        return true;
+    }
+
+    /// <summary>
+    /// Normalised local-error estimate of the two-half-step solution against one full
+    /// step, divided by <c>2^order - 1</c> as step doubling requires. Only the true
+    /// ordinary-differential-equation states are compared (capacitor voltage and
+    /// inductor current); the derived capacitor current and inductor voltage follow
+    /// from them and must not drive step control, because at a drive kink their
+    /// magnitude is independent of the step size. A value at or below 1 accepts the
+    /// step.
+    /// </summary>
+    private static double StateError(
+        ReactiveState fine,
+        ReactiveState coarse,
+        double relativeTolerance,
+        double absoluteTolerance,
+        int order)
+    {
+        double divisor = Math.Pow(2, order) - 1;
+        double worst = 0;
+        Accumulate(fine.CapacitorVolts, coarse.CapacitorVolts);
+        Accumulate(fine.InductorAmps, coarse.InductorAmps);
+        return worst;
+
+        void Accumulate(double[] fineValues, double[] coarseValues)
+        {
+            for (int index = 0; index < fineValues.Length; index++)
+            {
+                double scale = absoluteTolerance +
+                    (relativeTolerance *
+                     Math.Max(Math.Abs(fineValues[index]), Math.Abs(coarseValues[index])));
+                worst = Math.Max(
+                    worst, Math.Abs(fineValues[index] - coarseValues[index]) / (divisor * scale));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The circuit's own magnitude, used to derive the absolute error scale: the largest
+    /// independent source value over the interval, the largest initial reactive state,
+    /// and a floor of 1. It is a numerical scale, not a physical quantity, so a voltage
+    /// and a current share it.
+    /// </summary>
+    private double ReferenceScale(TransientOptions options, ReactiveState state)
+    {
+        double scale = 1;
+        foreach (DcElement element in _elements)
+        {
+            if (element is not (DcVoltageSource or DcCurrentSource))
+            {
+                continue;
+            }
+
+            if (!_waveforms.TryGetValue(element.Id, out TransientWaveform? waveform))
+            {
+                scale = Math.Max(scale, Math.Abs(element.Value));
+                continue;
+            }
+
+            scale = Math.Max(scale, Math.Abs(waveform.ValueAt(options.StartTime)));
+            scale = Math.Max(scale, Math.Abs(waveform.ValueAt(options.StopTime)));
+            foreach (TransientWaveformPoint point in waveform.Points)
+            {
+                if (point.Time >= options.StartTime && point.Time <= options.StopTime)
+                {
+                    scale = Math.Max(scale, Math.Abs(point.Value));
+                }
+            }
+        }
+
+        foreach (double volts in state.CapacitorVolts)
+        {
+            scale = Math.Max(scale, Math.Abs(volts));
+        }
+
+        foreach (double amperes in state.InductorAmps)
+        {
+            scale = Math.Max(scale, Math.Abs(amperes));
+        }
+
+        return scale;
     }
 
     /// <summary>
@@ -704,10 +1093,7 @@ public sealed class TransientNetlist
         double time,
         double timeStep,
         bool trapezoidal,
-        double[] capacitorVoltages,
-        double[] capacitorCurrents,
-        double[] inductorVoltages,
-        double[] inductorCurrents,
+        ReactiveState state,
         out DcNetlist? netlist,
         out string? problem)
     {
@@ -722,8 +1108,8 @@ public sealed class TransientNetlist
             TransientCapacitor capacitor = _capacitors[index];
             double conductance =
                 ((trapezoidal ? 2 : 1) * capacitor.Farads) / timeStep;
-            double history = (conductance * capacitorVoltages[index]) +
-                (trapezoidal ? capacitorCurrents[index] : 0);
+            double history = (conductance * state.CapacitorVolts[index]) +
+                (trapezoidal ? state.CapacitorAmps[index] : 0);
             if (!IsUsable(conductance) || !double.IsFinite(history))
             {
                 problem =
@@ -742,8 +1128,8 @@ public sealed class TransientNetlist
             TransientInductor inductor = _inductors[index];
             double conductance =
                 timeStep / ((trapezoidal ? 2 : 1) * inductor.Henries);
-            double history = inductorCurrents[index] +
-                (trapezoidal ? conductance * inductorVoltages[index] : 0);
+            double history = state.InductorAmps[index] +
+                (trapezoidal ? conductance * state.InductorVolts[index] : 0);
             if (!IsUsable(conductance) || !double.IsFinite(history))
             {
                 problem =
@@ -770,14 +1156,13 @@ public sealed class TransientNetlist
     private TransientPoint MakePoint(
         double time,
         DcSolution solution,
-        double[] capacitorCurrents,
-        double[] inductorCurrents) =>
+        ReactiveState state) =>
         MakePoint(
             time,
             solution.NodeVoltages,
             solution.ElementCurrents,
-            capacitorCurrents,
-            inductorCurrents,
+            state.CapacitorAmps,
+            state.InductorAmps,
             solution.RelativeResidual);
 
     private TransientPoint MakePoint(
