@@ -396,6 +396,15 @@ answers the question an id cannot: `rc-charge` in two revisions of a project is 
 not the same circuit, and a result copied into a report now proves which one produced it. Inspect
 it with `--json` (`"netlist"`), in the CSV comment block, or as a `provenance` attribute in SVG.
 
+**Sweeping a component.** `radix transient rc.json --sweep R1=800:1200:5` solves the circuit once for
+each value and prints a table of every node's peak, final value and settling time; a comma list
+(`R1=500,1000,2000`) gives exact values. Each row is a full run of its own copy of the netlist, with
+only that element changed, so a difference between rows belongs to the value rather than to how the
+circuit was rebuilt — and its fingerprint differs, which the exports show. A value that cannot solve
+appears as a failed row instead of vanishing, and the command exits non-zero if any row failed. A
+diode has four parameters rather than one value, so it is rejected with an explanation instead of
+being half-changed.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design

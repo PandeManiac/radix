@@ -371,13 +371,13 @@ internal static class Program
             [
                 "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
-                "refine-levels",
+                "refine-levels", "sweep",
             ],
             ["json", "refine", "csv"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--max-rows <n>] [--json|--csv]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--max-rows <n>] [--json|--csv]");
             return 2;
         }
 
@@ -459,6 +459,37 @@ internal static class Program
             return 2;
         }
 
+        string? sweepSpec = GetOption(options, "sweep");
+        if (sweepSpec is not null && (json || csv || refine))
+        {
+            Console.Error.WriteLine("--sweep prints a table; drop --json, --csv or --refine.");
+            return 2;
+        }
+
+        if (sweepSpec is not null)
+        {
+            if (!TryParseSweep(sweepSpec, out string sweptElement, out double[] sweptValues, out string? sweepError))
+            {
+                Console.Error.WriteLine(sweepError);
+                return 2;
+            }
+
+            IReadOnlyList<TransientSweepRow> sweepRows;
+            try
+            {
+                sweepRows = TransientSweep.Run(
+                    document.Netlist, sweptElement, sweptValues, transientOptions);
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"sweep error: {exception.Message}");
+                return 2;
+            }
+
+            PrintTransientSweep(document.Netlist, sweptElement, sweepRows);
+            return sweepRows.All(row => row.Result.Completed) ? 0 : 1;
+        }
+
         TransientResult result;
         try
         {
@@ -505,6 +536,139 @@ internal static class Program
         }
 
         return refinement is { Completed: false } || !result.Completed ? 1 : 0;
+    }
+
+    /// <summary>
+    /// Prints one line per node and swept value. The value is repeated for the first node of each
+    /// row and left blank for the rest, so a wide study stays readable as a table instead of
+    /// repeating the same number down the column.
+    /// </summary>
+    private static void PrintTransientSweep(
+        TransientNetlist netlist,
+        string elementId,
+        IReadOnlyList<TransientSweepRow> rows)
+    {
+        Console.WriteLine(
+            $"sweep:     {elementId} over {rows.Count} values ({rows[0].Value} -> {rows[^1].Value})");
+        Console.WriteLine(
+            "  value".PadRight(16) + "node".PadRight(12) + "peak (V)".PadRight(18) +
+            "final (V)".PadRight(18) + "settle (s)");
+        foreach (TransientSweepRow row in rows)
+        {
+            string value = FormatDcNumber(row.Value);
+            if (!row.Result.Completed)
+            {
+                Console.WriteLine("  " + value.PadRight(14) + "failed: " + row.Result.Failure);
+                continue;
+            }
+
+            if (row.Result.Metrics is not TransientMetrics metrics || metrics.Nodes.Count == 0)
+            {
+                Console.WriteLine("  " + value.PadRight(14) + "no metrics (run too short)");
+                continue;
+            }
+
+            bool first = true;
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                // Ground is the reference by definition: a 0 V row is not information.
+                if (string.Equals(node.NodeId, netlist.GroundNodeId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                string settled = node.SettlingTimeSeconds is double seconds
+                    ? FormatDcNumber(seconds)
+                    : "not settled";
+                Console.WriteLine(
+                    "  " + (first ? value : string.Empty).PadRight(14) +
+                    node.NodeId.PadRight(12) +
+                    FormatDcNumber(node.MaximumVolts).PadRight(18) +
+                    FormatDcNumber(node.FinalVolts).PadRight(18) +
+                    settled);
+                first = false;
+            }
+
+            if (first)
+            {
+                Console.WriteLine("  " + value.PadRight(14) + "no measured nodes");
+            }
+        }
+
+        Console.WriteLine(
+            $"convention: peak and final volts per node; sweep changed only '{elementId}' in a copy of the circuit.");
+    }
+
+    /// <summary>
+    /// Parses <c>id=v1,v2,...</c> or <c>id=from:to:count</c>. The spelling lives in the CLI
+    /// because it is about input, not about the numerical study.
+    /// </summary>
+    private static bool TryParseSweep(
+        string spec,
+        out string elementId,
+        out double[] values,
+        out string? error)
+    {
+        elementId = string.Empty;
+        values = [];
+        error = null;
+
+        int equals = spec.IndexOf('=');
+        if (equals <= 0 || equals == spec.Length - 1)
+        {
+            error = "--sweep expects <element>=<v1,v2,...> or <element>=<from>:<to>:<count>.";
+            return false;
+        }
+
+        elementId = spec[..equals].Trim();
+        string text = spec[(equals + 1)..].Trim();
+        if (elementId.Length == 0 || text.Length == 0)
+        {
+            error = "--sweep needs a non-empty element id and at least two values.";
+            return false;
+        }
+
+        string[] parts = text.Split(
+            ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1)
+        {
+            var parsed = new double[parts.Length];
+            for (int index = 0; index < parts.Length; index++)
+            {
+                if (!double.TryParse(
+                        parts[index], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[index]) ||
+                    !double.IsFinite(parsed[index]))
+                {
+                    error = $"--sweep value '{parts[index]}' is not a finite number.";
+                    return false;
+                }
+            }
+
+            values = parsed;
+            return true;
+        }
+
+        string[] range = text.Split(':', StringSplitOptions.TrimEntries);
+        if (range.Length != 3 ||
+            !double.TryParse(range[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) ||
+            !double.TryParse(range[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) ||
+            !int.TryParse(range[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
+        {
+            error = "--sweep expects <from>:<to>:<count> (for example R1=800:1200:5) or a comma-separated list of at least two values.";
+            return false;
+        }
+
+        try
+        {
+            values = TransientSweep.Linspace(from, to, count);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            error = exception.Message;
+            return false;
+        }
+
+        return true;
     }
 
     private static void PrintTransientRefinement(TransientRefinement study)

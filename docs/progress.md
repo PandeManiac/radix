@@ -710,7 +710,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     waveform and a differently named ground, and that the value reaches the stamp, the CSV and the
     report.
 
-Verification: release build 0 warnings/0 errors; core tests 601/601; editor
+67. Added a parameter sweep: `TransientNetlist.Clone()` and `WithElementValue(id, value)` copy a
+    circuit and change exactly one element, and `TransientSweep.Run` solves the copies, reporting a
+    failed run as a row rather than dropping it. The CLI gained
+    `--sweep <id>=<v1,v2,...>` / `--sweep <id>=<from>:<to>:<count>` printing peak, final value and
+    settling time per node, with ground suppressed and a non-zero exit if any row failed. Values
+    must be positive and invertible for reactive and resistive elements; a diode is refused because
+    one value cannot describe four parameters. Tests pin the clone (identical solution, originals
+    untouched), the physical trend (larger R settles later), the linear source sweep, and the
+    rejection of bad values, unknown ids, diodes, and unusable ranges.
+
+Verification: release build 0 warnings/0 errors; core tests 607/607; editor
 tests 213/213; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

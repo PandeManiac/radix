@@ -464,6 +464,137 @@ public sealed class TransientNetlist
     /// <summary>All referenced nodes, including ground, in ordinal order.</summary>
     public IReadOnlyList<string> Nodes => _nodes.OrderBy(node => node, StringComparer.Ordinal).ToArray();
 
+    /// <summary>
+    /// A copy that can be changed without touching this netlist. Elements, reactive components,
+    /// presets and waveforms are all carried over, so a sweep varies exactly one thing.
+    /// </summary>
+    public TransientNetlist Clone()
+    {
+        var copy = new TransientNetlist(GroundNodeId);
+        foreach (DcElement element in _elements)
+        {
+            switch (element)
+            {
+                case DcResistor resistor:
+                    copy.AddResistor(resistor.Id, resistor.NodeA, resistor.NodeB, resistor.Ohms);
+                    break;
+                case DcVoltageSource source:
+                    copy.AddVoltageSource(source.Id, source.NodeA, source.NodeB, source.Volts);
+                    break;
+                case DcCurrentSource source:
+                    copy.AddCurrentSource(source.Id, source.NodeA, source.NodeB, source.Amperes);
+                    break;
+                case DcDiode diode:
+                    copy.AddDiode(
+                        diode.Id,
+                        diode.NodeA,
+                        diode.NodeB,
+                        diode.SaturationCurrent,
+                        diode.EmissionCoefficient,
+                        diode.ThermalVoltage,
+                        diode.SeriesResistance);
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Element '{element.Id}' has an unknown type and cannot be copied.");
+            }
+        }
+
+        foreach (TransientCapacitor capacitor in _capacitors)
+        {
+            copy.AddCapacitor(capacitor.Id, capacitor.NodeA, capacitor.NodeB, capacitor.Farads);
+        }
+
+        foreach (TransientInductor inductor in _inductors)
+        {
+            copy.AddInductor(inductor.Id, inductor.NodeA, inductor.NodeB, inductor.Henries);
+        }
+
+        foreach (KeyValuePair<string, double> preset in _initialCapacitorVolts)
+        {
+            copy.SetCapacitorInitialVoltage(preset.Key, preset.Value);
+        }
+
+        foreach (KeyValuePair<string, double> preset in _initialInductorAmperes)
+        {
+            copy.SetInductorInitialCurrent(preset.Key, preset.Value);
+        }
+
+        foreach (KeyValuePair<string, TransientWaveform> waveform in _waveforms)
+        {
+            copy.SetWaveform(waveform.Key, waveform.Value.Points.ToArray());
+        }
+
+        return copy;
+    }
+
+    /// <summary>
+    /// A copy with one element's value replaced, for a parameter sweep. A diode's behaviour comes
+    /// from four parameters, so it cannot be expressed as one swept value and is rejected instead
+    /// of being changed only partly.
+    /// </summary>
+    public TransientNetlist WithElementValue(string id, double value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        if (!double.IsFinite(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "A swept value must be finite.");
+        }
+
+        TransientNetlist copy = Clone();
+        int staticIndex = copy._elements.FindIndex(
+            element => string.Equals(element.Id, id, StringComparison.Ordinal));
+        if (staticIndex >= 0)
+        {
+            copy._elements[staticIndex] = copy._elements[staticIndex] switch
+            {
+                DcResistor resistor => resistor with { Ohms = RequireSweptPositive(value, id) },
+                DcVoltageSource source => source with { Volts = value },
+                DcCurrentSource source => source with { Amperes = value },
+                DcDiode => throw new ArgumentException(
+                    $"Element '{id}' is a diode; its diode parameters cannot be swept as one value, so sweep a resistor, source, capacitor or inductor instead.",
+                    nameof(id)),
+                _ => throw new ArgumentException($"Element '{id}' cannot be swept.", nameof(id)),
+            };
+            return copy;
+        }
+
+        int capacitorIndex = copy._capacitors.FindIndex(
+            capacitor => string.Equals(capacitor.Id, id, StringComparison.Ordinal));
+        if (capacitorIndex >= 0)
+        {
+            copy._capacitors[capacitorIndex] = copy._capacitors[capacitorIndex] with
+            {
+                Farads = RequireSweptPositive(value, id),
+            };
+            return copy;
+        }
+
+        int inductorIndex = copy._inductors.FindIndex(
+            inductor => string.Equals(inductor.Id, id, StringComparison.Ordinal));
+        if (inductorIndex >= 0)
+        {
+            copy._inductors[inductorIndex] = copy._inductors[inductorIndex] with
+            {
+                Henries = RequireSweptPositive(value, id),
+            };
+            return copy;
+        }
+
+        throw new ArgumentException($"Netlist has no element '{id}' to sweep.", nameof(id));
+    }
+
+    private static double RequireSweptPositive(double value, string id)
+    {
+        if (!(value > 0) || !double.IsFinite(1.0 / value))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(value), value, $"A swept value for '{id}' must be positive and invertible.");
+        }
+
+        return value;
+    }
+
     public TransientNetlist AddResistor(string id, string nodeA, string nodeB, double ohms)
     {
         ValidateElement(id, nodeA, nodeB);
