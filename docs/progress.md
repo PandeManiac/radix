@@ -681,7 +681,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     order, one row per point, exact round-trip of the final time, a comma-containing node name,
     an embedded quote, and the mutual-exclusion exit code.
 
-Verification: release build 0 warnings/0 errors; core tests 591/591; editor
+64. Stamped exported files with deterministic provenance. `TransientStamp.From` records the
+    source, circuit, method, interval, steps, step size, adaptivity, settling band, tolerance,
+    point count and completion as ordered key/value pairs, and both the CSV writer and the panel's
+    export emit them as `# key: value` comment lines ahead of the table. There is deliberately no
+    wall-clock timestamp, so two exports of one run are byte-identical and a diff stays meaningful;
+    numbers use the same round-trip format as the body, and a comment value cannot contain a line
+    break, so a label can never forge a header row. Tests check the fields and their determinism,
+    the comment block ahead of an intact table, the no-stamp case, and the newline-is-folded case;
+    the panel test now finds the header after the stamp and checks the circuit name.
+
+Verification: release build 0 warnings/0 errors; core tests 594/594; editor
 tests 211/211; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

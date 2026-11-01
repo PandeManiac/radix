@@ -373,6 +373,13 @@ quoted with their own quotes doubled, so an id containing a comma cannot break t
 panel's **Copy CSV** / **Save CSV…** call the same writer, so the file a designer saves and the
 one a script produces cannot drift apart.
 
+Both files begin with a deterministic provenance header, written as `# key: value` comment
+lines (`source`, `circuit`, `method`, `start_s`, `stop_s`, `steps`, `step_s`, `adaptive`,
+`settling_band`, `points`, `completed`, plus `tolerance` for an adaptive run). There is no
+wall-clock timestamp on purpose: two exports of the same run are byte-identical, which keeps
+diffs and tests honest. A comment value cannot contain a line break, so a label cannot forge a
+header row, and a reader that wants only the table skips lines starting with `#`.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design
