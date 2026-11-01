@@ -64,10 +64,10 @@ public static class TransientCsv
     }
 
     /// <summary>A comment cannot contain a line break, or it would forge a header row.</summary>
-    private static string SanitizeComment(string value) => value.Replace('\r', ' ').Replace('\n', ' ');
+    internal static string SanitizeComment(string value) => value.Replace('\r', ' ').Replace('\n', ' ');
 
-    private static string Text(string value) =>
+    internal static string Text(string value) =>
         $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 
-    private static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+    internal static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 }

@@ -460,9 +460,9 @@ internal static class Program
         }
 
         string? sweepSpec = GetOption(options, "sweep");
-        if (sweepSpec is not null && (json || csv || refine))
+        if (sweepSpec is not null && refine)
         {
-            Console.Error.WriteLine("--sweep prints a table; drop --json, --csv or --refine.");
+            Console.Error.WriteLine("--sweep and --refine are separate studies; run them one at a time.");
             return 2;
         }
 
@@ -486,7 +486,21 @@ internal static class Program
                 return 2;
             }
 
-            PrintTransientSweep(document.Netlist, sweptElement, sweepRows);
+            if (csv)
+            {
+                Console.Write(TransientSweepCsv.Write(
+                    source, circuitId, sweptElement, sweepRows));
+            }
+            else if (json)
+            {
+                Console.WriteLine(TransientSweepJson.ToReportJson(
+                    source, circuitId, sweptElement, sweepRows));
+            }
+            else
+            {
+                PrintTransientSweep(document.Netlist, sweptElement, sweepRows);
+            }
+
             return sweepRows.All(row => row.Result.Completed) ? 0 : 1;
         }
 

@@ -405,6 +405,14 @@ appears as a failed row instead of vanishing, and the command exits non-zero if 
 diode has four parameters rather than one value, so it is rejected with an explanation instead of
 being half-changed.
 
+**Archiving a study.** `--csv` writes the sweep as a long table (one row per value and node, with
+its value, netlist fingerprint and failure if any), and `--json` writes a versioned
+`radix-transient-sweep` report with the same information. Long form is deliberate: metrics are per
+node, and a value that fails to solve still belongs in the record instead of vanishing. Both
+exports are deterministic — the same study written twice is byte-identical — so a diff shows what
+changed in the circuit, and labels are sanitised and quoted so a circuit named `rc,charge` cannot
+break a row.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design

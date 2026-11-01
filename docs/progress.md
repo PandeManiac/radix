@@ -720,7 +720,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     untouched), the physical trend (larger R settles later), the linear source sweep, and the
     rejection of bad values, unknown ids, diodes, and unusable ranges.
 
-Verification: release build 0 warnings/0 errors; core tests 607/607; editor
+68. Made a sweep archivable: `TransientSweepCsv.Write` emits a long table (value, netlist,
+    completed, node, peak, final, settle, failure, message) under a `#` comment block, and
+    `TransientSweepJson.ToReportJson` emits a versioned `radix-transient-sweep` report with one
+    object per value; both refuse an empty study and both reuse the single-run writer's quoting and
+    comment sanitiser, so the two cannot drift. A failed value keeps its row with a failure name and
+    no nodes. The CLI accepts `--csv`/`--json` with `--sweep` (it previously refused them) and still
+    refuses `--refine` alongside a sweep. Tests cover the comment block and row count, determinism of
+    both writers, the failed-row shape, the JSON field set, and a label containing a comma and a newline
+    staying on one comment line.
+
+Verification: release build 0 warnings/0 errors; core tests 613/613; editor
 tests 213/213; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
