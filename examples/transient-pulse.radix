@@ -1,0 +1,75 @@
+{
+  "format": "radix-project",
+  "version": 10,
+  "name": "Authored RC step response",
+  "root": "main",
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": ["0", "1"],
+      "drivers": { "kind": "single" }
+    }
+  ],
+  "definitions": [
+    {
+      "id": "main",
+      "name": "Main",
+      "pins": [],
+      "instances": [],
+      "nets": [],
+      "ports": []
+    }
+  ],
+  "electricalCircuits": [
+    {
+      "id": "rc-step",
+      "name": "1 ms RC step",
+      "description": "A 5 V step at 1 ms charges a 1 uF capacitor through 1 kOhm; one time constant later the output is 5 (1 - e^-1) = 3.1606 V.",
+      "ground": "gnd",
+      "nodes": [
+        { "id": "gnd", "name": "Ground" },
+        { "id": "in", "name": "Input" },
+        { "id": "out", "name": "Output" }
+      ],
+      "components": [
+        {
+          "id": "V1",
+          "name": "Stepped 5 V source",
+          "kind": "voltage-source",
+          "value": 5,
+          "waveform": [
+            { "time": 0, "value": 0 },
+            { "time": 0.000999, "value": 0 },
+            { "time": 0.001, "value": 5 }
+          ],
+          "terminals": [
+            { "id": "a", "name": "Positive", "polarity": "positive", "node": "in" },
+            { "id": "b", "name": "Negative", "polarity": "negative", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "R1",
+          "name": "Series resistor",
+          "kind": "resistor",
+          "value": 1000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "in" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+          ]
+        },
+        {
+          "id": "C1",
+          "name": "Timing capacitor",
+          "kind": "capacitor",
+          "value": 1e-6,
+          "initialValue": 0,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "out" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "gnd" }
+          ]
+        }
+      ]
+    }
+  ]
+}

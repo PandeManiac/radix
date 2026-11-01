@@ -188,6 +188,12 @@ public partial class MainWindow : Window
         MimeTypes = ["text/csv"],
     };
 
+    private static readonly FilePickerFileType SvgFileType = new("SVG")
+    {
+        Patterns = ["*.svg"],
+        MimeTypes = ["image/svg+xml"],
+    };
+
     private static readonly FilePickerFileType TestScriptFileType = new("RADIX test script")
     {
         Patterns = ["*.radixtest"],
@@ -388,16 +394,155 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalTransientCopyJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientJson(out string json))
+        {
+            await CopyElectricalSolveTextAsync(json, "Copied transient report as JSON");
+        }
+    }
+
+    private async void ElectricalTransientCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied transient points as CSV");
+        }
+    }
+
+    private async void ElectricalTransientSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, csv, "csv", CsvFileType, "transient points", "transient");
+        }
+    }
+
+    private async void ElectricalTransientCopySvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientSvg(out string svg))
+        {
+            await CopyElectricalSolveTextAsync(svg, "Copied transient plot as SVG");
+        }
+    }
+
+    private async void ElectricalTransientSaveSvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientSvg(out string svg))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, svg, "svg", SvgFileType, "transient plot", "transient-plot");
+        }
+    }
+
+    private async void ElectricalTransientSaveJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientJson(out string json))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, json, "json", JsonFileType, "transient report", "transient");
+        }
+    }
+
+    private async void ElectricalSweepCopyComparisonCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel &&
+            viewModel.TryBuildElectricalSweepComparisonCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied sweep comparison as CSV");
+        }
+    }
+
+    private async void ElectricalSweepSaveComparisonJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel &&
+            viewModel.TryBuildElectricalSweepComparisonJson(out string json))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, json, "json", JsonFileType, "sweep comparison", "sweep-diff");
+        }
+    }
+
+    private async void ElectricalSweepCompare_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not EditorViewModel viewModel)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Compare with an archived sweep",
+            AllowMultiple = false,
+            FileTypeFilter = [JsonFileType],
+        });
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            string json = await System.IO.File.ReadAllTextAsync(files[0].Path.LocalPath);
+            viewModel.CompareElectricalSweepWithArchived(json, files[0].Name);
+        }
+        catch (System.IO.IOException exception)
+        {
+            viewModel.StatusText = "Could not read the archived study: " + exception.Message;
+        }
+        catch (System.UnauthorizedAccessException exception)
+        {
+            viewModel.StatusText = "Could not read the archived study: " + exception.Message;
+        }
+    }
+
+    private async void ElectricalSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied sweep study as CSV");
+        }
+    }
+
+    private async void ElectricalSweepSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, csv, "csv", CsvFileType, "sweep study", "sweep");
+        }
+    }
+
+    private async void ElectricalSweepCopyJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepJson(out string json))
+        {
+            await CopyElectricalSolveTextAsync(json, "Copied sweep study as JSON");
+        }
+    }
+
+    private async void ElectricalSweepSaveJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSweepJson(out string json))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, json, "json", JsonFileType, "sweep study", "sweep");
+        }
+    }
+
     private async Task SaveElectricalSolveTextAsync(
         EditorViewModel viewModel,
         string text,
         string extension,
-        FilePickerFileType fileType)
+        FilePickerFileType fileType,
+        string label = "DC solve result",
+        string fileSuffix = "dc-solve")
     {
         IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = $"Save DC solve result as {extension.ToUpperInvariant()}",
-            SuggestedFileName = $"{SanitizeFileName(viewModel.Project.Name)}-dc-solve.{extension}",
+            Title = $"Save {label} as {extension.ToUpperInvariant()}",
+            SuggestedFileName = $"{SanitizeFileName(viewModel.Project.Name)}-{fileSuffix}.{extension}",
             DefaultExtension = extension,
             FileTypeChoices = [fileType],
             ShowOverwritePrompt = true,

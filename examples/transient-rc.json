@@ -1,0 +1,39 @@
+{
+  "format": "radix-transient-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    {
+      "id": "V1",
+      "type": "voltage-source",
+      "nodeA": "in",
+      "nodeB": "gnd",
+      "volts": 0,
+      "waveform": [
+        { "time": 0, "value": 0 },
+        { "time": 0.00001, "value": 0 },
+        { "time": 0.00002, "value": 5 }
+      ]
+    },
+    {
+      "id": "R1",
+      "type": "resistor",
+      "nodeA": "in",
+      "nodeB": "out",
+      "ohms": 1000
+    },
+    {
+      "id": "C1",
+      "type": "capacitor",
+      "nodeA": "out",
+      "nodeB": "gnd",
+      "farads": 1e-6
+    }
+  ],
+  "analysis": {
+    "start": 0,
+    "stop": 0.003,
+    "steps": 60,
+    "method": "backward-euler"
+  }
+}

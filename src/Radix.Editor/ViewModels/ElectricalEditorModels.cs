@@ -25,6 +25,143 @@ public sealed class ElectricalCircuitListItem
     public override string ToString() => Name;
 }
 
+/// <summary>One node's peak and settling summary, shown beside the transient points.</summary>
+public sealed class ElectricalTransientMetricItem
+{
+    public ElectricalTransientMetricItem(TransientNodeMetrics metrics)
+    {
+        ArgumentNullException.ThrowIfNull(metrics);
+        NodeId = metrics.NodeId;
+        ExtremesText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"min {metrics.MinimumVolts:G4} · max {metrics.MaximumVolts:G4} · final {metrics.FinalVolts:G4}");
+        PeakText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"peak @ {metrics.PeakTimeSeconds:G4} s");
+        SettleText = metrics.SettlingTimeSeconds is double settling
+            ? string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"settled at {settling:G4} s")
+            : "not settled";
+    }
+
+    public string NodeId { get; }
+
+    public string ExtremesText { get; }
+
+    public string PeakText { get; }
+
+    public string SettleText { get; }
+}
+
+/// <summary>
+/// One node's presence on the transient plot. Hiding a trace keeps its palette slot, so the
+/// remaining traces stay the same colour and a reader's memory of the picture survives.
+/// </summary>
+public sealed class ElectricalTransientSeriesItem : ObservableObject
+{
+    private readonly Action<ElectricalTransientSeriesItem> _changed;
+    private bool _isVisible = true;
+
+    public ElectricalTransientSeriesItem(
+        string nodeId,
+        int colorIndex,
+        Action<ElectricalTransientSeriesItem> changed)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        ArgumentNullException.ThrowIfNull(changed);
+        NodeId = nodeId;
+        ColorIndex = colorIndex;
+        _changed = changed;
+    }
+
+    public string NodeId { get; }
+
+    public int ColorIndex { get; }
+
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set
+        {
+            if (SetField(ref _isVisible, value))
+            {
+                _changed(this);
+            }
+        }
+    }
+
+    public override string ToString() => NodeId;
+}
+
+/// <summary>
+/// One level of a step-refinement study: its step count, its uniform step, the deviation from
+/// the previous level, and the convergence order implied by two successive deviations. The
+/// coarsest level is what the others are compared against, so it reports that instead of a zero
+/// deviation, which would read as if it were exact.
+/// </summary>
+public sealed class ElectricalTransientRefinementItem
+{
+    public ElectricalTransientRefinementItem(TransientRefinementLevel level, bool isReference)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        StepsText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{level.Steps} steps");
+        StepText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{level.TimeStep:G4} s");
+        DeviationText = isReference
+            ? "reference"
+            : string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{level.MaximumDeviationVolts:G4} V");
+        OrderText = level.ObservedOrder is double order
+            ? order.ToString("G3", System.Globalization.CultureInfo.InvariantCulture)
+            : "-";
+    }
+
+    public string StepsText { get; }
+
+    public string StepText { get; }
+
+    public string DeviationText { get; }
+
+    public string OrderText { get; }
+
+    public override string ToString() => $"{StepsText} · {DeviationText}";
+}
+
+/// <summary>One solved point of a transient run: its time and every node voltage.</summary>
+public sealed class ElectricalTransientPointItem
+{
+    public ElectricalTransientPointItem(int index, TransientPoint point)
+    {
+        Index = index;
+        Time = point.Time;
+        TimeText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{point.Time:G6} s");
+        VoltagesText = string.Join(
+            "  ",
+            point.NodeVoltages
+                .OrderBy(entry => entry.Key, StringComparer.Ordinal)
+                .Select(entry => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"{entry.Key}={entry.Value:G6}")));
+    }
+
+    public int Index { get; }
+
+    public double Time { get; }
+
+    public string TimeText { get; }
+
+    public string VoltagesText { get; }
+
+    public override string ToString() => TimeText;
+}
+
 /// <summary>A selectable electrical node, used for ground and terminal bindings.</summary>
 public sealed class ElectricalNodeChoice
 {
@@ -76,6 +213,8 @@ public sealed class ElectricalComponentKindChoice
             ElectricalComponentKind.Resistor => "Resistor",
             ElectricalComponentKind.VoltageSource => "Voltage source",
             ElectricalComponentKind.CurrentSource => "Current source",
+            ElectricalComponentKind.Capacitor => "Capacitor",
+            ElectricalComponentKind.Inductor => "Inductor",
             _ => kind.ToString(),
         };
         Unit = ElectricalComponentMetadata.Unit(kind);

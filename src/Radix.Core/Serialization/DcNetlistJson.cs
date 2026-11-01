@@ -176,7 +176,8 @@ public static class DcNetlistJson
             _ => throw new ArgumentOutOfRangeException(nameof(element)),
         };
 
-    private static string FailureName(DcSolveFailure failure) =>
+    /// <summary>The stable JSON name of a solve failure, shared by every electrical report.</summary>
+    public static string FailureName(DcSolveFailure failure) =>
         failure switch
         {
             DcSolveFailure.NoGround => "no-ground",

@@ -394,3 +394,403 @@ suite results are recorded in the final handoff for this session.
     accepts and reports `seriesResistance`; the headless diode example now models
     a realistic 10 Ω series resistance. Added independent bisection tests over
     several resistance values, plus monotonicity and parameter-validation cases.
+
+## Session 2026-11-01 (agent/radix-transient)
+
+Base: `origin/main` at `40bd3a9`. PR #4 (`agent/radix-dc-numerics`) was left
+untouched: it hardens the DC solver, while this branch adds a separate analysis
+path and changes no `DcLinearSolver` semantics.
+
+35. Added fixed-step transient (time-domain) electrical analysis in
+    `Radix.Core.Electrical.TransientNetlist`. Capacitors and inductors are
+    integrated with companion models: backward Euler (default, L-stable) and the
+    trapezoidal rule (second order, energy preserving on linear LC networks, not
+    L-stable). Every step assembles a purely resistive MNA system and solves it
+    through the existing `DcNetlist`, so scaled partial pivoting, residual
+    rejection, and floating/contradictory/singular classification are shared.
+    Diodes remain nonlinear per step through the existing Newton iteration.
+36. Solved the initial state in two phases: a DC operating point (capacitors
+    open, inductors shorted) supplies defaults, then a state-imposing network
+    (each capacitor as an ideal voltage source, each inductor as an ideal current
+    source) produces the reported `t = start` node voltages. The first
+    implementation reported the DC values while integrating from the preset
+    states; two tests caught that inconsistency before it shipped.
+    `SetCapacitorInitialVoltage` and `SetInductorInitialCurrent` override
+    individual states, and a capacitor with no other DC path is reported as a
+    floating network unless its voltage is preset.
+37. Added piecewise-linear source waveforms (`SetWaveform`): finite, distinct,
+    sorted breakpoints with endpoint hold, covering pulses, ramps, triangles, and
+    sampled drives. Constant sources are unchanged. Without this, every run
+    started at the DC steady state and only DC-op-perturbation responses were
+    expressible.
+38. Added the strict versioned `radix-transient-netlist` format and the
+    `radix-transient-report` projection in `TransientNetlistJson`, plus the
+    headless `radix transient` command (`--start`, `--stop`, `--steps`,
+    `--method`, `--max-rows`, `--json`). A run keeps the points it solved before a
+    failed step and exits 1 with the failing step and its classification.
+39. Added `TransientSolverTests` (17 tests) and `TransientNetlistJsonTests`
+    (5 tests plus a 14-case rejection theory): closed-form backward-Euler
+    recurrences for RC charge, capacitor discharge, and inductor current;
+    convergence order 1 for backward Euler and 2 for trapezoidal against the
+    analytic RC solution; trapezoidal energy conservation versus backward-Euler
+    damping in an LC tank; the analytic underdamped RLC overshoot
+    `1 + exp(-πζ/√(1-ζ²))`; per-point absorbed-power conservation; element-order
+    and ground-name invariance; initial-condition handling; floating detection;
+    deterministic reruns; waveform interpolation; parameter/option validation;
+    and strict JSON parsing.
+40. Added `examples/transient-rc.json`, `examples/transient-rlc.json`, and
+    `examples/transient-pulse.json` and documented the solver, format, failure
+    behaviour, and limits in `docs/electrical.md` and `README.md`.
+41. Added adaptive step control (`TransientOptions.AdaptiveTolerance`, CLI
+    `--tol/--initial-step/--min-step/--max-step/--max-steps`, JSON `tolerance`).
+    Control uses step doubling from the same state, normalises by `2^p - 1`, and
+    accepts only when every capacitor and inductor state variable is within
+    `rtol*|value| + rtol*1e-6`. Accepted steps keep the two half steps; rejected
+    steps shrink by `clamp(0.9*err^(-1/(p+1)), 0.2, 4)`. A step that cannot be
+    solved at all is retried smaller, so an over-large step is recoverable
+    instead of fatal, and failing to meet the tolerance above `minStep` is
+    reported as `NonConvergent` rather than a completed run. Six tests cover
+    accuracy vs a fixed run, tolerance monotonicity, a 1 us time constant over a
+    10 ms interval, determinism, the minimum-step failure, and option validation;
+    a JSON test covers loading and reporting adaptive settings.
+    The first implementation controlled the capacitor current and inductor
+    voltage as well, with an absolute floor of `rtol * 1e-6`. A temporary debug
+trace showed that at a drive ramp the estimator never accepted a step: those
+    derived quantities do not shrink with the step at a kink, so the normalised
+    error stayed around 0.8 while the step collapsed to 4e-12 s. The metric now
+    controls only capacitor voltage and inductor current, with
+    `AdaptiveAbsoluteTolerance` derived by default from the circuit's source and
+    initial-state scale. Adaptive accuracy is asserted against the analytic RC
+    solution, not just step counts.
+42. Refactored the integrator so the fixed and adaptive loops share one
+    `TryAdvance` step routine and an immutable `ReactiveState`, and the CLI text
+    report distinguishes fixed and adaptive headers.
+43. Added authored `capacitor` and `inductor` components with an optional
+    `initialValue` (initial capacitor voltage in volts, initial inductor current
+    in amperes, positive `a` to `b`), bumping the project format to 9. Metadata
+    drives units (F/H), passive terminal contracts, kind names, and the editor's
+    kind list, ID prefixes, defaults, and initial-value field, which accepts a
+    blank value for the DC operating point. `ElectricalCircuit.ToDcNetlist`
+    keeps its DC meaning (capacitor open and omitted, inductor as a 0 V source
+    short) and `ToTransientNetlist()` feeds the transient solver, so
+    `radix transient examples/transient-rc.radix --circuit rc-charge` integrates
+    an authored circuit and reports its circuit ID in text and JSON. Validation
+    adds `RAD-ELEC-015` (initial value on a non-reactive kind) and `RAD-ELEC-016`
+    (non-finite initial value).
+44. Added authored piecewise-linear source waveforms (`waveform` breakpoint arrays
+    on independent sources, project format 10) so an authored `.radix` circuit can
+    express a step, ramp, or pulse without hand-writing a JSON netlist.
+    `ToTransientNetlist` forwards the breakpoints to the solver's waveform, while
+    `ToDcNetlist` and the editor keep using the source's `value`, and the model
+    keeps the waveform untouched through editor edits and saves. Validation adds
+    `RAD-ELEC-017` (waveform on a non-source), `RAD-ELEC-018` (fewer than two
+    breakpoints), `RAD-ELEC-019` (non-finite time or value), and `RAD-ELEC-020`
+    (non-increasing times). `examples/transient-pulse.radix` drives an RC step and
+    reaches `5*(1 - e^-1)` one time constant after the step.
+45. Added an energy ledger to every transient run: source-delivered and
+    resistor/diode-dissipated power is integrated over the reported points with the
+    trapezoidal rule, stored `v²C/2 + i²L/2` is compared at the first and last
+    point, and the residual `delivered - dissipated - stored` is printed with its
+    relative size and reported as `energy` in the JSON report. The ledger also acts
+    as an independent accuracy signal: it closes to `1.2e-5` relative for an RC
+    charge at `h/τ = 0.01`, to `1.0e-3` for a lossless LC tank at `hω = 0.032`,
+    refining the step 4x cuts either about 16x, and backward Euler's is first order.
+    Tests assert the analytic `C·V²` delivery and `½C·V²` storage, the tank's
+    conserved stored energy with zero dissipation, both convergence orders, the
+    absent ledger on a failed initial state, and the JSON fields.
+46. Added waveform authoring to the Electrical inspector: an independent source now
+    exposes a `Waveform` field that reads and writes comma-separated `time=value`
+    breakpoints in the source's own unit, validates them (finite numbers, at least
+    two breakpoints, strictly increasing times), applies the change as one undo
+    step, and clears with a blank value. `ApplyField` keeps an editor-specific
+    rejection message instead of overwriting it with a generic one, so a bad
+    waveform says why. Tests cover authoring, round-trip formatting, rejection of
+    decreasing/repeated/short/garbled input without mutation, clearing, and the
+    field's absence on a resistor.
+47. Added a transient run to the Electrical tab: **Run transient** integrates the
+    selected circuit through `ToTransientNetlist()` with the panel's own stop
+    time, step count, and method (view state, not project data), lists solved
+    points as time plus node voltages (sampled evenly above 300 points), shows the
+    energy ledger, and copies or saves the same `radix-transient-report` JSON the
+    CLI writes, including the circuit id. Any circuit edit, circuit switch, or DC
+    solve clears the preview so stale numbers cannot be mistaken for current ones;
+    a structural or integration failure is reported in the panel and status bar.
+    The JSON save helper now takes a label and file suffix instead of hardcoding
+    the DC names. Tests cover the point table, summary, energy text, exported JSON
+    (circuit id, completion, delivered energy), method normalisation, rejection of
+    a non-numeric step count, and invalidation on a settings change.
+48. Completed the panel's transient parity with the CLI: a **Transient tolerance**
+    field (blank keeps the fixed step count, a positive relative tolerance enables
+    adaptive stepping with a bounded trial budget) and **Copy CSV** / **Save CSV…**
+    exports. The CSV is a wide `time_s` table with one column per node, invariant
+    round-trip numbers, and every solved point; only the on-screen table is sampled
+    above 300 points, so the export never depends on display limits. A new read-only
+    `ElectricalTransientPointCount` exposes the solved count so the panel summary
+    and tests can distinguish the two. Tests cover adaptive mode selection,
+    rejection of a non-positive tolerance, the CSV header and first row, the export
+    carrying more rows than the sampled table, and returning to fixed stepping.
+49. Made waveform breakpoints step boundaries in both integrators. A fixed-step run
+    now shortens the step that would straddle a breakpoint, lands on it, and resumes
+    at the requested size, so `steps` is nominal and such runs report extra points;
+    an adaptive run clamps its trial step the same way. Before this, a pulse narrower
+    than the step was sampled only where it is zero and disappeared, and a ramp kink
+    inside a step was integrated with a value that never held. The final step also
+    absorbs floating-point remainder below the stop time instead of emitting a
+    spurious near-zero step (which had added one point to every panel run). Two
+    recurrence tests that used a 1e-12 s drive step now start from explicit initial
+    state, because a breakpoint is no longer crossed; the shipped-example count
+    assertion allows the added landing points. New tests show a 2 us triangle pulse
+    is integrated (it was exactly zero before) and lands on its breakpoints in fixed
+    and adaptive runs, matching `(Q/tau) * e^(-(T-t_end)/tau)` within 5% and 2%.
+50. Added per-node peak, swing, and settling metrics to every transient result: min,
+    max, final value, the time of the maximum, and when the node last left a 2% band
+    around its own final value or swing (null if still outside, which is what an
+    oscillation looks like). `radix transient` prints the table and the JSON report
+    carries it under `metrics`. Metrics are read from the reported points, not a
+    second solve. Tests check the first-order settling formula including the finite
+    final value, the analytic underdamped RLC overshoot and quarter-period peak, a
+    pulse peaking where the drive falls below the capacitor voltage, absent metrics
+    on a failed run, and the JSON fields.
+51. Made the settling band configurable and surfaced metrics in the app: the band is
+    now `TransientOptions.SettlingBand` (default 0.02, validated strictly between 0
+    and 1), `--settling-band <fraction>` on the CLI, and a **Settling band** field in
+    the panel, so a typo like `2` is rejected instead of turning every node into an
+    instantly settled one. The panel also lists each node's minimum, maximum, final
+    value, peak time, and settling time above the solved-point table. Tests cover
+    the custom band's settling formula, rejection of 0, 1, and NaN, the panel rows,
+    the field's validation message, and invalidation of the previous run.
+52. Drew the transient run in the Electrical tab. The geometry lives in
+    `Radix.Editor.Rendering.TransientPlot`, a plain Avalonia-free model, so scaling is
+    unit-testable; `TransientPlotView` only draws the points it is handed (frame,
+    axes, grid, zero line, labelled ticks, node names). All nodes share one time and
+    value axis so traces stay comparable, the value axis is padded by 10% of the
+    span, and a flat trace falls back to `max(|v| * 0.1, 0.5)` rather than collapsing
+    to a zero-height scale. Runs longer than 600 points per node are decimated by
+    even stride and always keep the last sample, because that is the settled value,
+    while the axis labels still report the true first and last solved times. A
+    single sample, an empty run, or a non-finite value yields no plot and an explicit
+    empty state. Tests check shared axes, padding, corner mapping, the flat-trace
+    fallback, the decimation cap with a preserved last sample, tick coverage, and
+    that a run produces three drawable node series and clears when settings change.
+53. Added a step-refinement accuracy study, so a run can be judged without a closed-form
+    reference. `TransientRefinement.Analyze` solves the circuit at the requested step
+    count and at each doubled count, compares every finer run against the coarser one at
+    the finer run's times (interpolating the coarse trace), and infers the measured order
+    `p = log2(d_prev / d_now)`. The finest run's error is estimated as `d / (2^p - 1)`
+    relative to the node peak (Richardson). `radix transient --refine` prints the table,
+    the estimate, and the worst node; a failed level reports the same `DcSolveFailure` as
+    the base run, an order near zero is reported rather than rounded away, adaptive runs
+    are rejected because there is no nominal step to halve, and the studied baseline is
+    the run already reported so the two cannot disagree. Measured on the RC example:
+    backward Euler settles to order `0.989` with a `5.8e-3` relative estimate, trapezoidal
+    to `1.819` with `6.8e-4`. Tests cover both orders, the estimate against the analytic
+    solution within an order of magnitude, baseline reuse, failure propagation, the
+    step-limit guard, level bounds, and a breakpointed drive.
+54. Put the accuracy study in the app: **Check accuracy** beside the transient result refines
+    the displayed run through the same `TransientRefinement` code and reports the estimate, the
+    measured order, and the node that moved most (for the RC example at 200 steps: `5.8e-3`
+    relative, order `0.989`, node `out` moving `0.0285 V` at `0.000969 s`). It is an explicit
+    action because it costs three solves, it refuses to run before a transient or on a failed
+    one, it explains that an adaptive run has no step to halve, and its text is cleared with
+    the run by any edit or settings change so it cannot describe stale numbers. Tests cover the
+    refusal, the reported order and worst node, and the clear-on-change behavior.
+55. Added a time probe to the transient plot, so a curve can be read as numbers. **Probe at
+    (s)** plus **Probe** reads every node at a chosen time and draws a dashed marker at that
+    time (`TransientPlot.FractionOf`, clamped to the frame and safe for a non-finite time). A
+    time that is not a solved sample is interpolated between the two points that bracket it and
+    the readout names them, so an interpolated value is never presented as a solved one; a time
+    outside the run is rejected with the valid interval, a non-numeric entry says so, and the
+    probe clears with the run on any edit. Tests cover the clamped marker fractions, the
+    interpolated value against the analytic charge (`5*(1 - e^(-t/tau))` within 2%), the
+    bracketing readout, both rejections, the exact-sample case, and the clear-on-change case.
+56. Added SVG export for the transient plot. `TransientPlotSvg.Render` is a pure function over
+    the plot geometry that reproduces the control's frame, ticks, zero line, series colours,
+    legend, and probe marker as a standalone document; **Copy SVG** and **Save SVG…** expose it
+    beside the JSON and CSV exports. Node names are XML-escaped so an unusual id cannot produce
+    a malformed file, a marker outside the plotted range is omitted rather than clamped into a
+    misleading place, and a size with no room for the axes is rejected. Tests parse the output,
+    check one polyline per node with every coordinate inside the view box, escaped names that
+    still parse, the presence and absence of the marker, and the size guard; the panel test also
+    checks the export exists for a run and disappears with it.
+57. Listed the refinement study per level in the panel instead of one summary line: each row
+    gives the step count, the uniform step, the deviation from the coarser level, and the order
+    that deviation implies, so the point where the order stops improving is visible rather than
+    hidden. The coarsest row reads `reference` instead of a zero deviation, since it is what the
+    others are compared against, and the table is cleared with the run like every other view of
+    it. The panel test checks three rows, the reference row, and a parseable order near one for
+    backward Euler, plus the empty state after a settings change.
+58. Put the refinement study in the JSON report. `TransientNetlistJson.ToReportJson` takes an
+    optional study and emits a `refinement` object: `completed`, `levels` (step count, step,
+    deviation, and the order once two deviations exist), the finest deviation, the study's
+    measured order, the Richardson estimate, and the worst node. A failed study keeps the levels
+    that solved and its `failure`, so "not checked" and "checked and failed" stay distinguishable;
+    the field is omitted when no study is given. `--refine --json` now works instead of being
+    refused, and the panel's JSON export includes the study exactly while its accuracy check is
+    current. Tests parse the report for the levels, the missing order on the reference level, the
+    measured order and estimate, the worst node, and the absent block without a study; the panel
+    test checks the export gains `refinement` after a check and cannot be built once an edit has
+    invalidated the run.
+59. Made the refinement depth configurable instead of fixed at three levels: `--refine-levels
+    <2-5>` on the CLI and a **Refine levels** field in the panel, both validated (a count of one
+    cannot imply an order and six is beyond the supported range), with the study's step-limit
+    guard still refusing a run whose finest count would exceed 10^6. On the RC example at 40
+    steps a fourth level moves the measured order from `0.989` to `0.995` and halves the estimate
+    from `5.8e-3` to `2.9e-3`, which is the honest way to show a stiff circuit converging. Tests
+    cover the rejected count, the four-row study reaching 1600 steps, the reference row, and the
+    CLI's exit 2 for an out-of-range flag.
+
+60. Measured transient cost and fixed the time-grid defect the measurement exposed.
+    `TransientBenchmarkTests` is an opt-in benchmark (`RADIX_TRANSIENT_BENCH=1`) over a series RC
+    ladder; on an AMD Ryzen 9 9950X3D it measures 21.7 us/step at 5 nodes and 56.3 us/step at 50
+    nodes over 5,000 steps, and the ratios show per-point work (companion assembly plus the four
+    dictionaries behind each `TransientPoint`) dominating the cubic factorisation at these sizes.
+    The benchmark's `steps + 1` invariant then failed: with `stop = 0.01` and 1,000 steps the run
+    reported 1,002 points, because the remainder tolerance `|stop| * 1e-14` was smaller than the
+    rounding accumulated over 1,000 additions, so a sliver final step survived. Both the fixed and
+    adaptive loops now scale that tolerance with the number of points, which stays below 1% of a
+    real step even at the 10^6-step limit. `TransientTimeGridTests` pins the grid over seven
+    stop-time/step-count pairs and a charged initial state, and [docs/benchmarks.md](benchmarks.md)
+    records the baseline and its caveats.
+
+61. Added initial-condition notes. A preset `initialValue` is legitimate, but when it disagrees
+    with the circuit's own DC operating point the run begins with a discontinuity that the
+    sources do not explain. The solver now compares every preset with the operating point across
+    that element and records a note such as `'C1' starts at 2 V but its DC operating point is 5 V;
+    the run begins with a 3 V discontinuity.` The comparison is relative (`max(|v|) * 1e-9`), so a
+    matching preset stays silent and a millivolt circuit is judged like a 5 V one; a note never
+    changes the result, the failure classification, or the time grid. `radix transient` prints the
+    notes before the point table, the JSON report carries them as `notes` (omitted when empty),
+    and the panel shows them above the energy ledger, cleared with the run. Tests cover both
+    element kinds, the silent case, the unchanged grid, and the report field.
+
+62. Made the plotted traces individually visible. Every node gets a checkbox under the plot, so
+    a designer can read a 50 mV ripple next to a 5 V step instead of choosing between them.
+    `TransientPlotSeries` now carries a palette `colorIndex` assigned from the full node list, so
+    hiding one trace does not repaint the remaining ones and a half-read picture keeps its
+    meaning; the control and the SVG export both colour by that index. Hiding every trace yields
+    the same explicit empty state as a run with nothing to draw, and a new run shows them all
+    again. Tests hide a trace, check the surviving count and the untouched palette slots, hide
+    everything to get no plot, restore all three, and confirm a rerun resets visibility.
+
+63. Added `radix transient --csv` and shared its writer with the panel. `TransientCsv.Write`
+    emits a `time_s` header plus one column per node in ordinal order and one row per solved
+    point, with invariant round-trip numbers so a reader parses back the same doubles, and quoted
+    node names whose own quotes are doubled so a comma cannot break the table. The panel's CSV
+    export now calls the same writer, so the two cannot drift apart; `--csv` is refused alongside
+    `--json` and with `--refine` rather than silently preferring one. Tests check the header
+    order, one row per point, exact round-trip of the final time, a comma-containing node name,
+    an embedded quote, and the mutual-exclusion exit code.
+
+64. Stamped exported files with deterministic provenance. `TransientStamp.From` records the
+    source, circuit, method, interval, steps, step size, adaptivity, settling band, tolerance,
+    point count and completion as ordered key/value pairs, and both the CSV writer and the panel's
+    export emit them as `# key: value` comment lines ahead of the table. There is deliberately no
+    wall-clock timestamp, so two exports of one run are byte-identical and a diff stays meaningful;
+    numbers use the same round-trip format as the body, and a comment value cannot contain a line
+    break, so a label can never forge a header row. Tests check the fields and their determinism,
+    the comment block ahead of an intact table, the no-stamp case, and the newline-is-folded case;
+    the panel test now finds the header after the stamp and checks the circuit name.
+
+65. Stamped the SVG export the same way as the CSV. `TransientPlotSvg.Render` takes an optional
+    `TransientStamp` and writes it as a `<metadata><provenance/>` block using the same keys, plus a
+    caption line under the axis labels naming the circuit, method, step count and point count. The
+    caption reserves 14 px of its own so it cannot cover a tick, values are XML-escaped so a label
+    with `<`, `&` or a quote still yields a well-formed document, and two renders of one run are
+    byte-identical. The panel passes the displayed circuit's stamp, so a picture carried into a
+    document names its run as precisely as the table. Tests parse the metadata, check the caption,
+    the escaped value, the determinism, and the absence of the block without a stamp.
+
+66. Fingerprinted the solved netlist. `TransientNetlist.Fingerprint()` hashes a canonical text
+    form of the circuit — ground node, every element with its type, nodes and values (including
+    diode saturation current, emission coefficient, thermal voltage and series resistance), the
+    reactive elements, presets and waveforms, ordered by id — with SHA-256 and keeps 16 hex
+    characters. `TransientResult` records it, the stamp publishes it as `netlist`, and the JSON
+    report carries the same value, so CSV, SVG and JSON all name the same circuit. Tests prove an
+    order-independent match, a mismatch for a changed resistance (both directions), a preset, a
+    waveform and a differently named ground, and that the value reaches the stamp, the CSV and the
+    report.
+
+67. Added a parameter sweep: `TransientNetlist.Clone()` and `WithElementValue(id, value)` copy a
+    circuit and change exactly one element, and `TransientSweep.Run` solves the copies, reporting a
+    failed run as a row rather than dropping it. The CLI gained
+    `--sweep <id>=<v1,v2,...>` / `--sweep <id>=<from>:<to>:<count>` printing peak, final value and
+    settling time per node, with ground suppressed and a non-zero exit if any row failed. Values
+    must be positive and invertible for reactive and resistive elements; a diode is refused because
+    one value cannot describe four parameters. Tests pin the clone (identical solution, originals
+    untouched), the physical trend (larger R settles later), the linear source sweep, and the
+    rejection of bad values, unknown ids, diodes, and unusable ranges.
+
+68. Made a sweep archivable: `TransientSweepCsv.Write` emits a long table (value, netlist,
+    completed, node, peak, final, settle, failure, message) under a `#` comment block, and
+    `TransientSweepJson.ToReportJson` emits a versioned `radix-transient-sweep` report with one
+    object per value; both refuse an empty study and both reuse the single-run writer's quoting and
+    comment sanitiser, so the two cannot drift. A failed value keeps its row with a failure name and
+    no nodes. The CLI accepts `--csv`/`--json` with `--sweep` (it previously refused them) and still
+    refuses `--refine` alongside a sweep. Tests cover the comment block and row count, determinism of
+    both writers, the failed-row shape, the JSON field set, and a label containing a comma and a newline
+    staying on one comment line.
+
+69. Made studies comparable: `TransientSweepReport.Load`/`LoadFromString` reads an archived
+    `radix-transient-sweep` report (strict on format and version, tolerant of extra fields so a newer
+    archive still loads), and `TransientSweepComparison.Compare` matches rows by exact swept value
+    and reports per-node differences in peak, final value, settling time and completion, plus values
+    and nodes present on only one side. The CLI gained `--compare <archived.json>`, which refuses a
+    study of a different element, a report of another format or version, and `--json`/`--csv` output
+    for a comparison. Tests cover the round-trip load, both rejections, an identical study, doubled
+    capacitance settling later at every value, added and removed values, a value that stopped solving,
+    and deterministic ordering independent of the current study's order.
+
+70. Closed two gaps in the study record: each row now carries the run's energy-ledger residual (a
+    physical check on that value, written as `energy_residual` in CSV and `energyResidual` in JSON),
+    and comparison accepts a relative tolerance (`--compare-tolerance`, 0 by default = exact) so a
+    last-bit difference between builds does not read as a circuit change, while a structure change
+    (added/removed value, a node on one side, a run that stopped completing) is never excused. An
+    archive written before the field existed still compares as identical instead of manufacturing a
+    ledger difference. Tests cover the ledger column and round-trip, an old archive, noise suppressed
+    at 1e-6 but a real change kept, ledger differences, and rejection of a tolerance outside [0, 1).
+    The relative form has one deliberate hole: a metric at exactly zero has no scale, so a change
+    there is always reported.
+
+71. Brought studies into the panel: the Electrical tab gained a **Sweep** row (element id plus a
+    comma list or `from:to:count`) and a table of each node's peak, final value and settling time per
+    value. The sweep reuses the displayed run's netlist and `TransientOptions`, so a study cannot
+    mix settings; a value that fails keeps a row; ground is omitted; and any edit that clears the run
+    clears the sweep too. Parsing is local to the view model and reports a sentence for a typo rather
+    than throwing. Tests cover the row count and value-once-per-block layout, an unknown element and
+    an unparsable value, and invalidation by an edit.
+
+72. Exported panel studies through the shared writers: the view model keeps the last sweep's
+    `TransientSweepRow` list (not the formatted table), and `TryBuildElectricalSweepCsv/Json` call
+    `TransientSweepCsv.Write` and `TransientSweepJson.ToReportJson` with the circuit id, so the app and
+    the command line cannot describe one study differently. Copy/Save buttons appear only with a
+    study, the export refuses when there is none, and an edit that clears the run clears the export
+    with it. Tests cover the CSV comment block and column list, the JSON format/element/circuit and
+    row count, the empty case, and disappearance after an invalidating edit.
+
+73. Brought comparison into the panel: **Compare…** reads an archived report through a file picker
+    and `CompareElectricalSweepWithArchived` runs the same `TransientSweepComparison` as `--compare`,
+    so the two front ends agree on what changed. Differences are listed per value, node and metric
+    with `-` for a side that lacks the row, plus explicit `removed`/`added` rows for values held by
+    only one study; an `rtol` box sets the relative tolerance and is validated before any report is
+    read; a foreign format/version or a study of a different element is refused with a sentence.
+    Editing anything that clears the run clears the comparison with it. Tests cover an identical
+    study, added and removed values, foreign reports, a mismatched element, an invalid tolerance, and
+    invalidation by an edit.
+
+74. Made comparisons archivable: `TransientSweepComparisonCsv.Write` and
+    `TransientSweepComparisonJson.ToReportJson` write a `radix-transient-sweep-comparison` document
+    naming the element, the study compared against, whether the studies are identical, every
+    difference per value/node/metric, and the added and removed values. `--compare` now accepts
+    `--csv`/`--json` (it refused them before), and the panel gained **Copy diff CSV** and
+    **Save diff JSON…**, both disabled until a comparison exists and cleared with the study. Tests
+    cover the comment block and row count, added/removed rows, the JSON field set, byte-identical
+    repeats, an identical comparison exporting zero rows, and a run-level ledger difference being
+    labelled `(run)` in both formats.
+
+Verification: release build 0 warnings/0 errors; core tests 630/630; editor
+tests 224/224; `radix transient` runs all three examples with exit 0 and
+physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
+example rings and settles to 10 V, the pulse example charges then decays).
+Not modelled: junction capacitance, transformers, dependent sources, switches,
+AC/small-signal analysis, gmin continuation, and plotting more than one run or
+exporting a plotted image.

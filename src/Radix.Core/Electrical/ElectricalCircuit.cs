@@ -8,6 +8,8 @@ public enum ElectricalComponentKind
     Resistor,
     VoltageSource,
     CurrentSource,
+    Capacitor,
+    Inductor,
 }
 
 /// <summary>Polarity metadata for an authored electrical terminal.</summary>
@@ -40,7 +42,21 @@ public static class ElectricalComponentMetadata
     ];
 
     public static IReadOnlyList<ElectricalTerminalTemplate> Terminals(ElectricalComponentKind kind) =>
-        kind == ElectricalComponentKind.Resistor ? ResistorTerminals : SourceTerminals;
+        HasPassiveTerminals(kind) ? ResistorTerminals : SourceTerminals;
+
+    /// <summary>Whether the kind's terminals are interchangeable passive terminals.</summary>
+    public static bool HasPassiveTerminals(ElectricalComponentKind kind) =>
+        kind is ElectricalComponentKind.Resistor
+            or ElectricalComponentKind.Capacitor
+            or ElectricalComponentKind.Inductor;
+
+    /// <summary>Whether the kind stores state, so it can carry an initial value.</summary>
+    public static bool HasState(ElectricalComponentKind kind) =>
+        kind is ElectricalComponentKind.Capacitor or ElectricalComponentKind.Inductor;
+
+    /// <summary>Whether the kind is an independent source, so a transient run can drive it.</summary>
+    public static bool SupportsWaveform(ElectricalComponentKind kind) =>
+        kind is ElectricalComponentKind.VoltageSource or ElectricalComponentKind.CurrentSource;
 
     public static string ParameterName(ElectricalComponentKind kind) =>
         kind switch
@@ -48,6 +64,8 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.Resistor => "Resistance",
             ElectricalComponentKind.VoltageSource => "Voltage",
             ElectricalComponentKind.CurrentSource => "Current",
+            ElectricalComponentKind.Capacitor => "Capacitance",
+            ElectricalComponentKind.Inductor => "Inductance",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -57,6 +75,20 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.Resistor => "ohm",
             ElectricalComponentKind.VoltageSource => "V",
             ElectricalComponentKind.CurrentSource => "A",
+            ElectricalComponentKind.Capacitor => "F",
+            ElectricalComponentKind.Inductor => "H",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    /// <summary>The stable JSON name of a component kind.</summary>
+    public static string KindName(ElectricalComponentKind kind) =>
+        kind switch
+        {
+            ElectricalComponentKind.Resistor => "resistor",
+            ElectricalComponentKind.VoltageSource => "voltage-source",
+            ElectricalComponentKind.CurrentSource => "current-source",
+            ElectricalComponentKind.Capacitor => "capacitor",
+            ElectricalComponentKind.Inductor => "inductor",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 }
@@ -88,6 +120,19 @@ public sealed class ElectricalTerminal
     public override string ToString() => $"{Id}->{NodeId}";
 }
 
+/// <summary>
+/// One piecewise-linear breakpoint of an authored source drive: the source value at an
+/// absolute time from the start of the run, in the source's unit.
+/// </summary>
+public sealed class ElectricalWaveformPoint
+{
+    public double Time { get; set; }
+
+    public double Value { get; set; }
+
+    public override string ToString() => $"{Time}:{Value}";
+}
+
 /// <summary>One authored electrical component with an explicit value and terminal bindings.</summary>
 public sealed class ElectricalComponent
 {
@@ -97,8 +142,26 @@ public sealed class ElectricalComponent
 
     public ElectricalComponentKind Kind { get; set; }
 
-    /// <summary>Resistance, voltage, or current in the unit reported by <see cref="Unit"/>.</summary>
+    /// <summary>
+    /// Resistance, voltage, current, capacitance, or inductance in the unit reported by
+    /// <see cref="Unit"/>.
+    /// </summary>
     public double Value { get; set; }
+
+    /// <summary>
+    /// Optional initial state for a reactive component: the capacitor voltage in volts
+    /// or the inductor current in amperes at the start of a transient run. Null uses the
+    /// circuit's DC operating point. Components without state reject a value.
+    /// </summary>
+    public double? InitialValue { get; set; }
+
+    /// <summary>
+    /// Optional piecewise-linear drive for an independent source, in the source's unit.
+    /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
+    /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
+    /// outside their range. Capacitors, inductors, and resistors reject a waveform.
+    /// </summary>
+    public List<ElectricalWaveformPoint> Waveform { get; } = [];
 
     public List<ElectricalTerminal> Terminals { get; } = [];
 
@@ -165,12 +228,91 @@ public sealed class ElectricalCircuit
                 case ElectricalComponentKind.CurrentSource:
                     netlist.AddCurrentSource(component.Id, nodeA, nodeB, component.Value);
                     break;
+                case ElectricalComponentKind.Capacitor:
+                    // A capacitor is an open circuit at DC, so it contributes no DC element.
+                    break;
+                case ElectricalComponentKind.Inductor:
+                    // An ideal inductor is a zero-volt short at DC.
+                    netlist.AddVoltageSource(component.Id, nodeA, nodeB, 0);
+                    break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
             }
         }
 
         return netlist;
+    }
+
+    /// <summary>Whether any component stores energy, so a transient run can do more than a DC solve.</summary>
+    public bool HasReactiveComponents =>
+        Components.Any(component => ElectricalComponentMetadata.HasState(component.Kind));
+
+    /// <summary>
+    /// Validates and bridges this authored circuit to the transient solver. Capacitors
+    /// and inductors become the solver's reactive elements, their optional initial
+    /// values become the solver's initial state, all other kinds map one to one, and a
+    /// source's optional piecewise-linear waveform drives it in time.
+    /// </summary>
+    public TransientNetlist ToTransientNetlist()
+    {
+        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(this);
+        if (diagnostics.HasErrors)
+        {
+            throw new ElectricalCircuitValidationException(diagnostics);
+        }
+
+        var netlist = new TransientNetlist(GroundNodeId);
+        foreach (ElectricalComponent component in Components)
+        {
+            string nodeA = component.FindTerminal("a")!.NodeId;
+            string nodeB = component.FindTerminal("b")!.NodeId;
+            switch (component.Kind)
+            {
+                case ElectricalComponentKind.Resistor:
+                    netlist.AddResistor(component.Id, nodeA, nodeB, component.Value);
+                    break;
+                case ElectricalComponentKind.VoltageSource:
+                    netlist.AddVoltageSource(component.Id, nodeA, nodeB, component.Value);
+                    ApplyWaveform(netlist, component);
+                    break;
+                case ElectricalComponentKind.CurrentSource:
+                    netlist.AddCurrentSource(component.Id, nodeA, nodeB, component.Value);
+                    ApplyWaveform(netlist, component);
+                    break;
+                case ElectricalComponentKind.Capacitor:
+                    netlist.AddCapacitor(component.Id, nodeA, nodeB, component.Value);
+                    if (component.InitialValue is double volts)
+                    {
+                        netlist.SetCapacitorInitialVoltage(component.Id, volts);
+                    }
+
+                    break;
+                case ElectricalComponentKind.Inductor:
+                    netlist.AddInductor(component.Id, nodeA, nodeB, component.Value);
+                    if (component.InitialValue is double amperes)
+                    {
+                        netlist.SetInductorInitialCurrent(component.Id, amperes);
+                    }
+
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
+            }
+        }
+
+        return netlist;
+    }
+
+    private static void ApplyWaveform(TransientNetlist netlist, ElectricalComponent component)
+    {
+        if (component.Waveform.Count == 0)
+        {
+            return;
+        }
+
+        netlist.SetWaveform(
+            component.Id,
+            component.Waveform.Select(point => new TransientWaveformPoint(point.Time, point.Value)));
     }
 
     public override string ToString() => Id;
@@ -255,13 +397,75 @@ public static class ElectricalCircuitValidator
                     path: path);
             }
 
-            if (!double.IsFinite(component.Value) ||
-                (component.Kind == ElectricalComponentKind.Resistor && component.Value <= 0))
+            bool needsPositiveValue = ElectricalComponentMetadata.HasPassiveTerminals(component.Kind);
+            if (!double.IsFinite(component.Value) || (needsPositiveValue && component.Value <= 0))
             {
                 diagnostics.Error(
                     "RAD-ELEC-007",
                     $"Component '{component.Id}' has an invalid {component.ParameterName.ToLowerInvariant()} value.",
                     path: path);
+            }
+
+            if (component.InitialValue is double initialValue)
+            {
+                if (!ElectricalComponentMetadata.HasState(component.Kind))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-015",
+                        $"Component '{component.Id}' is a {component.Kind} and cannot have an initial value; only capacitors and inductors store state.",
+                        path: path);
+                }
+                else if (!double.IsFinite(initialValue))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-016",
+                        $"Component '{component.Id}' has a non-finite initial value.",
+                        path: path);
+                }
+            }
+
+            if (component.Waveform.Count > 0)
+            {
+                if (!ElectricalComponentMetadata.SupportsWaveform(component.Kind))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-017",
+                        $"Component '{component.Id}' is a {component.Kind} and cannot have a waveform; only independent sources are driven in time.",
+                        path: path);
+                }
+                else if (component.Waveform.Count < 2)
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-018",
+                        $"Component '{component.Id}' has a waveform with {component.Waveform.Count} breakpoint(s); a piecewise-linear drive needs at least two.",
+                        path: path);
+                }
+                else
+                {
+                    double previousTime = double.NegativeInfinity;
+                    foreach (ElectricalWaveformPoint point in component.Waveform)
+                    {
+                        if (!double.IsFinite(point.Time) || !double.IsFinite(point.Value))
+                        {
+                            diagnostics.Error(
+                                "RAD-ELEC-019",
+                                $"Component '{component.Id}' has a non-finite waveform breakpoint.",
+                                path: path);
+                            break;
+                        }
+
+                        if (point.Time <= previousTime)
+                        {
+                            diagnostics.Error(
+                                "RAD-ELEC-020",
+                                $"Component '{component.Id}' waveform breakpoints must have strictly increasing times; {point.Time} follows {previousTime}.",
+                                path: path);
+                            break;
+                        }
+
+                        previousTime = point.Time;
+                    }
+                }
             }
 
             IReadOnlyList<ElectricalTerminalTemplate> templates =

@@ -40,6 +40,7 @@ internal static class Program
             {
                 "validate" => ValidateCommand(args[1..]),
                 "dc" => DcCommand(args[1..]),
+                "transient" or "tran" => TransientCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
                 "sweep" => SweepCommand(args[1..]),
@@ -109,6 +110,22 @@ internal static class Program
                                              Solve a DC linear electrical circuit
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--json]                   Emit one machine-readable DC report
+              transient <netlist.json|project.radix>
+                                             Solve a time-domain electrical circuit
+                  [--circuit <id>]           Choose an authored circuit in a project
+                  [--start <s>]              Start time in seconds (default: file analysis or 0)
+                  [--stop <s>]               Stop time in seconds (default: file analysis or 1)
+                  [--steps <n>]              Fixed steps, 1..10000 (default: file analysis or 100)
+                  [--method <name>]          backward-euler (default) or trapezoidal
+                  [--tol <x>]                Adaptive step control with this relative tolerance
+                  [--atol <x>]               Absolute adaptive tolerance (default: derived from the circuit)
+                  [--initial-step <s>]       First adaptive step (default: (stop-start)/steps)
+                  [--min-step <s>]           Smallest adaptive step (default: interval * 1e-12)
+                  [--max-step <s>]           Largest adaptive step (default: the whole interval)
+                  [--max-steps <n>]          Adaptive trial-step budget (default 100000)
+                  [--max-rows <n>]           Text rows to print (default 40)
+                  [--csv]                    Emit the points as a wide CSV table
+                  [--json]                   Emit one machine-readable transient report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -345,6 +362,613 @@ internal static class Program
 
         throw new ProjectFormatException(
             $"Project has multiple electrical circuits; choose one with --circuit: {string.Join(", ", project.ElectricalCircuits.Select(circuit => circuit.Id))}");
+    }
+
+    private static int TransientCommand(string[] args)
+    {
+        (var positional, var options) = Parse(
+            args,
+            [
+                "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
+                "initial-step", "min-step", "max-step", "max-steps", "settling-band",
+                "refine-levels", "sweep", "compare", "compare-tolerance",
+            ],
+            ["json", "refine", "csv"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--compare <archived-sweep.json>] [--compare-tolerance <fraction>] [--max-rows <n>] [--json|--csv]");
+            return 2;
+        }
+
+        bool json = options.ContainsKey("json");
+        string source = positional[0];
+        string? circuitId = null;
+        TransientDocument document;
+        try
+        {
+            if (string.Equals(Path.GetExtension(source), ".radix", StringComparison.OrdinalIgnoreCase))
+            {
+                CircuitProject project = ProjectSerializer.Load(source, validate: false);
+                ElectricalCircuit circuit = SelectElectricalCircuit(
+                    project, GetOption(options, "circuit"));
+                circuitId = circuit.Id;
+                document = new TransientDocument(circuit.ToTransientNetlist(), null);
+            }
+            else
+            {
+                if (GetOption(options, "circuit") is not null)
+                {
+                    Console.Error.WriteLine("--circuit is only valid when solving an authored .radix project.");
+                    return 2;
+                }
+
+                document = TransientNetlistJson.Load(source);
+            }
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            PrintDiagnostics(exception.Diagnostics, Console.Error);
+            return 2;
+        }
+        catch (ProjectFormatException exception)
+        {
+            Console.Error.WriteLine($"transient input error: {exception.Message}");
+            return 2;
+        }
+
+        TransientOptions defaults = document.Analysis ?? new TransientOptions();
+        int maxRows = GetIntOption(options, "max-rows", 40, 1, 100_000);
+        double? adaptiveTolerance = GetOption(options, "tol") is null
+            ? defaults.AdaptiveTolerance
+            : GetDoubleOption(options, "tol", 0);
+        var transientOptions = new TransientOptions
+        {
+            StartTime = GetDoubleOption(options, "start", defaults.StartTime),
+            StopTime = GetDoubleOption(options, "stop", defaults.StopTime),
+            Steps = GetIntOption(options, "steps", defaults.Steps, 1, 10_000),
+            Method = ParseTransientMethod(GetOption(options, "method"), defaults.Method),
+            AdaptiveTolerance = adaptiveTolerance,
+            AdaptiveAbsoluteTolerance = GetDoubleOption(
+                options, "atol", defaults.AdaptiveAbsoluteTolerance),
+            InitialTimeStep = GetDoubleOption(options, "initial-step", defaults.InitialTimeStep),
+            MinimumTimeStep = GetDoubleOption(options, "min-step", defaults.MinimumTimeStep),
+            MaximumTimeStep = GetDoubleOption(options, "max-step", defaults.MaximumTimeStep),
+            MaximumStepCount = GetIntOption(options, "max-steps", defaults.MaximumStepCount, 1, 1_000_000),
+            SettlingBand = GetDoubleOption(options, "settling-band", defaults.SettlingBand),
+        };
+
+        bool refine = options.ContainsKey("refine");
+        bool csv = options.ContainsKey("csv");
+        if (csv && json)
+        {
+            Console.Error.WriteLine("--csv and --json are mutually exclusive.");
+            return 2;
+        }
+
+        if (csv && refine)
+        {
+            Console.Error.WriteLine("--refine prints a table; drop --csv or --refine.");
+            return 2;
+        }
+
+        int refineLevels = GetIntOption(options, "refine-levels", 3, 2, 5);
+        if (refine && transientOptions.IsAdaptive)
+        {
+            Console.Error.WriteLine("--refine needs a fixed step; drop --tol or --atol.");
+            return 2;
+        }
+
+        string? sweepSpec = GetOption(options, "sweep");
+        string? compareSpec = GetOption(options, "compare");
+        if (sweepSpec is not null && refine)
+        {
+            Console.Error.WriteLine("--sweep and --refine are separate studies; run them one at a time.");
+            return 2;
+        }
+
+        if (compareSpec is not null && sweepSpec is null)
+        {
+            Console.Error.WriteLine("--compare needs --sweep: it compares this study with an archived one.");
+            return 2;
+        }
+
+        double compareTolerance = 0;
+        if (GetOption(options, "compare-tolerance") is not null)
+        {
+            compareTolerance = GetDoubleOption(options, "compare-tolerance", 0);
+            if (!double.IsFinite(compareTolerance) || compareTolerance < 0 || compareTolerance >= 1)
+            {
+                Console.Error.WriteLine(
+                    "--compare-tolerance must be a finite fraction from 0 (exact) to below 1.");
+                return 2;
+            }
+
+            if (compareSpec is null)
+            {
+                Console.Error.WriteLine("--compare-tolerance needs --compare.");
+                return 2;
+            }
+        }
+
+        if (sweepSpec is not null)
+        {
+            if (!TryParseSweep(sweepSpec, out string sweptElement, out double[] sweptValues, out string? sweepError))
+            {
+                Console.Error.WriteLine(sweepError);
+                return 2;
+            }
+
+            IReadOnlyList<TransientSweepRow> sweepRows;
+            try
+            {
+                sweepRows = TransientSweep.Run(
+                    document.Netlist, sweptElement, sweptValues, transientOptions);
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"sweep error: {exception.Message}");
+                return 2;
+            }
+
+            if (compareSpec is not null)
+            {
+                TransientSweepReport archived;
+                try
+                {
+                    archived = TransientSweepReport.Load(compareSpec);
+                }
+                catch (ProjectFormatException exception)
+                {
+                    Console.Error.WriteLine($"sweep report error: {exception.Message}");
+                    return 2;
+                }
+                catch (IOException exception)
+                {
+                    Console.Error.WriteLine($"sweep report error: {exception.Message}");
+                    return 2;
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    Console.Error.WriteLine($"sweep report error: {exception.Message}");
+                    return 2;
+                }
+
+                if (!string.Equals(archived.Element, sweptElement, StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine(
+                        $"--compare: the archived study swept '{archived.Element}', this run sweeps '{sweptElement}'.");
+                    return 2;
+                }
+
+                SweepComparison comparison = TransientSweepComparison.Compare(
+                    archived, sweepRows, compareTolerance);
+                string against = Path.GetFileName(compareSpec);
+                if (csv)
+                {
+                    Console.Write(TransientSweepComparisonCsv.Write(
+                        source, circuitId, comparison, against));
+                }
+                else if (json)
+                {
+                    Console.WriteLine(TransientSweepComparisonJson.ToReportJson(
+                        source, circuitId, comparison, against));
+                }
+                else
+                {
+                    PrintSweepComparison(archived, comparison, compareTolerance);
+                }
+
+                return 0;
+            }
+
+            if (csv)
+            {
+                Console.Write(TransientSweepCsv.Write(
+                    source, circuitId, sweptElement, sweepRows));
+            }
+            else if (json)
+            {
+                Console.WriteLine(TransientSweepJson.ToReportJson(
+                    source, circuitId, sweptElement, sweepRows));
+            }
+            else
+            {
+                PrintTransientSweep(document.Netlist, sweptElement, sweepRows);
+            }
+
+            return sweepRows.All(row => row.Result.Completed) ? 0 : 1;
+        }
+
+        TransientResult result;
+        try
+        {
+            result = document.Netlist.Run(transientOptions);
+        }
+        catch (ArgumentException exception)
+        {
+            Console.Error.WriteLine($"invalid transient options: {exception.Message}");
+            return 2;
+        }
+
+        TransientRefinement? refinement = null;
+        if (refine)
+        {
+            try
+            {
+                refinement = TransientRefinement.Analyze(
+                    document.Netlist, transientOptions, levels: refineLevels, baseline: result);
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"invalid refinement options: {exception.Message}");
+                return 2;
+            }
+        }
+
+        if (csv)
+        {
+            Console.Write(TransientCsv.Write(
+                result, TransientStamp.From(result, source, circuitId)));
+        }
+        else if (json)
+        {
+            Console.WriteLine(TransientNetlistJson.ToReportJson(
+                source, document.Netlist, result, circuitId, refinement));
+        }
+        else
+        {
+            PrintTransientResult(source, circuitId, document.Netlist, result, maxRows);
+            if (refinement is not null)
+            {
+                PrintTransientRefinement(refinement);
+            }
+        }
+
+        return refinement is { Completed: false } || !result.Completed ? 1 : 0;
+    }
+
+    /// <summary>
+    /// Prints the differences between an archived study and this one. Values present on only one
+    /// side are listed first, because a study that gained or lost a value is a different study
+    /// before any metric is compared.
+    /// </summary>
+    private static void PrintSweepComparison(
+        TransientSweepReport archived,
+        SweepComparison comparison,
+        double tolerance)
+    {
+        string scope = tolerance > 0
+            ? $", ignoring changes within {FormatDcNumber(tolerance)} relative"
+            : ", exact";
+        Console.WriteLine(
+            $"comparison: '{comparison.Element}' against {archived.Source ?? "an archived study"}{scope}");
+        foreach (double removed in comparison.RemovedValues)
+        {
+            Console.WriteLine($"  value {FormatDcNumber(removed)} is in the archived study only");
+        }
+
+        foreach (double added in comparison.AddedValues)
+        {
+            Console.WriteLine($"  value {FormatDcNumber(added)} is in this study only");
+        }
+
+        if (comparison.IsIdentical)
+        {
+            Console.WriteLine("  identical: no metric differs");
+            return;
+        }
+
+        Console.WriteLine("  value    node      metric     archived          current");
+        foreach (SweepDifference difference in comparison.Differences)
+        {
+            Console.WriteLine(
+                "  " + FormatDcNumber(difference.Value).PadRight(9) +
+                difference.NodeId.PadRight(10) +
+                difference.Metric.PadRight(11) +
+                FormatOrDash(difference.Before).PadRight(18) +
+                FormatOrDash(difference.After));
+        }
+
+        Console.WriteLine(
+            $"  {comparison.Differences.Count} difference(s) across {comparison.ChangedValues} value(s)");
+    }
+
+    private static string FormatOrDash(double? value) =>
+        value is double number ? FormatDcNumber(number) : "-";
+
+    /// <summary>
+    /// Prints one line per node and swept value. The value is repeated for the first node of each
+    /// row and left blank for the rest, so a wide study stays readable as a table instead of
+    /// repeating the same number down the column.
+    /// </summary>
+    private static void PrintTransientSweep(
+        TransientNetlist netlist,
+        string elementId,
+        IReadOnlyList<TransientSweepRow> rows)
+    {
+        Console.WriteLine(
+            $"sweep:     {elementId} over {rows.Count} values ({rows[0].Value} -> {rows[^1].Value})");
+        Console.WriteLine(
+            "  value".PadRight(16) + "node".PadRight(12) + "peak (V)".PadRight(18) +
+            "final (V)".PadRight(18) + "settle (s)");
+        foreach (TransientSweepRow row in rows)
+        {
+            string value = FormatDcNumber(row.Value);
+            if (!row.Result.Completed)
+            {
+                Console.WriteLine("  " + value.PadRight(14) + "failed: " + row.Result.Failure);
+                continue;
+            }
+
+            if (row.Result.Metrics is not TransientMetrics metrics || metrics.Nodes.Count == 0)
+            {
+                Console.WriteLine("  " + value.PadRight(14) + "no metrics (run too short)");
+                continue;
+            }
+
+            bool first = true;
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                // Ground is the reference by definition: a 0 V row is not information.
+                if (string.Equals(node.NodeId, netlist.GroundNodeId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                string settled = node.SettlingTimeSeconds is double seconds
+                    ? FormatDcNumber(seconds)
+                    : "not settled";
+                Console.WriteLine(
+                    "  " + (first ? value : string.Empty).PadRight(14) +
+                    node.NodeId.PadRight(12) +
+                    FormatDcNumber(node.MaximumVolts).PadRight(18) +
+                    FormatDcNumber(node.FinalVolts).PadRight(18) +
+                    settled);
+                first = false;
+            }
+
+            if (first)
+            {
+                Console.WriteLine("  " + value.PadRight(14) + "no measured nodes");
+            }
+        }
+
+        Console.WriteLine(
+            $"convention: peak and final volts per node; sweep changed only '{elementId}' in a copy of the circuit.");
+    }
+
+    /// <summary>
+    /// Parses <c>id=v1,v2,...</c> or <c>id=from:to:count</c>. The spelling lives in the CLI
+    /// because it is about input, not about the numerical study.
+    /// </summary>
+    private static bool TryParseSweep(
+        string spec,
+        out string elementId,
+        out double[] values,
+        out string? error)
+    {
+        elementId = string.Empty;
+        values = [];
+        error = null;
+
+        int equals = spec.IndexOf('=');
+        if (equals <= 0 || equals == spec.Length - 1)
+        {
+            error = "--sweep expects <element>=<v1,v2,...> or <element>=<from>:<to>:<count>.";
+            return false;
+        }
+
+        elementId = spec[..equals].Trim();
+        string text = spec[(equals + 1)..].Trim();
+        if (elementId.Length == 0 || text.Length == 0)
+        {
+            error = "--sweep needs a non-empty element id and at least two values.";
+            return false;
+        }
+
+        string[] parts = text.Split(
+            ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1)
+        {
+            var parsed = new double[parts.Length];
+            for (int index = 0; index < parts.Length; index++)
+            {
+                if (!double.TryParse(
+                        parts[index], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[index]) ||
+                    !double.IsFinite(parsed[index]))
+                {
+                    error = $"--sweep value '{parts[index]}' is not a finite number.";
+                    return false;
+                }
+            }
+
+            values = parsed;
+            return true;
+        }
+
+        string[] range = text.Split(':', StringSplitOptions.TrimEntries);
+        if (range.Length != 3 ||
+            !double.TryParse(range[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) ||
+            !double.TryParse(range[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) ||
+            !int.TryParse(range[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
+        {
+            error = "--sweep expects <from>:<to>:<count> (for example R1=800:1200:5) or a comma-separated list of at least two values.";
+            return false;
+        }
+
+        try
+        {
+            values = TransientSweep.Linspace(from, to, count);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            error = exception.Message;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static void PrintTransientRefinement(TransientRefinement study)
+    {
+        Console.WriteLine($"step refinement ({study.Levels.Count} levels, fixed steps):");
+        Console.WriteLine(
+            "  steps  ".PadRight(9) + "step (s)".PadRight(18) +
+            "max deviation (V)".PadRight(20) + "order");
+        foreach (TransientRefinementLevel level in study.Levels)
+        {
+            Console.WriteLine(
+                string.Create(CultureInfo.InvariantCulture, $"  {level.Steps,-7} {FormatDcNumber(level.TimeStep),-17}") +
+                FormatDcNumber(level.MaximumDeviationVolts).PadRight(20) +
+                (level.ObservedOrder is double order ? FormatDcNumber(order) : "-"));
+        }
+
+        if (!study.Completed)
+        {
+            Console.WriteLine($"  refinement failed: {study.Failure}");
+            return;
+        }
+
+        Console.WriteLine($"  {study.Describe()}");
+        TransientNodeDeviation? worst = study.Nodes
+            .OrderByDescending(node => node.RelativeDeviation)
+            .FirstOrDefault();
+        if (worst is not null)
+        {
+            Console.WriteLine(
+                $"  worst node: {worst.NodeId} at t={FormatDcNumber(worst.WorstTimeSeconds)} s, " +
+                $"{FormatDcNumber(worst.MaximumDeviationVolts)} V " +
+                $"({FormatDcNumber(worst.RelativeDeviation)} of its peak)");
+        }
+    }
+
+    private static TransientMethod ParseTransientMethod(string? text, TransientMethod fallback)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return fallback;
+        }
+
+        return text.Trim().ToLowerInvariant() switch
+        {
+            "be" or "backward-euler" or "backwardeuler" => TransientMethod.BackwardEuler,
+            "trap" or "trapezoidal" => TransientMethod.Trapezoidal,
+            _ => throw new ProjectFormatException(
+                $"option '--method' must be 'backward-euler' or 'trapezoidal', not '{text}'."),
+        };
+    }
+
+    private static void PrintTransientResult(
+        string source,
+        string? circuitId,
+        TransientNetlist netlist,
+        TransientResult result,
+        int maxRows)
+    {
+        TransientOptions options = result.Options;
+        Console.WriteLine($"source:    {source}");
+        if (circuitId is not null)
+        {
+            Console.WriteLine($"circuit:   {circuitId}");
+        }
+
+        Console.WriteLine($"ground:    {netlist.GroundNodeId}");
+        Console.WriteLine($"method:    {TransientNetlistJson.MethodName(options.Method)}");
+        Console.WriteLine(
+            options.IsAdaptive
+                ? $"step size: adaptive, relative tolerance {FormatDcNumber(options.AdaptiveTolerance!.Value)}, " +
+                  $"{result.Points.Count - 1} accepted steps " +
+                  $"({FormatDcNumber(options.StartTime)} -> {FormatDcNumber(options.StopTime)} s)"
+                : $"time step: {FormatDcNumber(result.TimeStep)} s x {options.Steps} steps " +
+                  $"({FormatDcNumber(options.StartTime)} -> {FormatDcNumber(options.StopTime)} s)");
+        Console.WriteLine("convention: element current flows nodeA -> nodeB; power is absorbed");
+        if (netlist.Capacitors.Count + netlist.Inductors.Count > 0)
+        {
+            var reactive = netlist.Capacitors
+                .Select(element => $"{element.Id}={FormatDcNumber(element.Farads)} F")
+                .Concat(netlist.Inductors.Select(element => $"{element.Id}={FormatDcNumber(element.Henries)} H"));
+            Console.WriteLine($"reactive:  {string.Join(", ", reactive)}");
+        }
+
+        if (result.Notes.Count > 0)
+        {
+            Console.WriteLine("notes:");
+            foreach (string note in result.Notes)
+            {
+                Console.WriteLine($"  {note}");
+            }
+        }
+
+        string[] nodes = netlist.Nodes.ToArray();
+        Console.WriteLine($"points ({result.Points.Count}):");
+        Console.WriteLine("  idx  time".PadRight(25) + string.Concat(nodes.Select(node => node.PadRight(16))));
+        int shown = Math.Min(result.Points.Count, maxRows);
+        for (int index = 0; index < shown; index++)
+        {
+            TransientPoint point = result.Points[index];
+            Console.WriteLine(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"  {index,-4} {FormatDcNumber(point.Time),-18}") +
+                string.Concat(nodes.Select(node => FormatDcNumber(point.NodeVoltages[node]).PadRight(16))));
+        }
+
+        if (result.Points.Count > shown)
+        {
+            Console.WriteLine(
+                $"  ({result.Points.Count - shown} of {result.Points.Count} rows omitted; raise --max-rows to show more)");
+        }
+
+        if (result.FinalPoint is TransientPoint final)
+        {
+            Console.WriteLine(
+                $"{(result.Completed ? "final" : "last solved")} operating point (t={FormatDcNumber(final.Time)} s):");
+            foreach (string id in final.ElementCurrents.Keys.Order(StringComparer.Ordinal))
+            {
+                Console.WriteLine(
+                    $"  {id,-16} V={FormatDcNumber(final.ElementVoltages[id]),-14} " +
+                    $"I={FormatDcNumber(final.ElementCurrents[id]),-14} A " +
+                    $"P={FormatDcNumber(final.ElementPowers[id])} W");
+            }
+
+            Console.WriteLine($"residual:  {FormatDcNumber(final.RelativeResidual)}");
+        }
+
+        if (result.Energy is TransientEnergyBalance energy)
+        {
+            Console.WriteLine("energy balance (joules):");
+            Console.WriteLine(
+                $"  delivered {FormatDcNumber(energy.DeliveredJoules),-14} " +
+                $"dissipated {FormatDcNumber(energy.DissipatedJoules),-14} " +
+                $"stored change {FormatDcNumber(energy.StoredChangeJoules)}");
+            Console.WriteLine(
+                $"  residual  {FormatDcNumber(energy.ResidualJoules),-14} " +
+                $"({FormatDcNumber(energy.RelativeResidual)} relative)");
+        }
+
+        if (result.Metrics is TransientMetrics metrics)
+        {
+            Console.WriteLine(
+                $"node metrics (settling band {FormatDcNumber(metrics.SettlingBand * 100)}% of each node's swing):");
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                string settling = node.SettlingTimeSeconds is double settled
+                    ? FormatDcNumber(settled)
+                    : "not settled";
+                Console.WriteLine(
+                    $"  {node.NodeId,-14} min {FormatDcNumber(node.MinimumVolts),-14} " +
+                    $"max {FormatDcNumber(node.MaximumVolts),-14} " +
+                    $"final {FormatDcNumber(node.FinalVolts),-14} " +
+                    $"peak@t {FormatDcNumber(node.PeakTimeSeconds),-12} settle {settling}");
+            }
+        }
+
+        if (!result.Completed)
+        {
+            Console.Error.WriteLine(
+                $"transient failed at step {result.FailedStep?.ToString(CultureInfo.InvariantCulture) ?? "initial"}: {result.Failure}: {result.Message}");
+        }
     }
 
     private static int SimulateCommand(string[] args)
@@ -1441,6 +2065,26 @@ internal static class Program
     {
         long value = GetLongOption(options, key, fallback, min, max);
         return checked((int)value);
+    }
+
+    private static double GetDoubleOption(
+        Dictionary<string, List<string>> options,
+        string key,
+        double fallback)
+    {
+        string? text = GetOption(options, key);
+        if (text is null)
+        {
+            return fallback;
+        }
+
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ||
+            !double.IsFinite(value))
+        {
+            throw new ProjectFormatException($"option '--{key}' must be a finite number.");
+        }
+
+        return value;
     }
 
     private static void PrintDcSolution(

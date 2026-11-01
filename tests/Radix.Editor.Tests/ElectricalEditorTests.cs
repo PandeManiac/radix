@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text.Json;
 using Radix.Core.Electrical;
 using Radix.Core.Model;
+using Radix.Editor.Rendering;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -41,6 +43,500 @@ public sealed class ElectricalEditorTests
         nodeName.Value = "Output";
         Assert.True(viewModel.ApplyField(nodeName));
         Assert.Equal("Output", viewModel.SelectedElectricalCircuitModel.FindNode("n1")!.Name);
+    }
+
+    [Fact]
+    public void CapacitorKindExposesItsUnitAndInitialVoltageField()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Capacitor);
+
+        ElectricalComponent component = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        Assert.Equal(ElectricalComponentKind.Capacitor, component.Kind);
+        Assert.Equal("F", component.Unit);
+        Assert.Equal(ElectricalTerminalPolarity.Passive, component.FindTerminal("a")!.Polarity);
+
+        EditableField initial = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        initial.Value = "2.5";
+        Assert.True(viewModel.ApplyField(initial));
+        Assert.Equal(2.5, component.InitialValue);
+
+        EditableField cleared = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        cleared.Value = string.Empty;
+        Assert.True(viewModel.ApplyField(cleared));
+        Assert.Null(component.InitialValue);
+    }
+
+    [Fact]
+    public void EditingAValuePreservesAnAuthoredWaveform()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        ElectricalComponent source = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        source.Waveform.Add(new ElectricalWaveformPoint { Time = 1e-3, Value = 5 });
+
+        EditableField value = viewModel.ElectricalComponentFields
+            .Single(field => field.Label.StartsWith("Value (", StringComparison.Ordinal));
+        value.Value = "3";
+
+        Assert.True(viewModel.ApplyField(value));
+        Assert.Equal(3, source.Value);
+        Assert.Equal(2, source.Waveform.Count);
+        Assert.Equal(5, source.Waveform[1].Value);
+    }
+
+    [Fact]
+    public void TransientRunReportsPointsEnergyAndExportsJson()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        EditableField method = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient method");
+        method.Value = "trap";
+        Assert.True(viewModel.ApplyField(method));
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.True(viewModel.HasElectricalTransientResult);
+        Assert.False(viewModel.HasElectricalTransientError);
+        Assert.Equal(201, viewModel.ElectricalTransientResults.Count);
+        Assert.Contains("trapezoidal", viewModel.ElectricalTransientSummary);
+        Assert.Contains("residual", viewModel.ElectricalTransientEnergyText);
+        Assert.Equal(0.005, viewModel.ElectricalTransientResults[^1].Time, 9);
+
+        Assert.True(viewModel.TryBuildElectricalTransientJson(out string json));
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.Equal(circuit.Id, document.RootElement.GetProperty("circuit").GetString());
+        Assert.True(document.RootElement.GetProperty("completed").GetBoolean());
+        Assert.True(
+            document.RootElement.GetProperty("energy").GetProperty("deliveredJoules").GetDouble() > 0);
+
+        EditableField steps = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient steps");
+        steps.Value = "abc";
+        Assert.False(viewModel.ApplyField(steps));
+        Assert.Contains("whole number", viewModel.StatusText);
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient stop (s)");
+        stop.Value = "0.01";
+        Assert.True(viewModel.ApplyField(stop));
+        Assert.False(viewModel.HasElectricalTransientResult);
+        Assert.False(viewModel.TryBuildElectricalTransientJson(out _));
+    }
+
+    [Fact]
+    public void TransientRunCanUseAdaptiveControlAndExportCsv()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        EditableField tolerance = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient tolerance");
+        tolerance.Value = "-1";
+        Assert.False(viewModel.ApplyField(tolerance));
+        Assert.Contains("positive", viewModel.StatusText);
+
+        EditableField adaptive = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient tolerance");
+        adaptive.Value = "1e-6";
+        Assert.True(viewModel.ApplyField(adaptive));
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Contains("adaptive rtol", viewModel.ElectricalTransientSummary);
+        Assert.True(viewModel.ElectricalTransientResults.Count > 2);
+        Assert.Equal(0.005, viewModel.ElectricalTransientResults[^1].Time, 9);
+
+        Assert.True(viewModel.TryBuildElectricalTransientCsv(out string csv));
+        string[] lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        // The file names the circuit it came from before the table, so a saved export can be
+        // traced back to the run that produced it.
+        Assert.Equal("# circuit: dc1", lines[0]);
+        int header = Array.FindIndex(
+            lines, line => line.StartsWith("time_s", StringComparison.Ordinal));
+        Assert.Equal("time_s,\"gnd\",\"in\",\"out\"", lines[header]);
+        Assert.Equal(viewModel.ElectricalTransientPointCount + 1, lines.Length - header);
+        // The table is sampled for the panel; the export always carries every point.
+        Assert.True(lines.Length - header > viewModel.ElectricalTransientResults.Count);
+        Assert.StartsWith("0,0,5,0", lines[header + 1]);
+
+        EditableField fixedStep = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient tolerance");
+        fixedStep.Value = string.Empty;
+        Assert.True(viewModel.ApplyField(fixedStep));
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Contains("steps", viewModel.ElectricalTransientSummary);
+        Assert.Equal(201, viewModel.ElectricalTransientResults.Count);
+    }
+
+    [Fact]
+    public void TransientMetricsAndSettlingBandAreEditableInThePanel()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        EditableField invalid = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        invalid.Value = "2";
+        Assert.False(viewModel.ApplyField(invalid));
+        Assert.Contains("between 0 and 1", viewModel.StatusText);
+
+        EditableField loose = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        loose.Value = "0.1";
+        Assert.True(viewModel.ApplyField(loose));
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        // The capacitor starts at 0 V against a 5 V operating point, and the panel says so
+        // instead of leaving the first samples unexplained.
+        Assert.Contains("C1", viewModel.ElectricalTransientNotesText, StringComparison.Ordinal);
+        Assert.Contains(
+            "discontinuity",
+            viewModel.ElectricalTransientNotesText,
+            StringComparison.Ordinal);
+
+        ElectricalTransientMetricItem output = viewModel.ElectricalTransientMetrics
+            .Single(item => item.NodeId == "out");
+        Assert.Contains("settled at", output.SettleText);
+        Assert.Contains("max", output.ExtremesText);
+        Assert.Contains("peak @", output.PeakText);
+        Assert.Contains(
+            viewModel.ElectricalTransientMetrics,
+            item => item.NodeId == "in" && item.SettleText == "settled at 0 s");
+
+        TransientPlot plot = Assert.IsType<TransientPlot>(viewModel.ElectricalTransientPlot);
+        Assert.Equal(3, plot.Series.Count);
+        Assert.All(plot.Series, series => Assert.True(
+            series.Points.Count > 1,
+            $"{series.NodeId} needs a drawable polyline"));
+        Assert.Equal(0.005, plot.TimeEnd, 12);
+
+        // The SVG export is the shareable form of the same plot.
+        Assert.True(viewModel.TryBuildElectricalTransientSvg(out string svg));
+        Assert.Contains("<svg", svg, StringComparison.Ordinal);
+        Assert.Equal(3, svg.Split("<polyline").Length - 1);
+        // The picture names the circuit it came from, like the CSV export does.
+        Assert.Contains("provenance", svg, StringComparison.Ordinal);
+
+        EditableField tighter = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        tighter.Value = "0.02";
+        Assert.True(viewModel.ApplyField(tighter));
+        Assert.Empty(viewModel.ElectricalTransientMetrics);
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientNotesText);
+        Assert.Null(viewModel.ElectricalTransientPlot);
+        Assert.False(viewModel.TryBuildElectricalTransientSvg(out _));
+        Assert.False(viewModel.HasElectricalTransientResult);
+    }
+
+    [Fact]
+    public void ThePanelChecksTransientAccuracyAndClearsItWithTheRun()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        // Nothing has run yet, so there is nothing to refine.
+        Assert.False(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Contains("Run a transient", viewModel.StatusText);
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientAccuracyText);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.True(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Contains("measured order", viewModel.ElectricalTransientAccuracyText);
+        Assert.Contains(
+            "Worst node out",
+            viewModel.ElectricalTransientAccuracyText,
+            StringComparison.Ordinal);
+
+        // The per-level table shows where the measured order stops improving.
+        Assert.True(viewModel.HasElectricalTransientRefinement);
+        Assert.Equal(3, viewModel.ElectricalTransientRefinementLevels.Count);
+        ElectricalTransientRefinementItem coarse = viewModel.ElectricalTransientRefinementLevels[0];
+        Assert.Equal("200 steps", coarse.StepsText);
+        Assert.Equal("reference", coarse.DeviationText);
+        Assert.Equal("-", coarse.OrderText);
+
+        ElectricalTransientRefinementItem finest = viewModel.ElectricalTransientRefinementLevels[^1];
+        Assert.Equal("800 steps", finest.StepsText);
+        Assert.True(double.TryParse(
+            finest.OrderText,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out double measuredOrder));
+        Assert.InRange(measuredOrder, 0.5, 1.5);
+
+        // The exported report carries the study, so a script sees what the panel shows.
+        Assert.True(viewModel.TryBuildElectricalTransientJson(out string report));
+        Assert.Contains("\"refinement\"", report, StringComparison.Ordinal);
+        Assert.Contains("\"observedOrder\"", report, StringComparison.Ordinal);
+
+        // The check describes the displayed run, so a settings change invalidates both.
+        EditableField band = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        band.Value = "0.1";
+        Assert.True(viewModel.ApplyField(band));
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientAccuracyText);
+        // With the run gone there is nothing to export, so the study cannot leak into a
+        // later report either.
+        Assert.False(viewModel.TryBuildElectricalTransientJson(out _));
+        Assert.Empty(viewModel.ElectricalTransientRefinementLevels);
+        Assert.False(viewModel.HasElectricalTransientRefinement);
+        Assert.False(viewModel.HasElectricalTransientResult);
+    }
+
+    [Fact]
+    public void TheAccuracyCheckUsesTheRequestedLevelCount()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+
+        // One level cannot imply an order, so it is rejected before any solve.
+        viewModel.ElectricalTransientRefineLevelsText = "1";
+        Assert.False(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Contains("2 to 5", viewModel.StatusText);
+        Assert.Empty(viewModel.ElectricalTransientRefinementLevels);
+
+        // Four levels refine 200 steps to 1600 and report one row per level.
+        viewModel.ElectricalTransientRefineLevelsText = "4";
+        Assert.True(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Equal(4, viewModel.ElectricalTransientRefinementLevels.Count);
+        Assert.Equal("200 steps", viewModel.ElectricalTransientRefinementLevels[0].StepsText);
+        Assert.Equal("1600 steps", viewModel.ElectricalTransientRefinementLevels[^1].StepsText);
+        Assert.Equal("reference", viewModel.ElectricalTransientRefinementLevels[0].DeviationText);
+    }
+
+    [Fact]
+    public void NodesCanBeHiddenFromThePlotWithoutRepaintingTheOthers()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Equal(3, viewModel.ElectricalTransientSeries.Count);
+
+        ElectricalTransientSeriesItem ground =
+            viewModel.ElectricalTransientSeries.Single(item => item.NodeId == "gnd");
+        ground.IsVisible = false;
+
+        TransientPlot plot = Assert.IsType<TransientPlot>(viewModel.ElectricalTransientPlot);
+        Assert.Equal(2, plot.Series.Count);
+        Assert.DoesNotContain(plot.Series, series => series.NodeId == "gnd");
+        // The surviving traces keep their palette slots, so hiding one does not repaint the rest.
+        Assert.Equal(1, plot.Series.Single(series => series.NodeId == "in").ColorIndex);
+        Assert.Equal(2, plot.Series.Single(series => series.NodeId == "out").ColorIndex);
+
+        foreach (ElectricalTransientSeriesItem item in viewModel.ElectricalTransientSeries)
+        {
+            item.IsVisible = false;
+        }
+
+        Assert.Null(viewModel.ElectricalTransientPlot);
+
+        ground.IsVisible = true;
+        viewModel.ElectricalTransientSeries.Single(item => item.NodeId == "in").IsVisible = true;
+        viewModel.ElectricalTransientSeries.Single(item => item.NodeId == "out").IsVisible = true;
+        Assert.Equal(3, Assert.IsType<TransientPlot>(viewModel.ElectricalTransientPlot).Series.Count);
+
+        // A new run starts with every trace shown again.
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.Equal(3, viewModel.ElectricalTransientSeries.Count);
+        Assert.All(viewModel.ElectricalTransientSeries, item => Assert.True(item.IsVisible));
+    }
+
+    [Fact]
+    public void ThePanelProbesNodeVoltagesAtAChosenTime()
+    {
+        const double supply = 5;
+        const double tau = 1_000 * 1e-6;
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, supply, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        viewModel.ElectricalTransientProbeInput = "0.0012345";
+        Assert.False(viewModel.ProbeElectricalTransient());
+        Assert.Contains("Run a transient", viewModel.StatusText);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.True(viewModel.ProbeElectricalTransient());
+
+        // 200 steps over 0.005 s puts samples at 2.5e-5 s, so this time is interpolated.
+        Assert.Contains("interpolated", viewModel.ElectricalTransientProbeText);
+        Assert.Equal(0.0012345, viewModel.ElectricalTransientProbeTime!.Value, 15);
+        Assert.Equal(3, viewModel.ElectricalTransientProbeValues.Count);
+
+        // The probe reports the solved trace, so it sits within the scheme's own error of
+        // the analytic charge 5*(1 - e^(-t/tau)) at this time.
+        double analytic = supply * (1 - Math.Exp(-0.0012345 / tau));
+        Assert.InRange(viewModel.ElectricalTransientProbeValues["out"], analytic * 0.98, analytic * 1.02);
+        Assert.Equal(supply, viewModel.ElectricalTransientProbeValues["in"], 9);
+
+        viewModel.ElectricalTransientProbeInput = "abc";
+        Assert.False(viewModel.ProbeElectricalTransient());
+        Assert.Contains("number of seconds", viewModel.StatusText);
+
+        viewModel.ElectricalTransientProbeInput = "0.01";
+        Assert.False(viewModel.ProbeElectricalTransient());
+        Assert.Contains("between", viewModel.StatusText);
+
+        viewModel.ElectricalTransientProbeInput = "0.00125";
+        Assert.True(viewModel.ProbeElectricalTransient());
+        Assert.Contains("solved point", viewModel.ElectricalTransientProbeText);
+
+        EditableField band = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        band.Value = "0.1";
+        Assert.True(viewModel.ApplyField(band));
+        Assert.Empty(viewModel.ElectricalTransientProbeValues);
+        Assert.Null(viewModel.ElectricalTransientProbeTime);
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientProbeText);
+    }
+
+    [Fact]
+    public void SourceWaveformsCanBeAuthoredThroughThePanel()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.VoltageSource);
+        ElectricalComponent source = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        Assert.Equal(ElectricalComponentKind.VoltageSource, source.Kind);
+
+        EditableField empty = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        Assert.Equal(string.Empty, empty.Value);
+
+        empty.Value = "0=0, 0.001=5";
+        Assert.True(viewModel.ApplyField(empty));
+        Assert.Equal(2, source.Waveform.Count);
+        Assert.Equal(0.001, source.Waveform[1].Time);
+        Assert.Equal(5, source.Waveform[1].Value);
+
+        EditableField formatted = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        Assert.Equal("0=0, 0.001=5", formatted.Value);
+
+        EditableField decreasing = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        decreasing.Value = "0.002=1, 0.001=2";
+        Assert.False(viewModel.ApplyField(decreasing));
+        Assert.Equal(2, source.Waveform.Count);
+        Assert.Equal(0, source.Waveform[0].Time);
+
+        EditableField single = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        single.Value = "0=0";
+        Assert.False(viewModel.ApplyField(single));
+        Assert.Equal(2, source.Waveform.Count);
+
+        EditableField garbled = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        garbled.Value = "0=0, nope";
+        Assert.False(viewModel.ApplyField(garbled));
+        Assert.Equal(2, source.Waveform.Count);
+
+        EditableField cleared = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        cleared.Value = string.Empty;
+        Assert.True(viewModel.ApplyField(cleared));
+        Assert.Empty(source.Waveform);
+
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Resistor);
+        Assert.DoesNotContain(
+            viewModel.ElectricalComponentFields,
+            field => field.Label == "Waveform");
     }
 
     [Fact]
@@ -317,6 +813,299 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void ThePanelSweepsOneElementAndListsEachNodeMetric()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        Assert.True(viewModel.SolveElectricalTransient());
+
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000,2000";
+
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.HasElectricalSweepResult);
+        // Two measured nodes per value: ground is the reference, not a row.
+        Assert.Equal(6, viewModel.ElectricalSweepRows.Count);
+        Assert.Contains("R1", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+        Assert.All(viewModel.ElectricalSweepRows, row =>
+            Assert.DoesNotContain("failed", row.NodeId, StringComparison.Ordinal));
+        // The value is printed once per block, not on every node row.
+        Assert.Equal("500", viewModel.ElectricalSweepRows[0].ValueText);
+        Assert.Equal(string.Empty, viewModel.ElectricalSweepRows[1].ValueText);
+    }
+
+    [Fact]
+    public void TheSweepExplainsAnUnknownElementOrUnusableValues()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        Assert.True(viewModel.SolveElectricalTransient());
+
+        viewModel.ElectricalSweepElementText = "R9";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Empty(viewModel.ElectricalSweepRows);
+        Assert.Contains("R9", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500";
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("800:1200:5", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+
+        viewModel.ElectricalSweepValuesText = "500,abc";
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("abc", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnEditClearsTheSweepWithTheRunItCameFrom()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        Assert.True(viewModel.SolveElectricalTransient());
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.NotEmpty(viewModel.ElectricalSweepRows);
+
+        // The stop time is part of the run the sweep reused, so changing it drops both.
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.02";
+        Assert.True(viewModel.ApplyField(stop));
+
+        Assert.Empty(viewModel.ElectricalSweepRows);
+        Assert.False(viewModel.HasElectricalSweepResult);
+        Assert.False(viewModel.HasElectricalTransientResult);
+    }
+
+    [Fact]
+    public void ThePanelExportsItsSweepWithTheSharedWriters()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        Assert.True(viewModel.SolveElectricalTransient());
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.True(viewModel.RunElectricalSweep());
+
+        Assert.True(viewModel.TryBuildElectricalSweepCsv(out string csv));
+        Assert.Contains("# format: radix-transient-sweep", csv, StringComparison.Ordinal);
+        Assert.Contains("# element: R1", csv, StringComparison.Ordinal);
+        Assert.Contains("# values: 2", csv, StringComparison.Ordinal);
+        // The export is complete: two values times three nodes, ground included.
+        Assert.Contains("node,peak_v,final_v,settle_s,energy_residual", csv, StringComparison.Ordinal);
+
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string json));
+        using JsonDocument report = JsonDocument.Parse(json);
+        Assert.Equal("radix-transient-sweep", report.RootElement.GetProperty("format").GetString());
+        Assert.Equal("R1", report.RootElement.GetProperty("element").GetString());
+        Assert.Equal(circuit.Id, report.RootElement.GetProperty("circuit").GetString());
+        Assert.Equal(2, report.RootElement.GetProperty("rows").GetArrayLength());
+    }
+
+    [Fact]
+    public void SweepExportIsUnavailableUntilAStudyExists()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+
+        Assert.False(viewModel.TryBuildElectricalSweepCsv(out string csv));
+        Assert.False(viewModel.TryBuildElectricalSweepJson(out string json));
+        Assert.Empty(csv);
+        Assert.Empty(json);
+        // A sweep without a run explains the prerequisite instead of failing silently.
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("Run a transient", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheSweepExportDisappearsWithAnInvalidatingEdit()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        Assert.True(viewModel.SolveElectricalTransient());
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.TryBuildElectricalSweepCsv(out _));
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.02";
+        Assert.True(viewModel.ApplyField(stop));
+
+        // No study, no export: the file would describe a circuit the panel no longer shows.
+        Assert.False(viewModel.TryBuildElectricalSweepCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalSweepJson(out _));
+    }
+
+    [Fact]
+    public void ThePanelComparesItsSweepWithAnArchivedStudy()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+        Assert.Contains("Identical", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+        Assert.Empty(viewModel.ElectricalSweepDifferences);
+        Assert.False(viewModel.HasElectricalSweepComparison);
+
+        // A study over a different set of values is a different study, and the panel says which
+        // values each side holds. (Physics changes are covered by the Core comparison tests; at a
+        // 250 us step a doubled capacitance leaves the node metrics bit-identical here.)
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+        Assert.True(viewModel.HasElectricalSweepComparison);
+        Assert.Contains("difference", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+        Assert.Contains(
+            viewModel.ElectricalSweepDifferences,
+            row => row.Metric == "removed" && row.ValueText == "1000");
+        Assert.Contains(
+            viewModel.ElectricalSweepDifferences,
+            row => row.Metric == "added" && row.ValueText == "1500");
+    }
+
+    [Fact]
+    public void AComparisonRefusesAForeignReportOrADifferentElement()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+
+        Assert.False(viewModel.CompareElectricalSweepWithArchived(
+            "{\"format\":\"radix-transient-netlist\",\"version\":1}"));
+        Assert.Contains("radix-transient-sweep", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+
+        string otherElement = archived.Replace(
+            "\"element\": \"R1\"", "\"element\": \"C9\"", StringComparison.Ordinal);
+        Assert.NotEqual(archived, otherElement);
+        Assert.False(viewModel.CompareElectricalSweepWithArchived(otherElement));
+        Assert.Contains("C9", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+        Assert.Empty(viewModel.ElectricalSweepDifferences);
+
+        // An invalid tolerance is refused before any report is read.
+        viewModel.ElectricalSweepToleranceText = "2";
+        Assert.False(viewModel.CompareElectricalSweepWithArchived(archived));
+        Assert.Contains("below 1", viewModel.ElectricalSweepComparisonSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnEditClearsTheComparisonWithTheStudy()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived));
+        Assert.True(viewModel.HasElectricalSweepComparison);
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.02";
+        Assert.True(viewModel.ApplyField(stop));
+
+        Assert.Empty(viewModel.ElectricalSweepDifferences);
+        Assert.False(viewModel.HasElectricalSweepComparison);
+        Assert.Empty(viewModel.ElectricalSweepComparisonSummary);
+    }
+
+    [Fact]
+    public void ThePanelExportsItsComparison()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonJson(out _));
+
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+
+        Assert.True(viewModel.TryBuildElectricalSweepComparisonCsv(out string csv));
+        Assert.Contains("# format: radix-transient-sweep-comparison", csv, StringComparison.Ordinal);
+        Assert.Contains("# element: R1", csv, StringComparison.Ordinal);
+        Assert.Contains("# against: base.json", csv, StringComparison.Ordinal);
+        Assert.Contains("value,node,metric,before,after", csv, StringComparison.Ordinal);
+
+        Assert.True(viewModel.TryBuildElectricalSweepComparisonJson(out string json));
+        using JsonDocument report = JsonDocument.Parse(json);
+        Assert.Equal("radix-transient-sweep-comparison", report.RootElement.GetProperty("format").GetString());
+        Assert.Equal("base.json", report.RootElement.GetProperty("against").GetString());
+        Assert.False(report.RootElement.GetProperty("identical").GetBoolean());
+    }
+
+    [Fact]
+    public void TheComparisonExportDisappearsWithTheStudy()
+    {
+        EditorViewModel viewModel = RcSweepEditor(out _);
+        Assert.True(viewModel.TryBuildElectricalSweepJson(out string archived));
+        viewModel.ElectricalSweepValuesText = "500,1500";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.True(viewModel.CompareElectricalSweepWithArchived(archived, "base.json"));
+        Assert.True(viewModel.TryBuildElectricalSweepComparisonCsv(out _));
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.02";
+        Assert.True(viewModel.ApplyField(stop));
+
+        // The study the diff described is gone, so the diff must not be exportable either.
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalSweepComparisonJson(out _));
+    }
+
+    [Fact]
     public void MultipleCircuitsKeepIndependentSelectionsAndUndoRemoval()
     {
         EditorViewModel viewModel = CreateEmptyEditor();
@@ -341,6 +1130,60 @@ public sealed class ElectricalEditorTests
         viewModel.Undo();
         Assert.Equal(2, viewModel.ElectricalCircuits.Count);
         Assert.NotNull(viewModel.Project.FindElectricalCircuit("dc1"));
+    }
+
+    /// <summary>A run RC circuit with a two-value sweep of R1 already taken.</summary>
+    private static EditorViewModel RcSweepEditor(out ElectricalCircuit circuit)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        circuit.Components.Add(
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd"));
+        // Long enough for the RC to settle; at the 5 ms default nothing settles, so a comparison
+        // would only see the energy ledger move and the test would not exercise the metrics.
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label.StartsWith("Transient stop", StringComparison.Ordinal));
+        stop.Value = "0.05";
+        Assert.True(viewModel.ApplyField(stop));
+        Assert.True(viewModel.SolveElectricalTransient());
+        viewModel.ElectricalSweepElementText = "R1";
+        viewModel.ElectricalSweepValuesText = "500,1000";
+        Assert.True(viewModel.RunElectricalSweep());
+        return viewModel;
+    }
+
+    private static ElectricalComponent ElectricalTestComponent(
+        string id,
+        ElectricalComponentKind kind,
+        double value,
+        string nodeA,
+        string nodeB)
+    {
+        var component = new ElectricalComponent { Id = id, Name = id, Kind = kind, Value = value };
+        bool source = !ElectricalComponentMetadata.HasPassiveTerminals(kind);
+        component.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "a",
+            Name = source ? "Positive" : "A",
+            Polarity = source ? ElectricalTerminalPolarity.Positive : ElectricalTerminalPolarity.Passive,
+            NodeId = nodeA,
+        });
+        component.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "b",
+            Name = source ? "Negative" : "B",
+            Polarity = source ? ElectricalTerminalPolarity.Negative : ElectricalTerminalPolarity.Passive,
+            NodeId = nodeB,
+        });
+        return component;
     }
 
     private static EditorViewModel CreateEmptyEditor()

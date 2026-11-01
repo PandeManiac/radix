@@ -162,6 +162,39 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalSolveSummary = "Choose Solve to compute the DC operating point.";
     private bool _hasElectricalSolveResult;
     private bool _hasElectricalSolveError;
+    private bool _hasElectricalTransientResult;
+    private bool _hasElectricalTransientError;
+    private string _electricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
+    private string _electricalTransientEnergyText = string.Empty;
+    private string _electricalTransientNotesText = string.Empty;
+    private string _electricalTransientStopText = "0.005";
+    private string _electricalTransientStepsText = "200";
+    private string _electricalTransientMethodName = "backward-euler";
+    private string _electricalTransientToleranceText = string.Empty;
+    private string _electricalTransientSettlingBandText = "0.02";
+    private TransientPlot? _electricalTransientPlot;
+    private TransientPlotSeries[] _electricalTransientSeries = [];
+    private string _electricalTransientAccuracyText = string.Empty;
+    private string _electricalTransientProbeInput = string.Empty;
+    private string _electricalTransientRefineLevelsText = "3";
+    private string _electricalTransientProbeText = string.Empty;
+    private double? _electricalTransientProbeTime;
+    private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
+        new SortedDictionary<string, double>(StringComparer.Ordinal);
+    private int _electricalTransientPointCount;
+    private IReadOnlyList<TransientSweepRow>? _electricalSweepResult;
+    private SweepComparison? _electricalSweepComparison;
+    private string? _electricalSweepAgainst;
+    private string _electricalSweepToleranceText = "0";
+    private string _electricalSweepComparisonSummary = string.Empty;
+    private string _electricalSweepElementId = string.Empty;
+    private string _electricalSweepElementText = string.Empty;
+    private string _electricalSweepValuesText = string.Empty;
+    private string _electricalSweepSummary =
+        "Run a transient, then sweep one element to compare its values.";
+    private TransientNetlist? _electricalTransientNetlist;
+    private TransientResult? _electricalTransientResult;
+    private TransientRefinement? _electricalTransientRefinement;
 
 
     public EditorViewModel(CircuitProject project)
@@ -272,6 +305,11 @@ public sealed class EditorViewModel : ObservableObject
         AddElectricalComponentCommand = new RelayCommand(AddElectricalComponent);
         RemoveElectricalComponentCommand = new RelayCommand(RemoveElectricalComponent);
         SolveElectricalCircuitCommand = new RelayCommand(() => SolveElectricalCircuit());
+        RunElectricalTransientCommand = new RelayCommand(() => SolveElectricalTransient());
+        CheckElectricalTransientAccuracyCommand =
+            new RelayCommand(() => CheckElectricalTransientAccuracy());
+        ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
+        RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -382,6 +420,124 @@ public sealed class EditorViewModel : ObservableObject
 
     public ObservableCollection<ElectricalNodeResultItem> ElectricalNodeResults { get; } = [];
 
+    /// <summary>Solved points of the last transient run, formatted for the panel.</summary>
+    public ObservableCollection<ElectricalTransientPointItem> ElectricalTransientResults { get; } = [];
+
+    /// <summary>Per-node peak and settling summary of the last transient run.</summary>
+    public ObservableCollection<ElectricalTransientMetricItem> ElectricalTransientMetrics { get; } = [];
+
+    /// <summary>Per-node visibility of the plotted traces, in ordinal node order.</summary>
+    public ObservableCollection<ElectricalTransientSeriesItem> ElectricalTransientSeries { get; } = [];
+
+    /// <summary>Per-level rows of the last step-refinement check, empty until one is taken.</summary>
+    public ObservableCollection<ElectricalTransientRefinementItem> ElectricalTransientRefinementLevels { get; } = [];
+
+    /// <summary>Rows of the last parameter sweep: one per swept value and node.</summary>
+    public ObservableCollection<ElectricalSweepRowItem> ElectricalSweepRows { get; } = [];
+
+    /// <summary>Whether the sweep table has rows to show.</summary>
+    public bool HasElectricalSweepResult => ElectricalSweepRows.Count > 0;
+
+    /// <summary>Id of the single element the sweep varies, as typed.</summary>
+    public string ElectricalSweepElementText
+    {
+        get => _electricalSweepElementText;
+        set => SetField(ref _electricalSweepElementText, value ?? string.Empty);
+    }
+
+    /// <summary>Swept values as typed: a comma list, or <c>from:to:count</c>.</summary>
+    public string ElectricalSweepValuesText
+    {
+        get => _electricalSweepValuesText;
+        set => SetField(ref _electricalSweepValuesText, value ?? string.Empty);
+    }
+
+    /// <summary>Rows of the last comparison against an archived study.</summary>
+    public ObservableCollection<ElectricalSweepDifferenceItem> ElectricalSweepDifferences { get; } = [];
+
+    /// <summary>Whether there are comparison rows to show.</summary>
+    public bool HasElectricalSweepComparison => ElectricalSweepDifferences.Count > 0;
+
+    /// <summary>Relative tolerance for comparing studies, as typed; 0 means exact.</summary>
+    public string ElectricalSweepToleranceText
+    {
+        get => _electricalSweepToleranceText;
+        set => SetField(ref _electricalSweepToleranceText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the comparison, or why it could not run.</summary>
+    public string ElectricalSweepComparisonSummary
+    {
+        get => _electricalSweepComparisonSummary;
+        private set => SetField(ref _electricalSweepComparisonSummary, value);
+    }
+
+    /// <summary>One line describing the sweep, or why it could not run.</summary>
+    public string ElectricalSweepSummary
+    {
+        get => _electricalSweepSummary;
+        private set => SetField(ref _electricalSweepSummary, value);
+    }
+
+    /// <summary>Whether the refinement table has rows to show.</summary>
+    public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
+
+    /// <summary>Geometry of the displayed transient run, or null when nothing is shown.</summary>
+    public TransientPlot? ElectricalTransientPlot
+    {
+        get => _electricalTransientPlot;
+        private set => SetField(ref _electricalTransientPlot, value);
+    }
+
+    /// <summary>Initial-condition notes from the displayed run, empty when there are none.</summary>
+    public string ElectricalTransientNotesText
+    {
+        get => _electricalTransientNotesText;
+        private set => SetField(ref _electricalTransientNotesText, value);
+    }
+
+    /// <summary>Result of the last step-refinement check, empty until one is requested.</summary>
+    public string ElectricalTransientAccuracyText
+    {
+        get => _electricalTransientAccuracyText;
+        private set => SetField(ref _electricalTransientAccuracyText, value);
+    }
+
+    /// <summary>Number of step sizes the accuracy check studies, as typed; 2 to 5.</summary>
+    public string ElectricalTransientRefineLevelsText
+    {
+        get => _electricalTransientRefineLevelsText;
+        set => SetField(ref _electricalTransientRefineLevelsText, value ?? string.Empty);
+    }
+
+    /// <summary>Time in seconds the user asked to probe, as typed; parsed by the action.</summary>
+    public string ElectricalTransientProbeInput
+    {
+        get => _electricalTransientProbeInput;
+        set => SetField(ref _electricalTransientProbeInput, value ?? string.Empty);
+    }
+
+    /// <summary>Node voltages at the probed time, in ordinal node order.</summary>
+    public IReadOnlyDictionary<string, double> ElectricalTransientProbeValues
+    {
+        get => _electricalTransientProbeValues;
+        private set => SetField(ref _electricalTransientProbeValues, value);
+    }
+
+    /// <summary>Probed time, or null when no probe is active; drawn as a marker on the plot.</summary>
+    public double? ElectricalTransientProbeTime
+    {
+        get => _electricalTransientProbeTime;
+        private set => SetField(ref _electricalTransientProbeTime, value);
+    }
+
+    /// <summary>One line describing the probe, empty until one is taken.</summary>
+    public string ElectricalTransientProbeText
+    {
+        get => _electricalTransientProbeText;
+        private set => SetField(ref _electricalTransientProbeText, value);
+    }
+
     public ObservableCollection<ElectricalElementResultItem> ElectricalElementResults { get; } = [];
 
     /// <summary>Circuit metadata fields for the Electrical tab.</summary>
@@ -398,6 +554,8 @@ public sealed class EditorViewModel : ObservableObject
         new(ElectricalComponentKind.Resistor),
         new(ElectricalComponentKind.VoltageSource),
         new(ElectricalComponentKind.CurrentSource),
+        new(ElectricalComponentKind.Capacitor),
+        new(ElectricalComponentKind.Inductor),
     ];
 
     public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
@@ -1042,6 +1200,14 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand SolveElectricalCircuitCommand { get; }
 
+    public ICommand RunElectricalTransientCommand { get; }
+
+    public ICommand CheckElectricalTransientAccuracyCommand { get; }
+
+    public ICommand ProbeElectricalTransientCommand { get; }
+
+    public ICommand RunElectricalSweepCommand { get; }
+
     public bool IsEditingFormat => _editingFormatId is not null;
 
     public string FormatSaveButtonText => IsEditingFormat ? "Update numeric format" : "Add numeric format";
@@ -1209,6 +1375,40 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasElectricalSolveError;
         private set => SetField(ref _hasElectricalSolveError, value);
+    }
+
+    public string ElectricalTransientSummary
+    {
+        get => _electricalTransientSummary;
+        private set => SetField(ref _electricalTransientSummary, value);
+    }
+
+    public string ElectricalTransientEnergyText
+    {
+        get => _electricalTransientEnergyText;
+        private set => SetField(ref _electricalTransientEnergyText, value);
+    }
+
+    public bool HasElectricalTransientResult
+    {
+        get => _hasElectricalTransientResult;
+        private set => SetField(ref _hasElectricalTransientResult, value);
+    }
+
+    /// <summary>
+    /// Solved points in the last run. The panel shows a sampled subset of these,
+    /// while the JSON and CSV exports always contain every one.
+    /// </summary>
+    public int ElectricalTransientPointCount
+    {
+        get => _electricalTransientPointCount;
+        private set => SetField(ref _electricalTransientPointCount, value);
+    }
+
+    public bool HasElectricalTransientError
+    {
+        get => _hasElectricalTransientError;
+        private set => SetField(ref _hasElectricalTransientError, value);
     }
 
     public string FormatPreviewText
@@ -4767,14 +4967,15 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
+        string? statusBefore = StatusText;
         bool applied = field.Apply(field.Value);
         if (applied)
         {
             field.LastCommitted = field.Value;
         }
-
-        if (!applied)
+        else if (string.Equals(StatusText, statusBefore, StringComparison.Ordinal))
         {
+            // Keep the editor-specific reason when the callback supplied one.
             StatusText = $"Could not apply '{field.Label}'.";
         }
 
@@ -6050,6 +6251,31 @@ public sealed class EditorViewModel : ObservableObject
             circuit.Description ?? string.Empty,
             hint: "Optional context for this DC circuit",
             apply: value => SetElectricalCircuitDescription(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient stop (s)",
+            _electricalTransientStopText,
+            hint: "End of a transient run in seconds; a view setting, not saved with the project",
+            apply: SetElectricalTransientStop));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient steps",
+            _electricalTransientStepsText,
+            hint: "Fixed steps between 0 and the stop time (2 to 20000)",
+            apply: SetElectricalTransientSteps));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient method",
+            _electricalTransientMethodName,
+            hint: "backward-euler or trapezoidal",
+            apply: SetElectricalTransientMethod));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient tolerance",
+            _electricalTransientToleranceText,
+            hint: "Blank runs the fixed step count; a positive relative tolerance enables adaptive stepping",
+            apply: SetElectricalTransientTolerance));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Settling band",
+            _electricalTransientSettlingBandText,
+            hint: "Fraction between 0 and 1 used as each node's settling tolerance (default 0.02)",
+            apply: SetElectricalTransientSettlingBand));
 
         ElectricalNodeFields.Clear();
         if (_selectedElectricalNode is not null)
@@ -6080,9 +6306,36 @@ public sealed class EditorViewModel : ObservableObject
                     FormatElectricalValue(component.Value),
                     hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; validation is shown below",
                     apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
+                if (ElectricalComponentMetadata.HasState(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        component.Kind == ElectricalComponentKind.Capacitor
+                            ? "Initial voltage (V)"
+                            : "Initial current (A)",
+                        component.InitialValue is double initial
+                            ? FormatElectricalValue(initial)
+                            : string.Empty,
+                        hint: "Blank uses the DC operating point; applied only by a transient run",
+                        apply: value => SetElectricalComponentInitialValue(circuit.Id, component.Id, value)));
+                }
+
+                if (ElectricalComponentMetadata.SupportsWaveform(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Waveform",
+                        FormatElectricalWaveform(component),
+                        hint: $"Comma-separated time={component.Unit} breakpoints in seconds; blank keeps the source constant, and a DC solve always uses the value",
+                        apply: value => SetElectricalComponentWaveform(circuit.Id, component.Id, value)));
+                }
             }
         }
     }
+
+    private static string FormatElectricalWaveform(ElectricalComponent component) =>
+        string.Join(
+            ", ",
+            component.Waveform.Select(point =>
+                $"{FormatElectricalValue(point.Time)}={FormatElectricalValue(point.Value)}"));
 
     /// <summary>
     /// Solves the selected authored circuit through the same netlist bridge used by
@@ -6163,6 +6416,861 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalSolveSummary = $"Solved '{circuit.Id}' · {ElectricalNodeResults.Count} nodes · {ElectricalElementResults.Count} elements.";
         StatusText = $"Solved DC operating point for '{circuit.Id}'";
         return true;
+    }
+
+    /// <summary>
+    /// Integrates the selected circuit with the same solver <c>radix transient</c>
+    /// uses, over the panel's own stop time, step count, and method. Nothing is
+    /// mutated: the settings are view state and the result describes the circuit as
+    /// it was when the run started.
+    /// </summary>
+    public bool SolveElectricalTransient()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ShowElectricalTransientError(
+                "Select an authored circuit before running a transient.",
+                "No electrical circuit selected.");
+            return false;
+        }
+
+        if (!TryParseElectricalNumber(_electricalTransientStopText, out double stop) || stop <= 0)
+        {
+            ShowElectricalTransientError(
+                "Transient stop time must be a positive number of seconds.",
+                "Invalid transient stop time.");
+            return false;
+        }
+
+        if (!int.TryParse(
+                _electricalTransientStepsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            ShowElectricalTransientError(
+                "Transient steps must be a whole number from 2 to 20000.",
+                "Invalid transient step count.");
+            return false;
+        }
+
+        if (!TryParseElectricalTransientMethod(_electricalTransientMethodName, out TransientMethod method))
+        {
+            ShowElectricalTransientError(
+                "Transient method must be 'backward-euler' or 'trapezoidal'.",
+                "Invalid transient method.");
+            return false;
+        }
+
+        TransientNetlist netlist;
+        try
+        {
+            netlist = circuit.ToTransientNetlist();
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            ShowElectricalTransientError(
+                $"Cannot run: {exception.Diagnostics.ErrorCount} structural error(s). Fix the validation messages above.",
+                "Transient blocked by structural errors.");
+            return false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ShowElectricalTransientError(
+                "Cannot build the transient netlist: " + exception.Message,
+                "Transient netlist construction failed.");
+            return false;
+        }
+
+        double? tolerance = null;
+        if (!string.IsNullOrWhiteSpace(_electricalTransientToleranceText))
+        {
+            if (!TryParseElectricalNumber(_electricalTransientToleranceText, out double parsed) ||
+                parsed <= 0)
+            {
+                ShowElectricalTransientError(
+                    "Transient tolerance must be a positive number, or blank for a fixed step.",
+                    "Invalid transient tolerance.");
+                return false;
+            }
+
+            tolerance = parsed;
+        }
+
+        if (!TryParseElectricalNumber(_electricalTransientSettlingBandText, out double settlingBand) ||
+            settlingBand <= 0 ||
+            settlingBand >= 1)
+        {
+            ShowElectricalTransientError(
+                "Settling band must be a fraction between 0 and 1, exclusive.",
+                "Invalid settling band.");
+            return false;
+        }
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = stop,
+            Steps = steps,
+            Method = method,
+            AdaptiveTolerance = tolerance,
+            SettlingBand = settlingBand,
+            // Bound one panel run so a tight tolerance cannot hang the UI.
+            MaximumStepCount = tolerance is null ? 100_000 : 20_000,
+        });
+
+        _electricalTransientNetlist = netlist;
+        _electricalTransientResult = result;
+
+        const int maxDisplayedPoints = 300;
+        int stride = Math.Max(1, (result.Points.Count + maxDisplayedPoints - 1) / maxDisplayedPoints);
+        ElectricalTransientResults.Clear();
+        for (int index = 0; index < result.Points.Count; index += stride)
+        {
+            ElectricalTransientResults.Add(new ElectricalTransientPointItem(index, result.Points[index]));
+        }
+
+        if (result.Points.Count > 0 && (result.Points.Count - 1) % stride != 0)
+        {
+            ElectricalTransientResults.Add(new ElectricalTransientPointItem(
+                result.Points.Count - 1, result.Points[^1]));
+        }
+
+        ElectricalTransientMetrics.Clear();
+        if (result.Metrics is TransientMetrics metrics)
+        {
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                ElectricalTransientMetrics.Add(new ElectricalTransientMetricItem(node));
+            }
+        }
+
+        string[] plottedNodes = result.Points
+            .SelectMany(point => point.NodeVoltages.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        _electricalTransientSeries = plottedNodes
+            .Select((node, index) => new TransientPlotSeries(
+                node,
+                result.Points
+                    .Select(point => new TransientPlotPoint(
+                        point.Time,
+                        point.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0))
+                    .ToArray(),
+                index))
+            .ToArray();
+        ElectricalTransientSeries.Clear();
+        foreach (TransientPlotSeries series in _electricalTransientSeries)
+        {
+            ElectricalTransientSeries.Add(new ElectricalTransientSeriesItem(
+                series.NodeId,
+                series.ColorIndex,
+                _ => RebuildElectricalTransientPlot()));
+        }
+
+        RebuildElectricalTransientPlot();
+
+        ElectricalTransientPointCount = result.Points.Count;
+        HasElectricalTransientResult = true;
+        HasElectricalTransientError = !result.Completed;
+        string shown = stride == 1
+            ? $"{result.Points.Count} points"
+            : $"{ElectricalTransientResults.Count} of {result.Points.Count} points";
+        string mode = tolerance is double relativeTolerance
+            ? $"adaptive rtol {FormatElectricalValue(relativeTolerance)}"
+            : $"{steps} {TransientNetlistJson.MethodName(method)} steps";
+        ElectricalTransientSummary = result.Completed
+            ? $"Integrated '{circuit.Id}' · {shown} · {mode} to {FormatElectricalValue(stop)} s."
+            : $"Integration failed in '{circuit.Id}' near t={FormatElectricalValue(result.FinalPoint?.Time ?? 0)} s: {result.Message}";
+        ElectricalTransientNotesText = string.Join(" ", result.Notes);
+        ElectricalTransientEnergyText = result.Energy is TransientEnergyBalance energy
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"Energy (J): delivered {energy.DeliveredJoules:G4} · dissipated {energy.DissipatedJoules:G4} · stored change {energy.StoredChangeJoules:G4} · residual {energy.ResidualJoules:G4} ({energy.RelativeResidual:G3} relative)")
+            : "Energy ledger unavailable: fewer than two points were solved.";
+        StatusText = result.Completed
+            ? $"Integrated '{circuit.Id}' to t={FormatElectricalValue(stop)} s"
+            : $"Transient failed ({FailureLabel(result.Failure ?? DcSolveFailure.NonConvergent)}).";
+        return result.Completed;
+    }
+
+    /// <summary>
+    /// Sweeps one element of the displayed run. It reuses that run's netlist and settings on
+    /// purpose: comparing numbers computed under different options would be misleading, and an
+    /// edit already invalidates the run this depends on.
+    /// </summary>
+    public bool RunElectricalSweep()
+    {
+        if (_electricalTransientNetlist is not { } netlist ||
+            _electricalTransientResult is not { } baseline ||
+            !HasElectricalTransientResult)
+        {
+            _electricalSweepResult = null;
+            ElectricalSweepRows.Clear();
+            ElectricalSweepSummary = "Run a transient first; the sweep reuses its circuit and settings.";
+            RaisePropertyChanged(nameof(HasElectricalSweepResult));
+            StatusText = "Sweep needs a transient run.";
+            return false;
+        }
+
+        string elementId = (ElectricalSweepElementText ?? string.Empty).Trim();
+        if (elementId.Length == 0)
+        {
+            ElectricalSweepSummary = "Enter the id of one element to vary, for example R1.";
+            StatusText = "No sweep element given.";
+            return false;
+        }
+
+        if (!TryParseSweepValues(ElectricalSweepValuesText, out double[] values, out string error))
+        {
+            ElectricalSweepSummary = error;
+            StatusText = "Invalid sweep values.";
+            return false;
+        }
+
+        IReadOnlyList<TransientSweepRow> rows;
+        try
+        {
+            rows = TransientSweep.Run(netlist, elementId, values, baseline.Options);
+        }
+        catch (ArgumentException exception)
+        {
+            _electricalSweepResult = null;
+            ElectricalSweepRows.Clear();
+            ElectricalSweepSummary = exception.Message;
+            RaisePropertyChanged(nameof(HasElectricalSweepResult));
+            StatusText = "Sweep failed: " + exception.Message;
+            return false;
+        }
+
+        ElectricalSweepRows.Clear();
+        int failed = 0;
+        foreach (TransientSweepRow row in rows)
+        {
+            if (!row.Result.Completed || row.Result.Metrics is not TransientMetrics metrics)
+            {
+                failed++;
+                ElectricalSweepRows.Add(new ElectricalSweepRowItem(
+                    row.Value,
+                    $"failed: {FailureLabel(row.Result.Failure ?? DcSolveFailure.NonConvergent)}",
+                    null,
+                    showValue: true));
+                continue;
+            }
+
+            bool first = true;
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                // Ground is the reference by definition: a 0 V row is not information.
+                if (string.Equals(node.NodeId, netlist.GroundNodeId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                ElectricalSweepRows.Add(new ElectricalSweepRowItem(row.Value, node.NodeId, node, first));
+                first = false;
+            }
+        }
+
+        // Keep the study itself, not the formatted table: the exports must describe the numbers the
+        // solver produced, so they read the rows rather than re-parsing the display strings.
+        _electricalSweepResult = rows;
+        _electricalSweepElementId = elementId;
+        RaisePropertyChanged(nameof(HasElectricalSweepResult));
+        ElectricalSweepSummary = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalSweepRows.Count} rows · settings from the displayed run."
+            : $"Swept '{elementId}' over {rows.Count} values; {failed} could not solve.";
+        StatusText = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values"
+            : $"Swept '{elementId}': {failed} value(s) failed.";
+        return failed == 0;
+    }
+
+    /// <summary>
+    /// The sweep table as CSV, written by the same writer as <c>radix transient --sweep --csv</c>.
+    /// Returning false rather than an empty document keeps "nothing to export" distinct from a
+    /// study that legitimately has no rows.
+    /// </summary>
+    public bool TryBuildElectricalSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalSweepResult is not { Count: > 0 } rows)
+        {
+            return false;
+        }
+
+        csv = TransientSweepCsv.Write(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            elementId: _electricalSweepElementId,
+            rows);
+        return true;
+    }
+
+    /// <summary>The sweep study as a versioned JSON report, for archiving or comparing later.</summary>
+    public bool TryBuildElectricalSweepJson(out string json)
+    {
+        json = string.Empty;
+        if (_electricalSweepResult is not { Count: > 0 } rows)
+        {
+            return false;
+        }
+
+        json = TransientSweepJson.ToReportJson(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            elementId: _electricalSweepElementId,
+            rows);
+        return true;
+    }
+
+    /// <summary>
+    /// Compares the displayed study with an archived <c>radix-transient-sweep</c> report. The
+    /// comparison itself is the command line's, so a panel diff and a CLI diff of the same two
+    /// studies agree; the panel only formats the result. Nothing is exported or stored: the archived
+    /// study is read, checked to sweep the same element, and compared.
+    /// </summary>
+    public bool CompareElectricalSweepWithArchived(string json, string? label = null)
+    {
+        ElectricalSweepDifferences.Clear();
+        RaisePropertyChanged(nameof(HasElectricalSweepComparison));
+
+        if (_electricalSweepResult is not { Count: > 0 } rows)
+        {
+            ElectricalSweepComparisonSummary = "Run a sweep before comparing it with an archived study.";
+            StatusText = "Compare needs a sweep.";
+            return false;
+        }
+
+        if (!TryParseElectricalSweepTolerance(out double tolerance, out string toleranceError))
+        {
+            ElectricalSweepComparisonSummary = toleranceError;
+            StatusText = "Invalid comparison tolerance.";
+            return false;
+        }
+
+        TransientSweepReport archived;
+        try
+        {
+            archived = TransientSweepReport.LoadFromString(json);
+        }
+        catch (ProjectFormatException exception)
+        {
+            ElectricalSweepComparisonSummary = exception.Message;
+            StatusText = "Archived study could not be read.";
+            return false;
+        }
+
+        if (!string.Equals(archived.Element, _electricalSweepElementId, StringComparison.Ordinal))
+        {
+            ElectricalSweepComparisonSummary =
+                $"The archived study swept '{archived.Element}', this one sweeps '{_electricalSweepElementId}'.";
+            StatusText = "Cannot compare studies of different elements.";
+            return false;
+        }
+
+        SweepComparison comparison = TransientSweepComparison.Compare(archived, rows, tolerance);
+        _electricalSweepComparison = comparison;
+        _electricalSweepAgainst = label;
+        foreach (double removed in comparison.RemovedValues)
+        {
+            ElectricalSweepDifferences.Add(new ElectricalSweepDifferenceItem(
+                removed, "(value)", "removed", null, null));
+        }
+
+        foreach (double added in comparison.AddedValues)
+        {
+            ElectricalSweepDifferences.Add(new ElectricalSweepDifferenceItem(
+                added, "(value)", "added", null, null));
+        }
+
+        foreach (SweepDifference difference in comparison.Differences)
+        {
+            ElectricalSweepDifferences.Add(new ElectricalSweepDifferenceItem(
+                difference.Value,
+                difference.NodeId.Length == 0 ? "(run)" : difference.NodeId,
+                difference.Metric,
+                difference.Before,
+                difference.After));
+        }
+
+        RaisePropertyChanged(nameof(HasElectricalSweepComparison));
+        string against = label ?? "the archived study";
+        ElectricalSweepComparisonSummary = comparison.IsIdentical
+            ? $"Identical to {against}: no metric differs."
+            : $"{comparison.Differences.Count} difference(s) across {comparison.ChangedValues} value(s) versus {against}.";
+        StatusText = comparison.IsIdentical
+            ? "Archived sweep matches the displayed one."
+            : $"Archived sweep differs in {comparison.Differences.Count} metric(s).";
+        return true;
+    }
+
+    /// <summary>
+    /// The displayed comparison as CSV, written by the same writer the command line uses, so a diff
+    /// attached to a review is the same artefact as one produced in a terminal.
+    /// </summary>
+    public bool TryBuildElectricalSweepComparisonCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalSweepComparison is not { } comparison)
+        {
+            return false;
+        }
+
+        csv = TransientSweepComparisonCsv.Write(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            comparison,
+            against: _electricalSweepAgainst);
+        return true;
+    }
+
+    /// <summary>The displayed comparison as a versioned JSON report.</summary>
+    public bool TryBuildElectricalSweepComparisonJson(out string json)
+    {
+        json = string.Empty;
+        if (_electricalSweepComparison is not { } comparison)
+        {
+            return false;
+        }
+
+        json = TransientSweepComparisonJson.ToReportJson(
+            source: null,
+            circuit: SelectedElectricalCircuitModel?.Id,
+            comparison,
+            against: _electricalSweepAgainst);
+        return true;
+    }
+
+    private bool TryParseElectricalSweepTolerance(out double tolerance, out string error)
+    {
+        tolerance = 0;
+        error = string.Empty;
+        string text = (ElectricalSweepToleranceText ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            return true;
+        }
+
+        if (!TryParseElectricalNumber(text, out tolerance) ||
+            !double.IsFinite(tolerance) ||
+            tolerance < 0 ||
+            tolerance >= 1)
+        {
+            error = "Comparison tolerance must be a fraction from 0 (exact) to below 1.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Parses the panel's sweep values: <c>800,1000,1200</c> or <c>800:1200:5</c>. The spelling is
+    /// kept here so a typo produces a sentence instead of a stack trace, and the same shapes work
+    /// as on the command line.
+    /// </summary>
+    private static bool TryParseSweepValues(string? text, out double[] values, out string error)
+    {
+        values = [];
+        error = string.Empty;
+        string trimmed = (text ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            error = "Enter values as 800,1000,1200 or as from:to:count, for example 800:1200:5.";
+            return false;
+        }
+
+        string[] parts = trimmed.Split(
+            ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1)
+        {
+            var parsed = new double[parts.Length];
+            for (int index = 0; index < parts.Length; index++)
+            {
+                if (!double.TryParse(
+                        parts[index], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[index]) ||
+                    !double.IsFinite(parsed[index]))
+                {
+                    error = $"'{parts[index]}' is not a finite number.";
+                    return false;
+                }
+            }
+
+            values = parsed;
+            return true;
+        }
+
+        string[] range = trimmed.Split(':', StringSplitOptions.TrimEntries);
+        if (range.Length == 3 &&
+            double.TryParse(range[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) &&
+            double.TryParse(range[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) &&
+            int.TryParse(range[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
+        {
+            try
+            {
+                values = TransientSweep.Linspace(from, to, count);
+                return true;
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                error = exception.Message;
+                return false;
+            }
+        }
+
+        error = "Use a comma list of at least two values, or from:to:count (for example 800:1200:5).";
+        return false;
+    }
+
+    /// <summary>
+    /// Refines the displayed fixed-step run so the panel can report whether halving the
+    /// step would still change the answer. That costs three solves, so it stays an
+    /// explicit action rather than something every run pays for, and an adaptive run is
+    /// refused because it has no nominal step to halve.
+    /// </summary>
+    public bool CheckElectricalTransientAccuracy()
+    {
+        if (_electricalTransientNetlist is not { } netlist ||
+            _electricalTransientResult is not { } baseline ||
+            !HasElectricalTransientResult)
+        {
+            StatusText = "Run a transient before checking its accuracy.";
+            return false;
+        }
+
+        if (baseline.Options.IsAdaptive)
+        {
+            StatusText = "Clear the transient tolerance to use a fixed step before checking accuracy.";
+            return false;
+        }
+
+        if (!baseline.Completed)
+        {
+            StatusText = "The displayed run failed, so there is no accuracy to check.";
+            return false;
+        }
+
+        if (!int.TryParse(
+                _electricalTransientRefineLevelsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int levels) ||
+            levels is < 2 or > 5)
+        {
+            StatusText = "Refine levels must be a whole number from 2 to 5.";
+            return false;
+        }
+
+        TransientRefinement study;
+        try
+        {
+            study = TransientRefinement.Analyze(
+                netlist, baseline.Options, levels: levels, baseline: baseline);
+        }
+        catch (ArgumentException exception)
+        {
+            StatusText = "Accuracy check failed: " + exception.Message;
+            return false;
+        }
+
+        if (!study.Completed)
+        {
+            _electricalTransientRefinement = null;
+            ClearElectricalTransientRefinement();
+            ElectricalTransientAccuracyText = "Accuracy check failed: " + study.Describe();
+            StatusText = $"Accuracy check failed ({FailureLabel(study.Failure ?? DcSolveFailure.NonConvergent)}).";
+            return false;
+        }
+
+        TransientNodeDeviation? worst = study.Nodes
+            .OrderByDescending(node => node.RelativeDeviation)
+            .FirstOrDefault();
+        string finest = study.Levels.Count == 0
+            ? "the finest step"
+            : $"{study.Levels[^1].Steps.ToString(CultureInfo.InvariantCulture)} steps";
+        ElectricalTransientAccuracyText = worst is null
+            ? $"Accuracy at {finest}: {study.Describe()}"
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"Accuracy at {finest}: {study.Describe()} Worst node {worst.NodeId} moved {worst.MaximumDeviationVolts:G3} V at t={worst.WorstTimeSeconds:G3} s.");
+
+        // The table shows where the measured order stops improving, which a single
+        // summary line hides.
+        _electricalTransientRefinement = study;
+        ElectricalTransientRefinementLevels.Clear();
+        for (int index = 0; index < study.Levels.Count; index++)
+        {
+            ElectricalTransientRefinementLevels.Add(
+                new ElectricalTransientRefinementItem(study.Levels[index], isReference: index == 0));
+        }
+
+        RaisePropertyChanged(nameof(HasElectricalTransientRefinement));
+        StatusText = "Checked transient accuracy by halving the step.";
+        return true;
+    }
+
+    /// <summary>
+    /// Reads every node voltage at a chosen time, interpolating between the two solved
+    /// points that bracket it. The readout names the bracketing points when the time is
+    /// not itself a solved sample, so an interpolated value cannot be mistaken for one
+    /// the integrator actually produced.
+    /// </summary>
+    public bool ProbeElectricalTransient()
+    {
+        if (_electricalTransientResult is not { } result ||
+            !HasElectricalTransientResult ||
+            result.Points.Count == 0)
+        {
+            StatusText = "Run a transient before probing a time.";
+            return false;
+        }
+
+        if (!TryParseElectricalNumber(_electricalTransientProbeInput, out double time) ||
+            !double.IsFinite(time))
+        {
+            StatusText = "Probe time must be a number of seconds.";
+            return false;
+        }
+
+        TransientPoint first = result.Points[0];
+        TransientPoint last = result.Points[^1];
+        if (time < first.Time || time > last.Time)
+        {
+            StatusText =
+                $"Probe time must be between {FormatElectricalValue(first.Time)} and " +
+                $"{FormatElectricalValue(last.Time)} s.";
+            return false;
+        }
+
+        int low = 0;
+        int high = result.Points.Count - 1;
+        while (high - low > 1)
+        {
+            int middle = (low + high) / 2;
+            if (result.Points[middle].Time <= time)
+            {
+                low = middle;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+
+        TransientPoint left = result.Points[low];
+        TransientPoint right = result.Points[high];
+        double span = right.Time - left.Time;
+        double weight = span > 0 ? Math.Clamp((time - left.Time) / span, 0, 1) : 0;
+        bool solved = left.Time == time || right.Time == time;
+        var values = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        foreach (string node in result.Points
+                     .SelectMany(point => point.NodeVoltages.Keys)
+                     .Distinct(StringComparer.Ordinal))
+        {
+            double from = left.NodeVoltages.TryGetValue(node, out double start) ? start : 0;
+            double to = right.NodeVoltages.TryGetValue(node, out double end) ? end : 0;
+            values[node] = from + (weight * (to - from));
+        }
+
+        ElectricalTransientProbeValues = values;
+        ElectricalTransientProbeTime = time;
+        string source = solved
+            ? "solved point"
+            : $"interpolated {FormatElectricalValue(left.Time)}..{FormatElectricalValue(right.Time)} s";
+        ElectricalTransientProbeText =
+            $"At t={FormatElectricalValue(time)} s ({source}): " +
+            string.Join(
+                " · ",
+                values.Select(pair =>
+                    $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V"));
+        StatusText = $"Probed transient values at t={FormatElectricalValue(time)} s";
+        return true;
+    }
+
+    /// <summary>
+    /// Renders the displayed plot as a standalone SVG document, so a run can be shared without a
+    /// screenshot. It uses the same geometry as the control and the active probe marker, if any,
+    /// and returns false when there is nothing plotted.
+    /// </summary>
+    public bool TryBuildElectricalTransientSvg(out string svg)
+    {
+        svg = string.Empty;
+        if (ElectricalTransientPlot is not { } plot ||
+            !HasElectricalTransientResult ||
+            _electricalTransientResult is not { } result ||
+            SelectedElectricalCircuitModel is not { } circuit)
+        {
+            return false;
+        }
+
+        // The picture carries the same provenance as the table, so a shared image names its run.
+        svg = TransientPlotSvg.Render(
+            plot,
+            ElectricalTransientProbeTime,
+            $"Transient: {circuit.Id}",
+            stamp: TransientStamp.From(result, circuit: circuit.Id));
+        return true;
+    }
+
+    /// <summary>
+    /// Serialises the displayed transient result through the same report builder as
+    /// <c>radix transient --json</c>, so the panel and the CLI cannot drift apart.
+    /// </summary>
+    public bool TryBuildElectricalTransientJson(out string json)
+    {
+        json = string.Empty;
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (!HasElectricalTransientResult ||
+            circuit is null ||
+            _electricalTransientNetlist is null ||
+            _electricalTransientResult is null)
+        {
+            return false;
+        }
+
+        json = TransientNetlistJson.ToReportJson(
+            null,
+            _electricalTransientNetlist,
+            _electricalTransientResult,
+            circuit.Id,
+            _electricalTransientRefinement);
+        return true;
+    }
+
+    /// <summary>
+    /// Builds a wide CSV table from the displayed transient result: one row per
+    /// solved point with its time and every node voltage, so the file plots directly.
+    /// Values use the same invariant round-trip numbers as the DC export.
+    /// </summary>
+    public bool TryBuildElectricalTransientCsv(out string csv)
+    {
+        csv = string.Empty;
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (!HasElectricalTransientResult || circuit is null || _electricalTransientResult is null)
+        {
+            return false;
+        }
+
+        // The CLI writes the same table through the same writer, so the two cannot drift, and
+        // the stamp names the circuit and settings the file came from.
+        csv = TransientCsv.Write(
+            _electricalTransientResult,
+            TransientStamp.From(_electricalTransientResult, circuit: circuit.Id));
+        return true;
+    }
+
+    private bool SetElectricalTransientStop(string value)
+    {
+        if (!TryParseElectricalNumber(value, out double stop) || stop <= 0)
+        {
+            StatusText = "Transient stop time must be a positive number of seconds.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientStopText, value, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientStopText = value;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private bool SetElectricalTransientSteps(string value)
+    {
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            StatusText = "Transient steps must be a whole number from 2 to 20000.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientStepsText, value, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientStepsText = value;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private bool SetElectricalTransientMethod(string value)
+    {
+        if (!TryParseElectricalTransientMethod(value, out TransientMethod method))
+        {
+            StatusText = "Transient method must be 'backward-euler' or 'trapezoidal'.";
+            return false;
+        }
+
+        string name = TransientNetlistJson.MethodName(method);
+        if (string.Equals(_electricalTransientMethodName, name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientMethodName = name;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private bool SetElectricalTransientTolerance(string value)
+    {
+        string trimmed = value.Trim();
+        if (trimmed.Length > 0 &&
+            (!TryParseElectricalNumber(trimmed, out double tolerance) || tolerance <= 0))
+        {
+            StatusText = "Transient tolerance must be a positive number, or blank for a fixed step.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientToleranceText, trimmed, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientToleranceText = trimmed;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private bool SetElectricalTransientSettlingBand(string value)
+    {
+        string trimmed = value.Trim();
+        if (!TryParseElectricalNumber(trimmed, out double band) || band <= 0 || band >= 1)
+        {
+            StatusText = "Settling band must be a fraction between 0 and 1, exclusive.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientSettlingBandText, trimmed, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientSettlingBandText = trimmed;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private static bool TryParseElectricalTransientMethod(string text, out TransientMethod method)
+    {
+        switch (text?.Trim().ToLowerInvariant())
+        {
+            case "be" or "backward-euler" or "backwardeuler":
+                method = TransientMethod.BackwardEuler;
+                return true;
+            case "trap" or "trapezoidal":
+                method = TransientMethod.Trapezoidal;
+                return true;
+            default:
+                method = TransientMethod.BackwardEuler;
+                return false;
+        }
     }
 
     /// <summary>
@@ -6289,6 +7397,86 @@ public sealed class EditorViewModel : ObservableObject
         HasElectricalSolveResult = false;
         HasElectricalSolveError = false;
         ElectricalSolveSummary = "Choose Solve to compute the DC operating point.";
+        ClearElectricalTransientResult();
+    }
+
+    /// <summary>
+    /// Drops the transient preview. It describes the circuit as it was when the run
+    /// started, so any edit invalidates it rather than leaving stale numbers on screen.
+    /// </summary>
+    private void ClearElectricalTransientResult()
+    {
+        ElectricalTransientResults.Clear();
+        _electricalTransientNetlist = null;
+        _electricalTransientResult = null;
+        ElectricalTransientMetrics.Clear();
+        ElectricalTransientSeries.Clear();
+        _electricalTransientSeries = [];
+        ElectricalTransientPlot = null;
+        ElectricalTransientPointCount = 0;
+        HasElectricalTransientResult = false;
+        HasElectricalTransientError = false;
+        ElectricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
+        ElectricalTransientEnergyText = string.Empty;
+        ElectricalTransientNotesText = string.Empty;
+        ElectricalTransientAccuracyText = string.Empty;
+        ElectricalTransientProbeText = string.Empty;
+        ElectricalTransientProbeTime = null;
+        ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        _electricalTransientRefinement = null;
+        ClearElectricalTransientRefinement();
+        ClearElectricalSweep();
+    }
+
+    /// <summary>
+    /// Drops the sweep table. It was computed from the run being cleared, so keeping it would
+    /// leave numbers on screen that no longer describe the selected circuit.
+    /// </summary>
+    private void ClearElectricalSweep()
+    {
+        _electricalSweepResult = null;
+        _electricalSweepComparison = null;
+        _electricalSweepAgainst = null;
+        _electricalSweepElementId = string.Empty;
+        ElectricalSweepDifferences.Clear();
+        ElectricalSweepComparisonSummary = string.Empty;
+        RaisePropertyChanged(nameof(HasElectricalSweepComparison));
+        if (ElectricalSweepRows.Count > 0)
+        {
+            ElectricalSweepRows.Clear();
+            RaisePropertyChanged(nameof(HasElectricalSweepResult));
+        }
+
+        ElectricalSweepSummary = "Run a transient, then sweep one element to compare its values.";
+    }
+
+    private void ClearElectricalTransientRefinement()
+    {
+        if (ElectricalTransientRefinementLevels.Count == 0)
+        {
+            return;
+        }
+
+        ElectricalTransientRefinementLevels.Clear();
+        RaisePropertyChanged(nameof(HasElectricalTransientRefinement));
+    }
+
+    /// <summary>
+    /// Rebuilds the plot from the traces the reader left visible. Palette slots come from the
+    /// full node list, so hiding one trace never repaints the others.
+    /// </summary>
+    private void RebuildElectricalTransientPlot()
+    {
+        ElectricalTransientPlot = TransientPlot.Create(_electricalTransientSeries.Where(series =>
+            ElectricalTransientSeries.Any(item => item.IsVisible && item.NodeId == series.NodeId)));
+    }
+
+    private void ShowElectricalTransientError(string summary, string status)
+    {
+        ClearElectricalTransientResult();
+        HasElectricalTransientError = true;
+        ElectricalTransientSummary = summary;
+        StatusText = status;
     }
 
     private void ShowElectricalSolveError(string summary, string status)
@@ -6431,6 +7619,123 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    private bool SetElectricalComponentInitialValue(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.HasState(component.Kind))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (component.InitialValue is null)
+            {
+                return false;
+            }
+
+            PushUndo();
+            component.InitialValue = null;
+            AfterElectricalMutation($"Cleared the initial value of '{component.Id}'");
+            return true;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ||
+            !double.IsFinite(parsed))
+        {
+            StatusText = "Initial value must be a finite number, or blank for the DC operating point.";
+            return false;
+        }
+
+        if (component.InitialValue is double existing && Math.Abs(existing - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.InitialValue = parsed;
+        AfterElectricalMutation(
+            $"'{component.Id}' starts at {FormatElectricalValue(parsed)} {component.Unit}");
+        return true;
+    }
+
+    private bool SetElectricalComponentWaveform(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.SupportsWaveform(component.Kind))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (component.Waveform.Count == 0)
+            {
+                return false;
+            }
+
+            PushUndo();
+            component.Waveform.Clear();
+            AfterElectricalMutation($"Cleared the waveform of '{component.Id}'");
+            return true;
+        }
+
+        var points = new List<ElectricalWaveformPoint>();
+        foreach (string entry in value.Split(
+            [',', ';'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int separator = entry.IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0 ||
+                separator == entry.Length - 1 ||
+                !TryParseElectricalNumber(entry[..separator], out double time) ||
+                !TryParseElectricalNumber(entry[(separator + 1)..], out double pointValue))
+            {
+                StatusText = $"Waveform entry '{entry}' is not a finite time=value pair.";
+                return false;
+            }
+
+            if (points.Count > 0 && time <= points[^1].Time)
+            {
+                StatusText =
+                    $"Waveform times must strictly increase; {FormatElectricalValue(time)} follows {FormatElectricalValue(points[^1].Time)}.";
+                return false;
+            }
+
+            points.Add(new ElectricalWaveformPoint { Time = time, Value = pointValue });
+        }
+
+        if (points.Count < 2)
+        {
+            StatusText = "A waveform needs at least two time=value breakpoints.";
+            return false;
+        }
+
+        if (SameElectricalWaveform(component.Waveform, points))
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Waveform.Clear();
+        component.Waveform.AddRange(points);
+        AfterElectricalMutation(
+            $"Set the waveform of '{component.Id}' to {points.Count} breakpoints");
+        return true;
+    }
+
+    private static bool TryParseElectricalNumber(string text, out double value) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+        double.IsFinite(value);
+
+    private static bool SameElectricalWaveform(
+        IReadOnlyList<ElectricalWaveformPoint> current,
+        IReadOnlyList<ElectricalWaveformPoint> updated) =>
+        current.Count == updated.Count &&
+        current.Zip(updated).All(pair =>
+            Math.Abs(pair.First.Time - pair.Second.Time) <= double.Epsilon &&
+            Math.Abs(pair.First.Value - pair.Second.Value) <= double.Epsilon);
+
     private void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
     {
         component.Terminals.Clear();
@@ -6476,7 +7781,10 @@ public sealed class EditorViewModel : ObservableObject
         {
             ElectricalComponentKind.Resistor => "r",
             ElectricalComponentKind.VoltageSource => "v",
-            _ => "i",
+            ElectricalComponentKind.CurrentSource => "i",
+            ElectricalComponentKind.Capacitor => "c",
+            ElectricalComponentKind.Inductor => "l",
+            _ => "x",
         };
         for (int index = 1; ; index++)
         {
@@ -6493,6 +7801,8 @@ public sealed class EditorViewModel : ObservableObject
         {
             ElectricalComponentKind.Resistor => 1_000,
             ElectricalComponentKind.VoltageSource => 5,
+            ElectricalComponentKind.Capacitor => 1e-6,
+            ElectricalComponentKind.Inductor => 1e-3,
             _ => 0.001,
         };
 

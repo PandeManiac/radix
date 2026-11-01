@@ -1179,6 +1179,142 @@
                     </StackPanel>
                   </Border>
 
+                  <TextBlock Text="TRANSIENT" Classes="section" />
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <Button x:Name="ElectricalTransientButton" Content="Run transient" Command="{Binding RunElectricalTransientCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Integrate the selected circuit in time with the same solver used by radix transient" />
+                    <TextBlock Grid.Column="1" Text="{Binding ElectricalTransientSummary}" Classes="diag" Classes.error="{Binding HasElectricalTransientError}" FontSize="9.5" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </Grid>
+                  <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBlock Text="Probe at (s)" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalTransientProbeInput, Mode=TwoWay}" Width="84" FontSize="9.5" Watermark="time in s" ToolTip.Tip="Time in seconds; values at a non-solved time are interpolated between the bracketing points" />
+                    <Button Grid.Column="2" HorizontalAlignment="Left" Content="Probe" Command="{Binding ProbeElectricalTransientCommand}" IsEnabled="{Binding HasElectricalTransientResult}" ToolTip.Tip="Read every node voltage at this time" />
+                  </Grid>
+                  <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBlock Text="Refine levels" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalTransientRefineLevelsText, Mode=TwoWay}" Width="44" FontSize="9.5" Watermark="2-5" ToolTip.Tip="How many step sizes the accuracy check solves; more levels refine further" />
+                    <TextBlock Grid.Column="2" Text="2–5, used by Check accuracy" Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                  </Grid>
+                  <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBlock Text="Sweep" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalSweepElementText, Mode=TwoWay}" Width="54" FontSize="9.5" Watermark="R1" ToolTip.Tip="Id of the one element to vary; the sweep reuses the displayed run's circuit and settings" />
+                    <TextBox Grid.Column="2" Text="{Binding ElectricalSweepValuesText, Mode=TwoWay}" Width="120" FontSize="9.5" Watermark="800:1200:5" ToolTip.Tip="A comma list of values, or from:to:count" />
+                    <Button Grid.Column="3" Content="Sweep" Command="{Binding RunElectricalSweepCommand}" IsEnabled="{Binding HasElectricalTransientResult}" ToolTip.Tip="Solve once per value and list each node's peak, final value and settling time" />
+                  </Grid>
+                  <TextBlock Text="{Binding ElectricalSweepSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding ElectricalSweepRows}" IsVisible="{Binding HasElectricalSweepResult}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ElectricalSweepRowItem">
+                        <Grid ColumnDefinitions="56,64,74,74,*" ColumnSpacing="6" Margin="0,1">
+                          <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontFamily="monospace" FontSize="9.5" />
+                          <TextBlock Grid.Column="2" Text="{Binding PeakText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Peak voltage over the run" />
+                          <TextBlock Grid.Column="3" Text="{Binding FinalText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Final voltage at the stop time" />
+                          <TextBlock Grid.Column="4" Text="{Binding SettleText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Time to within the settling band, or 'not settled'" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalSweepResult}">
+                    <Button x:Name="ElectricalSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalSweepCopyCsv_Click" ToolTip.Tip="Copy the sweep as the same long CSV table radix transient --sweep --csv writes" />
+                    <Button x:Name="ElectricalSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalSweepSaveCsv_Click" ToolTip.Tip="Save the sweep as CSV" />
+                    <Button x:Name="ElectricalSweepCopyJsonButton" Content="Copy sweep JSON" Click="ElectricalSweepCopyJson_Click" ToolTip.Tip="Copy the sweep as a radix-transient-sweep report" />
+                    <Button x:Name="ElectricalSweepSaveJsonButton" Content="Save sweep JSON…" Click="ElectricalSweepSaveJson_Click" ToolTip.Tip="Save the sweep as JSON" />
+                    <TextBlock Text="rtol" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding ElectricalSweepToleranceText, Mode=TwoWay}" Width="52" FontSize="9.5" Watermark="0" ToolTip.Tip="Relative tolerance for Compare; 0 is exact" />
+                    <Button x:Name="ElectricalSweepCompareButton" Content="Compare…" Click="ElectricalSweepCompare_Click" ToolTip.Tip="Load an archived sweep report and list every metric that differs from this study" />
+                    <Button x:Name="ElectricalSweepCopyComparisonCsvButton" Content="Copy diff CSV" Click="ElectricalSweepCopyComparisonCsv_Click" IsEnabled="{Binding HasElectricalSweepComparison}" ToolTip.Tip="Copy the comparison as CSV" />
+                    <Button x:Name="ElectricalSweepSaveComparisonJsonButton" Content="Save diff JSON…" Click="ElectricalSweepSaveComparisonJson_Click" IsEnabled="{Binding HasElectricalSweepComparison}" ToolTip.Tip="Save the comparison as a versioned report" />
+                  </StackPanel>
+                  <TextBlock Text="{Binding ElectricalSweepComparisonSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding ElectricalSweepDifferences}" IsVisible="{Binding HasElectricalSweepComparison}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ElectricalSweepDifferenceItem">
+                        <Grid ColumnDefinitions="56,64,86,74,*" ColumnSpacing="6" Margin="0,1">
+                          <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontFamily="monospace" FontSize="9.5" />
+                          <TextBlock Grid.Column="2" Text="{Binding Metric}" FontFamily="monospace" FontSize="9.5" />
+                          <TextBlock Grid.Column="3" Text="{Binding BeforeText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Archived value" />
+                          <TextBlock Grid.Column="4" Text="{Binding AfterText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" ToolTip.Tip="Value in the displayed study" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalTransientResult}">
+                    <Button x:Name="ElectricalTransientCopyJsonButton" Content="Copy JSON" Click="ElectricalTransientCopyJson_Click" ToolTip.Tip="Copy the displayed transient report as JSON" />
+                    <Button x:Name="ElectricalTransientSaveJsonButton" Content="Save JSON…" Click="ElectricalTransientSaveJson_Click" ToolTip.Tip="Save the displayed transient report as JSON" />
+                    <Button x:Name="ElectricalTransientCopyCsvButton" Content="Copy CSV" Click="ElectricalTransientCopyCsv_Click" ToolTip.Tip="Copy the displayed points as a wide CSV table of time and node voltages" />
+                    <Button x:Name="ElectricalTransientSaveCsvButton" Content="Save CSV…" Click="ElectricalTransientSaveCsv_Click" ToolTip.Tip="Save the displayed points as a wide CSV table" />
+                    <Button x:Name="ElectricalTransientCopySvgButton" Content="Copy SVG" Click="ElectricalTransientCopySvg_Click" ToolTip.Tip="Copy the displayed plot as a standalone SVG document" />
+                    <Button x:Name="ElectricalTransientSaveSvgButton" Content="Save SVG…" Click="ElectricalTransientSaveSvg_Click" ToolTip.Tip="Save the displayed plot as an SVG document" />
+                    <Button x:Name="ElectricalTransientAccuracyButton" Content="Check accuracy" Command="{Binding CheckElectricalTransientAccuracyCommand}" ToolTip.Tip="Solve the same circuit at 2x and 4x the step count and report the measured order and error estimate" />
+                  </StackPanel>
+                  <Border
+                      IsVisible="{Binding HasElectricalTransientResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,6">
+                    <StackPanel Spacing="3">
+                      <ItemsControl ItemsSource="{Binding ElectricalTransientSeries}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalTransientSeriesItem">
+                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" Content="{Binding NodeId}" FontSize="9" Margin="0,0,10,0" ToolTip.Tip="Show this node on the plot" />
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <TextBlock Text="{Binding ElectricalTransientNotesText}" Classes="muted" FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource App.Accent}" />
+                      <TextBlock Text="{Binding ElectricalTransientEnergyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                      <controls:TransientPlotView Plot="{Binding ElectricalTransientPlot}" MarkerTime="{Binding ElectricalTransientProbeTime}" Height="170" Margin="0,2,0,4" />
+                      <TextBlock Text="{Binding ElectricalTransientAccuracyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding ElectricalTransientProbeText}" Classes="muted" FontSize="9" FontFamily="monospace" TextWrapping="Wrap" />
+                      <TextBlock Text="STEP REFINEMENT · MEASURED ORDER" Classes="muted" FontSize="9" FontWeight="SemiBold" IsVisible="{Binding HasElectricalTransientRefinement}" />
+                      <ItemsControl ItemsSource="{Binding ElectricalTransientRefinementLevels}" IsVisible="{Binding HasElectricalTransientRefinement}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalTransientRefinementItem">
+                            <Grid ColumnDefinitions="86,88,*,Auto" ColumnSpacing="6" Margin="0,1">
+                              <TextBlock Text="{Binding StepsText}" FontFamily="monospace" FontSize="9.5" FontWeight="SemiBold" />
+                              <TextBlock Grid.Column="1" Text="{Binding StepText}" FontFamily="monospace" FontSize="9.5" />
+                              <TextBlock Grid.Column="2" Text="{Binding DeviationText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Largest change from the previous level" />
+                              <TextBlock Grid.Column="3" Text="{Binding OrderText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" ToolTip.Tip="Measured convergence order from the last two deviations" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <TextBlock Text="NODE METRICS · PEAK AND SETTLING" Classes="muted" FontSize="9" FontWeight="SemiBold" />
+                      <ItemsControl ItemsSource="{Binding ElectricalTransientMetrics}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalTransientMetricItem">
+                            <Grid ColumnDefinitions="78,*,Auto" ColumnSpacing="6" Margin="0,1">
+                              <TextBlock Text="{Binding NodeId}" FontSize="9.5" FontWeight="SemiBold" />
+                              <TextBlock Grid.Column="1" Text="{Binding ExtremesText}" FontFamily="monospace" FontSize="9.5" TextWrapping="Wrap" ToolTip.Tip="{Binding PeakText}" />
+                              <TextBlock Grid.Column="2" Text="{Binding SettleText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <TextBlock Text="TIME · NODE VOLTAGES" Classes="muted" FontSize="9" FontWeight="SemiBold" Margin="0,4,0,0" />
+                      <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding ElectricalTransientResults}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ElectricalTransientPointItem">
+                              <Grid ColumnDefinitions="92,*" ColumnSpacing="8" Margin="0,1">
+                                <TextBlock Text="{Binding TimeText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" />
+                                <TextBlock Grid.Column="1" Text="{Binding VoltagesText}" FontFamily="monospace" FontSize="9.5" TextWrapping="Wrap" />
+                              </Grid>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </ScrollViewer>
+                    </StackPanel>
+                  </Border>
+
                   <TextBlock Text="VALIDATION" Classes="section" />
                   <TextBlock Text="{Binding ElectricalValidationSummary}" Classes="diag" Classes.error="{Binding HasElectricalDiagnostics}" FontSize="10.5" TextWrapping="Wrap" Margin="2,0,2,3" />
                   <ItemsControl ItemsSource="{Binding ElectricalDiagnostics}">

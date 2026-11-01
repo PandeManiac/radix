@@ -1,0 +1,70 @@
+{
+  "format": "radix-project",
+  "version": 9,
+  "name": "Authored RC charge",
+  "root": "main",
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": ["0", "1"],
+      "drivers": { "kind": "single" }
+    }
+  ],
+  "definitions": [
+    {
+      "id": "main",
+      "name": "Main",
+      "pins": [],
+      "instances": [],
+      "nets": [],
+      "ports": []
+    }
+  ],
+  "electricalCircuits": [
+    {
+      "id": "rc-charge",
+      "name": "5 V RC charge",
+      "description": "A 5 V source charges a 1 uF capacitor through 1 kOhm from a preset 0 V state.",
+      "ground": "gnd",
+      "nodes": [
+        { "id": "gnd", "name": "Ground" },
+        { "id": "in", "name": "Input" },
+        { "id": "out", "name": "Output" }
+      ],
+      "components": [
+        {
+          "id": "V1",
+          "name": "5 V source",
+          "kind": "voltage-source",
+          "value": 5,
+          "terminals": [
+            { "id": "a", "name": "Positive", "polarity": "positive", "node": "in" },
+            { "id": "b", "name": "Negative", "polarity": "negative", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "R1",
+          "name": "Series resistor",
+          "kind": "resistor",
+          "value": 1000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "in" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+          ]
+        },
+        {
+          "id": "C1",
+          "name": "Timing capacitor",
+          "kind": "capacitor",
+          "value": 1e-6,
+          "initialValue": 0,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "out" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "gnd" }
+          ]
+        }
+      ]
+    }
+  ]
+}
