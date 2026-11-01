@@ -371,13 +371,13 @@ internal static class Program
             [
                 "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
-                "refine-levels", "sweep",
+                "refine-levels", "sweep", "compare",
             ],
             ["json", "refine", "csv"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--max-rows <n>] [--json|--csv]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--compare <archived-sweep.json>] [--max-rows <n>] [--json|--csv]");
             return 2;
         }
 
@@ -460,9 +460,16 @@ internal static class Program
         }
 
         string? sweepSpec = GetOption(options, "sweep");
+        string? compareSpec = GetOption(options, "compare");
         if (sweepSpec is not null && refine)
         {
             Console.Error.WriteLine("--sweep and --refine are separate studies; run them one at a time.");
+            return 2;
+        }
+
+        if (compareSpec is not null && sweepSpec is null)
+        {
+            Console.Error.WriteLine("--compare needs --sweep: it compares this study with an archived one.");
             return 2;
         }
 
@@ -484,6 +491,47 @@ internal static class Program
             {
                 Console.Error.WriteLine($"sweep error: {exception.Message}");
                 return 2;
+            }
+
+            if (compareSpec is not null)
+            {
+                if (csv || json)
+                {
+                    Console.Error.WriteLine("--compare prints a table; drop --json or --csv.");
+                    return 2;
+                }
+
+                TransientSweepReport archived;
+                try
+                {
+                    archived = TransientSweepReport.Load(compareSpec);
+                }
+                catch (ProjectFormatException exception)
+                {
+                    Console.Error.WriteLine($"sweep report error: {exception.Message}");
+                    return 2;
+                }
+                catch (IOException exception)
+                {
+                    Console.Error.WriteLine($"sweep report error: {exception.Message}");
+                    return 2;
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    Console.Error.WriteLine($"sweep report error: {exception.Message}");
+                    return 2;
+                }
+
+                if (!string.Equals(archived.Element, sweptElement, StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine(
+                        $"--compare: the archived study swept '{archived.Element}', this run sweeps '{sweptElement}'.");
+                    return 2;
+                }
+
+                PrintSweepComparison(
+                    archived, TransientSweepComparison.Compare(archived, sweepRows));
+                return 0;
             }
 
             if (csv)
@@ -551,6 +599,51 @@ internal static class Program
 
         return refinement is { Completed: false } || !result.Completed ? 1 : 0;
     }
+
+    /// <summary>
+    /// Prints the differences between an archived study and this one. Values present on only one
+    /// side are listed first, because a study that gained or lost a value is a different study
+    /// before any metric is compared.
+    /// </summary>
+    private static void PrintSweepComparison(
+        TransientSweepReport archived,
+        SweepComparison comparison)
+    {
+        Console.WriteLine(
+            $"comparison: '{comparison.Element}' against {archived.Source ?? "an archived study"}");
+        foreach (double removed in comparison.RemovedValues)
+        {
+            Console.WriteLine($"  value {FormatDcNumber(removed)} is in the archived study only");
+        }
+
+        foreach (double added in comparison.AddedValues)
+        {
+            Console.WriteLine($"  value {FormatDcNumber(added)} is in this study only");
+        }
+
+        if (comparison.IsIdentical)
+        {
+            Console.WriteLine("  identical: no metric differs");
+            return;
+        }
+
+        Console.WriteLine("  value    node      metric     archived          current");
+        foreach (SweepDifference difference in comparison.Differences)
+        {
+            Console.WriteLine(
+                "  " + FormatDcNumber(difference.Value).PadRight(9) +
+                difference.NodeId.PadRight(10) +
+                difference.Metric.PadRight(11) +
+                FormatOrDash(difference.Before).PadRight(18) +
+                FormatOrDash(difference.After));
+        }
+
+        Console.WriteLine(
+            $"  {comparison.Differences.Count} difference(s) across {comparison.ChangedValues} value(s)");
+    }
+
+    private static string FormatOrDash(double? value) =>
+        value is double number ? FormatDcNumber(number) : "-";
 
     /// <summary>
     /// Prints one line per node and swept value. The value is repeated for the first node of each

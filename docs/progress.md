@@ -730,7 +730,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     both writers, the failed-row shape, the JSON field set, and a label containing a comma and a newline
     staying on one comment line.
 
-Verification: release build 0 warnings/0 errors; core tests 613/613; editor
+69. Made studies comparable: `TransientSweepReport.Load`/`LoadFromString` reads an archived
+    `radix-transient-sweep` report (strict on format and version, tolerant of extra fields so a newer
+    archive still loads), and `TransientSweepComparison.Compare` matches rows by exact swept value
+    and reports per-node differences in peak, final value, settling time and completion, plus values
+    and nodes present on only one side. The CLI gained `--compare <archived.json>`, which refuses a
+    study of a different element, a report of another format or version, and `--json`/`--csv` output
+    for a comparison. Tests cover the round-trip load, both rejections, an identical study, doubled
+    capacitance settling later at every value, added and removed values, a value that stopped solving,
+    and deterministic ordering independent of the current study's order.
+
+Verification: release build 0 warnings/0 errors; core tests 620/620; editor
 tests 213/213; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

@@ -413,6 +413,14 @@ exports are deterministic — the same study written twice is byte-identical —
 changed in the circuit, and labels are sanitised and quoted so a circuit named `rc,charge` cannot
 break a row.
 
+**Comparing two studies.** `--compare archived.json` reloads a saved `--json` report and prints each
+metric that differs from the study just computed, matched by swept value and node. A metric that only
+one side has shows `-`, so a node or a value that appeared or disappeared is visible rather than
+dropped; a value held by only one study is listed before any metric is compared. The comparison is
+exact — identical circuits produce identical doubles, so any difference is a real change in the
+circuit — and it refuses a report that swept a different element, or one written by another format or
+version, instead of comparing unrelated studies.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design
