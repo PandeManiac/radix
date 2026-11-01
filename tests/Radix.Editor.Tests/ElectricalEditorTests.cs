@@ -249,6 +249,46 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void ThePanelChecksTransientAccuracyAndClearsItWithTheRun()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        // Nothing has run yet, so there is nothing to refine.
+        Assert.False(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Contains("Run a transient", viewModel.StatusText);
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientAccuracyText);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.True(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Contains("measured order", viewModel.ElectricalTransientAccuracyText);
+        Assert.Contains(
+            "Worst node out",
+            viewModel.ElectricalTransientAccuracyText,
+            StringComparison.Ordinal);
+
+        // The check describes the displayed run, so a settings change invalidates both.
+        EditableField band = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Settling band");
+        band.Value = "0.1";
+        Assert.True(viewModel.ApplyField(band));
+        Assert.Equal(string.Empty, viewModel.ElectricalTransientAccuracyText);
+        Assert.False(viewModel.HasElectricalTransientResult);
+    }
+
+    [Fact]
     public void SourceWaveformsCanBeAuthoredThroughThePanel()
     {
         EditorViewModel viewModel = CreateEmptyEditor();

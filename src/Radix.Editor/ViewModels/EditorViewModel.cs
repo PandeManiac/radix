@@ -172,6 +172,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientToleranceText = string.Empty;
     private string _electricalTransientSettlingBandText = "0.02";
     private TransientPlot? _electricalTransientPlot;
+    private string _electricalTransientAccuracyText = string.Empty;
     private int _electricalTransientPointCount;
     private TransientNetlist? _electricalTransientNetlist;
     private TransientResult? _electricalTransientResult;
@@ -286,6 +287,8 @@ public sealed class EditorViewModel : ObservableObject
         RemoveElectricalComponentCommand = new RelayCommand(RemoveElectricalComponent);
         SolveElectricalCircuitCommand = new RelayCommand(() => SolveElectricalCircuit());
         RunElectricalTransientCommand = new RelayCommand(() => SolveElectricalTransient());
+        CheckElectricalTransientAccuracyCommand =
+            new RelayCommand(() => CheckElectricalTransientAccuracy());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -407,6 +410,13 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _electricalTransientPlot;
         private set => SetField(ref _electricalTransientPlot, value);
+    }
+
+    /// <summary>Result of the last step-refinement check, empty until one is requested.</summary>
+    public string ElectricalTransientAccuracyText
+    {
+        get => _electricalTransientAccuracyText;
+        private set => SetField(ref _electricalTransientAccuracyText, value);
     }
 
     public ObservableCollection<ElectricalElementResultItem> ElectricalElementResults { get; } = [];
@@ -1072,6 +1082,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand SolveElectricalCircuitCommand { get; }
 
     public ICommand RunElectricalTransientCommand { get; }
+
+    public ICommand CheckElectricalTransientAccuracyCommand { get; }
 
     public bool IsEditingFormat => _editingFormatId is not null;
 
@@ -6450,6 +6462,67 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Refines the displayed fixed-step run so the panel can report whether halving the
+    /// step would still change the answer. That costs three solves, so it stays an
+    /// explicit action rather than something every run pays for, and an adaptive run is
+    /// refused because it has no nominal step to halve.
+    /// </summary>
+    public bool CheckElectricalTransientAccuracy()
+    {
+        if (_electricalTransientNetlist is not { } netlist ||
+            _electricalTransientResult is not { } baseline ||
+            !HasElectricalTransientResult)
+        {
+            StatusText = "Run a transient before checking its accuracy.";
+            return false;
+        }
+
+        if (baseline.Options.IsAdaptive)
+        {
+            StatusText = "Clear the transient tolerance to use a fixed step before checking accuracy.";
+            return false;
+        }
+
+        if (!baseline.Completed)
+        {
+            StatusText = "The displayed run failed, so there is no accuracy to check.";
+            return false;
+        }
+
+        TransientRefinement study;
+        try
+        {
+            study = TransientRefinement.Analyze(netlist, baseline.Options, baseline: baseline);
+        }
+        catch (ArgumentException exception)
+        {
+            StatusText = "Accuracy check failed: " + exception.Message;
+            return false;
+        }
+
+        if (!study.Completed)
+        {
+            ElectricalTransientAccuracyText = "Accuracy check failed: " + study.Describe();
+            StatusText = $"Accuracy check failed ({FailureLabel(study.Failure ?? DcSolveFailure.NonConvergent)}).";
+            return false;
+        }
+
+        TransientNodeDeviation? worst = study.Nodes
+            .OrderByDescending(node => node.RelativeDeviation)
+            .FirstOrDefault();
+        string finest = study.Levels.Count == 0
+            ? "the finest step"
+            : $"{study.Levels[^1].Steps.ToString(CultureInfo.InvariantCulture)} steps";
+        ElectricalTransientAccuracyText = worst is null
+            ? $"Accuracy at {finest}: {study.Describe()}"
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"Accuracy at {finest}: {study.Describe()} Worst node {worst.NodeId} moved {worst.MaximumDeviationVolts:G3} V at t={worst.WorstTimeSeconds:G3} s.");
+        StatusText = "Checked transient accuracy by halving the step.";
+        return true;
+    }
+
+    /// <summary>
     /// Serialises the displayed transient result through the same report builder as
     /// <c>radix transient --json</c>, so the panel and the CLI cannot drift apart.
     /// </summary>
@@ -6769,6 +6842,7 @@ public sealed class EditorViewModel : ObservableObject
         HasElectricalTransientError = false;
         ElectricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
         ElectricalTransientEnergyText = string.Empty;
+        ElectricalTransientAccuracyText = string.Empty;
     }
 
     private void ShowElectricalTransientError(string summary, string status)

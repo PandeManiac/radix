@@ -586,9 +586,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     to `1.819` with `6.8e-4`. Tests cover both orders, the estimate against the analytic
     solution within an order of magnitude, baseline reuse, failure propagation, the
     step-limit guard, level bounds, and a breakpointed drive.
+54. Put the accuracy study in the app: **Check accuracy** beside the transient result refines
+    the displayed run through the same `TransientRefinement` code and reports the estimate, the
+    measured order, and the node that moved most (for the RC example at 200 steps: `5.8e-3`
+    relative, order `0.989`, node `out` moving `0.0285 V` at `0.000969 s`). It is an explicit
+    action because it costs three solves, it refuses to run before a transient or on a failed
+    one, it explains that an adaptive run has no step to halve, and its text is cleared with
+    the run by any edit or settings change so it cannot describe stale numbers. Tests cover the
+    refusal, the reported order and worst node, and the clear-on-change behavior.
 
 Verification: release build 0 warnings/0 errors; core tests 572/572; editor
-tests 202/202; `radix transient` runs all three examples with exit 0 and
+tests 203/203; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

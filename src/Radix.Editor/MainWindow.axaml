@@ -1189,6 +1189,7 @@
                     <Button x:Name="ElectricalTransientSaveJsonButton" Content="Save JSON…" Click="ElectricalTransientSaveJson_Click" ToolTip.Tip="Save the displayed transient report as JSON" />
                     <Button x:Name="ElectricalTransientCopyCsvButton" Content="Copy CSV" Click="ElectricalTransientCopyCsv_Click" ToolTip.Tip="Copy the displayed points as a wide CSV table of time and node voltages" />
                     <Button x:Name="ElectricalTransientSaveCsvButton" Content="Save CSV…" Click="ElectricalTransientSaveCsv_Click" ToolTip.Tip="Save the displayed points as a wide CSV table" />
+                    <Button x:Name="ElectricalTransientAccuracyButton" Content="Check accuracy" Command="{Binding CheckElectricalTransientAccuracyCommand}" ToolTip.Tip="Solve the same circuit at 2x and 4x the step count and report the measured order and error estimate" />
                   </StackPanel>
                   <Border
                       IsVisible="{Binding HasElectricalTransientResult}"
@@ -1201,6 +1202,7 @@
                     <StackPanel Spacing="3">
                       <TextBlock Text="{Binding ElectricalTransientEnergyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                       <controls:TransientPlotView Plot="{Binding ElectricalTransientPlot}" Height="170" Margin="0,2,0,4" />
+                      <TextBlock Text="{Binding ElectricalTransientAccuracyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                       <TextBlock Text="NODE METRICS · PEAK AND SETTLING" Classes="muted" FontSize="9" FontWeight="SemiBold" />
                       <ItemsControl ItemsSource="{Binding ElectricalTransientMetrics}">
                         <ItemsControl.ItemTemplate>

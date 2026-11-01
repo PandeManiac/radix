@@ -412,6 +412,13 @@ radix transient examples/transient-rc.radix --circuit rc-charge --stop 0.005 --s
 radix transient examples/transient-rc.radix --circuit rc-charge --steps 40 --method trapezoidal --refine
 ```
 
+The same study is one action in the app: **Check accuracy** next to the transient result
+refines the displayed run and reports the estimate, the measured order, and the node that
+moved most, e.g. *Accuracy at 800 steps: estimated error at the finest step: 5.8e-3 relative
+(measured order 0.989) worst node out moved 0.0285 V at t=0.000969 s.* It stays a button
+because it costs three solves, it reuses the displayed run as the coarsest level so the two
+cannot disagree, and it is cleared along with the run by any edit or settings change.
+
 ## Waveform breakpoints as step boundaries
 
 A piecewise-linear drive changes slope at its breakpoints, so the integrator never
