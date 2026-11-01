@@ -639,7 +639,20 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     cover the rejected count, the four-row study reaching 1600 steps, the reference row, and the
     CLI's exit 2 for an out-of-range flag.
 
-Verification: release build 0 warnings/0 errors; core tests 574/574; editor
+60. Measured transient cost and fixed the time-grid defect the measurement exposed.
+    `TransientBenchmarkTests` is an opt-in benchmark (`RADIX_TRANSIENT_BENCH=1`) over a series RC
+    ladder; on an AMD Ryzen 9 9950X3D it measures 21.7 us/step at 5 nodes and 56.3 us/step at 50
+    nodes over 5,000 steps, and the ratios show per-point work (companion assembly plus the four
+    dictionaries behind each `TransientPoint`) dominating the cubic factorisation at these sizes.
+    The benchmark's `steps + 1` invariant then failed: with `stop = 0.01` and 1,000 steps the run
+    reported 1,002 points, because the remainder tolerance `|stop| * 1e-14` was smaller than the
+    rounding accumulated over 1,000 additions, so a sliver final step survived. Both the fixed and
+    adaptive loops now scale that tolerance with the number of points, which stays below 1% of a
+    real step even at the 10^6-step limit. `TransientTimeGridTests` pins the grid over seven
+    stop-time/step-count pairs and a charged initial state, and [docs/benchmarks.md](benchmarks.md)
+    records the baseline and its caveats.
+
+Verification: release build 0 warnings/0 errors; core tests 583/583; editor
 tests 210/210; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

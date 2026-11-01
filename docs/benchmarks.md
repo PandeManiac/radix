@@ -270,3 +270,22 @@ When changing the engine:
 5. Do not claim a speedup without these before/after measurements.
 
 The current design intentionally favors correctness, deterministic ordering, and simple data structures. A JIT, parallelism, or incremental compilation should be justified by measured workloads before being added.
+
+## Transient solver
+
+`tests/Radix.Core.Tests/TransientBenchmarkTests.cs` is an opt-in measurement of transient run cost. It does nothing unless `RADIX_TRANSIENT_BENCH=1`, asserts only correctness (the run completes and reports every step), and prints a table for the machine that runs it. The circuit is a series RC ladder: one 5 V source, N series 1 kΩ resistors, one 1 µF capacitor from each node to ground, all starting discharged, integrated with the trapezoidal rule over 10 ms. It is linear, so each step is one dense assembly plus one factorisation — exactly the cost the solver's own `O((n+m)³)` limit describes.
+
+Measured on an AMD Ryzen 9 9950X3D (32 logical cores), .NET SDK 10.0.113, release build, best of three runs:
+
+| nodes | steps | total | per step |
+| --- | --- | --- | --- |
+| 5 | 1,000 | 21.7 ms | 21.7 µs |
+| 5 | 5,000 | 96.0 ms | 19.2 µs |
+| 25 | 1,000 | 55.2 ms | 55.2 µs |
+| 25 | 5,000 | 153.5 ms | 30.7 µs |
+| 50 | 1,000 | 56.4 ms | 56.4 µs |
+| 50 | 5,000 | 281.3 ms | 56.3 µs |
+
+Two things stand out. First, per-step cost at these sizes is dominated by fixed work per point — assembling companion models, building the dictionaries behind each `TransientPoint`, and the solve — rather than by the cubic factorisation: 50 nodes cost about the same per step as 25 nodes at 1,000 steps, and only ~1.8× at 5,000 steps. The cubic term is therefore not yet the wall at the circuit sizes the editor handles; per-point allocation is. Second, the benchmark immediately found a correctness defect: with `stop = 0.01` and 1,000 steps the run reported 1,002 points instead of 1,001, because the remainder tolerance `|stop| * 1e-14` was smaller than the rounding accumulated over 1,000 additions, so a sliver step survived. The tolerance now scales with the number of points, and `TransientTimeGridTests` pins the grid across several stop-time and step-count pairs.
+
+An honest note on the numbers: they are single-threaded (the solver does not parallelise), recorded on a shared desktop, and only lightly warmed up, so the ratios are the useful signal rather than the absolute microseconds.

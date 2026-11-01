@@ -819,8 +819,12 @@ public sealed class TransientNetlist
             }
 
             // Accumulated addition leaves a rounding remainder below the stop time; take it
-            // as the last step instead of emitting a spurious near-zero step afterwards.
-            if (remaining - step <= Math.Abs(options.StopTime) * 1e-14)
+            // as the last step instead of emitting a spurious near-zero step afterwards. Each
+            // addition can lose a fraction of a bit of the current time, so the tolerance grows
+            // with the number of points; 1e-14 * points stays well below a real step even at the
+            // 10^6-step limit, where it is 1% of one.
+            double rounding = Math.Abs(options.StopTime) * 1e-14 * Math.Max(1, points.Count);
+            if (remaining - step <= rounding)
             {
                 step = remaining;
             }
@@ -893,7 +897,10 @@ public sealed class TransientNetlist
                 trial = Math.Min(trial, breakpoints[breakpoint] - time);
             }
 
-            if (remaining - trial <= Math.Abs(options.StopTime) * 1e-14)
+            // Adaptive runs accumulate time too, so the remainder tolerance grows with the
+            // number of reported points for the same reason as the fixed-step loop.
+            double rounding = Math.Abs(options.StopTime) * 1e-14 * Math.Max(1, points.Count);
+            if (remaining - trial <= rounding)
             {
                 trial = remaining;
             }
