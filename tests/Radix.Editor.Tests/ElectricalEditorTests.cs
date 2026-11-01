@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Radix.Core.Electrical;
 using Radix.Core.Model;
+using Radix.Editor.Rendering;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -231,11 +232,19 @@ public sealed class ElectricalEditorTests
             viewModel.ElectricalTransientMetrics,
             item => item.NodeId == "in" && item.SettleText == "settled at 0 s");
 
+        TransientPlot plot = Assert.IsType<TransientPlot>(viewModel.ElectricalTransientPlot);
+        Assert.Equal(3, plot.Series.Count);
+        Assert.All(plot.Series, series => Assert.True(
+            series.Points.Count > 1,
+            $"{series.NodeId} needs a drawable polyline"));
+        Assert.Equal(0.005, plot.TimeEnd, 12);
+
         EditableField tighter = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Settling band");
         tighter.Value = "0.02";
         Assert.True(viewModel.ApplyField(tighter));
         Assert.Empty(viewModel.ElectricalTransientMetrics);
+        Assert.Null(viewModel.ElectricalTransientPlot);
         Assert.False(viewModel.HasElectricalTransientResult);
     }
 

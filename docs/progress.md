@@ -559,11 +559,24 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     value, peak time, and settling time above the solved-point table. Tests cover
     the custom band's settling formula, rejection of 0, 1, and NaN, the panel rows,
     the field's validation message, and invalidation of the previous run.
+52. Drew the transient run in the Electrical tab. The geometry lives in
+    `Radix.Editor.Rendering.TransientPlot`, a plain Avalonia-free model, so scaling is
+    unit-testable; `TransientPlotView` only draws the points it is handed (frame,
+    axes, grid, zero line, labelled ticks, node names). All nodes share one time and
+    value axis so traces stay comparable, the value axis is padded by 10% of the
+    span, and a flat trace falls back to `max(|v| * 0.1, 0.5)` rather than collapsing
+    to a zero-height scale. Runs longer than 600 points per node are decimated by
+    even stride and always keep the last sample, because that is the settled value,
+    while the axis labels still report the true first and last solved times. A
+    single sample, an empty run, or a non-finite value yields no plot and an explicit
+    empty state. Tests check shared axes, padding, corner mapping, the flat-trace
+    fallback, the decimation cap with a preserved last sample, tick coverage, and
+    that a run produces three drawable node series and clears when settings change.
 
 Verification: release build 0 warnings/0 errors; core tests 562/562; editor
-tests 197/197; `radix transient` runs all three examples with exit 0 and
+tests 202/202; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,
-AC/small-signal analysis, gmin continuation, source waveform authoring in the
-project format, and any transient editor UI.
+AC/small-signal analysis, gmin continuation, and plotting more than one run or
+exporting a plotted image.

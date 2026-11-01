@@ -339,9 +339,9 @@ transmission-line model. There is no AC or small-signal analysis, no
 stiffness detection or implicit method switching, no gmin or source
 continuation, and no SPICE-style built-in source functions beyond
 piecewise-linear tables. Adaptive control uses step doubling with one method at
-a time; it does not estimate a spectral radius or choose between methods. Authored `.radix` electrical circuits
-still expose only resistors and independent sources, and the editor has no
-transient UI: `radix transient` is the supported entry point.
+a time; it does not estimate a spectral radius or choose between methods. The
+editor's **Electrical** tab runs the same solver on an authored circuit, and
+`radix transient` remains the headless entry point.
 
 ## Peak and settling metrics
 
@@ -365,6 +365,25 @@ forms: an RC charge settles where `5*(e^(-t/tau) - e^(-T/tau))` enters the band
 where the drive falls below the capacitor voltage rather than where the drive itself
 peaks. `radix transient` prints the table, and the JSON report carries it under
 `metrics` with a `settlingBand` and one object per node.
+
+## Plotting a transient run
+
+The **Electrical** tab draws the last run instead of leaving the node voltages as a
+table. The geometry lives in `Radix.Editor.Rendering.TransientPlot`, which is plain
+data and has no Avalonia dependency, so the scaling can be checked without a window;
+`TransientPlotView` only places the points it is given.
+
+All series share one time axis and one value axis, so nodes are directly comparable
+and a 5 V step next to a 50 mV ripple is honestly shown as a ripple. The value axis
+is padded by 10% of the data span, which keeps a trace off the frame edges; a flat
+trace (a node that never moves) would otherwise have a zero span and be undrawable,
+so it falls back to a pad of `max(|v| * 0.1, 0.5)` and is drawn down the middle.
+A run longer than 600 points per node is decimated by even stride, and the *last*
+sample is always kept, because that sample is the settled value a reader is looking
+for; the plotted time range and tick labels still describe the true first and last
+solved times, so decimation never changes the reported interval. A single sample,
+an empty run, or a non-finite value produces no plot rather than a misleading one,
+and the panel says so instead of drawing an empty frame.
 
 ## Waveform breakpoints as step boundaries
 

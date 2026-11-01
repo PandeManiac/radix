@@ -171,6 +171,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientMethodName = "backward-euler";
     private string _electricalTransientToleranceText = string.Empty;
     private string _electricalTransientSettlingBandText = "0.02";
+    private TransientPlot? _electricalTransientPlot;
     private int _electricalTransientPointCount;
     private TransientNetlist? _electricalTransientNetlist;
     private TransientResult? _electricalTransientResult;
@@ -400,6 +401,13 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Per-node peak and settling summary of the last transient run.</summary>
     public ObservableCollection<ElectricalTransientMetricItem> ElectricalTransientMetrics { get; } = [];
+
+    /// <summary>Geometry of the displayed transient run, or null when nothing is shown.</summary>
+    public TransientPlot? ElectricalTransientPlot
+    {
+        get => _electricalTransientPlot;
+        private set => SetField(ref _electricalTransientPlot, value);
+    }
 
     public ObservableCollection<ElectricalElementResultItem> ElectricalElementResults { get; } = [];
 
@@ -6404,6 +6412,20 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
 
+        string[] plottedNodes = result.Points
+            .SelectMany(point => point.NodeVoltages.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        ElectricalTransientPlot = TransientPlot.Create(plottedNodes.Select(node =>
+            new TransientPlotSeries(
+                node,
+                result.Points
+                    .Select(point => new TransientPlotPoint(
+                        point.Time,
+                        point.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0))
+                    .ToArray())));
+
         ElectricalTransientPointCount = result.Points.Count;
         HasElectricalTransientResult = true;
         HasElectricalTransientError = !result.Completed;
@@ -6741,6 +6763,7 @@ public sealed class EditorViewModel : ObservableObject
         _electricalTransientNetlist = null;
         _electricalTransientResult = null;
         ElectricalTransientMetrics.Clear();
+        ElectricalTransientPlot = null;
         ElectricalTransientPointCount = 0;
         HasElectricalTransientResult = false;
         HasElectricalTransientError = false;

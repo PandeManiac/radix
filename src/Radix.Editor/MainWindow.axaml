@@ -1200,6 +1200,7 @@
                       Margin="0,0,0,6">
                     <StackPanel Spacing="3">
                       <TextBlock Text="{Binding ElectricalTransientEnergyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                      <controls:TransientPlotView Plot="{Binding ElectricalTransientPlot}" Height="170" Margin="0,2,0,4" />
                       <TextBlock Text="NODE METRICS · PEAK AND SETTLING" Classes="muted" FontSize="9" FontWeight="SemiBold" />
                       <ItemsControl ItemsSource="{Binding ElectricalTransientMetrics}">
                         <ItemsControl.ItemTemplate>
