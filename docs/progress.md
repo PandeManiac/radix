@@ -572,8 +572,22 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     empty state. Tests check shared axes, padding, corner mapping, the flat-trace
     fallback, the decimation cap with a preserved last sample, tick coverage, and
     that a run produces three drawable node series and clears when settings change.
+53. Added a step-refinement accuracy study, so a run can be judged without a closed-form
+    reference. `TransientRefinement.Analyze` solves the circuit at the requested step
+    count and at each doubled count, compares every finer run against the coarser one at
+    the finer run's times (interpolating the coarse trace), and infers the measured order
+    `p = log2(d_prev / d_now)`. The finest run's error is estimated as `d / (2^p - 1)`
+    relative to the node peak (Richardson). `radix transient --refine` prints the table,
+    the estimate, and the worst node; a failed level reports the same `DcSolveFailure` as
+    the base run, an order near zero is reported rather than rounded away, adaptive runs
+    are rejected because there is no nominal step to halve, and the studied baseline is
+    the run already reported so the two cannot disagree. Measured on the RC example:
+    backward Euler settles to order `0.989` with a `5.8e-3` relative estimate, trapezoidal
+    to `1.819` with `6.8e-4`. Tests cover both orders, the estimate against the analytic
+    solution within an order of magnitude, baseline reuse, failure propagation, the
+    step-limit guard, level bounds, and a breakpointed drive.
 
-Verification: release build 0 warnings/0 errors; core tests 562/562; editor
+Verification: release build 0 warnings/0 errors; core tests 572/572; editor
 tests 202/202; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

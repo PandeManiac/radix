@@ -385,6 +385,33 @@ solved times, so decimation never changes the reported interval. A single sample
 an empty run, or a non-finite value produces no plot rather than a misleading one,
 and the panel says so instead of drawing an empty frame.
 
+## Estimating error without a closed form
+
+The energy residual and the metrics describe one run; neither says whether halving the
+step would still change the answer. `radix transient --refine` answers that by solving
+the same circuit at the requested step count and at each doubled count (three levels by
+default), comparing every finer run against the coarser one sampled at the finer run's
+times, with the coarse trace interpolated between its own points.
+
+The comparison is reported per level, with the order implied by the ratio of successive
+deviations: `p = log2(d_prev / d_now)`. A first-order scheme at `h/τ = 0.125` measures
+`0.99`, and trapezoidal on the same circuit measures `1.82`, which is the honest way to
+show a second-order method before it has fully reached its asymptotic range. Given that
+order, the finest run's error is estimated as `d / (2^p - 1)` relative to the largest
+node magnitude — the Richardson estimate — so the number describes the run the caller
+is holding, not a hypothetical one. An order near zero with a large estimate means the
+step is too coarse for the claim to hold, and that is reported rather than rounded away.
+
+A failed refined solve stops the study and reports the same `DcSolveFailure`
+classification as the base run. Adaptive runs are rejected: they already choose their
+own step, so there is no nominal step to halve, and the study is text-only because the
+JSON report stays a description of one run.
+
+```bash
+radix transient examples/transient-rc.radix --circuit rc-charge --stop 0.005 --steps 40 --refine
+radix transient examples/transient-rc.radix --circuit rc-charge --steps 40 --method trapezoidal --refine
+```
+
 ## Waveform breakpoints as step boundaries
 
 A piecewise-linear drive changes slope at its breakpoints, so the integrator never

@@ -371,11 +371,11 @@ internal static class Program
                 "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
             ],
-            ["json"]);
+            ["json", "refine"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--max-rows <n>] [--json]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--max-rows <n>] [--json]");
             return 2;
         }
 
@@ -436,6 +436,19 @@ internal static class Program
             SettlingBand = GetDoubleOption(options, "settling-band", defaults.SettlingBand),
         };
 
+        bool refine = options.ContainsKey("refine");
+        if (refine && json)
+        {
+            Console.Error.WriteLine("--refine prints a text-only table; drop --json or --refine.");
+            return 2;
+        }
+
+        if (refine && transientOptions.IsAdaptive)
+        {
+            Console.Error.WriteLine("--refine needs a fixed step; drop --tol or --atol.");
+            return 2;
+        }
+
         TransientResult result;
         try
         {
@@ -455,9 +468,62 @@ internal static class Program
         else
         {
             PrintTransientResult(source, circuitId, document.Netlist, result, maxRows);
+            if (refine)
+            {
+                TransientRefinement study;
+                try
+                {
+                    study = TransientRefinement.Analyze(
+                        document.Netlist, transientOptions, baseline: result);
+                }
+                catch (ArgumentException exception)
+                {
+                    Console.Error.WriteLine($"invalid refinement options: {exception.Message}");
+                    return 2;
+                }
+
+                PrintTransientRefinement(study);
+                if (!study.Completed)
+                {
+                    return 1;
+                }
+            }
         }
 
         return result.Completed ? 0 : 1;
+    }
+
+    private static void PrintTransientRefinement(TransientRefinement study)
+    {
+        Console.WriteLine($"step refinement ({study.Levels.Count} levels, fixed steps):");
+        Console.WriteLine(
+            "  steps  ".PadRight(9) + "step (s)".PadRight(18) +
+            "max deviation (V)".PadRight(20) + "order");
+        foreach (TransientRefinementLevel level in study.Levels)
+        {
+            Console.WriteLine(
+                string.Create(CultureInfo.InvariantCulture, $"  {level.Steps,-7} {FormatDcNumber(level.TimeStep),-17}") +
+                FormatDcNumber(level.MaximumDeviationVolts).PadRight(20) +
+                (level.ObservedOrder is double order ? FormatDcNumber(order) : "-"));
+        }
+
+        if (!study.Completed)
+        {
+            Console.WriteLine($"  refinement failed: {study.Failure}");
+            return;
+        }
+
+        Console.WriteLine($"  {study.Describe()}");
+        TransientNodeDeviation? worst = study.Nodes
+            .OrderByDescending(node => node.RelativeDeviation)
+            .FirstOrDefault();
+        if (worst is not null)
+        {
+            Console.WriteLine(
+                $"  worst node: {worst.NodeId} at t={FormatDcNumber(worst.WorstTimeSeconds)} s, " +
+                $"{FormatDcNumber(worst.MaximumDeviationVolts)} V " +
+                $"({FormatDcNumber(worst.RelativeDeviation)} of its peak)");
+        }
     }
 
     private static TransientMethod ParseTransientMethod(string? text, TransientMethod fallback)
