@@ -62,6 +62,8 @@ public static class TransientSweepJson
             row.Result.Completed,
             row.Result.Failure?.ToString(),
             row.Result.Message,
+            // The ledger is a physical check on the whole run, so it belongs with the row it judges.
+            row.Result.Energy?.RelativeResidual,
             row.Result.Completed && row.Result.Metrics is TransientMetrics metrics
                 ? metrics.Nodes
                     .Select(node => new NodeDto(
@@ -96,6 +98,7 @@ public static class TransientSweepJson
         bool Completed,
         string? Failure,
         string? Message,
+        double? EnergyResidual,
         IReadOnlyList<NodeDto>? Nodes);
 
     private sealed record NodeDto(

@@ -56,12 +56,16 @@ public static class TransientSweepCsv
         Comment(builder, "adaptive", options.IsAdaptive ? "true" : "false");
         Comment(builder, "settling_band", TransientCsv.Number(options.SettlingBand));
 
-        builder.Append("value,netlist,completed,node,peak_v,final_v,settle_s,failure,message\n");
+        builder.Append(
+            "value,netlist,completed,node,peak_v,final_v,settle_s,energy_residual,failure,message\n");
         foreach (TransientSweepRow row in rows)
         {
             string value = TransientCsv.Number(row.Value);
             string fingerprint = row.Result.NetlistFingerprint ?? string.Empty;
             string completed = row.Result.Completed ? "true" : "false";
+            string ledger = row.Result.Energy is TransientEnergyBalance energy
+                ? TransientCsv.Number(energy.RelativeResidual)
+                : string.Empty;
             if (row.Result.Completed &&
                 row.Result.Metrics is TransientMetrics metrics &&
                 metrics.Nodes.Count > 0)
@@ -76,7 +80,8 @@ public static class TransientSweepCsv
                         .Append(node.SettlingTimeSeconds is double settled
                             ? TransientCsv.Number(settled)
                             : string.Empty)
-                        .Append(",,,\n");
+                        .Append(',').Append(ledger)
+                        .Append(",,\n");
                 }
 
                 continue;
@@ -84,7 +89,7 @@ public static class TransientSweepCsv
 
             // A failed value keeps its row: the study is a record, and a gap would hide the failure.
             builder.Append(value).Append(',').Append(fingerprint).Append(',')
-                .Append(completed).Append(",,,,").Append(',')
+                .Append(completed).Append(",,,,,") // node, peak, final, settle, ledger
                 .Append(row.Result.Failure?.ToString() ?? string.Empty).Append(',')
                 .Append(TransientCsv.Text(row.Result.Message ?? string.Empty)).Append('\n');
         }

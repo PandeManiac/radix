@@ -41,15 +41,19 @@ public static class TransientSweepComparison
 {
     public static SweepComparison Compare(
         TransientSweepReport baseline,
-        IReadOnlyList<TransientSweepRow> current)
+        IReadOnlyList<TransientSweepRow> current,
+        double relativeTolerance = 0)
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ArgumentNullException.ThrowIfNull(current);
 
-        return Compare(baseline, IndexRows(current));
+        return Compare(baseline, IndexRows(current), ValidateTolerance(relativeTolerance));
     }
 
-    public static SweepComparison Compare(TransientSweepReport baseline, TransientSweepReport current)
+    public static SweepComparison Compare(
+        TransientSweepReport baseline,
+        TransientSweepReport current,
+        double relativeTolerance = 0)
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ArgumentNullException.ThrowIfNull(current);
@@ -59,21 +63,41 @@ public static class TransientSweepComparison
         {
             index[row.Value] = new Side(
                 row.Completed,
+                row.EnergyResidual,
                 row.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal));
         }
 
-        return Compare(baseline, index);
+        return Compare(baseline, index, ValidateTolerance(relativeTolerance));
+    }
+
+    /// <summary>
+    /// Zero means exact, which is what identical circuits produce within one build; a small
+    /// positive fraction tolerates last-bit differences from another runtime or machine.
+    /// </summary>
+    private static double ValidateTolerance(double relativeTolerance)
+    {
+        if (!double.IsFinite(relativeTolerance) || relativeTolerance < 0 || relativeTolerance >= 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(relativeTolerance),
+                relativeTolerance,
+                "Comparison tolerance must be a finite fraction from 0 (exact) to below 1.");
+        }
+
+        return relativeTolerance;
     }
 
     private static SweepComparison Compare(
         TransientSweepReport baseline,
-        IReadOnlyDictionary<double, Side> current)
+        IReadOnlyDictionary<double, Side> current,
+        double tolerance)
     {
         var before = new Dictionary<double, Side>(baseline.Rows.Count);
         foreach (TransientSweepReportRow row in baseline.Rows)
         {
             before[row.Value] = new Side(
                 row.Completed,
+                row.EnergyResidual,
                 row.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal));
         }
 
@@ -87,6 +111,13 @@ public static class TransientSweepComparison
             Side fresh = current[value];
             // A run that stopped solving at one value is the most important difference of all.
             AddException(differences, value, "completed", archived.Completed, fresh.Completed);
+            // Only comparable when both sides recorded it: an archive from before the column
+            // existed must not look like a changed ledger.
+            if (archived.EnergyResidual is double oldLedger && fresh.EnergyResidual is double newLedger)
+            {
+                AddDifference(
+                    differences, value, string.Empty, "energy_residual", oldLedger, newLedger, tolerance);
+            }
 
             string[] nodes = archived.Nodes.Keys
                 .Union(fresh.Nodes.Keys, StringComparer.Ordinal)
@@ -96,11 +127,13 @@ public static class TransientSweepComparison
             {
                 archived.Nodes.TryGetValue(node, out TransientSweepNodeMetrics? old);
                 fresh.Nodes.TryGetValue(node, out TransientSweepNodeMetrics? updated);
-                AddDifference(differences, value, node, "peak_v", old?.MaximumVolts, updated?.MaximumVolts);
-                AddDifference(differences, value, node, "final_v", old?.FinalVolts, updated?.FinalVolts);
+                AddDifference(
+                    differences, value, node, "peak_v", old?.MaximumVolts, updated?.MaximumVolts, tolerance);
+                AddDifference(
+                    differences, value, node, "final_v", old?.FinalVolts, updated?.FinalVolts, tolerance);
                 AddDifference(
                     differences, value, node, "settle_s",
-                    old?.SettlingTimeSeconds, updated?.SettlingTimeSeconds);
+                    old?.SettlingTimeSeconds, updated?.SettlingTimeSeconds, tolerance);
             }
         }
 
@@ -120,6 +153,7 @@ public static class TransientSweepComparison
 
             index[row.Value] = new Side(
                 row.Result.Completed,
+                row.Result.Energy?.RelativeResidual,
                 row.Result.Completed && row.Result.Metrics is TransientMetrics metrics
                     ? metrics.Nodes.ToDictionary(
                         node => node.NodeId,
@@ -143,11 +177,28 @@ public static class TransientSweepComparison
         string node,
         string metric,
         double? before,
-        double? after)
+        double? after,
+        double tolerance)
     {
-        // Null == null covers "no metrics on either side"; equal doubles compare equal, because a
-        // byte-identical solve produces bit-identical results.
-        if (before == after)
+        if (before is null || after is null)
+        {
+            // A node on one side only is a structural difference, never noise.
+            if (before == after)
+            {
+                return;
+            }
+
+            differences.Add(new SweepDifference(value, node, metric, before, after));
+            return;
+        }
+
+        if (before.Value == after.Value)
+        {
+            return;
+        }
+
+        double scale = Math.Max(Math.Abs(before.Value), Math.Abs(after.Value));
+        if (tolerance > 0 && Math.Abs(after.Value - before.Value) <= tolerance * scale)
         {
             return;
         }
@@ -172,5 +223,6 @@ public static class TransientSweepComparison
 
     private sealed record Side(
         bool Completed,
+        double? EnergyResidual,
         IReadOnlyDictionary<string, TransientSweepNodeMetrics> Nodes);
 }

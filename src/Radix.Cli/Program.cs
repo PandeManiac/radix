@@ -371,13 +371,13 @@ internal static class Program
             [
                 "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
-                "refine-levels", "sweep", "compare",
+                "refine-levels", "sweep", "compare", "compare-tolerance",
             ],
             ["json", "refine", "csv"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--compare <archived-sweep.json>] [--max-rows <n>] [--json|--csv]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--compare <archived-sweep.json>] [--compare-tolerance <fraction>] [--max-rows <n>] [--json|--csv]");
             return 2;
         }
 
@@ -473,6 +473,24 @@ internal static class Program
             return 2;
         }
 
+        double compareTolerance = 0;
+        if (GetOption(options, "compare-tolerance") is not null)
+        {
+            compareTolerance = GetDoubleOption(options, "compare-tolerance", 0);
+            if (!double.IsFinite(compareTolerance) || compareTolerance < 0 || compareTolerance >= 1)
+            {
+                Console.Error.WriteLine(
+                    "--compare-tolerance must be a finite fraction from 0 (exact) to below 1.");
+                return 2;
+            }
+
+            if (compareSpec is null)
+            {
+                Console.Error.WriteLine("--compare-tolerance needs --compare.");
+                return 2;
+            }
+        }
+
         if (sweepSpec is not null)
         {
             if (!TryParseSweep(sweepSpec, out string sweptElement, out double[] sweptValues, out string? sweepError))
@@ -530,7 +548,9 @@ internal static class Program
                 }
 
                 PrintSweepComparison(
-                    archived, TransientSweepComparison.Compare(archived, sweepRows));
+                    archived,
+                    TransientSweepComparison.Compare(archived, sweepRows, compareTolerance),
+                    compareTolerance);
                 return 0;
             }
 
@@ -607,10 +627,14 @@ internal static class Program
     /// </summary>
     private static void PrintSweepComparison(
         TransientSweepReport archived,
-        SweepComparison comparison)
+        SweepComparison comparison,
+        double tolerance)
     {
+        string scope = tolerance > 0
+            ? $", ignoring changes within {FormatDcNumber(tolerance)} relative"
+            : ", exact";
         Console.WriteLine(
-            $"comparison: '{comparison.Element}' against {archived.Source ?? "an archived study"}");
+            $"comparison: '{comparison.Element}' against {archived.Source ?? "an archived study"}{scope}");
         foreach (double removed in comparison.RemovedValues)
         {
             Console.WriteLine($"  value {FormatDcNumber(removed)} is in the archived study only");

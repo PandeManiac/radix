@@ -165,6 +165,93 @@ public sealed class TransientSweepComparisonTests
                 .Select(difference => (difference.Value, difference.NodeId, difference.Metric)));
     }
 
+    [Fact]
+    public void AnArchivedReportWithoutALedgerDoesNotManufactureADifference()
+    {
+        IReadOnlyList<TransientSweepRow> rows = Rows(Rc(1_000, 1e-6), "R1", [800, 1_200]);
+        string json = TransientSweepJson.ToReportJson(null, null, "R1", rows);
+        string without = string.Join(
+            '\n',
+            json.Split('\n').Where(line => !line.Contains("energyResidual", StringComparison.Ordinal)));
+
+        TransientSweepReport archived = TransientSweepReport.LoadFromString(without);
+        SweepComparison comparison = TransientSweepComparison.Compare(archived, rows);
+
+        Assert.DoesNotContain(
+            comparison.Differences, difference => difference.Metric == "energy_residual");
+        Assert.True(comparison.IsIdentical);
+    }
+
+    [Fact]
+    public void AToleranceSuppressesNoiseButKeepsRealChanges()
+    {
+        IReadOnlyList<TransientSweepRow> rows = Rows(Rc(1_000, 1e-6), "R1", [800]);
+        TransientSweepReport archived = TransientSweepReport.LoadFromString(
+            TransientSweepJson.ToReportJson(null, null, "R1", rows));
+
+        // A last-bit difference between builds is not a circuit change; a real move is.
+        TransientSweepReport noise = Perturb(archived, 1e-9);
+        Assert.False(TransientSweepComparison.Compare(archived, noise).IsIdentical);
+        Assert.True(TransientSweepComparison.Compare(archived, noise, 1e-6).IsIdentical);
+
+        TransientSweepReport change = Perturb(archived, 0.5);
+        Assert.False(TransientSweepComparison.Compare(archived, change, 1e-6).IsIdentical);
+    }
+
+    [Fact]
+    public void AnInvalidToleranceIsRejected()
+    {
+        TransientSweepReport report = TransientSweepReport.LoadFromString(
+            TransientSweepJson.ToReportJson(null, null, "R1", Rows(Rc(1_000, 1e-6), "R1", [800])));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TransientSweepComparison.Compare(report, report, -0.1));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TransientSweepComparison.Compare(report, report, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TransientSweepComparison.Compare(report, report, double.NaN));
+    }
+
+    [Fact]
+    public void TheLedgerIsComparedWhenBothStudiesRecordIt()
+    {
+        IReadOnlyList<TransientSweepRow> rows = Rows(Rc(1_000, 1e-6), "R1", [800]);
+        TransientSweepReport archived = TransientSweepReport.LoadFromString(
+            TransientSweepJson.ToReportJson(null, null, "R1", rows));
+        TransientSweepReport coarser = archived with
+        {
+            Rows = archived.Rows
+                .Select(row => row with { EnergyResidual = (row.EnergyResidual ?? 0) + 0.01 })
+                .ToArray(),
+        };
+
+        SweepComparison comparison = TransientSweepComparison.Compare(archived, coarser);
+
+        SweepDifference ledger = Assert.Single(
+            comparison.Differences, difference => difference.Metric == "energy_residual");
+        Assert.Equal(0.01, ledger.After!.Value - ledger.Before!.Value, 9);
+    }
+
+    /// <summary>
+    /// Shifts every non-ground final voltage, which is what a last-bit difference between builds
+    /// looks like. Ground is left alone: a metric at exactly zero has no relative scale, so a
+    /// tolerance cannot judge it and the comparison deliberately reports any change there.
+    /// </summary>
+    private static TransientSweepReport Perturb(TransientSweepReport report, double delta) =>
+        report with
+        {
+            Rows = report.Rows
+                .Select(row => row with
+                {
+                    Nodes = row.Nodes
+                        .Select(node => node.Id == "gnd"
+                            ? node
+                            : node with { FinalVolts = node.FinalVolts + delta })
+                        .ToArray(),
+                })
+                .ToArray(),
+        };
+
     private static IReadOnlyList<TransientSweepRow> Rows(
         TransientNetlist netlist,
         string elementId,

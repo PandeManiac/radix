@@ -421,6 +421,16 @@ exact — identical circuits produce identical doubles, so any difference is a r
 circuit — and it refuses a report that swept a different element, or one written by another format or
 version, instead of comparing unrelated studies.
 
+Each row of a study also records the run's **energy-ledger residual** — the fraction of energy the
+bookkeeping failed to account for — so a value whose step was too coarse is visible in the archive
+rather than only on screen. The comparison reports that residual when both studies have it, and
+`--compare-tolerance <fraction>` sets a relative threshold: the default 0 is exact, which is what one
+build produces, while a small positive fraction tolerates the last bits that can differ between
+machines or runtimes without hiding a real change. Tolerance is relative to the larger magnitude, so
+a metric sitting at exactly zero has no scale to be tolerant of: a change there is still reported.
+It never excuses a value that appeared or disappeared, a node present on one side only, or a run that
+stopped completing.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design

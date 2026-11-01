@@ -740,7 +740,18 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     capacitance settling later at every value, added and removed values, a value that stopped solving,
     and deterministic ordering independent of the current study's order.
 
-Verification: release build 0 warnings/0 errors; core tests 620/620; editor
+70. Closed two gaps in the study record: each row now carries the run's energy-ledger residual (a
+    physical check on that value, written as `energy_residual` in CSV and `energyResidual` in JSON),
+    and comparison accepts a relative tolerance (`--compare-tolerance`, 0 by default = exact) so a
+    last-bit difference between builds does not read as a circuit change, while a structure change
+    (added/removed value, a node on one side, a run that stopped completing) is never excused. An
+    archive written before the field existed still compares as identical instead of manufacturing a
+    ledger difference. Tests cover the ledger column and round-trip, an old archive, noise suppressed
+    at 1e-6 but a real change kept, ledger differences, and rejection of a tolerance outside [0, 1).
+    The relative form has one deliberate hole: a metric at exactly zero has no scale, so a change
+    there is always reported.
+
+Verification: release build 0 warnings/0 errors; core tests 625/625; editor
 tests 213/213; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

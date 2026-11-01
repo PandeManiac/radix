@@ -19,6 +19,7 @@ public sealed record TransientSweepReportRow(
     bool Completed,
     string? Failure,
     string? Message,
+    double? EnergyResidual,
     IReadOnlyList<TransientSweepNodeMetrics> Nodes);
 
 /// <summary>
@@ -126,6 +127,7 @@ public sealed record TransientSweepReport(
                 row.Completed,
                 row.Failure,
                 row.Message,
+                row.EnergyResidual,
                 nodes);
         }
 
@@ -154,6 +156,7 @@ public sealed record TransientSweepReport(
         bool Completed,
         string? Failure,
         string? Message,
+        double? EnergyResidual,
         IReadOnlyList<NodeDto>? Nodes);
 
     private sealed record NodeDto(

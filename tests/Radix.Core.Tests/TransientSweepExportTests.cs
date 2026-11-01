@@ -25,7 +25,9 @@ public sealed class TransientSweepExportTests
         Assert.Contains("# element: R1", lines);
         Assert.Contains("# values: 2", lines);
         Assert.Contains("# method: backward-euler", lines);
-        Assert.Equal("value,netlist,completed,node,peak_v,final_v,settle_s,failure,message", data[0]);
+        Assert.Equal(
+            "value,netlist,completed,node,peak_v,final_v,settle_s,energy_residual,failure,message",
+            data[0]);
         // Two values, three nodes each (ground included): a complete record, not a summary.
         Assert.Equal(1 + (2 * 3), data.Length);
         Assert.All(rows, row => Assert.Contains(row.Result.NetlistFingerprint!, csv, StringComparison.Ordinal));
@@ -64,6 +66,27 @@ public sealed class TransientSweepExportTests
         Assert.False(first.GetProperty("completed").GetBoolean());
         Assert.True(first.TryGetProperty("failure", out _));
         Assert.False(first.TryGetProperty("nodes", out _));
+    }
+
+    [Fact]
+    public void TheStudyRecordsTheEnergyLedgerPerValue()
+    {
+        IReadOnlyList<TransientSweepRow> rows = Rows(Rc(1_000), "R1", [800, 1_200]);
+
+        string csv = TransientSweepCsv.Write(null, null, "R1", rows);
+        string header = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .First(line => !line.StartsWith('#'));
+        Assert.Contains("energy_residual", header, StringComparison.Ordinal);
+
+        string json = TransientSweepJson.ToReportJson(null, null, "R1", rows);
+        using JsonDocument report = JsonDocument.Parse(json);
+        double residual = report.RootElement.GetProperty("rows")[0]
+            .GetProperty("energyResidual").GetDouble();
+        Assert.Equal(rows[0].Result.Energy!.RelativeResidual, residual);
+        Assert.InRange(residual, 0, 0.05);
+
+        TransientSweepReport loaded = TransientSweepReport.LoadFromString(json);
+        Assert.Equal(residual, loaded.Rows[0].EnergyResidual);
     }
 
     [Fact]
