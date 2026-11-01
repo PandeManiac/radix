@@ -394,3 +394,58 @@ suite results are recorded in the final handoff for this session.
     accepts and reports `seriesResistance`; the headless diode example now models
     a realistic 10 Ω series resistance. Added independent bisection tests over
     several resistance values, plus monotonicity and parameter-validation cases.
+
+## Session 2026-11-01 (agent/radix-transient)
+
+Base: `origin/main` at `40bd3a9`. PR #4 (`agent/radix-dc-numerics`) was left
+untouched: it hardens the DC solver, while this branch adds a separate analysis
+path and changes no `DcLinearSolver` semantics.
+
+35. Added fixed-step transient (time-domain) electrical analysis in
+    `Radix.Core.Electrical.TransientNetlist`. Capacitors and inductors are
+    integrated with companion models: backward Euler (default, L-stable) and the
+    trapezoidal rule (second order, energy preserving on linear LC networks, not
+    L-stable). Every step assembles a purely resistive MNA system and solves it
+    through the existing `DcNetlist`, so scaled partial pivoting, residual
+    rejection, and floating/contradictory/singular classification are shared.
+    Diodes remain nonlinear per step through the existing Newton iteration.
+36. Solved the initial state in two phases: a DC operating point (capacitors
+    open, inductors shorted) supplies defaults, then a state-imposing network
+    (each capacitor as an ideal voltage source, each inductor as an ideal current
+    source) produces the reported `t = start` node voltages. The first
+    implementation reported the DC values while integrating from the preset
+    states; two tests caught that inconsistency before it shipped.
+    `SetCapacitorInitialVoltage` and `SetInductorInitialCurrent` override
+    individual states, and a capacitor with no other DC path is reported as a
+    floating network unless its voltage is preset.
+37. Added piecewise-linear source waveforms (`SetWaveform`): finite, distinct,
+    sorted breakpoints with endpoint hold, covering pulses, ramps, triangles, and
+    sampled drives. Constant sources are unchanged. Without this, every run
+    started at the DC steady state and only DC-op-perturbation responses were
+    expressible.
+38. Added the strict versioned `radix-transient-netlist` format and the
+    `radix-transient-report` projection in `TransientNetlistJson`, plus the
+    headless `radix transient` command (`--start`, `--stop`, `--steps`,
+    `--method`, `--max-rows`, `--json`). A run keeps the points it solved before a
+    failed step and exits 1 with the failing step and its classification.
+39. Added `TransientSolverTests` (17 tests) and `TransientNetlistJsonTests`
+    (5 tests plus a 14-case rejection theory): closed-form backward-Euler
+    recurrences for RC charge, capacitor discharge, and inductor current;
+    convergence order 1 for backward Euler and 2 for trapezoidal against the
+    analytic RC solution; trapezoidal energy conservation versus backward-Euler
+    damping in an LC tank; the analytic underdamped RLC overshoot
+    `1 + exp(-πζ/√(1-ζ²))`; per-point absorbed-power conservation; element-order
+    and ground-name invariance; initial-condition handling; floating detection;
+    deterministic reruns; waveform interpolation; parameter/option validation;
+    and strict JSON parsing.
+40. Added `examples/transient-rc.json`, `examples/transient-rlc.json`, and
+    `examples/transient-pulse.json` and documented the solver, format, failure
+    behaviour, and limits in `docs/electrical.md` and `README.md`.
+
+Verification: release build 0 warnings/0 errors; core tests 528/528; editor
+tests 191/191; `radix transient` runs all three examples with exit 0 and
+physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
+example rings and settles to 10 V, the pulse example charges then decays).
+Not modelled: junction capacitance, transformers, dependent sources, switches,
+AC/small-signal analysis, adaptive stepping, gmin continuation, and any transient
+editor UI.

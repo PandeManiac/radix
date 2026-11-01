@@ -40,6 +40,7 @@ internal static class Program
             {
                 "validate" => ValidateCommand(args[1..]),
                 "dc" => DcCommand(args[1..]),
+                "transient" or "tran" => TransientCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
                 "sweep" => SweepCommand(args[1..]),
@@ -109,6 +110,13 @@ internal static class Program
                                              Solve a DC linear electrical circuit
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--json]                   Emit one machine-readable DC report
+              transient <netlist.json>       Solve a fixed-step time-domain electrical circuit
+                  [--start <s>]              Start time in seconds (default: file analysis or 0)
+                  [--stop <s>]               Stop time in seconds (default: file analysis or 1)
+                  [--steps <n>]              Uniform steps, 1..10000 (default: file analysis or 100)
+                  [--method <name>]          backward-euler (default) or trapezoidal
+                  [--max-rows <n>]           Text rows to print (default 40)
+                  [--json]                   Emit one machine-readable transient report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -345,6 +353,133 @@ internal static class Program
 
         throw new ProjectFormatException(
             $"Project has multiple electrical circuits; choose one with --circuit: {string.Join(", ", project.ElectricalCircuits.Select(circuit => circuit.Id))}");
+    }
+
+    private static int TransientCommand(string[] args)
+    {
+        (var positional, var options) = Parse(
+            args, ["start", "stop", "steps", "method", "max-rows"], ["json"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix transient <netlist.json> [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--max-rows <n>] [--json]");
+            return 2;
+        }
+
+        bool json = options.ContainsKey("json");
+        string source = positional[0];
+        TransientDocument document = TransientNetlistJson.Load(source);
+        TransientOptions defaults = document.Analysis ?? new TransientOptions();
+        int maxRows = GetIntOption(options, "max-rows", 40, 1, 100_000);
+        var transientOptions = new TransientOptions
+        {
+            StartTime = GetDoubleOption(options, "start", defaults.StartTime),
+            StopTime = GetDoubleOption(options, "stop", defaults.StopTime),
+            Steps = GetIntOption(options, "steps", defaults.Steps, 1, 10_000),
+            Method = ParseTransientMethod(GetOption(options, "method"), defaults.Method),
+        };
+
+        TransientResult result;
+        try
+        {
+            result = document.Netlist.Run(transientOptions);
+        }
+        catch (ArgumentException exception)
+        {
+            Console.Error.WriteLine($"invalid transient options: {exception.Message}");
+            return 2;
+        }
+
+        if (json)
+        {
+            Console.WriteLine(TransientNetlistJson.ToReportJson(source, document.Netlist, result));
+        }
+        else
+        {
+            PrintTransientResult(source, document.Netlist, result, maxRows);
+        }
+
+        return result.Completed ? 0 : 1;
+    }
+
+    private static TransientMethod ParseTransientMethod(string? text, TransientMethod fallback)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return fallback;
+        }
+
+        return text.Trim().ToLowerInvariant() switch
+        {
+            "be" or "backward-euler" or "backwardeuler" => TransientMethod.BackwardEuler,
+            "trap" or "trapezoidal" => TransientMethod.Trapezoidal,
+            _ => throw new ProjectFormatException(
+                $"option '--method' must be 'backward-euler' or 'trapezoidal', not '{text}'."),
+        };
+    }
+
+    private static void PrintTransientResult(
+        string source,
+        TransientNetlist netlist,
+        TransientResult result,
+        int maxRows)
+    {
+        TransientOptions options = result.Options;
+        Console.WriteLine($"source:    {source}");
+        Console.WriteLine($"ground:    {netlist.GroundNodeId}");
+        Console.WriteLine($"method:    {TransientNetlistJson.MethodName(options.Method)}");
+        Console.WriteLine(
+            $"time step: {FormatDcNumber(result.TimeStep)} s x {options.Steps} steps " +
+            $"({FormatDcNumber(options.StartTime)} -> {FormatDcNumber(options.StopTime)} s)");
+        Console.WriteLine("convention: element current flows nodeA -> nodeB; power is absorbed");
+        if (netlist.Capacitors.Count + netlist.Inductors.Count > 0)
+        {
+            var reactive = netlist.Capacitors
+                .Select(element => $"{element.Id}={FormatDcNumber(element.Farads)} F")
+                .Concat(netlist.Inductors.Select(element => $"{element.Id}={FormatDcNumber(element.Henries)} H"));
+            Console.WriteLine($"reactive:  {string.Join(", ", reactive)}");
+        }
+
+        string[] nodes = netlist.Nodes.ToArray();
+        Console.WriteLine($"points ({result.Points.Count}):");
+        Console.WriteLine("  idx  time".PadRight(25) + string.Concat(nodes.Select(node => node.PadRight(16))));
+        int shown = Math.Min(result.Points.Count, maxRows);
+        for (int index = 0; index < shown; index++)
+        {
+            TransientPoint point = result.Points[index];
+            Console.WriteLine(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"  {index,-4} {FormatDcNumber(point.Time),-18}") +
+                string.Concat(nodes.Select(node => FormatDcNumber(point.NodeVoltages[node]).PadRight(16))));
+        }
+
+        if (result.Points.Count > shown)
+        {
+            Console.WriteLine(
+                $"  ({result.Points.Count - shown} of {result.Points.Count} rows omitted; raise --max-rows to show more)");
+        }
+
+        if (result.FinalPoint is TransientPoint final)
+        {
+            Console.WriteLine(
+                $"{(result.Completed ? "final" : "last solved")} operating point (t={FormatDcNumber(final.Time)} s):");
+            foreach (string id in final.ElementCurrents.Keys.Order(StringComparer.Ordinal))
+            {
+                Console.WriteLine(
+                    $"  {id,-16} V={FormatDcNumber(final.ElementVoltages[id]),-14} " +
+                    $"I={FormatDcNumber(final.ElementCurrents[id]),-14} A " +
+                    $"P={FormatDcNumber(final.ElementPowers[id])} W");
+            }
+
+            Console.WriteLine($"residual:  {FormatDcNumber(final.RelativeResidual)}");
+        }
+
+        if (!result.Completed)
+        {
+            Console.Error.WriteLine(
+                $"transient failed at step {result.FailedStep?.ToString(CultureInfo.InvariantCulture) ?? "initial"}: {result.Failure}: {result.Message}");
+        }
     }
 
     private static int SimulateCommand(string[] args)
@@ -1441,6 +1576,26 @@ internal static class Program
     {
         long value = GetLongOption(options, key, fallback, min, max);
         return checked((int)value);
+    }
+
+    private static double GetDoubleOption(
+        Dictionary<string, List<string>> options,
+        string key,
+        double fallback)
+    {
+        string? text = GetOption(options, key);
+        if (text is null)
+        {
+            return fallback;
+        }
+
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ||
+            !double.IsFinite(value))
+        {
+            throw new ProjectFormatException($"option '--{key}' must be a finite number.");
+        }
+
+        return value;
     }
 
     private static void PrintDcSolution(
