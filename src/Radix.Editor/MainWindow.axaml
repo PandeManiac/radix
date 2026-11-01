@@ -1179,6 +1179,41 @@
                     </StackPanel>
                   </Border>
 
+                  <TextBlock Text="TRANSIENT" Classes="section" />
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <Button x:Name="ElectricalTransientButton" Content="Run transient" Command="{Binding RunElectricalTransientCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Integrate the selected circuit in time with the same solver used by radix transient" />
+                    <TextBlock Grid.Column="1" Text="{Binding ElectricalTransientSummary}" Classes="diag" Classes.error="{Binding HasElectricalTransientError}" FontSize="9.5" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalTransientResult}">
+                    <Button x:Name="ElectricalTransientCopyJsonButton" Content="Copy JSON" Click="ElectricalTransientCopyJson_Click" ToolTip.Tip="Copy the displayed transient report as JSON" />
+                    <Button x:Name="ElectricalTransientSaveJsonButton" Content="Save JSON…" Click="ElectricalTransientSaveJson_Click" ToolTip.Tip="Save the displayed transient report as JSON" />
+                  </StackPanel>
+                  <Border
+                      IsVisible="{Binding HasElectricalTransientResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,6">
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="{Binding ElectricalTransientEnergyText}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                      <TextBlock Text="TIME · NODE VOLTAGES" Classes="muted" FontSize="9" FontWeight="SemiBold" />
+                      <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding ElectricalTransientResults}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ElectricalTransientPointItem">
+                              <Grid ColumnDefinitions="92,*" ColumnSpacing="8" Margin="0,1">
+                                <TextBlock Text="{Binding TimeText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" />
+                                <TextBlock Grid.Column="1" Text="{Binding VoltagesText}" FontFamily="monospace" FontSize="9.5" TextWrapping="Wrap" />
+                              </Grid>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </ScrollViewer>
+                    </StackPanel>
+                  </Border>
+
                   <TextBlock Text="VALIDATION" Classes="section" />
                   <TextBlock Text="{Binding ElectricalValidationSummary}" Classes="diag" Classes.error="{Binding HasElectricalDiagnostics}" FontSize="10.5" TextWrapping="Wrap" Margin="2,0,2,3" />
                   <ItemsControl ItemsSource="{Binding ElectricalDiagnostics}">

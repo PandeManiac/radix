@@ -474,6 +474,23 @@ Node rows leave the element fields empty; element rows use the same
 report. Numeric fields use invariant, round-trip formatting, and text fields are
 quoted with CSV escaping.
 
+## Editor transient preview
+
+**Run transient** integrates the selected circuit with the same solver and report
+builder as `radix transient`, using the panel's own settings: **Transient stop
+(s)**, **Transient steps**, and **Transient method** (`backward-euler` or
+`trapezoidal`). Those three values are view state, not project data: they are not
+saved, they are not undo steps, and changing one clears the previous result
+because the numbers on screen would describe an older circuit.
+
+The panel lists solved points as time plus node voltages, sampled evenly when a
+run has more than 300 points, shows the run's energy ledger, and offers **Copy
+JSON** and **Save JSON…** for the same `radix-transient-report` document the CLI
+writes, including the `circuit` id and `energy` object. Editing the circuit,
+switching circuits, or running a DC solve clears the preview instead of leaving
+stale values, and a structural error or failed integration is reported in the
+panel and the status bar instead of producing a result.
+
 ## Sign and unit conventions
 
 - Voltages and node voltages are in volts.
@@ -570,8 +587,8 @@ Not supported:
 - junction capacitance, carrier storage, high-injection, self-heating, or noise;
 - gmin continuation, or SPICE-style built-in source functions beyond
   piecewise-linear tables;
-- any transient editor UI (the Electrical tab stays a DC inspector and preview;
-  `radix transient` is the headless entry point);
+- an interactive transient plot or waveform cursor (the panel lists solved
+  points as text, and `radix transient` remains the scriptable entry point);
 - temperature, thermal limits, component tolerances, or datasheet ratings;
 - wire resistance, parasitic elements, or physical layout;
 - short-circuit current, overcurrent, or fuse-trip prediction;

@@ -162,6 +162,15 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalSolveSummary = "Choose Solve to compute the DC operating point.";
     private bool _hasElectricalSolveResult;
     private bool _hasElectricalSolveError;
+    private bool _hasElectricalTransientResult;
+    private bool _hasElectricalTransientError;
+    private string _electricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
+    private string _electricalTransientEnergyText = string.Empty;
+    private string _electricalTransientStopText = "0.005";
+    private string _electricalTransientStepsText = "200";
+    private string _electricalTransientMethodName = "backward-euler";
+    private TransientNetlist? _electricalTransientNetlist;
+    private TransientResult? _electricalTransientResult;
 
 
     public EditorViewModel(CircuitProject project)
@@ -272,6 +281,7 @@ public sealed class EditorViewModel : ObservableObject
         AddElectricalComponentCommand = new RelayCommand(AddElectricalComponent);
         RemoveElectricalComponentCommand = new RelayCommand(RemoveElectricalComponent);
         SolveElectricalCircuitCommand = new RelayCommand(() => SolveElectricalCircuit());
+        RunElectricalTransientCommand = new RelayCommand(() => SolveElectricalTransient());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -381,6 +391,9 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<ElectricalDiagnosticItem> ElectricalDiagnostics { get; } = [];
 
     public ObservableCollection<ElectricalNodeResultItem> ElectricalNodeResults { get; } = [];
+
+    /// <summary>Solved points of the last transient run, formatted for the panel.</summary>
+    public ObservableCollection<ElectricalTransientPointItem> ElectricalTransientResults { get; } = [];
 
     public ObservableCollection<ElectricalElementResultItem> ElectricalElementResults { get; } = [];
 
@@ -1044,6 +1057,8 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand SolveElectricalCircuitCommand { get; }
 
+    public ICommand RunElectricalTransientCommand { get; }
+
     public bool IsEditingFormat => _editingFormatId is not null;
 
     public string FormatSaveButtonText => IsEditingFormat ? "Update numeric format" : "Add numeric format";
@@ -1211,6 +1226,30 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasElectricalSolveError;
         private set => SetField(ref _hasElectricalSolveError, value);
+    }
+
+    public string ElectricalTransientSummary
+    {
+        get => _electricalTransientSummary;
+        private set => SetField(ref _electricalTransientSummary, value);
+    }
+
+    public string ElectricalTransientEnergyText
+    {
+        get => _electricalTransientEnergyText;
+        private set => SetField(ref _electricalTransientEnergyText, value);
+    }
+
+    public bool HasElectricalTransientResult
+    {
+        get => _hasElectricalTransientResult;
+        private set => SetField(ref _hasElectricalTransientResult, value);
+    }
+
+    public bool HasElectricalTransientError
+    {
+        get => _hasElectricalTransientError;
+        private set => SetField(ref _hasElectricalTransientError, value);
     }
 
     public string FormatPreviewText
@@ -6053,6 +6092,21 @@ public sealed class EditorViewModel : ObservableObject
             circuit.Description ?? string.Empty,
             hint: "Optional context for this DC circuit",
             apply: value => SetElectricalCircuitDescription(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient stop (s)",
+            _electricalTransientStopText,
+            hint: "End of a transient run in seconds; a view setting, not saved with the project",
+            apply: SetElectricalTransientStop));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient steps",
+            _electricalTransientStepsText,
+            hint: "Fixed steps between 0 and the stop time (2 to 20000)",
+            apply: SetElectricalTransientSteps));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Transient method",
+            _electricalTransientMethodName,
+            hint: "backward-euler or trapezoidal",
+            apply: SetElectricalTransientMethod));
 
         ElectricalNodeFields.Clear();
         if (_selectedElectricalNode is not null)
@@ -6196,6 +6250,209 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Integrates the selected circuit with the same solver <c>radix transient</c>
+    /// uses, over the panel's own stop time, step count, and method. Nothing is
+    /// mutated: the settings are view state and the result describes the circuit as
+    /// it was when the run started.
+    /// </summary>
+    public bool SolveElectricalTransient()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ShowElectricalTransientError(
+                "Select an authored circuit before running a transient.",
+                "No electrical circuit selected.");
+            return false;
+        }
+
+        if (!TryParseElectricalNumber(_electricalTransientStopText, out double stop) || stop <= 0)
+        {
+            ShowElectricalTransientError(
+                "Transient stop time must be a positive number of seconds.",
+                "Invalid transient stop time.");
+            return false;
+        }
+
+        if (!int.TryParse(
+                _electricalTransientStepsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            ShowElectricalTransientError(
+                "Transient steps must be a whole number from 2 to 20000.",
+                "Invalid transient step count.");
+            return false;
+        }
+
+        if (!TryParseElectricalTransientMethod(_electricalTransientMethodName, out TransientMethod method))
+        {
+            ShowElectricalTransientError(
+                "Transient method must be 'backward-euler' or 'trapezoidal'.",
+                "Invalid transient method.");
+            return false;
+        }
+
+        TransientNetlist netlist;
+        try
+        {
+            netlist = circuit.ToTransientNetlist();
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            ShowElectricalTransientError(
+                $"Cannot run: {exception.Diagnostics.ErrorCount} structural error(s). Fix the validation messages above.",
+                "Transient blocked by structural errors.");
+            return false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ShowElectricalTransientError(
+                "Cannot build the transient netlist: " + exception.Message,
+                "Transient netlist construction failed.");
+            return false;
+        }
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = stop,
+            Steps = steps,
+            Method = method,
+        });
+
+        _electricalTransientNetlist = netlist;
+        _electricalTransientResult = result;
+
+        const int maxDisplayedPoints = 300;
+        int stride = Math.Max(1, (result.Points.Count + maxDisplayedPoints - 1) / maxDisplayedPoints);
+        ElectricalTransientResults.Clear();
+        for (int index = 0; index < result.Points.Count; index += stride)
+        {
+            ElectricalTransientResults.Add(new ElectricalTransientPointItem(index, result.Points[index]));
+        }
+
+        if (result.Points.Count > 0 && (result.Points.Count - 1) % stride != 0)
+        {
+            ElectricalTransientResults.Add(new ElectricalTransientPointItem(
+                result.Points.Count - 1, result.Points[^1]));
+        }
+
+        HasElectricalTransientResult = true;
+        HasElectricalTransientError = !result.Completed;
+        string shown = stride == 1
+            ? $"{result.Points.Count} points"
+            : $"{ElectricalTransientResults.Count} of {result.Points.Count} points";
+        ElectricalTransientSummary = result.Completed
+            ? $"Integrated '{circuit.Id}' · {shown} · {steps} {TransientNetlistJson.MethodName(method)} steps to {FormatElectricalValue(stop)} s."
+            : $"Integration failed in '{circuit.Id}' near t={FormatElectricalValue(result.FinalPoint?.Time ?? 0)} s: {result.Message}";
+        ElectricalTransientEnergyText = result.Energy is TransientEnergyBalance energy
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"Energy (J): delivered {energy.DeliveredJoules:G4} · dissipated {energy.DissipatedJoules:G4} · stored change {energy.StoredChangeJoules:G4} · residual {energy.ResidualJoules:G4} ({energy.RelativeResidual:G3} relative)")
+            : "Energy ledger unavailable: fewer than two points were solved.";
+        StatusText = result.Completed
+            ? $"Integrated '{circuit.Id}' to t={FormatElectricalValue(stop)} s"
+            : $"Transient failed ({FailureLabel(result.Failure ?? DcSolveFailure.NonConvergent)}).";
+        return result.Completed;
+    }
+
+    /// <summary>
+    /// Serialises the displayed transient result through the same report builder as
+    /// <c>radix transient --json</c>, so the panel and the CLI cannot drift apart.
+    /// </summary>
+    public bool TryBuildElectricalTransientJson(out string json)
+    {
+        json = string.Empty;
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (!HasElectricalTransientResult ||
+            circuit is null ||
+            _electricalTransientNetlist is null ||
+            _electricalTransientResult is null)
+        {
+            return false;
+        }
+
+        json = TransientNetlistJson.ToReportJson(
+            null, _electricalTransientNetlist, _electricalTransientResult, circuit.Id);
+        return true;
+    }
+
+    private bool SetElectricalTransientStop(string value)
+    {
+        if (!TryParseElectricalNumber(value, out double stop) || stop <= 0)
+        {
+            StatusText = "Transient stop time must be a positive number of seconds.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientStopText, value, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientStopText = value;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private bool SetElectricalTransientSteps(string value)
+    {
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            StatusText = "Transient steps must be a whole number from 2 to 20000.";
+            return false;
+        }
+
+        if (string.Equals(_electricalTransientStepsText, value, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientStepsText = value;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private bool SetElectricalTransientMethod(string value)
+    {
+        if (!TryParseElectricalTransientMethod(value, out TransientMethod method))
+        {
+            StatusText = "Transient method must be 'backward-euler' or 'trapezoidal'.";
+            return false;
+        }
+
+        string name = TransientNetlistJson.MethodName(method);
+        if (string.Equals(_electricalTransientMethodName, name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _electricalTransientMethodName = name;
+        ClearElectricalTransientResult();
+        return true;
+    }
+
+    private static bool TryParseElectricalTransientMethod(string text, out TransientMethod method)
+    {
+        switch (text?.Trim().ToLowerInvariant())
+        {
+            case "be" or "backward-euler" or "backwardeuler":
+                method = TransientMethod.BackwardEuler;
+                return true;
+            case "trap" or "trapezoidal":
+                method = TransientMethod.Trapezoidal;
+                return true;
+            default:
+                method = TransientMethod.BackwardEuler;
+                return false;
+        }
+    }
+
+    /// <summary>
     /// Builds a JSON document from the solve preview exactly as displayed. The
     /// solver is not called again, so copied values cannot diverge from the panel.
     /// </summary>
@@ -6319,6 +6576,30 @@ public sealed class EditorViewModel : ObservableObject
         HasElectricalSolveResult = false;
         HasElectricalSolveError = false;
         ElectricalSolveSummary = "Choose Solve to compute the DC operating point.";
+        ClearElectricalTransientResult();
+    }
+
+    /// <summary>
+    /// Drops the transient preview. It describes the circuit as it was when the run
+    /// started, so any edit invalidates it rather than leaving stale numbers on screen.
+    /// </summary>
+    private void ClearElectricalTransientResult()
+    {
+        ElectricalTransientResults.Clear();
+        _electricalTransientNetlist = null;
+        _electricalTransientResult = null;
+        HasElectricalTransientResult = false;
+        HasElectricalTransientError = false;
+        ElectricalTransientSummary = "Choose Run transient to integrate the circuit over time.";
+        ElectricalTransientEnergyText = string.Empty;
+    }
+
+    private void ShowElectricalTransientError(string summary, string status)
+    {
+        ClearElectricalTransientResult();
+        HasElectricalTransientError = true;
+        ElectricalTransientSummary = summary;
+        StatusText = status;
     }
 
     private void ShowElectricalSolveError(string summary, string status)

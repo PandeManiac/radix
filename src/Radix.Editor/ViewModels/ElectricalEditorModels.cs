@@ -25,6 +25,36 @@ public sealed class ElectricalCircuitListItem
     public override string ToString() => Name;
 }
 
+/// <summary>One solved point of a transient run: its time and every node voltage.</summary>
+public sealed class ElectricalTransientPointItem
+{
+    public ElectricalTransientPointItem(int index, TransientPoint point)
+    {
+        Index = index;
+        Time = point.Time;
+        TimeText = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{point.Time:G6} s");
+        VoltagesText = string.Join(
+            "  ",
+            point.NodeVoltages
+                .OrderBy(entry => entry.Key, StringComparer.Ordinal)
+                .Select(entry => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"{entry.Key}={entry.Value:G6}")));
+    }
+
+    public int Index { get; }
+
+    public double Time { get; }
+
+    public string TimeText { get; }
+
+    public string VoltagesText { get; }
+
+    public override string ToString() => TimeText;
+}
+
 /// <summary>A selectable electrical node, used for ground and terminal bindings.</summary>
 public sealed class ElectricalNodeChoice
 {

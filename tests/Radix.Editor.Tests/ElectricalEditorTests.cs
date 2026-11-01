@@ -91,6 +91,58 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void TransientRunReportsPointsEnergyAndExportsJson()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        EditableField method = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient method");
+        method.Value = "trap";
+        Assert.True(viewModel.ApplyField(method));
+
+        Assert.True(viewModel.SolveElectricalTransient());
+        Assert.True(viewModel.HasElectricalTransientResult);
+        Assert.False(viewModel.HasElectricalTransientError);
+        Assert.Equal(201, viewModel.ElectricalTransientResults.Count);
+        Assert.Contains("trapezoidal", viewModel.ElectricalTransientSummary);
+        Assert.Contains("residual", viewModel.ElectricalTransientEnergyText);
+        Assert.Equal(0.005, viewModel.ElectricalTransientResults[^1].Time, 9);
+
+        Assert.True(viewModel.TryBuildElectricalTransientJson(out string json));
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.Equal(circuit.Id, document.RootElement.GetProperty("circuit").GetString());
+        Assert.True(document.RootElement.GetProperty("completed").GetBoolean());
+        Assert.True(
+            document.RootElement.GetProperty("energy").GetProperty("deliveredJoules").GetDouble() > 0);
+
+        EditableField steps = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient steps");
+        steps.Value = "abc";
+        Assert.False(viewModel.ApplyField(steps));
+        Assert.Contains("whole number", viewModel.StatusText);
+
+        EditableField stop = viewModel.ElectricalCircuitFields
+            .Single(field => field.Label == "Transient stop (s)");
+        stop.Value = "0.01";
+        Assert.True(viewModel.ApplyField(stop));
+        Assert.False(viewModel.HasElectricalTransientResult);
+        Assert.False(viewModel.TryBuildElectricalTransientJson(out _));
+    }
+
+    [Fact]
     public void SourceWaveformsCanBeAuthoredThroughThePanel()
     {
         EditorViewModel viewModel = CreateEmptyEditor();
@@ -445,6 +497,32 @@ public sealed class ElectricalEditorTests
         viewModel.Undo();
         Assert.Equal(2, viewModel.ElectricalCircuits.Count);
         Assert.NotNull(viewModel.Project.FindElectricalCircuit("dc1"));
+    }
+
+    private static ElectricalComponent ElectricalTestComponent(
+        string id,
+        ElectricalComponentKind kind,
+        double value,
+        string nodeA,
+        string nodeB)
+    {
+        var component = new ElectricalComponent { Id = id, Name = id, Kind = kind, Value = value };
+        bool source = !ElectricalComponentMetadata.HasPassiveTerminals(kind);
+        component.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "a",
+            Name = source ? "Positive" : "A",
+            Polarity = source ? ElectricalTerminalPolarity.Positive : ElectricalTerminalPolarity.Passive,
+            NodeId = nodeA,
+        });
+        component.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "b",
+            Name = source ? "Negative" : "B",
+            Polarity = source ? ElectricalTerminalPolarity.Negative : ElectricalTerminalPolarity.Passive,
+            NodeId = nodeB,
+        });
+        return component;
     }
 
     private static EditorViewModel CreateEmptyEditor()

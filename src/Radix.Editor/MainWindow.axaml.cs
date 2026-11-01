@@ -388,16 +388,35 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalTransientCopyJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientJson(out string json))
+        {
+            await CopyElectricalSolveTextAsync(json, "Copied transient report as JSON");
+        }
+    }
+
+    private async void ElectricalTransientSaveJson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientJson(out string json))
+        {
+            await SaveElectricalSolveTextAsync(
+                viewModel, json, "json", JsonFileType, "transient report", "transient");
+        }
+    }
+
     private async Task SaveElectricalSolveTextAsync(
         EditorViewModel viewModel,
         string text,
         string extension,
-        FilePickerFileType fileType)
+        FilePickerFileType fileType,
+        string label = "DC solve result",
+        string fileSuffix = "dc-solve")
     {
         IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = $"Save DC solve result as {extension.ToUpperInvariant()}",
-            SuggestedFileName = $"{SanitizeFileName(viewModel.Project.Name)}-dc-solve.{extension}",
+            Title = $"Save {label} as {extension.ToUpperInvariant()}",
+            SuggestedFileName = $"{SanitizeFileName(viewModel.Project.Name)}-{fileSuffix}.{extension}",
             DefaultExtension = extension,
             FileTypeChoices = [fileType],
             ShowOverwritePrompt = true,

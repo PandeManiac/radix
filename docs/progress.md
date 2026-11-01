@@ -507,9 +507,21 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     waveform says why. Tests cover authoring, round-trip formatting, rejection of
     decreasing/repeated/short/garbled input without mutation, clearing, and the
     field's absence on a resistor.
+47. Added a transient run to the Electrical tab: **Run transient** integrates the
+    selected circuit through `ToTransientNetlist()` with the panel's own stop
+    time, step count, and method (view state, not project data), lists solved
+    points as time plus node voltages (sampled evenly above 300 points), shows the
+    energy ledger, and copies or saves the same `radix-transient-report` JSON the
+    CLI writes, including the circuit id. Any circuit edit, circuit switch, or DC
+    solve clears the preview so stale numbers cannot be mistaken for current ones;
+    a structural or integration failure is reported in the panel and status bar.
+    The JSON save helper now takes a label and file suffix instead of hardcoding
+    the DC names. Tests cover the point table, summary, energy text, exported JSON
+    (circuit id, completion, delivered energy), method normalisation, rejection of
+    a non-numeric step count, and invalidation on a settings change.
 
 Verification: release build 0 warnings/0 errors; core tests 552/552; editor
-tests 194/194; `radix transient` runs all three examples with exit 0 and
+tests 195/195; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,
