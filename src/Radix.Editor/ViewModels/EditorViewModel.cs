@@ -182,6 +182,10 @@ public sealed class EditorViewModel : ObservableObject
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
         new SortedDictionary<string, double>(StringComparer.Ordinal);
     private int _electricalTransientPointCount;
+    private string _electricalSweepElementText = string.Empty;
+    private string _electricalSweepValuesText = string.Empty;
+    private string _electricalSweepSummary =
+        "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
     private TransientResult? _electricalTransientResult;
     private TransientRefinement? _electricalTransientRefinement;
@@ -299,6 +303,7 @@ public sealed class EditorViewModel : ObservableObject
         CheckElectricalTransientAccuracyCommand =
             new RelayCommand(() => CheckElectricalTransientAccuracy());
         ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
+        RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -420,6 +425,33 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Per-level rows of the last step-refinement check, empty until one is taken.</summary>
     public ObservableCollection<ElectricalTransientRefinementItem> ElectricalTransientRefinementLevels { get; } = [];
+
+    /// <summary>Rows of the last parameter sweep: one per swept value and node.</summary>
+    public ObservableCollection<ElectricalSweepRowItem> ElectricalSweepRows { get; } = [];
+
+    /// <summary>Whether the sweep table has rows to show.</summary>
+    public bool HasElectricalSweepResult => ElectricalSweepRows.Count > 0;
+
+    /// <summary>Id of the single element the sweep varies, as typed.</summary>
+    public string ElectricalSweepElementText
+    {
+        get => _electricalSweepElementText;
+        set => SetField(ref _electricalSweepElementText, value ?? string.Empty);
+    }
+
+    /// <summary>Swept values as typed: a comma list, or <c>from:to:count</c>.</summary>
+    public string ElectricalSweepValuesText
+    {
+        get => _electricalSweepValuesText;
+        set => SetField(ref _electricalSweepValuesText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the sweep, or why it could not run.</summary>
+    public string ElectricalSweepSummary
+    {
+        get => _electricalSweepSummary;
+        private set => SetField(ref _electricalSweepSummary, value);
+    }
 
     /// <summary>Whether the refinement table has rows to show.</summary>
     public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
@@ -1147,6 +1179,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand CheckElectricalTransientAccuracyCommand { get; }
 
     public ICommand ProbeElectricalTransientCommand { get; }
+
+    public ICommand RunElectricalSweepCommand { get; }
 
     public bool IsEditingFormat => _editingFormatId is not null;
 
@@ -6538,6 +6572,150 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Sweeps one element of the displayed run. It reuses that run's netlist and settings on
+    /// purpose: comparing numbers computed under different options would be misleading, and an
+    /// edit already invalidates the run this depends on.
+    /// </summary>
+    public bool RunElectricalSweep()
+    {
+        if (_electricalTransientNetlist is not { } netlist ||
+            _electricalTransientResult is not { } baseline ||
+            !HasElectricalTransientResult)
+        {
+            ElectricalSweepRows.Clear();
+            ElectricalSweepSummary = "Run a transient first; the sweep reuses its circuit and settings.";
+            RaisePropertyChanged(nameof(HasElectricalSweepResult));
+            StatusText = "Sweep needs a transient run.";
+            return false;
+        }
+
+        string elementId = (ElectricalSweepElementText ?? string.Empty).Trim();
+        if (elementId.Length == 0)
+        {
+            ElectricalSweepSummary = "Enter the id of one element to vary, for example R1.";
+            StatusText = "No sweep element given.";
+            return false;
+        }
+
+        if (!TryParseSweepValues(ElectricalSweepValuesText, out double[] values, out string error))
+        {
+            ElectricalSweepSummary = error;
+            StatusText = "Invalid sweep values.";
+            return false;
+        }
+
+        IReadOnlyList<TransientSweepRow> rows;
+        try
+        {
+            rows = TransientSweep.Run(netlist, elementId, values, baseline.Options);
+        }
+        catch (ArgumentException exception)
+        {
+            ElectricalSweepRows.Clear();
+            ElectricalSweepSummary = exception.Message;
+            RaisePropertyChanged(nameof(HasElectricalSweepResult));
+            StatusText = "Sweep failed: " + exception.Message;
+            return false;
+        }
+
+        ElectricalSweepRows.Clear();
+        int failed = 0;
+        foreach (TransientSweepRow row in rows)
+        {
+            if (!row.Result.Completed || row.Result.Metrics is not TransientMetrics metrics)
+            {
+                failed++;
+                ElectricalSweepRows.Add(new ElectricalSweepRowItem(
+                    row.Value,
+                    $"failed: {FailureLabel(row.Result.Failure ?? DcSolveFailure.NonConvergent)}",
+                    null,
+                    showValue: true));
+                continue;
+            }
+
+            bool first = true;
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                // Ground is the reference by definition: a 0 V row is not information.
+                if (string.Equals(node.NodeId, netlist.GroundNodeId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                ElectricalSweepRows.Add(new ElectricalSweepRowItem(row.Value, node.NodeId, node, first));
+                first = false;
+            }
+        }
+
+        RaisePropertyChanged(nameof(HasElectricalSweepResult));
+        ElectricalSweepSummary = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalSweepRows.Count} rows · settings from the displayed run."
+            : $"Swept '{elementId}' over {rows.Count} values; {failed} could not solve.";
+        StatusText = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values"
+            : $"Swept '{elementId}': {failed} value(s) failed.";
+        return failed == 0;
+    }
+
+    /// <summary>
+    /// Parses the panel's sweep values: <c>800,1000,1200</c> or <c>800:1200:5</c>. The spelling is
+    /// kept here so a typo produces a sentence instead of a stack trace, and the same shapes work
+    /// as on the command line.
+    /// </summary>
+    private static bool TryParseSweepValues(string? text, out double[] values, out string error)
+    {
+        values = [];
+        error = string.Empty;
+        string trimmed = (text ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            error = "Enter values as 800,1000,1200 or as from:to:count, for example 800:1200:5.";
+            return false;
+        }
+
+        string[] parts = trimmed.Split(
+            ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1)
+        {
+            var parsed = new double[parts.Length];
+            for (int index = 0; index < parts.Length; index++)
+            {
+                if (!double.TryParse(
+                        parts[index], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[index]) ||
+                    !double.IsFinite(parsed[index]))
+                {
+                    error = $"'{parts[index]}' is not a finite number.";
+                    return false;
+                }
+            }
+
+            values = parsed;
+            return true;
+        }
+
+        string[] range = trimmed.Split(':', StringSplitOptions.TrimEntries);
+        if (range.Length == 3 &&
+            double.TryParse(range[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) &&
+            double.TryParse(range[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) &&
+            int.TryParse(range[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
+        {
+            try
+            {
+                values = TransientSweep.Linspace(from, to, count);
+                return true;
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                error = exception.Message;
+                return false;
+            }
+        }
+
+        error = "Use a comma list of at least two values, or from:to:count (for example 800:1200:5).";
+        return false;
+    }
+
+    /// <summary>
     /// Refines the displayed fixed-step run so the panel can report whether halving the
     /// step would still change the answer. That costs three solves, so it stays an
     /// explicit action rather than something every run pays for, and an adaptive run is
@@ -7037,6 +7215,22 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
         _electricalTransientRefinement = null;
         ClearElectricalTransientRefinement();
+        ClearElectricalSweep();
+    }
+
+    /// <summary>
+    /// Drops the sweep table. It was computed from the run being cleared, so keeping it would
+    /// leave numbers on screen that no longer describe the selected circuit.
+    /// </summary>
+    private void ClearElectricalSweep()
+    {
+        if (ElectricalSweepRows.Count > 0)
+        {
+            ElectricalSweepRows.Clear();
+            RaisePropertyChanged(nameof(HasElectricalSweepResult));
+        }
+
+        ElectricalSweepSummary = "Run a transient, then sweep one element to compare its values.";
     }
 
     private void ClearElectricalTransientRefinement()

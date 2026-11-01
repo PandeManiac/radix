@@ -431,6 +431,13 @@ a metric sitting at exactly zero has no scale to be tolerant of: a change there 
 It never excuses a value that appeared or disappeared, a node present on one side only, or a run that
 stopped completing.
 
+**Sweeping in the app.** The Electrical tab has **Sweep**: name one element and give either a comma
+list (`500,1000,2000`) or `from:to:count` (`800:1200:5`). It reuses the displayed run's circuit and
+settings, so a study never mixes options, and it lists each node's peak, final value and settling time
+per value with the value printed once per block and ground omitted. A value that cannot solve keeps a
+row, and any edit that invalidates the run also clears the table, so on-screen numbers always describe
+the selected circuit.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design

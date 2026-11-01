@@ -751,8 +751,16 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     The relative form has one deliberate hole: a metric at exactly zero has no scale, so a change
     there is always reported.
 
+71. Brought studies into the panel: the Electrical tab gained a **Sweep** row (element id plus a
+    comma list or `from:to:count`) and a table of each node's peak, final value and settling time per
+    value. The sweep reuses the displayed run's netlist and `TransientOptions`, so a study cannot
+    mix settings; a value that fails keeps a row; ground is omitted; and any edit that clears the run
+    clears the sweep too. Parsing is local to the view model and reports a sentence for a typo rather
+    than throwing. Tests cover the row count and value-once-per-block layout, an unknown element and
+    an unparsable value, and invalidation by an edit.
+
 Verification: release build 0 warnings/0 errors; core tests 625/625; editor
-tests 213/213; `radix transient` runs all three examples with exit 0 and
+tests 216/216; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,
