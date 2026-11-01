@@ -124,6 +124,7 @@ internal static class Program
                   [--max-step <s>]           Largest adaptive step (default: the whole interval)
                   [--max-steps <n>]          Adaptive trial-step budget (default 100000)
                   [--max-rows <n>]           Text rows to print (default 40)
+                  [--csv]                    Emit the points as a wide CSV table
                   [--json]                   Emit one machine-readable transient report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
@@ -372,11 +373,11 @@ internal static class Program
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
                 "refine-levels",
             ],
-            ["json", "refine"]);
+            ["json", "refine", "csv"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--max-rows <n>] [--json]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--max-rows <n>] [--json|--csv]");
             return 2;
         }
 
@@ -438,6 +439,19 @@ internal static class Program
         };
 
         bool refine = options.ContainsKey("refine");
+        bool csv = options.ContainsKey("csv");
+        if (csv && json)
+        {
+            Console.Error.WriteLine("--csv and --json are mutually exclusive.");
+            return 2;
+        }
+
+        if (csv && refine)
+        {
+            Console.Error.WriteLine("--refine prints a table; drop --csv or --refine.");
+            return 2;
+        }
+
         int refineLevels = GetIntOption(options, "refine-levels", 3, 2, 5);
         if (refine && transientOptions.IsAdaptive)
         {
@@ -471,7 +485,11 @@ internal static class Program
             }
         }
 
-        if (json)
+        if (csv)
+        {
+            Console.Write(TransientCsv.Write(result));
+        }
+        else if (json)
         {
             Console.WriteLine(TransientNetlistJson.ToReportJson(
                 source, document.Netlist, result, circuitId, refinement));

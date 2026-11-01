@@ -672,7 +672,16 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     again. Tests hide a trace, check the surviving count and the untouched palette slots, hide
     everything to get no plot, restore all three, and confirm a rerun resets visibility.
 
-Verification: release build 0 warnings/0 errors; core tests 588/588; editor
+63. Added `radix transient --csv` and shared its writer with the panel. `TransientCsv.Write`
+    emits a `time_s` header plus one column per node in ordinal order and one row per solved
+    point, with invariant round-trip numbers so a reader parses back the same doubles, and quoted
+    node names whose own quotes are doubled so a comma cannot break the table. The panel's CSV
+    export now calls the same writer, so the two cannot drift apart; `--csv` is refused alongside
+    `--json` and with `--refine` rather than silently preferring one. Tests check the header
+    order, one row per point, exact round-trip of the final time, a comma-containing node name,
+    an embedded quote, and the mutual-exclusion exit code.
+
+Verification: release build 0 warnings/0 errors; core tests 591/591; editor
 tests 211/211; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).

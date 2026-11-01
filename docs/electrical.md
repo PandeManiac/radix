@@ -366,6 +366,13 @@ where the drive falls below the capacitor voltage rather than where the drive it
 peaks. `radix transient` prints the table, and the JSON report carries it under
 `metrics` with a `settlingBand` and one object per node.
 
+`--csv` writes the solved points as a wide table instead: a `time_s` header followed by one
+column per node in ordinal order, one row per point. Numbers use the invariant round-trip
+format, so a reader parses back exactly the doubles the solver produced, and node names are
+quoted with their own quotes doubled, so an id containing a comma cannot break the table. The
+panel's **Copy CSV** / **Save CSV…** call the same writer, so the file a designer saves and the
+one a script produces cannot drift apart.
+
 ## Initial-condition notes
 
 A preset `initialValue` is legitimate — starting a capacitor pre-charged is a normal design

@@ -6760,34 +6760,8 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        string[] nodes = _electricalTransientResult.Points
-            .SelectMany(point => point.NodeVoltages.Keys)
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        var builder = new StringBuilder();
-        builder.Append("time_s");
-        foreach (string node in nodes)
-        {
-            builder.Append(',').Append(CsvText(node));
-        }
-
-        builder.Append('\n');
-        foreach (TransientPoint point in _electricalTransientResult.Points)
-        {
-            builder.Append(CsvNumber(point.Time));
-            foreach (string node in nodes)
-            {
-                builder.Append(',');
-                builder.Append(CsvNumber(
-                    point.NodeVoltages.TryGetValue(node, out double volts) ? volts : null));
-            }
-
-            builder.Append('\n');
-        }
-
-        csv = builder.ToString();
+        // The CLI writes the same table through the same writer, so the two cannot drift.
+        csv = TransientCsv.Write(_electricalTransientResult);
         return true;
     }
 
