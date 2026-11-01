@@ -40,6 +40,7 @@ internal static class Program
             {
                 "validate" => ValidateCommand(args[1..]),
                 "dc" => DcCommand(args[1..]),
+                "dc-sweep" => DcSweepCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
                 "sweep" => SweepCommand(args[1..]),
@@ -109,6 +110,15 @@ internal static class Program
                                              Solve a DC linear electrical circuit
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--json]                   Emit one machine-readable DC report
+              dc-sweep <netlist.json|project.radix>
+                                             Sweep one voltage source and solve each point
+                  [--source <id>]            Voltage source to sweep (required)
+                  [--start <volts>]          First source value (required)
+                  [--stop <volts>]           Last source value (required)
+                  [--points <n>]             Points including both endpoints (default 11)
+                  [--node <id>]              Also report this node's voltage
+                  [--circuit <id>]           Choose an authored circuit in a project
+                  [--json]                   Emit one machine-readable sweep report
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -320,6 +330,130 @@ internal static class Program
 
             return 1;
         }
+    }
+
+    private static int DcSweepCommand(string[] args)
+    {
+        (var positional, var options) = Parse(
+            args,
+            ["circuit", "source", "start", "stop", "points", "node"],
+            ["json"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix dc-sweep <netlist.json|project.radix> --source <id> --start <volts> --stop <volts> [--points <n>] [--node <id>] [--circuit <id>] [--json]");
+            return 2;
+        }
+
+        bool json = options.ContainsKey("json");
+        string? requestedCircuit = GetOption(options, "circuit");
+        string? sourceId = GetOption(options, "source");
+        if (sourceId is null)
+        {
+            Console.Error.WriteLine("--source is required: the ID of the voltage source to sweep.");
+            return 2;
+        }
+
+        string? nodeId = GetOption(options, "node");
+        int points = GetIntOption(options, "points", 11, 2, DcSweep.MaximumPoints);
+        double start = GetDoubleOption(options, "start");
+        double stop = GetDoubleOption(options, "stop");
+        string source = positional[0];
+        string? circuitId = null;
+        DcNetlist netlist;
+        try
+        {
+            if (string.Equals(Path.GetExtension(source), ".radix", StringComparison.OrdinalIgnoreCase))
+            {
+                CircuitProject project = ProjectSerializer.Load(source, validate: false);
+                ElectricalCircuit circuit = SelectElectricalCircuit(project, requestedCircuit);
+                circuitId = circuit.Id;
+                netlist = circuit.ToDcNetlist();
+            }
+            else
+            {
+                if (requestedCircuit is not null)
+                {
+                    Console.Error.WriteLine("--circuit is only valid when sweeping an authored .radix project.");
+                    return 2;
+                }
+
+                netlist = DcNetlistJson.Load(source);
+            }
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            PrintDiagnostics(exception.Diagnostics, Console.Error);
+            return 2;
+        }
+        catch (ProjectFormatException exception)
+        {
+            Console.Error.WriteLine($"DC input error: {exception.Message}");
+            return 2;
+        }
+
+        if (!netlist.Elements.OfType<DcVoltageSource>().Any(candidate =>
+                string.Equals(candidate.Id, sourceId, StringComparison.Ordinal)))
+        {
+            Console.Error.WriteLine($"Netlist has no voltage source '{sourceId}'.");
+            return 2;
+        }
+
+        if (nodeId is not null && !netlist.Nodes.Contains(nodeId, StringComparer.Ordinal))
+        {
+            Console.Error.WriteLine($"Netlist has no node '{nodeId}'.");
+            return 2;
+        }
+
+        IReadOnlyList<DcSweepPoint> results = DcSweep.VoltageSource(
+            netlist,
+            sourceId,
+            start,
+            stop,
+            points);
+
+        if (json)
+        {
+            Console.WriteLine(DcNetlistJson.ToSweepJson(
+                source,
+                circuitId,
+                sourceId,
+                nodeId,
+                start,
+                stop,
+                results));
+        }
+        else
+        {
+            Console.WriteLine($"source:  {source}");
+            if (circuitId is not null)
+            {
+                Console.WriteLine($"circuit: {circuitId}");
+            }
+
+            Console.WriteLine(
+                $"sweep:   {sourceId} {FormatDcNumber(start)} -> {FormatDcNumber(stop)} V, {points} points");
+            string nodeHeader = (nodeId ?? "-") + " (V)";
+            string currentHeader = $"I({sourceId}) (A)";
+            Console.WriteLine($"{"value",16}  {nodeHeader,16}  {currentHeader,20}");
+            foreach (DcSweepPoint point in results)
+            {
+                if (point.Solution is null)
+                {
+                    Console.WriteLine(
+                        $"{FormatDcNumber(point.SourceValue),16}  {"failed",16}  {point.Failure}: {point.Message}");
+                    continue;
+                }
+
+                string nodeText = nodeId is null
+                    ? "-"
+                    : FormatDcNumber(point.Solution.NodeVoltages[nodeId]);
+                Console.WriteLine(
+                    $"{FormatDcNumber(point.SourceValue),16}  {nodeText,16}  {FormatDcNumber(point.Solution.ElementCurrents[sourceId]),20}");
+            }
+        }
+
+        return results.Any(point => point.Solution is null) ? 1 : 0;
     }
 
     private static ElectricalCircuit SelectElectricalCircuit(
@@ -1441,6 +1575,23 @@ internal static class Program
     {
         long value = GetLongOption(options, key, fallback, min, max);
         return checked((int)value);
+    }
+
+    private static double GetDoubleOption(Dictionary<string, List<string>> options, string key)
+    {
+        string? text = GetOption(options, key);
+        if (text is null)
+        {
+            throw new ProjectFormatException($"option '--{key}' is required.");
+        }
+
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ||
+            !double.IsFinite(value))
+        {
+            throw new ProjectFormatException($"option '--{key}' must be a finite number.");
+        }
+
+        return value;
     }
 
     private static void PrintDcSolution(

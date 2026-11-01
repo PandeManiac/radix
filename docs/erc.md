@@ -20,6 +20,9 @@ available from:
 | --- | --- | --- | --- |
 | `RAD-ERC-001` | Warning | A net has input pins but no instance output and no input port binding. | Structural |
 | `RAD-ERC-002` | Warning | A net is bound to an input port and also driven by one or more instance outputs under a single-driver domain. | Structural |
+| `RAD-ERC-101` | Warning | Authored electrical nodes form an island with no conductive path to the declared ground node. | Structural |
+| `RAD-ERC-102` | Warning | Authored ideal voltage sources impose contradictory voltage differences. | Structural |
+| `RAD-ERC-103` | Warning | Authored ideal voltage sources form a consistent but redundant loop, so individual source currents are not unique. | Structural |
 | `RAD080` | Warning | A component input pin is not connected to any net. | Structural |
 | `RAD081` | Warning | A single-driver net has more than one output pin; the domain policy resolves it as a conflict. | Structural |
 
@@ -29,6 +32,19 @@ the initial value is a startup/hold state, not an inferred external driver.
 
 `RAD-ERC-002` is a structural conflict between an external input and an internal
 driver. It is not a claim that a physical short circuit or overcurrent exists.
+
+The electrical rules inspect authored `electricalCircuits` topology through the
+same `DcNetlist.AnalyzeTopology` projection the DC solver uses, so the rule
+checker and the solver cannot disagree about connectivity. They are deliberately
+**warnings**, not errors: an electrical asset is independent of the digital
+project, and an unsolvable DC circuit must not block digital compilation. Each
+warning carries the `electrical/<circuitId>` path, the affected node or source
+names in its message, and the usual assumption and suggestion fields.
+
+`RAD-ERC-102` and `RAD-ERC-103` are deliberately distinct. Contradictory ideal
+sources have no solution at all. A consistent but redundant source loop has
+well-defined node voltages but non-unique branch currents; the rule tells the
+author which condition applies instead of collapsing both into "singular".
 
 `RAD081` preserves its existing stable code and location. It now carries an
 assumption and a suggested correction. It means the selected domain's driver
@@ -74,7 +90,7 @@ RADIX does **not** yet model or claim to detect:
 - physical short-circuit resistance or low-resistance path analysis
 - decoupling capacitors, fan-out limits, clock-domain crossings, reset
   distribution, timing violations, or signal-integrity risks
-- missing power or ground connections
+- missing power or ground connections on digital definitions
 
 Those checks require real electrical component metadata and a solver. RADIX
 must not infer them from ideal digital values.
@@ -85,8 +101,9 @@ A separate core DC linear solver now covers ideal resistors, independent voltage
 sources, independent current sources, and one ground reference. It has explicit
 units, node/ground conventions, singular-system failures, analytical tests, and
 headless JSON netlists and authored project v8 electrical circuits through
-`radix dc`; see [electrical.md](electrical.md). It is not yet connected to ERC,
-the digital engine, or the editor.
+`radix dc`; see [electrical.md](electrical.md). It is not connected to the digital engine. The ERC layer now reports its
+topology findings as `RAD-ERC-101`–`RAD-ERC-103` warnings before a solve, using
+the solver's own analysis rather than a second connectivity model.
 
 The next step is explicit electrical terminals and component metadata with a
 documented mapping to electrical nodes. Transient, nonlinear, and component-rating

@@ -40,6 +40,163 @@ double sourcePower = solution.ElementPowers["V1"]; // -50 mW (delivered)
 absorbed element power. All dictionaries are keyed by the stable IDs supplied to
 the netlist. Ground is present in `NodeVoltages` with value zero.
 
+## Numerical method and failure classification
+
+The unknown vector contains every non-ground node voltage in ordinal node-ID
+order, followed by one branch current per ideal voltage source. Resistors are
+stamped as conductances, current sources into the right-hand side, and voltage
+sources as their modified-nodal branch rows.
+
+The dense linear system is factorized with **scaled partial pivoting**: each
+pivot candidate is compared with the largest coefficient in its own row, not
+with one global matrix magnitude. This matters for real circuits with wide
+parameter spreads: a 1 GΩ branch next to a 1 mΩ branch is weak, not singular. A
+pivot is rejected only when it is below `1e-12` of its row scale.
+
+After back-substitution the solver computes the relative backward error
+`max|Ax - b| / max(||b||∞, ||A||∞ ||x||∞)` and exposes it as
+`DcSolution.RelativeResidual`. If the residual exceeds `1e-8`, the solve is
+refused with `IllConditioned` instead of returning a plausible-looking wrong
+answer. The residual is a backward-error measure; it does not bound forward
+error, so a severely ill-conditioned but solvable circuit can still lose digits.
+For a netlist containing diodes, `RelativeResidual` instead reports the largest
+nonlinear KCL/source residual as a fraction of its acceptance bound, so a value at
+or below 1 means Newton converged.
+The randomized ladder tests state their accuracy expectations explicitly for
+that reason.
+
+Failures are classified before or after factorization:
+
+| Failure | Meaning |
+| --- | --- |
+| `NoGround` | no element references the declared ground node |
+| `FloatingNetwork` | one or more nodes form an island with no path to ground; the message names them |
+| `InconsistentSourceConstraints` | ideal voltage sources impose contradictory voltage differences; the message names the conflicting source |
+| `SingularMatrix` | the system is underdetermined, e.g. a current source into an open node or a *consistent but redundant* ideal-source loop whose branch currents are not unique |
+| `NonFiniteResult` | a coefficient, node voltage, or branch current became infinite or NaN |
+| `IllConditioned` | the system solved but its residual is too large to trust |
+
+A consistent redundant source loop is deliberately not reported as
+inconsistent: its node voltages are well defined even though the individual
+source currents are not. The solver refuses the whole solve rather than choosing
+an arbitrary current distribution.
+
+`radix validate`, the editor **Diagnostics** tab, and electrical rule checking
+share this topology analysis. An island with no ground path, a contradictory
+ideal-source loop, and a consistent but redundant source loop are reported as
+`RAD-ERC-101`–`RAD-ERC-103` warnings before a solve (see [erc.md](erc.md)). They
+are warnings so an electrical asset never blocks digital compilation.
+
+The implementation is a dense `double` factorization: time and memory grow as
+O(n³) and O(n²). It is intended for interactive, small and medium netlists; it is
+not a sparse or large-scale production simulator.
+
+## Nonlinear diode model
+
+The netlist also supports a two-terminal Shockley diode:
+
+```
+I(V) = Is * (exp(V / (N * Vt)) - 1)
+```
+
+`NodeA` is the anode and `NodeB` the cathode, so the reported current flows from
+anode to cathode and the reported voltage is `V(anode) - V(cathode)`. `Is` is the
+saturation current in amperes, `N` the dimensionless emission coefficient, and
+`Vt` the thermal voltage in volts. The default thermal voltage is 25.852 mV,
+corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep.
+
+An optional series resistance `Rs` adds the terminal relation
+`Vterminal = Vjunction + Rs * I`. The junction voltage is recovered from the
+terminal voltage by a monotonic scalar bisection, and the circuit-level Newton
+iteration linearizes the combined terminal conductance
+`Gj / (1 + Rs * Gj)`. `Rs = 0` (the default) is the ideal junction. The model is
+isothermal and has no junction capacitance or high-injection effects.
+
+An optional reverse breakdown branch models a Zener or avalanche knee at `-BV`:
+
+```
+I(V) = Is * (exp(V / (N * Vt)) - 1) - Ibv * exp(-(V + BV) / (N * Vt))
+```
+
+`BV > 0` is the knee magnitude in volts and `Ibv` the reverse current at that
+knee (`1 mA` by default). At `V = -BV` the branch carries `-Ibv`; below the knee
+it grows exponentially, and above it the term is negligible. Both branches are
+monotonic, so the series-resistance junction solve stays a single bisection.
+Newton applies the same junction limiting to the overdrive `-(V + BV)`, which
+keeps a large reverse step from landing far below the knee. Omitting `BV` or
+setting it to zero disables breakdown and preserves the plain Shockley model.
+
+Diodes are solved with a damped Newton iteration. Each iteration linearizes every
+junction around its current voltage, solves the same scaled-pivot MNA system used
+for linear circuits, and applies standard pn-junction limiting when a forward or
+reverse step exceeds two junction voltages; reverse steps are limited in the
+breakdown overdrive. A result is accepted only when the junction
+voltages stop moving and the nonlinear KCL/source residual is within a relative
+`1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. The absolute
+floors matter at picoamp reverse currents, where subtracting nearly equal node
+voltages limits how small a KCL residual is representable. Failure to converge within 100 iterations raises `NonConvergent` rather
+than returning a partial operating point. The linear fast path is unchanged when
+a netlist has no diodes.
+
+The forward and breakdown exponential arguments are both capped at 80 (about 2 V
+per junction at `N = 1`). That keeps the arithmetic finite but means the ideal
+model must not be used at large forward bias, or far below the breakdown knee,
+without series resistance; it is a modelling limit, not a convergence tolerance.
+
+Standalone netlists can express a diode:
+
+```json
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 5 },
+    { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
+    { "id": "D1", "type": "diode", "nodeA": "out", "nodeB": "gnd",
+      "saturationCurrent": 1e-12, "emissionCoefficient": 1, "thermalVoltage": 0.025852 }
+  ]
+}
+```
+
+`emissionCoefficient`, `thermalVoltage`, `seriesResistance`, `breakdownVoltage`,
+and `breakdownCurrent` are optional and default to `1`, `0.025852` V, `0` Ω,
+`0` (disabled), and `1 mA`. The report adds all five model parameters, omitting
+the two breakdown fields when breakdown is disabled. Authored
+`electricalCircuits` in project files do not expose diodes yet; that needs a
+second component parameter in the project format.
+
+```bash
+radix dc examples/dc-diode.json
+radix dc examples/dc-zener.json
+```
+
+## DC sweeps
+
+`radix dc-sweep` solves one voltage source across a uniform range and reports
+each operating point. It is a design aid for transfer curves and I-V knees (for
+example, finding where a Zener clamps), not a transient or AC analysis.
+
+```bash
+radix dc-sweep examples/dc-zener.json --source V1 --start 0 --stop 9 --points 10 --node out
+radix dc-sweep examples/dc-divider.radix --circuit divider --source V1 --start 0 --stop 10 --points 6 --node out --json
+```
+
+`--start` and `--stop` are inclusive and `--points` must be between 2 and 10000.
+Every point solves a fresh copy of the netlist, so results do not depend on the
+previous bias. A point with no solution is reported with its failure kind and
+message instead of aborting the sweep; the command then exits with status 1.
+`--node` adds that node's voltage to each row and to the JSON report.
+
+`DcSweep.VoltageSource` exposes the same behaviour in Core, and
+`DcNetlist.WithVoltageSource` returns an independent copy. Neither mutates the
+input netlist, so a sweep can run without shared state.
+
+The JSON report uses format `radix-dc-sweep`, version 1, with `sourceId`,
+`node`, `start`, `stop`, `points`, and a `results` array. Each result carries
+`sourceValue`, `solved`, optional `failure`/`message`, and, when solved and
+requested, `nodeVolts` and `sourceAmperes`.
+
 ## Authored electrical circuits
 
 Projects may contain one or more `electricalCircuits` (project format v8). Each
