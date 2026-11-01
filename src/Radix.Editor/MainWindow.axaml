@@ -1189,6 +1189,11 @@
                     <TextBox Grid.Column="1" Text="{Binding ElectricalTransientProbeInput, Mode=TwoWay}" Width="84" FontSize="9.5" Watermark="time in s" ToolTip.Tip="Time in seconds; values at a non-solved time are interpolated between the bracketing points" />
                     <Button Grid.Column="2" HorizontalAlignment="Left" Content="Probe" Command="{Binding ProbeElectricalTransientCommand}" IsEnabled="{Binding HasElectricalTransientResult}" ToolTip.Tip="Read every node voltage at this time" />
                   </Grid>
+                  <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBlock Text="Refine levels" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalTransientRefineLevelsText, Mode=TwoWay}" Width="44" FontSize="9.5" Watermark="2-5" ToolTip.Tip="How many step sizes the accuracy check solves; more levels refine further" />
+                    <TextBlock Grid.Column="2" Text="2–5, used by Check accuracy" Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                  </Grid>
                   <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4" IsVisible="{Binding HasElectricalTransientResult}">
                     <Button x:Name="ElectricalTransientCopyJsonButton" Content="Copy JSON" Click="ElectricalTransientCopyJson_Click" ToolTip.Tip="Copy the displayed transient report as JSON" />
                     <Button x:Name="ElectricalTransientSaveJsonButton" Content="Save JSON…" Click="ElectricalTransientSaveJson_Click" ToolTip.Tip="Save the displayed transient report as JSON" />

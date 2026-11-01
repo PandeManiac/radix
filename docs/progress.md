@@ -630,9 +630,17 @@ trace showed that at a drive ramp the estimator never accepted a step: those
     measured order and estimate, the worst node, and the absent block without a study; the panel
     test checks the export gains `refinement` after a check and cannot be built once an edit has
     invalidated the run.
+59. Made the refinement depth configurable instead of fixed at three levels: `--refine-levels
+    <2-5>` on the CLI and a **Refine levels** field in the panel, both validated (a count of one
+    cannot imply an order and six is beyond the supported range), with the study's step-limit
+    guard still refusing a run whose finest count would exceed 10^6. On the RC example at 40
+    steps a fourth level moves the measured order from `0.989` to `0.995` and halves the estimate
+    from `5.8e-3` to `2.9e-3`, which is the honest way to show a stiff circuit converging. Tests
+    cover the rejected count, the four-row study reaching 1600 steps, the reference row, and the
+    CLI's exit 2 for an out-of-range flag.
 
 Verification: release build 0 warnings/0 errors; core tests 574/574; editor
-tests 209/209; `radix transient` runs all three examples with exit 0 and
+tests 210/210; `radix transient` runs all three examples with exit 0 and
 physically consistent results (RC reaches 4.73 V of 5 V after 3τ, the RLC
 example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,

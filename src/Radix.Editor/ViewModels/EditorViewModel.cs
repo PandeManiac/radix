@@ -174,6 +174,7 @@ public sealed class EditorViewModel : ObservableObject
     private TransientPlot? _electricalTransientPlot;
     private string _electricalTransientAccuracyText = string.Empty;
     private string _electricalTransientProbeInput = string.Empty;
+    private string _electricalTransientRefineLevelsText = "3";
     private string _electricalTransientProbeText = string.Empty;
     private double? _electricalTransientProbeTime;
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
@@ -430,6 +431,13 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _electricalTransientAccuracyText;
         private set => SetField(ref _electricalTransientAccuracyText, value);
+    }
+
+    /// <summary>Number of step sizes the accuracy check studies, as typed; 2 to 5.</summary>
+    public string ElectricalTransientRefineLevelsText
+    {
+        get => _electricalTransientRefineLevelsText;
+        set => SetField(ref _electricalTransientRefineLevelsText, value ?? string.Empty);
     }
 
     /// <summary>Time in seconds the user asked to probe, as typed; parsed by the action.</summary>
@@ -6532,10 +6540,22 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
+        if (!int.TryParse(
+                _electricalTransientRefineLevelsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int levels) ||
+            levels is < 2 or > 5)
+        {
+            StatusText = "Refine levels must be a whole number from 2 to 5.";
+            return false;
+        }
+
         TransientRefinement study;
         try
         {
-            study = TransientRefinement.Analyze(netlist, baseline.Options, baseline: baseline);
+            study = TransientRefinement.Analyze(
+                netlist, baseline.Options, levels: levels, baseline: baseline);
         }
         catch (ArgumentException exception)
         {

@@ -448,6 +448,13 @@ the order that deviation implies — because a single summary hides the point wh
 improving, which is exactly where a coarser claim would be unsupported. The coarsest row says
 `reference` instead of a zero deviation, since it is what the others are measured against.
 
+The study is three levels by default and accepts two to five through `--refine-levels <n>` or
+the **Refine levels** field. That matters for a circuit whose fastest time constant sits far
+below the interval: on the RC example at 40 steps a fourth level moves the measured order from
+`0.989` to `0.995` and halves the estimate from `5.8e-3` to `2.9e-3`. A count outside that range
+is rejected, and a study whose finest step count would exceed the solver's limit is refused with
+the limit named rather than silently truncated.
+
 ## Waveform breakpoints as step boundaries
 
 A piecewise-linear drive changes slope at its breakpoints, so the integrator never

@@ -323,6 +323,41 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void TheAccuracyCheckUsesTheRequestedLevelCount()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        ElectricalCircuit circuit = viewModel.SelectedElectricalCircuitModel!;
+        circuit.Nodes.Add(new ElectricalNode { Id = "in", Name = "Input" });
+        circuit.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
+        circuit.Components.Clear();
+        circuit.Components.Add(
+            ElectricalTestComponent("V1", ElectricalComponentKind.VoltageSource, 5, "in", "gnd"));
+        circuit.Components.Add(
+            ElectricalTestComponent("R1", ElectricalComponentKind.Resistor, 1_000, "in", "out"));
+        ElectricalComponent capacitor =
+            ElectricalTestComponent("C1", ElectricalComponentKind.Capacitor, 1e-6, "out", "gnd");
+        capacitor.InitialValue = 0;
+        circuit.Components.Add(capacitor);
+
+        Assert.True(viewModel.SolveElectricalTransient());
+
+        // One level cannot imply an order, so it is rejected before any solve.
+        viewModel.ElectricalTransientRefineLevelsText = "1";
+        Assert.False(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Contains("2 to 5", viewModel.StatusText);
+        Assert.Empty(viewModel.ElectricalTransientRefinementLevels);
+
+        // Four levels refine 200 steps to 1600 and report one row per level.
+        viewModel.ElectricalTransientRefineLevelsText = "4";
+        Assert.True(viewModel.CheckElectricalTransientAccuracy());
+        Assert.Equal(4, viewModel.ElectricalTransientRefinementLevels.Count);
+        Assert.Equal("200 steps", viewModel.ElectricalTransientRefinementLevels[0].StepsText);
+        Assert.Equal("1600 steps", viewModel.ElectricalTransientRefinementLevels[^1].StepsText);
+        Assert.Equal("reference", viewModel.ElectricalTransientRefinementLevels[0].DeviationText);
+    }
+
+    [Fact]
     public void ThePanelProbesNodeVoltagesAtAChosenTime()
     {
         const double supply = 5;

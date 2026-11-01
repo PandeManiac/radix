@@ -370,12 +370,13 @@ internal static class Program
             [
                 "circuit", "start", "stop", "steps", "method", "max-rows", "tol", "atol",
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
+                "refine-levels",
             ],
             ["json", "refine"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--max-rows <n>] [--json]");
+                "usage: radix transient <netlist.json|project.radix> [--circuit <id>] [--start <s>] [--stop <s>] [--steps <n>] [--method <backward-euler|trapezoidal>] [--tol <x>] [--atol <x>] [--settling-band <f>] [--refine] [--refine-levels <2-5>] [--max-rows <n>] [--json]");
             return 2;
         }
 
@@ -437,6 +438,7 @@ internal static class Program
         };
 
         bool refine = options.ContainsKey("refine");
+        int refineLevels = GetIntOption(options, "refine-levels", 3, 2, 5);
         if (refine && transientOptions.IsAdaptive)
         {
             Console.Error.WriteLine("--refine needs a fixed step; drop --tol or --atol.");
@@ -460,7 +462,7 @@ internal static class Program
             try
             {
                 refinement = TransientRefinement.Analyze(
-                    document.Netlist, transientOptions, baseline: result);
+                    document.Netlist, transientOptions, levels: refineLevels, baseline: result);
             }
             catch (ArgumentException exception)
             {
