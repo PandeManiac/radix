@@ -1011,3 +1011,10 @@ summary and full local verification results; see the PR for the latest CI state.
     passed 643/643; headless Editor passed 242/242. The DC Zener CLI remains at
     -5.1082954 V with balanced branch currents and power, and the resistor divider
     still reports its expected 5 V midpoint. GitHub CI for this checkpoint is pending.
+
+99. WIP: added a seeded 96-case series-resistance equation sweep. It exposed a
+    second numerical issue at small forward voltage: direct `exp(x) - 1` cancellation
+    rounds diode current to zero. Case 4 had 0.00010045 V terminal voltage,
+    2.0e22 ohm series resistance, and 7.2e-9 A saturation current; reconstructed
+    terminal voltage was effectively zero. The regression currently fails and is
+    published before changing the Shockley current evaluation.

@@ -80,6 +80,36 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void SeededSeriesResistanceSweepSatisfiesIndependentTerminalEquation()
+    {
+        var random = new Random(0x5E71E5);
+        for (int caseIndex = 0; caseIndex < 96; caseIndex++)
+        {
+            double terminalVoltage = SignedLogUniform(random, -8, 8);
+            double seriesResistance = LogUniform(random, -6, 24);
+            double saturationCurrent = LogUniform(random, -30, -3);
+            var netlist = new DcNetlist("gnd")
+                .AddDiode(
+                    "D1", "a", "gnd", saturationCurrent,
+                    seriesResistance: seriesResistance);
+            DcDiode diode = Assert.IsType<DcDiode>(netlist.Elements[0]);
+
+            double junctionVoltage = diode.JunctionVoltageFor(terminalVoltage);
+            double expectedCurrent = IndependentShockleyCurrent(
+                saturationCurrent, diode.JunctionVoltage, junctionVoltage);
+            double reconstructedTerminal = junctionVoltage + (seriesResistance * expectedCurrent);
+            double allowedError = 2e-10 * Math.Max(1, Math.Abs(terminalVoltage));
+
+            Assert.True(double.IsFinite(junctionVoltage), $"case {caseIndex}: junction voltage was not finite");
+            Assert.True(
+                Math.Abs(reconstructedTerminal - terminalVoltage) <= allowedError,
+                $"case {caseIndex}: terminal {terminalVoltage:G17} V reconstructed as {reconstructedTerminal:G17} V; " +
+                $"junction {junctionVoltage:G17} V, Rs {seriesResistance:G6} ohm, Is {saturationCurrent:G6} A.");
+            AssertClose(expectedCurrent, diode.CurrentAt(terminalVoltage), 1e-8);
+        }
+    }
+
+    [Fact]
     public void ReverseBiasedDiodePassesOnlySaturationCurrent()
     {
         var netlist = new DcNetlist("gnd")
@@ -607,6 +637,24 @@ public sealed class DcDiodeSolverTests
     }
 
     /// <summary>Solves (Vs - Vd)/R = Is(exp(Vd/(N Vt)) - 1) by bisection.</summary>
+    private static double LogUniform(Random random, double minimumExponent, double maximumExponent) =>
+        Math.Pow(10, minimumExponent + (random.NextDouble() * (maximumExponent - minimumExponent)));
+
+    private static double SignedLogUniform(Random random, double minimumExponent, double maximumExponent) =>
+        (random.Next(2) == 0 ? -1 : 1) * LogUniform(random, minimumExponent, maximumExponent);
+
+    private static double IndependentShockleyCurrent(
+        double saturationCurrent,
+        double junctionVoltage,
+        double volts)
+    {
+        double argument = volts / junctionVoltage;
+        double exponential = argument <= 80
+            ? Math.Exp(argument)
+            : Math.Exp(80) * (1 + (argument - 80));
+        return saturationCurrent * (exponential - 1);
+    }
+
     private static double BisectForwardVoltage(double source, double resistance, DcDiode diode)
     {
         double low = -1;
