@@ -110,6 +110,7 @@ dotnet run --project src/Radix.Cli -- dc examples/dc-cmos-inverter.json --sweep 
 dotnet run --project src/Radix.Cli -- dc examples/dc-ternary-inverter.json --sweep VIN=0:5:51 --csv
 dotnet run --project src/Radix.Cli -- dc examples/dc-cmos-inverter.json --sweep VIN=2.3:2.7:5 --gain out
 dotnet run --project src/Radix.Cli -- dc examples/dc-ternary-inverter.radix --sweep VIN=0:5:64 --margins out
+dotnet run --project src/Radix.Cli -- ac examples/transient-ternary-inverter.radix --drive VIN --bias VIN=1.3 --from 1e3 --to 1e7 --points 7
 dotnet run --project src/Radix.Cli -- dc examples/dc-ternary-inverter.radix --sweep VIN=0:5:21
 
 # Integrate a transient circuit in time: RC charge, RLC ring, or a pulse drive

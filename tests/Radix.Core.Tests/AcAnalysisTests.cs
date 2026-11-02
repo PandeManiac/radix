@@ -1,5 +1,7 @@
 using System.Numerics;
 using Radix.Core.Electrical;
+using Radix.Core.Model;
+using Radix.Core.Serialization;
 using Xunit;
 
 namespace Radix.Core.Tests;
@@ -123,6 +125,46 @@ public sealed class AcAnalysisTests
         Assert.InRange(low.Magnitude, 0.9, 1.1);
         Assert.InRange(AcResponse.PhaseDegrees(low), 179, 181);
         Assert.InRange(At(response, corner, "out").Magnitude / low.Magnitude, 0.6, 0.8);
+    }
+
+    [Fact]
+    public void TheTernaryGateGainAgreesWithItsDcSlope()
+    {
+        // Two independent roads to the same derivative: the AC magnitude far below every pole, and
+        // the difference quotient of a DC sweep, which sees capacitors open — exactly the limit the
+        // AC solve should reproduce. If either the complex assembly or the linearization were wrong,
+        // these two numbers would disagree.
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Radix.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        CircuitProject project = ProjectSerializer.Load(
+            Path.Combine(directory!.FullName, "examples", "transient-ternary-inverter.radix"));
+        ElectricalCircuit circuit = Assert.Single(project.ElectricalCircuits);
+
+        // Bias on the lower transition, where the gate amplifies; at 2.5 V it sits on its plateau.
+        // The waveform has to go: an operating point takes each source at its waveform's value at
+        // t = 0, which here is 0 V, so holding the drive at the switching point means saying so.
+        ElectricalComponent drive = circuit.FindComponent("VIN")!;
+        drive.Waveform.Clear();
+        drive.Value = 1.3;
+
+        Complex output = AcAnalysis.Run(circuit.ToTransientNetlist(), "VIN", [1]).Points[0]
+            .NodeVoltages["out"];
+
+        IReadOnlyList<DcSweepRow> rows = DcSweep.Run(
+            circuit.ToDcNetlist(), "VIN", DcSweep.Linspace(1.25, 1.35, 11));
+        DcSweepGainPoint middle = DcSweepGain.Along(rows, "out")[5];
+
+        Assert.NotNull(middle.Gain);
+        Assert.True(Math.Abs(middle.Gain!.Value) > 2, $"dc gain {middle.Gain}");
+        Assert.InRange(output.Magnitude / Math.Abs(middle.Gain.Value), 0.85, 1.15);
+
+        // An inverting stage: the output is 180 degrees from the drive.
+        Assert.InRange(Math.Abs(AcResponse.PhaseDegrees(output)), 170, 190);
     }
 
     [Fact]

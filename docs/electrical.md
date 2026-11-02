@@ -508,6 +508,28 @@ This is a small-signal linearization, not a large-signal answer: it describes ho
 disturbance travels around the operating point, which is what a gain, a corner frequency or a phase
 margin is about.
 
+`radix ac` runs the same analysis from the command line. The drive must be named, because the
+transfer function is from that source to every node, and `--bias` exists because an operating point
+takes each source at its waveform's value at t = 0 — the ternary example's drive starts at 0 V,
+where the gate is off and its gain is zero. Held on the lower transition instead:
+
+```bash
+radix ac examples/transient-ternary-inverter.radix --drive VIN --bias VIN=1.3 --from 1e3 --to 1e7 --points 7
+```
+
+```text
+  Hz  g dB  phase g  in dB  phase in  out dB  phase out  ...
+  1000          -2.6e-12  -1.2e-05         0         0  29.4397        180  ...
+  215443        -0.104154 -2.38925         0         0  28.6745   155.532  ...
+  4.64159E+06   -1.02871  -16.7123         0         0  9.52886   79.6753  ...
+```
+
+The gate has 29.4 dB of gain at low frequency, inverting at 180°, and is 3 dB down near 500 kHz,
+with the phase past 136° by 447 kHz. Those are the same numbers the DC sweep measures as a slope at
+the same bias: because the analysis is linearized at the operating point, the test asserts that the
+AC magnitude at 1 Hz agrees with the difference quotient within 15 %, so the frequency-domain
+assembly and the DC slope cross-check each other instead of each being trusted alone.
+
 **Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,
 or `cgs`/`cgd` in a transient JSON netlist, both defaulting to zero so an existing netlist keeps its
 behaviour. Given, they are stamped between gate and source and between gate and drain on every step,

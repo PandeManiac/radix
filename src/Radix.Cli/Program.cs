@@ -40,6 +40,7 @@ internal static class Program
             {
                 "validate" => ValidateCommand(args[1..]),
                 "dc" => DcCommand(args[1..]),
+                "ac" => AcCommand(args[1..]),
                 "transient" or "tran" => TransientCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
@@ -131,6 +132,16 @@ internal static class Program
                   [--max-rows <n>]           Text rows to print (default 40)
                   [--csv]                    Emit the points as a wide CSV table
                   [--json]                   Emit one machine-readable transient report
+              ac <netlist.json|project.radix>
+                                             Small-signal frequency response at the DC operating point
+                  [--drive <source-id>]      Voltage source driven at the requested amplitude (required)
+                  [--circuit <id>]           Choose an authored circuit in a project
+                  [--from <hz>]              Start frequency (default 1)
+                  [--to <hz>]                Stop frequency (default 1000000)
+                  [--points <n>]             Log-spaced points, 2..256 (default 11)
+                  [--amplitude <v>]          Drive amplitude in volts (default 1)
+                  [--bias <source-id>=<v>]   Hold a source at this value for the operating point
+                                             (a waveform would otherwise bias at its start value)
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -457,6 +468,118 @@ internal static class Program
 
         throw new ProjectFormatException(
             $"Project has multiple electrical circuits; choose one with --circuit: {string.Join(", ", project.ElectricalCircuits.Select(circuit => circuit.Id))}");
+    }
+
+    /// <summary>
+    /// Small-signal frequency response. The circuit is linearized at the operating point its
+    /// transient run would start from, so a report here and a transient run of the same file
+    /// describe the same circuit rather than two configurations.
+    /// </summary>
+    private static int AcCommand(string[] args)
+    {
+        (var positional, var options) = Parse(
+            args,
+            ["circuit", "drive", "from", "to", "points", "amplitude", "bias"],
+            []);
+        string? drive = GetOption(options, "drive");
+        if (positional.Count != 1 || drive is null)
+        {
+            Console.Error.WriteLine(
+                "usage: radix ac <netlist.json|project.radix> --drive <source-id> [--circuit <id>] [--from <hz>] [--to <hz>] [--points <n>] [--amplitude <v>]");
+            return 2;
+        }
+
+        string source = positional[0];
+        TransientNetlist netlist;
+        try
+        {
+            if (string.Equals(Path.GetExtension(source), ".radix", StringComparison.OrdinalIgnoreCase))
+            {
+                CircuitProject project = ProjectSerializer.Load(source, validate: false);
+                netlist = SelectElectricalCircuit(project, GetOption(options, "circuit")).ToTransientNetlist();
+            }
+            else
+            {
+                if (GetOption(options, "circuit") is not null)
+                {
+                    Console.Error.WriteLine("--circuit is only valid when solving an authored .radix project.");
+                    return 2;
+                }
+
+                netlist = TransientNetlistJson.Load(source).Netlist;
+            }
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            PrintDiagnostics(exception.Diagnostics, Console.Error);
+            return 2;
+        }
+        catch (ProjectFormatException exception)
+        {
+            Console.Error.WriteLine($"ac input error: {exception.Message}");
+            return 2;
+        }
+
+        DcVoltageSource[] sources = netlist.Elements.OfType<DcVoltageSource>().ToArray();
+        if (!sources.Any(source => string.Equals(source.Id, drive, StringComparison.Ordinal)))
+        {
+            Console.Error.WriteLine(
+                $"--drive source '{drive}' is not a voltage source in this netlist; available: {string.Join(", ", sources.Select(source => source.Id))}.");
+            return 2;
+        }
+
+        // A waveform biases a source at its value at t = 0, which is usually the rest state. An
+        // analysis of a gate at its switching point needs the source held there instead, so the
+        // bias override replaces the waveform with a constant for this run.
+        if (GetOption(options, "bias") is string biasSpec)
+        {
+            int equals = biasSpec.IndexOf('=');
+            if (equals <= 0 ||
+                !double.TryParse(
+                    biasSpec[(equals + 1)..],
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out double biasVolts) ||
+                !double.IsFinite(biasVolts))
+            {
+                Console.Error.WriteLine("--bias takes <source-id>=<volts>, for example --bias VIN=1.3.");
+                return 2;
+            }
+
+            string biasId = biasSpec[..equals];
+            if (!sources.Any(source => string.Equals(source.Id, biasId, StringComparison.Ordinal)))
+            {
+                Console.Error.WriteLine(
+                    $"--bias source '{biasId}' is not a voltage source in this netlist; available: {string.Join(", ", sources.Select(source => source.Id))}.");
+                return 2;
+            }
+
+            netlist = netlist.Clone().WithElementValue(biasId, biasVolts);
+            netlist.SetWaveform(biasId, [new TransientWaveformPoint(0, biasVolts)]);
+        }
+
+        double from = GetDoubleOption(options, "from", 1);
+        double to = GetDoubleOption(options, "to", 1e6);
+        int points = GetIntOption(options, "points", 11, 2, AcFrequencySweep.MaximumCount);
+        double amplitude = GetDoubleOption(options, "amplitude", 1);
+        if (amplitude == 0 || !double.IsFinite(amplitude))
+        {
+            Console.Error.WriteLine("--amplitude must be a finite, non-zero number of volts.");
+            return 2;
+        }
+
+        try
+        {
+            AcResponse response = AcAnalysis.Run(
+                netlist, drive, AcFrequencySweep.Logarithmic(from, to, points), amplitude);
+            Console.Write(response.ToText());
+            return 0;
+        }
+        catch (DcSolveException exception)
+        {
+            Console.Error.WriteLine($"ac failed: {exception.Message}");
+            return 1;
+        }
     }
 
     private static int TransientCommand(string[] args)
