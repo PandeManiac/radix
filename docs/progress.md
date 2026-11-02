@@ -1052,3 +1052,9 @@ summary and full local verification results; see the PR for the latest CI state.
      with balanced branch currents and the divider reports 5 V. The new regression
      was previously demonstrated failing for both underflow and overflow, then
      passed after the validation was added.
+
+105. WIP: added a fixed/adaptive transient-options regression for time steps too
+     small to advance a large absolute start time in double precision (start
+     1e16 s, 2 s span, 100 steps). Both cases currently pass validation even though
+     repeated time addition leaves the simulation clock unchanged. Implementation
+     and broader verification remain pending.

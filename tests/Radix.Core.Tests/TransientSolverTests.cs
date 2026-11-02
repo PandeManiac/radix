@@ -678,6 +678,22 @@ public sealed class TransientSolverTests
             }.Validate());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RejectsTimeStepsThatCannotAdvanceRepresentableClock(bool adaptive)
+    {
+        var options = new TransientOptions
+        {
+            StartTime = 1e16,
+            StopTime = 1e16 + 2,
+            Steps = 100,
+            AdaptiveTolerance = adaptive ? 1e-6 : null,
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
+    }
+
     private static double AdaptiveRcError(double tolerance, out int points)
     {
         const double supply = 5;
