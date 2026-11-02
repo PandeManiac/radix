@@ -955,5 +955,8 @@ summary and full local verification results; see the PR for the latest CI state.
 89. Corrected the public diode model's XML documentation to describe the tangent
     continuation accurately and made its derivative propagate NaN inputs instead of
     returning the finite cap slope. Extended the conductance regression to assert
-    NaN propagation for both Shockley and breakdown branches. The focused test passes;
-    broader verification is pending.
+    NaN propagation for both Shockley and breakdown branches. The focused test passes.
+
+90. Reverified the updated diode edge handling: Release solution build completed
+    with 0 warnings/errors, Core passed 641/641, and headless Editor passed 242/242
+    with the documented Linux native-library setup.
