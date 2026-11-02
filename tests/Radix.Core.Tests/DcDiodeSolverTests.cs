@@ -53,6 +53,33 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void LargeUnrelatedCurrentDoesNotLoosenDiodeKclConvergence()
+    {
+        // The reverse-biased diode draws 0.1 A, so a 5 V source and 10 ohm series
+        // resistor put the output at 4 V. A separate 1e12 A branch must not allow a
+        // large KCL error in this small branch to satisfy a globally scaled residual.
+        DcNetlist netlist = new DcNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 5)
+            .AddResistor("R1", "in", "out", 10)
+            .AddDiode("D1", "gnd", "out", 0.1);
+        DcNetlist augmented = new DcNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 5)
+            .AddResistor("R1", "in", "out", 10)
+            .AddDiode("D1", "gnd", "out", 0.1)
+            .AddVoltageSource("Vlarge", "large", "gnd", 1e12)
+            .AddResistor("Rlarge", "large", "gnd", 1);
+
+        DcSolution reference = netlist.Solve();
+        DcSolution withLargeBranch = augmented.Solve();
+
+        Assert.InRange(reference.NodeVoltages["out"], 3.999999, 4.000001);
+        Assert.InRange(
+            withLargeBranch.NodeVoltages["out"],
+            reference.NodeVoltages["out"] - 1e-6,
+            reference.NodeVoltages["out"] + 1e-6);
+    }
+
+    [Fact]
     public void TwoSeriesDiodesSplitTheForwardDropEvenly()
     {
         var netlist = new DcNetlist("gnd")

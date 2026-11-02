@@ -628,8 +628,7 @@ public sealed class DcNetlist
         double[] solution)
     {
         var residual = new double[solution.Length];
-        double currentScale = 1e-12;
-        double voltageScale = 1;
+        var currentScales = new double[nodeIndex.Count];
 
         foreach (DcElement element in _elements)
         {
@@ -639,26 +638,24 @@ public sealed class DcNetlist
                 case DcResistor resistor:
                 {
                     double current = voltage / resistor.Ohms;
-                    AddNodeCurrent(residual, nodeIndex, element.NodeA, element.NodeB, current);
-                    currentScale = Math.Max(currentScale, Math.Abs(current));
+                    AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
                     break;
                 }
 
                 case DcCurrentSource currentSource:
-                    AddNodeCurrent(
+                    AddNodeCurrentAndScale(
                         residual,
                         nodeIndex,
+                        currentScales,
                         element.NodeA,
                         element.NodeB,
                         currentSource.Amperes);
-                    currentScale = Math.Max(currentScale, Math.Abs(currentSource.Amperes));
                     break;
 
                 case DcDiode diode:
                 {
                     double current = diode.CurrentAt(voltage);
-                    AddNodeCurrent(residual, nodeIndex, element.NodeA, element.NodeB, current);
-                    currentScale = Math.Max(currentScale, Math.Abs(current));
+                    AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
                     break;
                 }
 
@@ -666,15 +663,14 @@ public sealed class DcNetlist
                 {
                     int row = voltageSourceRows[source.Id];
                     double branchCurrent = solution[row];
-                    AddNodeCurrent(
+                    AddNodeCurrentAndScale(
                         residual,
                         nodeIndex,
+                        currentScales,
                         element.NodeA,
                         element.NodeB,
                         branchCurrent);
                     residual[row] = voltage - source.Volts;
-                    currentScale = Math.Max(currentScale, Math.Abs(branchCurrent));
-                    voltageScale = Math.Max(voltageScale, Math.Max(Math.Abs(voltage), Math.Abs(source.Volts)));
                     break;
                 }
             }
@@ -686,20 +682,49 @@ public sealed class DcNetlist
         const double absoluteVoltageFloor = 1e-12;
 
         double worst = 0;
-        double allowedCurrent = (currentTolerance * currentScale) + absoluteCurrentFloor;
         for (int index = 0; index < nodeIndex.Count; index++)
         {
+            double allowedCurrent = (currentTolerance * currentScales[index]) + absoluteCurrentFloor;
             worst = Math.Max(worst, Math.Abs(residual[index]) / allowedCurrent);
         }
 
-        double allowedVoltage = (voltageTolerance * voltageScale) + absoluteVoltageFloor;
         foreach (DcVoltageSource source in voltageSources)
         {
             int row = voltageSourceRows[source.Id];
+            double voltageScale = Math.Max(1, Math.Max(
+                Math.Abs(source.Volts),
+                Math.Abs(VoltageAcross(solution, nodeIndex, source.NodeA, source.NodeB))));
+            double allowedVoltage = (voltageTolerance * voltageScale) + absoluteVoltageFloor;
             worst = Math.Max(worst, Math.Abs(residual[row]) / allowedVoltage);
         }
 
         return worst;
+    }
+
+    private static void AddNodeCurrentAndScale(
+        double[] residual,
+        Dictionary<string, int> nodeIndex,
+        double[] currentScales,
+        string nodeA,
+        string nodeB,
+        double current)
+    {
+        AddNodeCurrent(residual, nodeIndex, nodeA, nodeB, current);
+        double magnitude = Math.Abs(current);
+        int indexA = IndexOf(nodeIndex, nodeA);
+        int indexB = IndexOf(nodeIndex, nodeB);
+        if (indexA >= 0)
+        {
+            currentScales[indexA] = AddMagnitude(currentScales[indexA], magnitude);
+        }
+
+        if (indexB >= 0)
+        {
+            currentScales[indexB] = AddMagnitude(currentScales[indexB], magnitude);
+        }
+
+        static double AddMagnitude(double scale, double term) =>
+            term > double.MaxValue - scale ? double.MaxValue : scale + term;
     }
 
     private static void AddNodeCurrent(

@@ -69,7 +69,10 @@ answer. The residual is a backward-error measure; it does not bound forward
 error, so a severely ill-conditioned but solvable circuit can still lose digits.
 For a netlist containing diodes, `RelativeResidual` instead reports the largest
 nonlinear KCL/source residual as a fraction of its acceptance bound, so a value at
-or below 1 means Newton converged.
+or below 1 means Newton converged. Each node's KCL residual is scaled by the
+currents incident on that node, and each ideal-source equation by that source's own
+voltage. An unrelated high-current or high-voltage branch therefore cannot mask a
+poorly converged operating point elsewhere in the circuit.
 The randomized ladder tests state their accuracy expectations explicitly for
 that reason.
 
