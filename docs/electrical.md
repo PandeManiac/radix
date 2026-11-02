@@ -1446,10 +1446,17 @@ shows the region, the gain the region allows, and the charge it presents. On the
 The constants are exact in the model — ⅔ and ½ — so the tests compare against the algebra rather
 than a tolerance.
 
-The transient solver still stamps the capacitance values it is authored with: the fractions above
-are the bias dependence the model predicts and reports, not yet a capacitance the time-domain
-integration re-evaluates as a device changes region. That wiring is the next step, and until it
-lands a switching measurement does not depend on the voltage the gate is switching through.
+The transient solver can use them: `UseBiasDependentCapacitance()` re-evaluates each device
+capacitor from the last accepted solution at the start of every step, so a saturated device is
+charged through two thirds of its gate-source capacitance and none of its gate-drain. It is off by
+default, because a constant capacitance is what every earlier measurement was taken with, and the
+stamps stay explicit — the value is constant within a step, taken from the previous one, so the
+charge moved is that value times the voltage change it saw. A gate driven through 10 kΩ into a
+saturated device settles in two thirds of the time, which is the closed form the test checks
+against 3/2.
+
+The authored project format does not yet expose the switch, so a file always runs the constant
+model; the option is a library setting until a device field carries it.
 
 ## Analytical validation
 

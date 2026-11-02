@@ -21,7 +21,17 @@ public enum TransientMethod
 /// A two-terminal ideal capacitor, <c>i = C dv/dt</c>, with current flowing from
 /// <see cref="NodeA"/> to <see cref="NodeB"/> through the element.
 /// </summary>
-public sealed record TransientCapacitor(string Id, string NodeA, string NodeB, double Farads);
+public sealed record TransientCapacitor(string Id, string NodeA, string NodeB, double Farads)
+{
+    /// <summary>
+    /// The value the current step should stamp, when a model supplies one. Null means the authored
+    /// value, which is what every constant capacitance uses.
+    /// </summary>
+    public double? EffectiveFaradsOverride { get; set; }
+
+    /// <summary>The capacitance the solver stamps: the override when set, otherwise the authored value.</summary>
+    public double EffectiveFarads => EffectiveFaradsOverride ?? Farads;
+}
 
 /// <summary>
 /// A two-terminal ideal inductor, <c>v = L di/dt</c>, with current flowing from
@@ -472,6 +482,9 @@ public sealed record TransientResult(
 public sealed class TransientNetlist
 {
     private const string CompanionPrefix = "~";
+
+    private bool _biasDependentCapacitance;
+    private IReadOnlyDictionary<string, double>? _lastBiasVoltages;
 
     private readonly List<DcElement> _elements = [];
     private readonly List<TransientCapacitor> _capacitors = [];
@@ -990,6 +1003,71 @@ public sealed class TransientNetlist
     public DcSolution SolveDc(double time = 0) => SolveOperatingPoint(time);
 
     /// <summary>
+    /// Turns on the bias dependence of the MOSFET gate capacitances. Each step then stamps the
+    /// fraction of the authored value its device's region presents — two thirds towards the source
+    /// and nothing towards the drain in saturation — instead of the authored value throughout.
+    /// <para>
+    /// The region is taken from the last accepted solution, so this is an explicit rather than an
+    /// implicit capacitance: the value is constant within a step and the charge it moves is the
+    /// value times the voltage change it saw. Off by default, because a constant capacitance is
+    /// what every existing measurement was taken with.
+    /// </para>
+    /// </summary>
+    public TransientNetlist UseBiasDependentCapacitance(bool enabled = true)
+    {
+        _biasDependentCapacitance = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Re-evaluates each device capacitor from the last solved voltages. Internal ids follow the
+    /// companion pattern <c>~&lt;device&gt;.&lt;terminal&gt;</c>, so the device and the terminal it belongs to are
+    /// recovered from the id rather than from a second table that could fall out of step.
+    /// </summary>
+    private void ApplyBiasDependentDeviceCapacitances()
+    {
+        if (!_biasDependentCapacitance || _lastBiasVoltages is not { } bias)
+        {
+            return;
+        }
+
+        // Device capacitors are identified by their terminals rather than by parsing their ids: the
+        // gate-source capacitor sits across the gate and source, the gate-drain one across the gate
+        // and drain, and matching nodes cannot fall out of step with a naming convention.
+        foreach (DcMosfet device in _elements.OfType<DcMosfet>())
+        {
+            double gateSource = NodeVoltage(bias, device.Gate) - NodeVoltage(bias, device.Source);
+            double drainSource = NodeVoltage(bias, device.Drain) - NodeVoltage(bias, device.Source);
+            DcMosfetRegion region = device.Evaluate(drainSource, gateSource).Region;
+            double gateSourceFraction = MosfetCapacitance.GateSourceFraction(region);
+            double gateDrainFraction = MosfetCapacitance.GateDrainFraction(region);
+
+            foreach (TransientCapacitor capacitor in _capacitors)
+            {
+                if (!IsInternal(capacitor.Id))
+                {
+                    continue;
+                }
+
+                if (Across(capacitor, device.Gate, device.Source))
+                {
+                    capacitor.EffectiveFaradsOverride = capacitor.Farads * gateSourceFraction;
+                }
+                else if (Across(capacitor, device.Gate, device.Drain))
+                {
+                    capacitor.EffectiveFaradsOverride = capacitor.Farads * gateDrainFraction;
+                }
+            }
+        }
+
+        static bool Across(TransientCapacitor capacitor, string nodeA, string nodeB) =>
+            (string.Equals(capacitor.NodeA, nodeA, StringComparison.Ordinal) &&
+             string.Equals(capacitor.NodeB, nodeB, StringComparison.Ordinal)) ||
+            (string.Equals(capacitor.NodeA, nodeB, StringComparison.Ordinal) &&
+             string.Equals(capacitor.NodeB, nodeA, StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Runs a fixed-step transient analysis from the DC operating point. The
     /// operating point treats capacitors as open circuits and inductors as ideal
     /// zero-volt shorts, uses every source's waveform value at
@@ -1061,6 +1139,7 @@ public sealed class TransientNetlist
                 initialState.NodeVoltages, inductor.NodeA, inductor.NodeB);
         }
 
+        _lastBiasVoltages = initialState.NodeVoltages;
         var state = new ReactiveState(
             capacitorVoltages, capacitorCurrents, inductorVoltages, inductorCurrents);
         var points = new List<TransientPoint>(options.Steps + 1)
@@ -1431,6 +1510,7 @@ public sealed class TransientNetlist
         try
         {
             solution = netlist!.Solve();
+            _lastBiasVoltages = solution.NodeVoltages;
         }
         catch (DcSolveException exception)
         {
@@ -1445,10 +1525,20 @@ public sealed class TransientNetlist
         {
             TransientCapacitor capacitor = _capacitors[index];
             double volts = VoltageAcross(solution.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
+
+            // No capacitance means no channel charge and no current: the element holds nothing, so
+            // it neither carries a companion current nor contributes to the next step's history.
+            if (capacitor.EffectiveFarads <= 0)
+            {
+                capacitorVolts[index] = volts;
+                capacitorAmps[index] = 0;
+                continue;
+            }
+
             double current = trapezoidal
-                ? ((2 * capacitor.Farads / timeStep) * (volts - state.CapacitorVolts[index])) -
+                ? ((2 * capacitor.EffectiveFarads / timeStep) * (volts - state.CapacitorVolts[index])) -
                   state.CapacitorAmps[index]
-                : (capacitor.Farads / timeStep) * (volts - state.CapacitorVolts[index]);
+                : (capacitor.EffectiveFarads / timeStep) * (volts - state.CapacitorVolts[index]);
             if (!double.IsFinite(volts) || !double.IsFinite(current))
             {
                 failure = DcSolveFailure.NonFiniteResult;
@@ -1679,11 +1769,23 @@ public sealed class TransientNetlist
             CopyElement(netlist, element, time);
         }
 
+        // The devices' own capacitances are re-evaluated here, from the voltages the last accepted
+        // step solved, before any of them is stamped.
+        ApplyBiasDependentDeviceCapacitances();
+
         for (int index = 0; index < _capacitors.Count; index++)
         {
             TransientCapacitor capacitor = _capacitors[index];
+
+            // A region that presents no capacitance is an open circuit. Stamping it would divide by
+            // zero, so it is omitted instead: nothing is in parallel with the node it used to load.
+            if (capacitor.EffectiveFarads <= 0)
+            {
+                continue;
+            }
+
             double conductance =
-                ((trapezoidal ? 2 : 1) * capacitor.Farads) / timeStep;
+                ((trapezoidal ? 2 : 1) * capacitor.EffectiveFarads) / timeStep;
             double history = (conductance * state.CapacitorVolts[index]) +
                 (trapezoidal ? state.CapacitorAmps[index] : 0);
             if (!IsUsable(conductance) || !double.IsFinite(history))
@@ -1881,7 +1983,7 @@ public sealed class TransientNetlist
             // Taken from the node voltages rather than the element table so internal parasitics,
             // which are deliberately absent from that table, are still counted.
             double volts = VoltageAcross(point.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
-            stored += 0.5 * capacitor.Farads * volts * volts;
+            stored += 0.5 * capacitor.EffectiveFarads * volts * volts;
         }
 
         foreach (TransientInductor inductor in _inductors)
