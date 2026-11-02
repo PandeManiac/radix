@@ -952,13 +952,77 @@ public sealed class DcNetlist
         DcDiode[] diodes,
         DcMosfet[] mosfets)
     {
-        const int maxIterations = 100;
+        try
+        {
+            return SolveNonlinearCore(
+                nodeIds,
+                nodeIndex,
+                voltageSources,
+                voltageSourceRows,
+                baseMatrix,
+                baseRhs,
+                diodes,
+                mosfets,
+                initialVoltages: null,
+                mosfetScale: 1.0,
+                maxIterations: 100);
+        }
+        catch (DcSolveException directFailure) when (
+            directFailure.Failure == DcSolveFailure.NonConvergent &&
+            diodes.Length == 0 &&
+            mosfets.Length > 0)
+        {
+            try
+            {
+                return SolveWithMosfetContinuation(
+                    nodeIds,
+                    nodeIndex,
+                    voltageSources,
+                    voltageSourceRows,
+                    baseMatrix,
+                    baseRhs,
+                    mosfets);
+            }
+            catch (DcSolveException continuationFailure)
+            {
+                throw new DcSolveException(
+                    DcSolveFailure.NonConvergent,
+                    $"{directFailure.Message} MOSFET-current continuation also failed: {continuationFailure.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// One Newton solve at a chosen fraction of the MOSFET channel current. A scale
+    /// of one is the real circuit; a scale of zero leaves only the 1 pS leakage
+    /// conductance, which gives a linear, easily solved starting point. Diodes are
+    /// always evaluated at full current because continuation is only attempted for
+    /// MOSFET-only nonlinear netlists.
+    /// </summary>
+    private DcSolution SolveNonlinearCore(
+        string[] nodeIds,
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[,] baseMatrix,
+        double[] baseRhs,
+        DcDiode[] diodes,
+        DcMosfet[] mosfets,
+        double[]? initialVoltages,
+        double mosfetScale,
+        int maxIterations)
+    {
         const double voltageTolerance = 1e-9;
 
         int size = baseRhs.Length;
         var diodeJunctionVoltages = new double[diodes.Length];
         var nextDiodeVoltages = new double[diodes.Length];
         var previous = new double[size];
+        if (initialVoltages is not null)
+        {
+            Array.Copy(initialVoltages, previous, Math.Min(size, initialVoltages.Length));
+        }
+
         var solution = new double[size];
         double residual = double.PositiveInfinity;
 
@@ -972,10 +1036,11 @@ public sealed class DcNetlist
             }
 
             // A MOSFET has no internal state, so it is linearized at the previous
-            // iterate's terminal voltages; the first iterate starts at zero volts.
+            // iterate's terminal voltages. A continuation step starts from the last
+            // solved bias instead of from zero.
             for (int index = 0; index < mosfets.Length; index++)
             {
-                StampMosfet(matrix, rhs, nodeIndex, mosfets[index], previous);
+                StampMosfet(matrix, rhs, nodeIndex, mosfets[index], previous, mosfetScale);
             }
 
             (solution, _) = SolveLinearSystem(matrix, rhs);
@@ -1014,7 +1079,8 @@ public sealed class DcNetlist
                 nextDiodeVoltages[index] = limited;
             }
 
-            residual = NonlinearResidual(nodeIndex, voltageSources, voltageSourceRows, solution);
+            residual = NonlinearResidual(
+                nodeIndex, voltageSources, voltageSourceRows, solution, mosfetScale);
             double tolerance = voltageTolerance * Math.Max(1, maxVoltage);
             if (maxVoltageChange <= tolerance &&
                 maxLimitError <= tolerance &&
@@ -1033,9 +1099,126 @@ public sealed class DcNetlist
             Array.Copy(nextDiodeVoltages, diodeJunctionVoltages, diodes.Length);
         }
 
+        string scaleNote = Math.Abs(mosfetScale - 1) < 1e-12
+            ? string.Empty
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $" at MOSFET-current scale {mosfetScale:G6}");
         throw new DcSolveException(
             DcSolveFailure.NonConvergent,
-            $"The nonlinear DC operating point did not converge after {maxIterations} Newton iterations (last normalized residual {residual.ToString("G6", CultureInfo.InvariantCulture)}); check diode parameters, series resistance, and whether the operating point is physically bounded.");
+            $"The nonlinear DC operating point did not converge after {maxIterations} Newton iterations{scaleNote} (last normalized residual {residual.ToString("G6", CultureInfo.InvariantCulture)}); check diode parameters, series resistance, and whether the operating point is physically bounded.");
+    }
+
+    /// <summary>
+    /// A homotopy fallback for high-gain MOSFET circuits: start with the channel
+    /// current turned off, where the circuit is linear and has a unique solution, then
+    /// ramp the current back to its full value. Each accepted step seeds the next
+    /// Newton solve, so a bistable or high-gain operating point is approached along a
+    /// continuous path instead of from an all-zero guess. If a step fails, the step size
+    /// is halved; a step that still cannot be solved is a real failure, not hidden.
+    /// </summary>
+    private DcSolution SolveWithMosfetContinuation(
+        string[] nodeIds,
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[,] baseMatrix,
+        double[] baseRhs,
+        DcMosfet[] mosfets)
+    {
+        DcSolution seed;
+        try
+        {
+            seed = SolveNonlinearCore(
+                nodeIds,
+                nodeIndex,
+                voltageSources,
+                voltageSourceRows,
+                baseMatrix,
+                baseRhs,
+                diodes: [],
+                mosfets,
+                initialVoltages: null,
+                mosfetScale: 0.0,
+                maxIterations: 100);
+        }
+        catch (DcSolveException exception)
+        {
+            throw new DcSolveException(
+                DcSolveFailure.NonConvergent,
+                $"The devices-off starting point could not be solved: {exception.Message}");
+        }
+
+        double scale = 0;
+        double step = 0.25;
+        int rejectedSteps = 0;
+        while (scale < 1)
+        {
+            double next = Math.Min(1.0, scale + step);
+            if (next <= scale)
+            {
+                break;
+            }
+
+            try
+            {
+                DcSolution candidate = SolveNonlinearCore(
+                    nodeIds,
+                    nodeIndex,
+                    voltageSources,
+                    voltageSourceRows,
+                    baseMatrix,
+                    baseRhs,
+                    diodes: [],
+                    mosfets,
+                    ToStateVector(seed, nodeIds, voltageSources),
+                    mosfetScale: next,
+                    maxIterations: 100);
+                seed = candidate;
+                scale = next;
+                step = Math.Min(0.5, step * 1.5);
+            }
+            catch (DcSolveException exception) when (
+                exception.Failure != DcSolveFailure.NonFiniteResult)
+            {
+                rejectedSteps++;
+                step *= 0.5;
+                if (step < 1e-4 || rejectedSteps > 80)
+                {
+                    throw new DcSolveException(
+                        DcSolveFailure.NonConvergent,
+                        $"MOSFET-current continuation stalled at scale {scale.ToString("G6", CultureInfo.InvariantCulture)} after {rejectedSteps} rejected steps: {exception.Message}");
+                }
+            }
+        }
+
+        if (scale < 1)
+        {
+            throw new DcSolveException(
+                DcSolveFailure.NonConvergent,
+                $"MOSFET-current continuation reached scale {scale.ToString("G6", CultureInfo.InvariantCulture)} but could not complete the final step.");
+        }
+
+        return seed;
+    }
+
+    private static double[] ToStateVector(
+        DcSolution solution,
+        string[] nodeIds,
+        DcVoltageSource[] voltageSources)
+    {
+        var state = new double[nodeIds.Length + voltageSources.Length];
+        for (int index = 0; index < nodeIds.Length; index++)
+        {
+            state[index] = solution.NodeVoltages[nodeIds[index]];
+        }
+
+        for (int index = 0; index < voltageSources.Length; index++)
+        {
+            state[nodeIds.Length + index] = solution.ElementCurrents[voltageSources[index].Id];
+        }
+
+        return state;
     }
 
     private static void StampDiode(
@@ -1081,7 +1264,8 @@ public sealed class DcNetlist
         double[] rhs,
         Dictionary<string, int> nodeIndex,
         DcMosfet mosfet,
-        double[] previousVoltages)
+        double[] previousVoltages,
+        double mosfetScale = 1.0)
     {
         double drainVolts = PreviousVoltage(previousVoltages, nodeIndex, mosfet.Drain);
         double sourceVolts = PreviousVoltage(previousVoltages, nodeIndex, mosfet.Source);
@@ -1090,15 +1274,22 @@ public sealed class DcNetlist
         double gateSource = gateVolts - sourceVolts;
 
         DcMosfetOperatingPoint point = mosfet.Evaluate(drainSource, gateSource);
-        double equivalentCurrent = point.Current
-            - (point.DrainConductance * drainSource)
-            - (point.GateTransconductance * gateSource);
+        // Continuation scales the channel current, not the 1 pS leakage floor. Keeping
+        // the floor unscaled gives the devices-off start a finite conductance and makes
+        // the scaled residual match the scaled stamp exactly.
+        double channelCurrent = point.Current - (DcMosfet.MinimumConductance * drainSource);
+        double channelConductance = point.DrainConductance - DcMosfet.MinimumConductance;
+        double conductance = (mosfetScale * channelConductance) + DcMosfet.MinimumConductance;
+        double transconductance = mosfetScale * point.GateTransconductance;
+        double current = (mosfetScale * channelCurrent) +
+            (DcMosfet.MinimumConductance * drainSource);
+        double equivalentCurrent = current
+            - (conductance * drainSource)
+            - (transconductance * gateSource);
 
         int drain = IndexOf(nodeIndex, mosfet.Drain);
         int source = IndexOf(nodeIndex, mosfet.Source);
         int gate = IndexOf(nodeIndex, mosfet.Gate);
-        double conductance = point.DrainConductance;
-        double transconductance = point.GateTransconductance;
         Add(matrix, drain, drain, conductance);
         Add(matrix, source, source, conductance);
         Add(matrix, drain, source, -conductance);
@@ -1180,7 +1371,8 @@ public sealed class DcNetlist
         Dictionary<string, int> nodeIndex,
         DcVoltageSource[] voltageSources,
         Dictionary<string, int> voltageSourceRows,
-        double[] solution)
+        double[] solution,
+        double mosfetScale = 1.0)
     {
         var residual = new double[solution.Length];
         var currentScales = new double[nodeIndex.Count];
@@ -1218,7 +1410,10 @@ public sealed class DcNetlist
                 {
                     double gateVolts = VoltageAcross(
                         solution, nodeIndex, mosfet.Gate, mosfet.NodeB);
-                    double current = mosfet.CurrentAt(voltage, gateVolts);
+                    DcMosfetOperatingPoint point = mosfet.Evaluate(voltage, gateVolts);
+                    double channelCurrent = point.Current - (DcMosfet.MinimumConductance * voltage);
+                    double current = (mosfetScale * channelCurrent) +
+                        (DcMosfet.MinimumConductance * voltage);
                     AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
                     break;
                 }
