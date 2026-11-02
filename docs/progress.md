@@ -1206,3 +1206,9 @@ summary and full local verification results; see the PR for the latest CI state.
      node values and finite energy residual. `TransientEnergyTests` passed 8/8,
      including the two independent-branch case whose instantaneous power sum
      overflows while each branch's integrated energy remains representable.
+
+131. WIP: added a DC solver regression for a finite 1e200 V source and 1 ohm
+     resistor. The resulting node voltage and branch current are finite, but their
+     product overflows; `BuildSolution` currently returns the operating point with
+     infinite element power. The expected behavior is a deterministic
+     `NonFiniteResult` failure. Focused test execution and the guard are pending.
