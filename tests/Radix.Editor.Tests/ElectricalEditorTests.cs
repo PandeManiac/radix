@@ -581,6 +581,49 @@ public sealed class ElectricalEditorTests
         Assert.Equal(2, viewModel.ElectricalTerminals.Count);
     }
 
+    [Theory]
+    [InlineData("2.2k", 2_200)]
+    [InlineData("4.7M", 4_700_000)]
+    [InlineData("3.3meg", 3_300_000)]
+    [InlineData("3m", 3e-3)]
+    [InlineData("1u", 1e-6)]
+    [InlineData("1µ", 1e-6)]
+    [InlineData("1n", 1e-9)]
+    [InlineData("1G", 1e9)]
+    public void ComponentValuesAcceptInvariantSiEngineeringSuffixes(string text, double expected)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        ElectricalComponent component = viewModel.SelectedElectricalCircuitModel!.Components.Single();
+        EditableField value = viewModel.ElectricalComponentFields.Single(field =>
+            field.Label.StartsWith("Value", StringComparison.Ordinal));
+
+        value.Value = text;
+        Assert.True(viewModel.ApplyField(value));
+        Assert.InRange(component.Value, expected * (1 - 1e-12), expected * (1 + 1e-12));
+        Assert.Contains("SI suffixes", value.Hint, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("2.2x")]
+    [InlineData("1e308G")]
+    public void InvalidOrOverflowingEngineeringValuesAreRejected(string text)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        ElectricalComponent component = viewModel.SelectedElectricalCircuitModel!.Components.Single();
+        EditableField value = viewModel.ElectricalComponentFields.Single(field =>
+            field.Label.StartsWith("Value", StringComparison.Ordinal));
+
+        value.Value = text;
+
+        Assert.False(viewModel.ApplyField(value));
+        Assert.Equal(1_000, component.Value);
+        Assert.Contains("SI suffix", viewModel.StatusText, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TerminalBindingsDriveValidationAndUndoRedo()
     {

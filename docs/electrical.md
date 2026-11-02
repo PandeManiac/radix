@@ -647,6 +647,13 @@ name, and unit for each kind:
 | `capacitor` | `a`/`b`, passive | capacitance | F |
 | `inductor` | `a`/`b`, passive | inductance | H |
 
+In the editor, component values accept invariant-culture numbers with an optional
+SI magnitude suffix: `p`, `n`, `u`/`µ`, `m`, `k`, `M`, or `G` (and `meg` for
+mega). Suffix case is significant for `m` (milli) and `M` (mega). For example,
+`4.7k` on a resistor stores 4,700 ohms and `2.2u` on a capacitor stores
+2.2 microfarads. The project continues to store the resulting finite numeric value
+in the component's declared unit.
+
 Terminals are explicit bindings to circuit node IDs. The validator checks
 missing, duplicate, unknown, misplaced, and self-looped terminals; invalid
 values; missing grounds; and ungrounded circuits with stable `RAD-ELEC-*` codes.

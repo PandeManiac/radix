@@ -6304,7 +6304,7 @@ public sealed class EditorViewModel : ObservableObject
                 ElectricalComponentFields.Add(new EditableField(
                     $"Value ({component.Unit})",
                     FormatElectricalValue(component.Value),
-                    hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; validation is shown below",
+                    hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; SI suffixes p, n, u, m, k, M, and G are supported",
                     apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
                 if (ElectricalComponentMetadata.HasState(component.Kind))
                 {
@@ -7601,10 +7601,9 @@ public sealed class EditorViewModel : ObservableObject
     {
         ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
         if (component is null ||
-            !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ||
-            !double.IsFinite(parsed))
+            !TryParseEngineeringValue(value, out double parsed))
         {
-            StatusText = "Component value must be a finite number.";
+            StatusText = "Component value must be a finite number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
             return false;
         }
 
@@ -7727,6 +7726,53 @@ public sealed class EditorViewModel : ObservableObject
     private static bool TryParseElectricalNumber(string text, out double value) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
         double.IsFinite(value);
+
+    private static bool TryParseEngineeringValue(string text, out double value)
+    {
+        string trimmed = text.Trim();
+        if (TryParseElectricalNumber(trimmed, out value))
+        {
+            return true;
+        }
+
+        double multiplier;
+        string number;
+        if (trimmed.EndsWith("meg", StringComparison.OrdinalIgnoreCase))
+        {
+            multiplier = 1e6;
+            number = trimmed[..^3];
+        }
+        else if (trimmed.Length > 1)
+        {
+            multiplier = trimmed[^1] switch
+            {
+                'p' or 'P' => 1e-12,
+                'n' or 'N' => 1e-9,
+                'u' or 'U' or 'µ' or 'μ' => 1e-6,
+                'm' => 1e-3,
+                'k' or 'K' => 1e3,
+                'M' => 1e6,
+                'g' or 'G' => 1e9,
+                _ => 0,
+            };
+            number = trimmed[..^1];
+        }
+        else
+        {
+            value = 0;
+            return false;
+        }
+
+        if (multiplier == 0 ||
+            !double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double magnitude))
+        {
+            value = 0;
+            return false;
+        }
+
+        value = magnitude * multiplier;
+        return double.IsFinite(value);
+    }
 
     private static bool SameElectricalWaveform(
         IReadOnlyList<ElectricalWaveformPoint> current,
