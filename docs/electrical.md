@@ -282,6 +282,20 @@ A MOSFET's gate node is added to the solved node set so its voltage is reported,
 conducts nothing, so a node attached only to gates has no DC operating point and is
 reported as `FloatingNetwork` instead of being given an invented voltage.
 
+### Device-current continuation
+
+Cold Newton starts every node at zero volts. That is usually fine, but a high-gain
+feedback amplifier or a diode-clamped high-impedance node can make the first step so
+poor that the 100-iteration budget is exhausted. When the direct solve returns
+`NonConvergent`, the DC solver retries with a homotopy: it solves a devices-off system
+where both diode and MOSFET currents are zero, then ramps both current laws back to full,
+seeding each Newton solve with the previous operating point. The diode stamp adds a
+fading 1 pS shunt during the ramp so an otherwise open node still has a defined voltage;
+the shunt vanishes at full scale. If a step fails, the step is halved; a step that still
+fails is reported as a real non-convergence, not hidden. `DcSolution.UsedContinuation`
+reports which path produced the answer. This is a numerical fallback, not a physical gmin
+or source-stepping model.
+
 ### Conservation and conventions
 
 The reported element current is the channel current from drain to source, and the reported
@@ -852,9 +866,11 @@ There is no junction capacitance, carrier storage, high-injection, self-heating,
 noise, temperature dependence, transformer, other dependent-source model
 (VCVS/VCCS/CCCS), switch, relay, or transmission-line model, and the MOSFET has no
 charge storage of its own. There is no AC or small-signal analysis, no
-stiffness detection or implicit method switching, no gmin or source
-continuation, and no SPICE-style built-in source functions beyond
-piecewise-linear tables. Adaptive control uses step doubling with one method at
+stiffness detection or implicit method switching, no source stepping, and no
+SPICE-style built-in source functions beyond piecewise-linear tables. The DC
+solver's device-current continuation is a numerical fallback for a failed cold
+Newton start; its fading 1 pS shunt exists only during the homotopy and is not a
+physical gmin model. Adaptive control uses step doubling with one method at
 a time; it does not estimate a spectral radius or choose between methods. The
 editor's **Electrical** tab runs the same solver on an authored circuit, and
 `radix transient` remains the headless entry point.
@@ -1463,8 +1479,9 @@ Not supported:
   optional gate and drain capacitances, not a SPICE device with subthreshold
   conduction, a body effect, or geometry-derived parameters;
 - junction capacitance, carrier storage, high-injection, self-heating, or noise;
-- gmin continuation, or SPICE-style built-in source functions beyond
-  piecewise-linear tables;
+- source stepping, a physical gmin model, or SPICE-style built-in source
+  functions beyond piecewise-linear tables (the DC solver's device-current
+  fallback is a numerical homotopy, not a model parameter);
 - an interactive transient plot or waveform cursor (the panel lists solved
   points as text, and `radix transient` remains the scriptable entry point);
 - temperature, thermal limits, component tolerances, or datasheet ratings;

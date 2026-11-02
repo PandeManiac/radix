@@ -143,7 +143,33 @@ public sealed class BufferedTernaryInverterTests
 
         // The loaded operating point is what needs the solver's continuation fallback;
         // a converged nonlinear solution reports a normalized residual at or below 1.
-        Assert.InRange(Solve(buffered, 2.5, 100_000).RelativeResidual, 0, 1);
+        DcSolution loaded = Solve(buffered, 2.5, 100_000);
+        Assert.True(loaded.UsedContinuation);
+        Assert.InRange(loaded.RelativeResidual, 0, 1);
+    }
+
+    [Fact]
+    public void MixedDiodeClampUsesDeviceCurrentContinuation()
+    {
+        // The unclamped bias point solves directly, but a diode on the high-impedance
+        // summing node makes the cold Newton start fail. Both device laws must be
+        // ramped together for the fallback to reach this operating point.
+        DcNetlist netlist = Netlist().WithElementValue("VIN", 2.5);
+        netlist.AddDiode("DCLAMP", "sum", "gnd", 1e-12);
+
+        DcSolution solution = netlist.Solve();
+
+        Assert.True(solution.UsedContinuation);
+        Assert.InRange(solution.NodeVoltages["out"], 4.5, 4.65);
+        Assert.InRange(solution.NodeVoltages["sum"], 0.4, 0.5);
+        Assert.InRange(solution.RelativeResidual, 0, 1);
+        Assert.InRange(Math.Abs(solution.ElementPowers.Values.Sum()), 0, 1e-9);
+
+        DcDiode diode = Assert.IsType<DcDiode>(netlist.Elements[^1]);
+        Assert.Equal(
+            diode.CurrentAt(solution.ElementVoltages["DCLAMP"]),
+            solution.ElementCurrents["DCLAMP"],
+            12);
     }
 
     [Fact]

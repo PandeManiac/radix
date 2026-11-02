@@ -554,6 +554,8 @@ public sealed class DcSolveException : Exception
 /// </summary>
 public sealed class DcNetlist
 {
+    private const double DeviceContinuationConductance = 1e-12;
+
     private readonly List<DcElement> _elements = [];
     private readonly HashSet<string> _nodes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _ids = new(StringComparer.Ordinal);
@@ -965,39 +967,40 @@ public sealed class DcNetlist
                 mosfets,
                 initialVoltages: null,
                 mosfetScale: 1.0,
+                diodeScale: 1.0,
                 maxIterations: 100);
         }
         catch (DcSolveException directFailure) when (
             directFailure.Failure == DcSolveFailure.NonConvergent &&
-            diodes.Length == 0 &&
-            mosfets.Length > 0)
+            (diodes.Length > 0 || mosfets.Length > 0))
         {
             try
             {
-                return SolveWithMosfetContinuation(
+                return SolveWithDeviceContinuation(
                     nodeIds,
                     nodeIndex,
                     voltageSources,
                     voltageSourceRows,
                     baseMatrix,
                     baseRhs,
+                    diodes,
                     mosfets);
             }
             catch (DcSolveException continuationFailure)
             {
                 throw new DcSolveException(
                     DcSolveFailure.NonConvergent,
-                    $"{directFailure.Message} MOSFET-current continuation also failed: {continuationFailure.Message}");
+                    $"{directFailure.Message} device-current continuation also failed: {continuationFailure.Message}");
             }
         }
     }
 
     /// <summary>
-    /// One Newton solve at a chosen fraction of the MOSFET channel current. A scale
-    /// of one is the real circuit; a scale of zero leaves only the 1 pS leakage
-    /// conductance, which gives a linear, easily solved starting point. Diodes are
-    /// always evaluated at full current because continuation is only attempted for
-    /// MOSFET-only nonlinear netlists.
+    /// One Newton solve at a chosen fraction of the nonlinear device currents. A
+    /// scale of one is the real circuit; a scale of zero leaves only a 1 pS
+    /// continuation conductance across each device, which gives a linear, easily
+    /// solved starting point. The same scale reaches both diode and MOSFET current
+    /// laws, and the diode conductance fades to zero at the final scale.
     /// </summary>
     private DcSolution SolveNonlinearCore(
         string[] nodeIds,
@@ -1010,6 +1013,7 @@ public sealed class DcNetlist
         DcMosfet[] mosfets,
         double[]? initialVoltages,
         double mosfetScale,
+        double diodeScale,
         int maxIterations)
     {
         const double voltageTolerance = 1e-9;
@@ -1032,7 +1036,13 @@ public sealed class DcNetlist
             var rhs = (double[])baseRhs.Clone();
             for (int index = 0; index < diodes.Length; index++)
             {
-                StampDiode(matrix, rhs, nodeIndex, diodes[index], diodeJunctionVoltages[index]);
+                StampDiode(
+                    matrix,
+                    rhs,
+                    nodeIndex,
+                    diodes[index],
+                    diodeJunctionVoltages[index],
+                    diodeScale);
             }
 
             // A MOSFET has no internal state, so it is linearized at the previous
@@ -1080,7 +1090,7 @@ public sealed class DcNetlist
             }
 
             residual = NonlinearResidual(
-                nodeIndex, voltageSources, voltageSourceRows, solution, mosfetScale);
+                nodeIndex, voltageSources, voltageSourceRows, solution, mosfetScale, diodeScale);
             double tolerance = voltageTolerance * Math.Max(1, maxVoltage);
             if (maxVoltageChange <= tolerance &&
                 maxLimitError <= tolerance &&
@@ -1099,31 +1109,34 @@ public sealed class DcNetlist
             Array.Copy(nextDiodeVoltages, diodeJunctionVoltages, diodes.Length);
         }
 
-        string scaleNote = Math.Abs(mosfetScale - 1) < 1e-12
-            ? string.Empty
-            : string.Create(
-                CultureInfo.InvariantCulture,
-                $" at MOSFET-current scale {mosfetScale:G6}");
+        string scaleNote =
+            Math.Abs(mosfetScale - 1) < 1e-12 &&
+            Math.Abs(diodeScale - 1) < 1e-12
+                ? string.Empty
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $" at device-current scale {mosfetScale:G6}");
         throw new DcSolveException(
             DcSolveFailure.NonConvergent,
             $"The nonlinear DC operating point did not converge after {maxIterations} Newton iterations{scaleNote} (last normalized residual {residual.ToString("G6", CultureInfo.InvariantCulture)}); check diode parameters, series resistance, and whether the operating point is physically bounded.");
     }
 
     /// <summary>
-    /// A homotopy fallback for high-gain MOSFET circuits: start with the channel
-    /// current turned off, where the circuit is linear and has a unique solution, then
-    /// ramp the current back to its full value. Each accepted step seeds the next
-    /// Newton solve, so a bistable or high-gain operating point is approached along a
-    /// continuous path instead of from an all-zero guess. If a step fails, the step size
-    /// is halved; a step that still cannot be solved is a real failure, not hidden.
+    /// A device-current homotopy fallback for high-gain nonlinear circuits: start with
+    /// every diode and MOSFET current turned off, where the circuit is linear and has a
+    /// unique solution, then ramp both current laws to full. Each accepted step seeds
+    /// the next Newton solve, so a bistable or high-gain operating point is approached
+    /// along a continuous path instead of from an all-zero guess. If a step fails, the
+    /// step size is halved; a step that still cannot be solved is a real failure.
     /// </summary>
-    private DcSolution SolveWithMosfetContinuation(
+    private DcSolution SolveWithDeviceContinuation(
         string[] nodeIds,
         Dictionary<string, int> nodeIndex,
         DcVoltageSource[] voltageSources,
         Dictionary<string, int> voltageSourceRows,
         double[,] baseMatrix,
         double[] baseRhs,
+        DcDiode[] diodes,
         DcMosfet[] mosfets)
     {
         DcSolution seed;
@@ -1136,10 +1149,11 @@ public sealed class DcNetlist
                 voltageSourceRows,
                 baseMatrix,
                 baseRhs,
-                diodes: [],
+                diodes,
                 mosfets,
                 initialVoltages: null,
                 mosfetScale: 0.0,
+                diodeScale: 0.0,
                 maxIterations: 100);
         }
         catch (DcSolveException exception)
@@ -1169,10 +1183,11 @@ public sealed class DcNetlist
                     voltageSourceRows,
                     baseMatrix,
                     baseRhs,
-                    diodes: [],
+                    diodes,
                     mosfets,
                     ToStateVector(seed, nodeIds, voltageSources),
                     mosfetScale: next,
+                    diodeScale: next,
                     maxIterations: 100);
                 seed = candidate;
                 scale = next;
@@ -1187,7 +1202,7 @@ public sealed class DcNetlist
                 {
                     throw new DcSolveException(
                         DcSolveFailure.NonConvergent,
-                        $"MOSFET-current continuation stalled at scale {scale.ToString("G6", CultureInfo.InvariantCulture)} after {rejectedSteps} rejected steps: {exception.Message}");
+                        $"Device-current continuation stalled at scale {scale.ToString("G6", CultureInfo.InvariantCulture)} after {rejectedSteps} rejected steps: {exception.Message}");
                 }
             }
         }
@@ -1196,10 +1211,10 @@ public sealed class DcNetlist
         {
             throw new DcSolveException(
                 DcSolveFailure.NonConvergent,
-                $"MOSFET-current continuation reached scale {scale.ToString("G6", CultureInfo.InvariantCulture)} but could not complete the final step.");
+                $"Device-current continuation reached scale {scale.ToString("G6", CultureInfo.InvariantCulture)} but could not complete the final step.");
         }
 
-        return seed;
+        return seed with { UsedContinuation = true };
     }
 
     private static double[] ToStateVector(
@@ -1226,15 +1241,22 @@ public sealed class DcNetlist
         double[] rhs,
         Dictionary<string, int> nodeIndex,
         DcDiode diode,
-        double junctionVolts)
+        double junctionVolts,
+        double diodeScale = 1.0)
     {
         double junctionCurrent = diode.JunctionCurrent(junctionVolts);
         double junctionConductance = diode.JunctionConductance(junctionVolts);
         double terminalVolts = junctionVolts + (diode.SeriesResistance * junctionCurrent);
-        double conductance = diode.SeriesResistance <= 0
+        double terminalConductance = diode.SeriesResistance <= 0
             ? junctionConductance
             : junctionConductance / (1 + (diode.SeriesResistance * junctionConductance));
-        double equivalentCurrent = junctionCurrent - (conductance * terminalVolts);
+        // A zero-scale diode is an open branch and can leave a node without a defined
+        // voltage. A fading 1 pS shunt keeps the starting Jacobian nonsingular; it
+        // disappears at scale one, so the solved device is exactly the authored diode.
+        double conductance = (diodeScale * terminalConductance) +
+            ((1 - diodeScale) * DeviceContinuationConductance);
+        double equivalentCurrent = diodeScale *
+            (junctionCurrent - (terminalConductance * terminalVolts));
         int nodeA = IndexOf(nodeIndex, diode.NodeA);
         int nodeB = IndexOf(nodeIndex, diode.NodeB);
         Add(matrix, nodeA, nodeA, conductance);
@@ -1372,7 +1394,8 @@ public sealed class DcNetlist
         DcVoltageSource[] voltageSources,
         Dictionary<string, int> voltageSourceRows,
         double[] solution,
-        double mosfetScale = 1.0)
+        double mosfetScale = 1.0,
+        double diodeScale = 1.0)
     {
         var residual = new double[solution.Length];
         var currentScales = new double[nodeIndex.Count];
@@ -1402,6 +1425,10 @@ public sealed class DcNetlist
                 case DcDiode diode:
                 {
                     double current = diode.CurrentAt(voltage);
+                    // Match the fading shunt in StampDiode exactly. At full scale this
+                    // is the authored diode current with no added conductance.
+                    current = (diodeScale * current) +
+                        ((1 - diodeScale) * DeviceContinuationConductance * voltage);
                     AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
                     break;
                 }
@@ -2077,4 +2104,10 @@ public sealed record DcSolution(
     /// forward-error bound.
     /// </summary>
     public double RelativeResidual { get; init; }
+
+    /// <summary>
+    /// True when the direct Newton solve failed and the operating point was reached by
+    /// ramping the diode and MOSFET currents from a devices-off start. False otherwise.
+    /// </summary>
+    public bool UsedContinuation { get; init; }
 }

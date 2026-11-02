@@ -9,12 +9,14 @@ humans; update it at each milestone instead of relying on chat history.
 - Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
 - Draft PR #7 is open against `main`: electrical hierarchy, reusable subcircuits,
   and the buffered ternary inverter.
-- Solver continuation checkpoint: `a6a82c3b7c83d489e74d1ab0424fce6c2d05d1c6`.
-  This checkpoint adds the buffered ternary example, its tests, and documentation.
+- Latest verified checkpoint before this change: `b51a0031f8cd0199831e0430af01b95ee81a7eab`
+  (deterministic LF endings for DC sweep CSV exports).
+- This checkpoint generalizes the continuation fallback from MOSFET-only netlists
+  to mixed diode/MOSFET netlists and exposes `DcSolution.UsedContinuation`.
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 826/826, Editor tests 311/311. The buffered example solves both from JSON and
-  as an authored project; its 100 kOhm loaded operating point exercises the new
-  MOSFET-current continuation fallback.
+  tests 827/827, CLI tests 2/2, Editor tests 311/311. The buffered example solves both
+  from JSON and as an authored project; its 100 kOhm loaded operating point and a
+  diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
   but the tests pass when Ubuntu native packages are extracted under ignored
   `.local-native` and `LD_LIBRARY_PATH`/`FONTCONFIG_FILE` are set.
@@ -44,6 +46,22 @@ humans; update it at each milestone instead of relying on chat history.
 - Verification: build clean (0 warnings/errors), Core 826/826, Editor 311/311.
 - Limitation: the output stage is class-A-ish and burns quiescent power at the rails;
   it has no compensation capacitor, mismatch, temperature, or transient-stability claim.
+
+## Session 2026-11-02 (mixed-device continuation)
+
+- Generalized the DC homotopy fallback: after a failed cold Newton solve, both diode
+  and MOSFET current laws are ramped from zero together. A fading 1 pS shunt keeps
+  the diodes-off start nonsingular and disappears at full scale, so the final
+  solution is the authored model rather than a modified one.
+- Added `DcSolution.UsedContinuation` so callers and tests can distinguish a direct
+  solve from a fallback without guessing from residuals.
+- Added a mixed regression case: a diode clamp on the buffered inverter's
+  high-impedance summing node fails cold Newton and solves to 4.575 V output /
+  0.453 V summing node through the fallback. The existing 100 kOhm buffered load now
+  also asserts that continuation was used.
+- Fixed the Windows-only CSV failure by writing explicit LF row endings from the DC
+  sweep writer; the Core test now rejects any carriage return in the export.
+- Verification: build clean (0 warnings/errors), Core 827/827, CLI 2/2, Editor 311/311.
 
 ## Reproducible setup and commands
 
