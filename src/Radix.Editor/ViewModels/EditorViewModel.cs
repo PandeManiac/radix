@@ -7338,6 +7338,27 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// The gain and phase curves as one standalone SVG: two stacked panels sharing a
+    /// decade-labelled axis, so a response can be shared as a file rather than a screenshot.
+    /// </summary>
+    public bool TryBuildElectricalAcSweepSvg(out string svg)
+    {
+        svg = string.Empty;
+        if (ElectricalAcSweepPlot is not { IsEmpty: false } gain ||
+            ElectricalAcSweepPhasePlot is not { IsEmpty: false } phase ||
+            _electricalAcSweepReport is not { } report)
+        {
+            return false;
+        }
+
+        svg = TransientPlotSvg.RenderBode(
+            gain,
+            phase,
+            $"AC analysis: {report.Circuit ?? "circuit"} {report.Drive}");
+        return true;
+    }
+
     private void RebuildElectricalAcSweepPlot(
         AcResponse response,
         IReadOnlyList<string> nodes,

@@ -1232,6 +1232,8 @@
                       <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
                         <Button x:Name="ElectricalAcSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalAcSweepCopyCsv_Click" ToolTip.Tip="Copy the response as the same CSV table radix ac --csv writes" />
                         <Button x:Name="ElectricalAcSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalAcSweepSaveCsv_Click" ToolTip.Tip="Save the response as CSV" />
+                        <Button x:Name="ElectricalAcSweepCopySvgButton" Content="Copy sweep SVG" Click="ElectricalAcSweepCopySvg_Click" ToolTip.Tip="Copy the gain and phase curves as one standalone SVG document" />
+                        <Button x:Name="ElectricalAcSweepSaveSvgButton" Content="Save sweep SVG…" Click="ElectricalAcSweepSaveSvg_Click" ToolTip.Tip="Save the response curves as SVG" />
                       </StackPanel>
                     </StackPanel>
                   </Border>

@@ -95,15 +95,18 @@ public static class TransientPlotSvg
                 $"fill=\"#6F8092\" text-anchor=\"end\">{Escape(TransientPlot.FormatTick(tick))}</text>");
         }
 
-        foreach (double tick in plot.TimeTicks)
+        for (int index = 0; index < plot.TimeTicks.Count; index++)
         {
+            double tick = plot.TimeTicks[index];
             string x = N(X(tick));
             svg.AppendLine(
                 $"  <line x1=\"{x}\" y1=\"{N(TopMargin)}\" x2=\"{x}\" y2=\"{N(TopMargin + plotHeight)}\" " +
                 "stroke=\"#E9EEF3\" stroke-width=\"1\" stroke-dasharray=\"2 3\"/>");
+            // The model owns the label, so a log-frequency axis exports as decades rather than
+            // as the exponents it plots.
             svg.AppendLine(
                 $"  <text x=\"{x}\" y=\"{N(TopMargin + plotHeight + 12)}\" font-size=\"8.5\" " +
-                $"fill=\"#6F8092\" text-anchor=\"middle\">{Escape(TransientPlot.FormatTick(tick))}</text>");
+                $"fill=\"#6F8092\" text-anchor=\"middle\">{Escape(plot.TimeTickLabel(index))}</text>");
         }
 
         svg.AppendLine(
@@ -150,7 +153,18 @@ public static class TransientPlotSvg
             svg.AppendLine(
                 $"  <text x=\"{N(LeftMargin + (index * 56))}\" y=\"11\" font-size=\"8.5\" " +
                 $"fill=\"{colour}\">{Escape(series.NodeId)}</text>");
-        }        svg.AppendLine($"  <text x=\"2\" y=\"12\" font-size=\"8.5\" fill=\"#1F2A36\">V</text>");
+        }
+
+        // Axis units come from the model - volts for a transient, dB for a response - and the
+        // horizontal unit sits inside the frame so it cannot collide with a tick label.
+        svg.AppendLine(
+            $"  <text x=\"2\" y=\"12\" font-size=\"8.5\" fill=\"#1F2A36\">{Escape(plot.VerticalUnit)}</text>");
+        if (plot.HorizontalUnit.Length > 0)
+        {
+            svg.AppendLine(
+                $"  <text x=\"{N(LeftMargin + plotWidth - 4)}\" y=\"{N(TopMargin + plotHeight - 6)}\" " +
+                $"font-size=\"8.5\" fill=\"#1F2A36\" text-anchor=\"end\">{Escape(plot.HorizontalUnit)}</text>");
+        }
         if (stamp is not null)
         {
             string caption = string.Join(
@@ -164,6 +178,71 @@ public static class TransientPlotSvg
 
         svg.AppendLine("</svg>");
         return svg.ToString();
+    }
+
+    /// <summary>
+    /// Renders two plots as one document, stacked: a frequency response is gain and phase read
+    /// together, and two files that must be kept in step are worse than one file.
+    /// <para>
+    /// Each panel keeps its own axes, ticks, labels and units; a translated group places the
+    /// second below the first, so the layout is the only thing this method decides.
+    /// </para>
+    /// </summary>
+    public static string RenderBode(
+        TransientPlot gain,
+        TransientPlot phase,
+        string? title = null,
+        int width = 640,
+        int gainHeight = 210,
+        int phaseHeight = 170)
+    {
+        ArgumentNullException.ThrowIfNull(gain);
+        ArgumentNullException.ThrowIfNull(phase);
+
+        string gainBody = Body(Render(gain, null, title, width, gainHeight));
+        string phaseBody = Body(Render(phase, null, null, width, phaseHeight));
+        int height = gainHeight + phaseHeight;
+
+        var svg = new StringBuilder();
+        svg.AppendLine(
+            $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" " +
+            $"viewBox=\"0 0 {width} {height}\" font-family=\"sans-serif\">");
+        svg.AppendLine(
+            $"  <title>{Escape(string.IsNullOrWhiteSpace(title) ? "Frequency response" : title)}</title>");
+        svg.AppendLine(
+            $"  <rect x=\"0\" y=\"0\" width=\"{width}\" height=\"{height}\" fill=\"#F8FAFC\"/>");
+        svg.AppendLine("  <g>");
+        svg.Append(gainBody);
+        svg.AppendLine("  </g>");
+        svg.AppendLine($"  <g transform=\"translate(0,{gainHeight})\">");
+        svg.Append(phaseBody);
+        svg.AppendLine("  </g>");
+        svg.AppendLine("</svg>");
+        return svg.ToString();
+    }
+
+    /// <summary>
+    /// The drawing part of a rendered document: the outer element, its title and its background
+    /// are dropped, because the caller supplies one of each for the composed document.
+    /// </summary>
+    private static string Body(string document)
+    {
+        var body = new StringBuilder();
+        foreach (string line in document.Split('\n'))
+        {
+            string trimmed = line.TrimStart();
+            if (trimmed.StartsWith("<svg", StringComparison.Ordinal) ||
+                trimmed.StartsWith("<title", StringComparison.Ordinal) ||
+                trimmed.StartsWith("<rect x=\"0\" y=\"0\"", StringComparison.Ordinal) ||
+                trimmed.StartsWith("</svg>", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            body.AppendLine(line);
+        }
+
+        return body.ToString();
     }
 
     private static string Escape(string text) => text

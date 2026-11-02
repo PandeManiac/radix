@@ -172,6 +172,38 @@ public sealed class ElectricalAcSweepTests
     }
 
     [Fact]
+    public void TheResponseSvgCarriesBothCurvesAndDecadeLabels()
+    {
+        EditorViewModel viewModel = TernaryInverter();
+        viewModel.ElectricalAcSweepDriveText = "VIN";
+        viewModel.ElectricalAcSweepBiasText = "VIN=1.3";
+        viewModel.ElectricalAcSweepRangeText = "1e3:1e7:9";
+        Assert.True(viewModel.RunElectricalAcSweep());
+
+        Assert.True(viewModel.TryBuildElectricalAcSweepSvg(out string svg));
+
+        // One document, two panels: the phase is translated below the gain instead of being a
+        // second file that has to be kept in step with the first.
+        Assert.Contains("<svg", svg, StringComparison.Ordinal);
+        Assert.Contains("translate(0,210)", svg, StringComparison.Ordinal);
+        Assert.Contains("AC analysis", svg, StringComparison.Ordinal);
+
+        // The exported axis says decades and units, not the exponents it plots.
+        Assert.Contains(">1k<", svg, StringComparison.Ordinal);
+        Assert.Contains(">10M<", svg, StringComparison.Ordinal);
+        Assert.Contains(">dB<", svg, StringComparison.Ordinal);
+        Assert.Contains(">°<", svg, StringComparison.Ordinal);
+        Assert.Contains(">Hz<", svg, StringComparison.Ordinal);
+        Assert.DoesNotContain(">3<", svg, StringComparison.Ordinal);
+
+        // Every responding node is drawn twice: once as gain, once as phase.
+        Assert.True(
+            System.Text.RegularExpressions.Regex.Matches(svg, "<polyline").Count >= 4,
+            "both panels should carry curves");
+        Assert.Contains("stroke-linejoin=\"round\"", svg, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DrivingSomethingThatIsNotASourceIsRejected()
     {
         EditorViewModel viewModel = TernaryInverter();
@@ -213,6 +245,8 @@ public sealed class ElectricalAcSweepTests
         // A response describing an older circuit would be worse than none at all.
         Assert.False(viewModel.HasElectricalAcSweepResult);
         Assert.False(viewModel.HasElectricalAcSweepPlot);
+        Assert.False(viewModel.HasElectricalAcSweepPhasePlot);
         Assert.False(viewModel.TryBuildElectricalAcSweepCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalAcSweepSvg(out _));
     }
 }
