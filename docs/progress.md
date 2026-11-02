@@ -862,5 +862,8 @@ completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
     control hints and `docs/electrical.md`; headless tests exercise `10m`, `1.2345m`,
     `500,1k,2k`, and `1k:2k:3` in the existing run/probe/sweep flows.
 
-Verification: focused `ElectricalEditorTests` passed 43/43. Full build/suites and
-GitHub CI are pending for this milestone.
+Verification: focused `ElectricalEditorTests` passed 43/43; Release solution build
+completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
+237/237. `radix dc examples/dc-divider.radix --json` solved at the expected 5 V
+midpoint, and `radix transient examples/transient-rc.radix --json` completed.
+GitHub CI is pending for this code commit.
