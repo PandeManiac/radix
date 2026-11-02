@@ -80,6 +80,27 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void LargeUnrelatedVoltageDoesNotHideAnUnresolvableSmallSourceConstraint()
+    {
+        // At a 1e12 V common mode, double precision cannot represent a 1 uV
+        // difference between these nodes. A separate nonlinear branch exercises the
+        // Newton residual check; it must reject the source equation instead of scaling
+        // its residual against the unrelated 1e12 V source.
+        DcNetlist netlist = new DcNetlist("gnd")
+            .AddVoltageSource("Vlarge", "a", "gnd", 1e12)
+            .AddVoltageSource("Vsmall", "a", "b", 1e-6)
+            .AddResistor("Rlarge", "b", "gnd", 1)
+            .AddVoltageSource("Vdiode", "in", "gnd", 5)
+            .AddResistor("Rdiode", "in", "out", 1_000)
+            .AddDiode("D1", "out", "gnd", DefaultIs);
+
+        DcSolveException error = Assert.Throws<DcSolveException>(netlist.Solve);
+
+        Assert.Equal(DcSolveFailure.NonConvergent, error.Failure);
+        Assert.Contains("nonlinear DC operating point did not converge", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TwoSeriesDiodesSplitTheForwardDropEvenly()
     {
         var netlist = new DcNetlist("gnd")
