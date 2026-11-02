@@ -99,6 +99,10 @@ ideal-source loop, and a consistent but redundant source loop are reported as
 `RAD-ERC-101`–`RAD-ERC-103` warnings before a solve (see [erc.md](erc.md)). They
 are warnings so an electrical asset never blocks digital compilation.
 
+The same surfaces also include `RAD-ELEC-*` structural errors from
+`ElectricalCircuitValidator.ValidateProject`; these are reported by validation and
+the editor but remain outside the digital compiler.
+
 The implementation is a dense `double` factorization: time and memory grow as
 O(n³) and O(n²). It is intended for interactive, small and medium netlists; it is
 not a sparse or large-scale production simulator.

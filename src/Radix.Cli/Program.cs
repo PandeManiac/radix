@@ -246,6 +246,13 @@ internal static class Program
                 out circuit,
                 out report);
 
+        // Electrical assets are deliberately separate from digital compilation, so the compiler
+        // must not be blocked by them. `validate` still reports their structural errors here.
+        foreach (Diagnostic diagnostic in ElectricalCircuitValidator.ValidateProject(project))
+        {
+            report.AddUnique(diagnostic);
+        }
+
         if (json)
         {
             Console.WriteLine(ValidationReport.ToJson(

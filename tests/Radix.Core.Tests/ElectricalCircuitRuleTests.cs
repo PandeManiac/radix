@@ -117,6 +117,24 @@ public sealed class ElectricalCircuitRuleTests
     }
 
     [Fact]
+    public void ProjectElectricalValidationReportsACircuitStructuralError()
+    {
+        ElectricalCircuit circuit = Divider();
+        circuit.FindComponent("R1")!.FindTerminal("b")!.NodeId = "missing";
+        CircuitProject project = ProjectWith(circuit);
+
+        DiagnosticBag report = ElectricalCircuitValidator.ValidateProject(project);
+
+        Diagnostic diagnostic = Assert.Single(
+            report,
+            item => item.Code == "RAD-ELEC-011");
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal("electrical/divider/R1", diagnostic.Path);
+        Assert.Contains("'missing'", diagnostic.Message, StringComparison.Ordinal);
+        Assert.True(report.HasErrors);
+    }
+
+    [Fact]
     public void SerializedProjectKeepsElectricalRuleWarnings()
     {
         ElectricalCircuit circuit = Divider();

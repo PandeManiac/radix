@@ -120,4 +120,34 @@ public sealed class DriveJsonContractTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void ValidateReportsAnElectricalStructuralErrorInTheJsonReport()
+    {
+        JsonNode root = JsonNode.Parse(File.ReadAllText(
+            Path.Combine(Root(), "examples", "dc-divider.radix")))!;
+        root["electricalCircuits"]!.AsArray()[0]!["components"]!.AsArray()[1]!
+            ["terminals"]!.AsArray()[0]!["node"] = "missing";
+
+        string path = Path.Combine(Path.GetTempPath(), $"radix-invalid-{Guid.NewGuid():N}.radix");
+        try
+        {
+            File.WriteAllText(path, root.ToJsonString());
+            (int exit, string output, string error) = Run("validate", path, "--json");
+
+            Assert.True(exit == 1, $"exit {exit}; {error}");
+            using JsonDocument report = JsonDocument.Parse(output);
+            Assert.False(report.RootElement.GetProperty("passed").GetBoolean());
+            JsonElement diagnostic = report.RootElement
+                .GetProperty("diagnostics")
+                .EnumerateArray()
+                .Single(item => item.GetProperty("code").GetString() == "RAD-ELEC-011");
+            Assert.Equal("Error", diagnostic.GetProperty("severity").GetString());
+            Assert.Equal("electrical/divider/R1", diagnostic.GetProperty("path").GetString());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

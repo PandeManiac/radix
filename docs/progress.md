@@ -42,6 +42,22 @@ humans; update it at each milestone instead of relying on chat history.
 - Verification: Release build clean (0 warnings/errors); Core 832/832, CLI 2/2,
   Editor 312/312; focused `ElectricalHierarchyTests` 18/18.
 
+## Session 2026-11-02 (project electrical structural validation)
+
+- Added `ElectricalCircuitValidator.ValidateProject`: it validates every authored
+  electrical circuit with the project resolver and deduplicates repeated hierarchy
+  diagnostics. `radix validate` and the editor Diagnostics tab now include the
+  result, so a terminal naming an unknown node is an error instead of being
+  silently skipped by ERC.
+- Digital compilation is deliberately unchanged: `CircuitValidator` and
+  `CircuitCompiler` do not consume electrical structural errors, preserving the
+  documented independence of electrical assets from the digital build.
+- Added a Core regression for `RAD-ELEC-011` and a CLI JSON contract test that
+  corrupts `examples/dc-divider.radix`, asserts exit code 1, `passed: false`, and
+  the error diagnostic.
+- Verification: Release build clean (0 warnings/errors); focused electrical rule
+  tests 7/7 and CLI tests 3/3. Full suite pending at this checkpoint.
+
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 
 - The Electrical tab's solved NODES table now includes unported internal nodes from

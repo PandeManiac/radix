@@ -11221,6 +11221,11 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshDiagnosticsFromValidator()
     {
         DiagnosticBag bag = CircuitValidator.Validate(_project);
+        foreach (Diagnostic diagnostic in ElectricalCircuitValidator.ValidateProject(_project))
+        {
+            bag.AddUnique(diagnostic);
+        }
+
         Diagnostics.Clear();
         foreach (Diagnostic diagnostic in bag.Take(250))
         {

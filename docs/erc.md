@@ -41,6 +41,12 @@ project, and an unsolvable DC circuit must not block digital compilation. Each
 warning carries the `electrical/<circuitId>` path, the affected node or source
 names in its message, and the usual assumption and suggestion fields.
 
+Structural `RAD-ELEC-*` errors are included in `radix validate` and the editor
+Diagnostics tab through `ElectricalCircuitValidator.ValidateProject`. They remain
+outside `CircuitValidator` and the digital compiler: a broken electrical asset is
+reported but cannot block a digital build. When structural errors are present,
+ERC skips that circuit because topology from an invalid model is not reliable.
+
 `RAD-ERC-102` and `RAD-ERC-103` are deliberately distinct. Contradictory ideal
 sources have no solution at all. A consistent but redundant source loop has
 well-defined node voltages but non-unique branch currents; the rule tells the

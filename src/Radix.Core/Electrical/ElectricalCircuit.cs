@@ -505,6 +505,27 @@ public static class ElectricalCircuitValidator
     public static DiagnosticBag Validate(ElectricalCircuit circuit) => Validate(circuit, null);
 
     /// <summary>
+    /// Validates every authored electrical circuit in a project, including hierarchy references.
+    /// This is a project-reporting entry point, separate from digital compilation: it surfaces
+    /// structural electrical errors to validation UIs while the electrical assets remain independent
+    /// of the digital build.
+    /// </summary>
+    public static DiagnosticBag ValidateProject(CircuitProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        var diagnostics = new DiagnosticBag();
+        foreach (ElectricalCircuit circuit in project.ElectricalCircuits)
+        {
+            foreach (Diagnostic diagnostic in Validate(circuit, project.FindElectricalCircuit))
+            {
+                diagnostics.AddUnique(diagnostic);
+            }
+        }
+
+        return diagnostics;
+    }
+
+    /// <summary>
     /// Validates one circuit and, when it contains subcircuits, the referenced hierarchy. A flat
     /// circuit needs no resolver, so existing callers remain valid; a subcircuit without one is an
     /// error rather than being silently treated as an empty component.
