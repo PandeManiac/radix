@@ -75,7 +75,7 @@ public sealed class LevelThresholdTests
             Assert.Contains("\"levelThresholds\": [", saved, StringComparison.Ordinal);
 
             CircuitProject reloaded = ProjectSerializer.Load(path);
-            Assert.Equal(16, reloaded.FormatVersion);
+            Assert.Equal(CircuitProject.CurrentFormatVersion, reloaded.FormatVersion);
             Assert.Equal([2.6, 3.0], Assert.Single(reloaded.ElectricalCircuits).LevelThresholds);
         }
         finally

@@ -15,6 +15,29 @@ namespace Radix.Core.Electrical;
 public readonly record struct ElectricalDriveStep(double Time, long At, double Volts, int Level);
 
 /// <summary>
+/// An authored claim that one of a circuit's nodes drives a digital pin, at a stated rate. The rate
+/// is part of the claim because seconds and ticks are different clocks: without it the drives would
+/// land at times nobody chose.
+/// </summary>
+public sealed class ElectricalDriveBinding
+{
+    /// <summary>The circuit node whose level is read.</summary>
+    public string NodeId { get; set; } = string.Empty;
+
+    /// <summary>The interface pin the level is written to.</summary>
+    public string PinId { get; set; } = string.Empty;
+
+    /// <summary>Simulator ticks per solved second.</summary>
+    public double TicksPerSecond { get; set; } = 1e9;
+
+    /// <summary>The drives this binding produces for a run, one per level change.</summary>
+    public IReadOnlyList<(long At, ScriptDrive Drive)> Schedule(
+        TransientResult result,
+        ElectricalLevelSampler sampler) =>
+        ElectricalDriveSchedule.Scheduled(result, NodeId, sampler, PinId, TicksPerSecond);
+}
+
+/// <summary>
 /// The electrical-to-digital handoff: a solved node read as levels over time, and those levels
 /// expressed as the drives the simulation engine already accepts.
 /// </summary>

@@ -26,6 +26,16 @@ internal sealed class ProjectDto
     public List<ElectricalCircuitDto>? ElectricalCircuits { get; set; }
 }
 
+/// <summary>One authored node-to-pin binding inside an electrical circuit.</summary>
+internal sealed class ElectricalDriveBindingDto
+{
+    public string? Node { get; set; }
+
+    public string? Pin { get; set; }
+
+    public double? TicksPerSecond { get; set; }
+}
+
 internal sealed class ElectricalCircuitDto
 {
     public string? Id { get; set; }
@@ -41,6 +51,9 @@ internal sealed class ElectricalCircuitDto
     /// reader falls back to equal thirds of the circuit's rail.
     /// </summary>
     public List<double>? LevelThresholds { get; set; }
+
+    /// <summary>Digital pins this circuit's nodes drive; omitted when the circuit drives none.</summary>
+    public List<ElectricalDriveBindingDto>? DriveBindings { get; set; }
 
     public List<ElectricalNodeDto>? Nodes { get; set; }
 

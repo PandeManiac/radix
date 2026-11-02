@@ -304,6 +304,13 @@ public sealed class ElectricalCircuit
     /// </summary>
     public List<double> LevelThresholds { get; } = [];
 
+    /// <summary>
+    /// Digital pins this circuit's nodes drive, with the rate that converts solved seconds into
+    /// simulator ticks. Stored on the circuit because a binding is a claim about what this network
+    /// means to the rest of the project, and one node may feed several pins.
+    /// </summary>
+    public List<ElectricalDriveBinding> DriveBindings { get; } = [];
+
     public ElectricalNode? FindNode(string nodeId) =>
         Nodes.FirstOrDefault(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal));
 

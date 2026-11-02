@@ -276,6 +276,37 @@ public static class ProjectSerializer
             circuit.LevelThresholds.Add(threshold);
         }
 
+        foreach (ElectricalDriveBindingDto bindingDto in dto.DriveBindings ?? [])
+        {
+            string nodeId = bindingDto.Node ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' has a drive binding without 'node'.");
+            // The circuit's nodes are added after this point, so the claim is checked against the
+            // authored list here rather than against a collection that is still empty.
+            if (dto.Nodes is null ||
+                !dto.Nodes.Any(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal)))
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' binds unknown node '{nodeId}' to a digital pin.");
+            }
+
+            string pinId = bindingDto.Pin ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' binds node '{nodeId}' without 'pin'.");
+            double rate = bindingDto.TicksPerSecond ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' binds '{nodeId}' to '{pinId}' without 'ticksPerSecond'.");
+            if (!double.IsFinite(rate) || rate <= 0)
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' binds '{nodeId}' to '{pinId}' at a tick rate that must be finite and positive.");
+            }
+
+            circuit.DriveBindings.Add(new ElectricalDriveBinding
+            {
+                NodeId = nodeId,
+                PinId = pinId,
+                TicksPerSecond = rate,
+            });
+        }
+
         foreach (ElectricalNodeDto nodeDto in dto.Nodes ?? [])
         {
             circuit.Nodes.Add(new ElectricalNode
@@ -718,6 +749,14 @@ public static class ProjectSerializer
         Description = circuit.Description,
         Ground = circuit.GroundNodeId,
         LevelThresholds = circuit.LevelThresholds.Count == 0 ? null : [.. circuit.LevelThresholds],
+        DriveBindings = circuit.DriveBindings.Count == 0
+            ? null
+            : [.. circuit.DriveBindings.Select(binding => new ElectricalDriveBindingDto
+            {
+                Node = binding.NodeId,
+                Pin = binding.PinId,
+                TicksPerSecond = binding.TicksPerSecond,
+            })],
         Nodes = circuit.Nodes.Select(node => new ElectricalNodeDto
         {
             Id = node.Id,
