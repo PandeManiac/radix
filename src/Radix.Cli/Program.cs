@@ -950,6 +950,13 @@ internal static class Program
             }
         }
 
+        // A supplied output is masked while it is driven, so asking what the definition would have
+        // computed needs its own run. Null means nothing was supplied and there is nothing to audit.
+        ElectricalDriveAudit? audit = simulation is null
+            ? null
+            : ElectricalDriveSimulation.Audit(
+                project, circuit, run, sampler, GetOption(options, "definition"));
+
         if (options.ContainsKey("json"))
         {
             Console.WriteLine(JsonSerializer.Serialize(
@@ -981,6 +988,20 @@ internal static class Program
                             steps = simulation.StepsExecuted,
                             finalTime = simulation.FinalTime,
                         },
+                    audit = audit is null
+                        ? null
+                        : new
+                        {
+                            suppliedTicks = audit.CheckedTicks,
+                            pins = audit.AuditedPins,
+                            passed = audit.Passed,
+                            failures = audit.Result.Failures.Select(failure => new
+                            {
+                                step = failure.Step,
+                                at = failure.At,
+                                message = failure.Message,
+                            }),
+                        },
                 },
                 ReportJsonOptions));
             return 0;
@@ -1010,9 +1031,24 @@ internal static class Program
                 Console.WriteLine(
                     $"checked {plan.Claims.Count} claim tick(s) on {plan.ClaimedPins} pin(s): the definition agreed with the network everywhere it was asked.");
             }
+            if (audit is null)
+            {
+                if (plan.Claims.Count == 0)
+                {
+                    Console.WriteLine(
+                        "no output was claimed and none is supplied, so the definition's answer was not checked.");
+                }
+            }
+            else if (audit.Passed)
+            {
+                Console.WriteLine(
+                    $"audited {audit.CheckedTicks} supplied tick(s) on {audit.AuditedPins} pin(s): the definition would have produced the network's levels.");
+            }
             else
             {
-                Console.WriteLine("no output was claimed, so the definition's answer was not checked.");
+                Console.WriteLine(
+                    $"audited {audit.CheckedTicks} supplied tick(s) on {audit.AuditedPins} pin(s): the definition would have answered differently - " +
+                    $"{audit.Result.Failures[0].Message}.");
             }
         }
 

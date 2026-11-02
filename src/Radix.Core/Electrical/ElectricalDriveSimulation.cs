@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Radix.Core.Electrical;
 using Radix.Core.Model;
+using Radix.Core.Signals;
 using Radix.Core.Testing;
 
 namespace Radix.Core.Electrical;
@@ -39,6 +40,33 @@ public sealed class ElectricalDrivePlan
 }
 
 /// <summary>
+/// A second run in which the supplied outputs are claimed instead of written: what the definition
+/// would have computed for the pins the network took over.
+/// </summary>
+public sealed class ElectricalDriveAudit
+{
+    public ElectricalDriveAudit(ElectricalDrivePlan plan, SimulationScriptResult result)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(result);
+        Plan = plan;
+        Result = result;
+    }
+
+    public ElectricalDrivePlan Plan { get; }
+
+    public SimulationScriptResult Result { get; }
+
+    public bool Passed => Result.Passed;
+
+    /// <summary>How many supplied ticks were compared.</summary>
+    public int CheckedTicks => Plan.Claims.Count;
+
+    /// <summary>How many supplied pins were compared.</summary>
+    public int AuditedPins => Plan.ClaimedPins;
+}
+
+/// <summary>
 /// Applying a circuit's drive bindings to a simulation: the levels a solved network produces become
 /// a script, and the script goes through the same runner the editor, the CLI and the tests use.
 /// </summary>
@@ -56,11 +84,16 @@ public static class ElectricalDriveSimulation
     /// </summary>
     public const int MaximumChecksPerBinding = 512;
 
-    /// <summary>The script and the claims a circuit's bindings produce for a completed run.</summary>
+    /// <summary>
+    /// The script and the claims a circuit's bindings produce for a completed run. Pins named in
+    /// <paramref name="auditedPins"/> are asked about instead of written, which is how a supplied
+    /// output is shown what the definition would have computed.
+    /// </summary>
     public static ElectricalDrivePlan Plan(
         ElectricalCircuit circuit,
         TransientResult run,
-        ElectricalLevelSampler sampler)
+        ElectricalLevelSampler sampler,
+        IReadOnlySet<string>? auditedPins = null)
     {
         ArgumentNullException.ThrowIfNull(circuit);
         ArgumentNullException.ThrowIfNull(run);
@@ -79,7 +112,8 @@ public static class ElectricalDriveSimulation
                     ticks[at] = entry;
                 }
 
-                (binding.Checks ? entry.Checks : entry.Drives).Add(
+                bool asClaim = binding.Checks || (auditedPins?.Contains(binding.PinId) ?? false);
+                (asClaim ? entry.Checks : entry.Drives).Add(
                     $"\"{binding.PinId}\": {step.Level}");
             }
         }
@@ -94,7 +128,8 @@ public static class ElectricalDriveSimulation
             ? 1
             : (long)Math.Ceiling(window / (double)MaximumChecksPerBinding);
 
-        foreach (ElectricalDriveBinding binding in circuit.DriveBindings.Where(binding => binding.Checks))
+        foreach (ElectricalDriveBinding binding in circuit.DriveBindings.Where(binding =>
+                     binding.Checks || (auditedPins?.Contains(binding.PinId) ?? false)))
         {
             List<(ElectricalDriveStep Step, long At)> steps = [.. binding.Steps(run, sampler)];
             for (long tick = 0; tick < endTick; tick += stride)
@@ -173,6 +208,43 @@ public static class ElectricalDriveSimulation
     {
         ArgumentNullException.ThrowIfNull(plan);
         return SimulationScriptRunner.Run(project, plan.Script, definitionId);
+    }
+
+    /// <summary>
+    /// What the definition would have computed for the outputs the network supplied, as a separate
+    /// run in which those pins are claimed instead of written. A supplied pin is masked while it is
+    /// driven, so its own answer can only be seen when nothing supplies it - which is exactly why
+    /// this is a second run and not an observation of the first. Inputs are never audited: they are
+    /// the definition's own values and are written from outside by design.
+    /// </summary>
+    /// <returns>Null when no output is supplied, so a caller can report silence honestly.</returns>
+    public static ElectricalDriveAudit? Audit(
+        CircuitProject project,
+        ElectricalCircuit circuit,
+        TransientResult run,
+        ElectricalLevelSampler sampler,
+        string? definitionId = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        CircuitDefinition? definition = project.FindDefinition(definitionId ?? project.RootDefinitionId);
+        if (definition is null)
+        {
+            return null;
+        }
+
+        HashSet<string> audited = [.. circuit.DriveBindings
+            .Where(binding => !binding.Checks &&
+                              definition.FindPin(binding.PinId) is { Direction: PinDirection.Output })
+            .Select(binding => binding.PinId)];
+        if (audited.Count == 0)
+        {
+            return null;
+        }
+
+        ElectricalDrivePlan auditPlan = Plan(circuit, run, sampler, audited);
+        return new ElectricalDriveAudit(
+            auditPlan,
+            SimulationScriptRunner.Run(project, auditPlan.Script, definitionId));
     }
 
     /// <summary>The level the node held at a tick: the last change at or before it.</summary>
