@@ -42,10 +42,15 @@ public sealed class ElectricalDrivePlan
 /// <summary>
 /// A tolerance for one transition of an output pin, keyed by the levels it leaves and reaches.
 /// </summary>
+/// <param name="PinId">The output pin this entry is for, or null when it applies to any pin.</param>
 /// <param name="FromLevel">The output level before the transition.</param>
 /// <param name="ToLevel">The output level after it.</param>
 /// <param name="Ticks">How far the measured delay may differ from the declared one.</param>
-public readonly record struct ElectricalDelayTolerance(int FromLevel, int ToLevel, int Ticks);
+public readonly record struct ElectricalDelayTolerance(
+    string? PinId,
+    int FromLevel,
+    int ToLevel,
+    int Ticks);
 
 /// <summary>One output change, paired with the input change that preceded it.</summary>
 /// <param name="InputLevel">The level the driving pin had taken.</param>
@@ -97,12 +102,27 @@ public sealed class ElectricalPropagationReport
     public IReadOnlyList<ElectricalDelayTolerance> Overrides { get; }
 
     /// <summary>The tolerance that applies to one transition: its own entry, else the circuit's.</summary>
+    /// <remarks>
+    /// A pin's own entry wins over one that names no pin, so a circuit can set a general allowance
+    /// and still hold one output to a tighter standard. An entry for another pin is never consulted.
+    /// </remarks>
     public int ToleranceFor(ElectricalPropagationStep step)
     {
         foreach (ElectricalDelayTolerance tolerance in Overrides)
         {
             if (tolerance.FromLevel == step.PreviousOutputLevel &&
-                tolerance.ToLevel == step.OutputLevel)
+                tolerance.ToLevel == step.OutputLevel &&
+                string.Equals(tolerance.PinId, OutputPinId, StringComparison.Ordinal))
+            {
+                return tolerance.Ticks;
+            }
+        }
+
+        foreach (ElectricalDelayTolerance tolerance in Overrides)
+        {
+            if (tolerance.FromLevel == step.PreviousOutputLevel &&
+                tolerance.ToLevel == step.OutputLevel &&
+                tolerance.PinId is null)
             {
                 return tolerance.Ticks;
             }

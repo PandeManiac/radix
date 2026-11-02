@@ -6655,7 +6655,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalCircuitFields.Add(new EditableField(
             "Delay tolerances",
             FormatDelayTolerances(circuit),
-            hint: "per-transition tolerance as from>to=ticks, semicolon separated; a transition named here ignores the circuit-wide tolerance",
+            hint: "per-transition tolerance as [pin:]from>to=ticks, semicolon separated; a pin's own entry wins over one that names no pin, and both override the circuit-wide tolerance",
             apply: value => SetElectricalCircuitDelayTolerances(circuit.Id, value)));
         ElectricalCircuitFields.Add(new EditableField(
             "Drive bindings",
@@ -9146,7 +9146,7 @@ public sealed class EditorViewModel : ObservableObject
             "; ",
             circuit.DelayTolerances.Select(tolerance => string.Create(
                 CultureInfo.InvariantCulture,
-                $"{tolerance.FromLevel}>{tolerance.ToLevel}={tolerance.Ticks}")));
+                $"{(string.IsNullOrEmpty(tolerance.PinId) ? string.Empty : tolerance.PinId + ":")}{tolerance.FromLevel}>{tolerance.ToLevel}={tolerance.Ticks}")));
 
     /// <summary>
     /// Authors per-transition tolerances. On success the whole list is replaced, so the field always
@@ -9167,18 +9167,23 @@ public sealed class EditorViewModel : ObservableObject
         {
             string[] halves = token.Split('>');
             int equals = halves.Length == 2 ? halves[1].IndexOf('=') : -1;
+            string left = halves.Length == 2 ? halves[0].Trim() : string.Empty;
+            int colon = left.IndexOf(':');
+            string? pin = colon > 0 ? left[..colon].Trim() : null;
+            string fromText = colon > 0 ? left[(colon + 1)..].Trim() : left;
             if (halves.Length != 2 ||
                 equals <= 0 ||
-                !int.TryParse(halves[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int from) ||
+                (pin is not null && pin.Length == 0) ||
+                !int.TryParse(fromText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int from) ||
                 !int.TryParse(halves[1][..equals].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int to) ||
                 !int.TryParse(halves[1][(equals + 1)..].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int ticks) ||
                 ticks < 0)
             {
-                StatusText = $"'{token}' is not a transition; write from>to=ticks with a tolerance of 0 or more.";
+                StatusText = $"'{token}' is not a transition; write [pin:]from>to=ticks with a tolerance of 0 or more.";
                 return false;
             }
 
-            parsed.Add(new ElectricalDelayTolerance(from, to, ticks));
+            parsed.Add(new ElectricalDelayTolerance(pin, from, to, ticks));
         }
 
         bool changed = parsed.Count != circuit.DelayTolerances.Count ||

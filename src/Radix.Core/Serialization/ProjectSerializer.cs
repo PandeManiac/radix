@@ -273,8 +273,11 @@ public static class ProjectSerializer
                     $"Circuit '{circuit.Id}' has a negative tolerance for transition {tolerance.From}->{tolerance.To}.");
             }
 
-            circuit.DelayTolerances.Add(
-                new ElectricalDelayTolerance(tolerance.From, tolerance.To, tolerance.Ticks));
+            circuit.DelayTolerances.Add(new ElectricalDelayTolerance(
+                string.IsNullOrWhiteSpace(tolerance.Pin) ? null : tolerance.Pin,
+                tolerance.From,
+                tolerance.To,
+                tolerance.Ticks));
         }
 
         foreach (double threshold in dto.LevelThresholds ?? [])
@@ -769,6 +772,7 @@ public static class ProjectSerializer
             ? null
             : [.. circuit.DelayTolerances.Select(tolerance => new ElectricalDelayToleranceDto
             {
+                Pin = tolerance.PinId,
                 From = tolerance.FromLevel,
                 To = tolerance.ToLevel,
                 Ticks = tolerance.Ticks,

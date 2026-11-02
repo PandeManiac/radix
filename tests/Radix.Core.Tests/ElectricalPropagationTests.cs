@@ -116,7 +116,7 @@ public sealed class ElectricalPropagationTests
 
         // Tightening one transition fails that transition alone: per-transition tolerances are not
         // all-or-nothing.
-        circuit.DelayTolerances[0] = new ElectricalDelayTolerance(2, 1, 0);
+        circuit.DelayTolerances[0] = new ElectricalDelayTolerance("y", 2, 1, 0);
         ElectricalPropagationReport one = Assert.IsType<ElectricalPropagationReport>(
             ElectricalDriveSimulation.Propagation(project, circuit, run, sampler));
         Assert.False(one.Agrees);
@@ -144,13 +144,35 @@ public sealed class ElectricalPropagationTests
 
             ElectricalCircuit loaded = Assert.Single(reloaded.ElectricalCircuits);
             Assert.Equal(2, loaded.DelayTolerances.Count);
-            Assert.Equal(new ElectricalDelayTolerance(2, 1, 23), loaded.DelayTolerances[0]);
-            Assert.Equal(new ElectricalDelayTolerance(1, 0, 44), loaded.DelayTolerances[1]);
+            Assert.Equal(new ElectricalDelayTolerance("y", 2, 1, 23), loaded.DelayTolerances[0]);
+            Assert.Equal(new ElectricalDelayTolerance("y", 1, 0, 44), loaded.DelayTolerances[1]);
         }
         finally
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void APinsOwnToleranceBeatsOneThatNamesNoPin()
+    {
+        (CircuitProject project, ElectricalCircuit circuit, TransientResult run, ElectricalLevelSampler sampler) =
+            Load();
+        circuit.DelayTolerances.Clear();
+        circuit.DelayTolerances.Add(new ElectricalDelayTolerance(null, 2, 1, 0));
+        circuit.DelayTolerances.Add(new ElectricalDelayTolerance("y", 2, 1, 23));
+        circuit.DelayTolerances.Add(new ElectricalDelayTolerance("other", 1, 0, 0));
+
+        ElectricalPropagationReport report = Assert.IsType<ElectricalPropagationReport>(
+            ElectricalDriveSimulation.Propagation(project, circuit, run, sampler));
+
+        // The generic entry would fail the 23-tick step; the pin's own entry admits it.
+        Assert.Equal(23, report.ToleranceFor(report.Steps[0]));
+
+        // The entry for another pin is never consulted, so the second step falls back to the
+        // circuit-wide zero and fails - one pin's allowance cannot cover another's.
+        ElectricalPropagationStep failing = Assert.Single(report.Mismatches);
+        Assert.Equal(1, failing.PreviousOutputLevel);
     }
 
     [Fact]

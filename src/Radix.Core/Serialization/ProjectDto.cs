@@ -76,6 +76,11 @@ internal sealed class ElectricalCircuitDto
 
 internal sealed class ElectricalDelayToleranceDto
 {
+    /// <summary>The output pin this entry is for; omitted when it applies to any pin.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Pin { get; set; }
+
     public int From { get; set; }
 
     public int To { get; set; }

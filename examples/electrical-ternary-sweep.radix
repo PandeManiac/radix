@@ -159,7 +159,7 @@
     {
       "id": "ternary-switch",
       "name": "Ternary inverter, swept",
-      "description": "The same four-device network as the paired examples, with the input swept 0 V to 2.5 V to 5 V. Each plateau is held long enough for the gate bus and the summing node to settle, so the output should read level 2, then 1, then 0. The table declares no transport delay; the network rises in 23 ticks and falls in 44, and each transition carries its own tolerance rather than one number pretending to describe both directions.",
+      "description": "The same four-device network as the paired examples, with the input swept 0 V to 2.5 V to 5 V. Each plateau is held long enough for the gate bus and the summing node to settle, so the output should read level 2, then 1, then 0. The table declares no transport delay; the network rises in 23 ticks and falls in 44, and each transition of pin y carries its own tolerance rather than one number pretending to describe both directions.",
       "ground": "gnd",
       "driveBindings": [
         {
@@ -458,11 +458,13 @@
       "delayToleranceTicks": 0,
       "delayTolerances": [
         {
+          "pin": "y",
           "from": 2,
           "to": 1,
           "ticks": 23
         },
         {
+          "pin": "y",
           "from": 1,
           "to": 0,
           "ticks": 44
