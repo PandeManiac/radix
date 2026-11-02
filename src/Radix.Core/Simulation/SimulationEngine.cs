@@ -174,8 +174,7 @@ public sealed class SimulationEngine
             return false;
         }
 
-        ProcessNextEvent();
-        return true;
+        return ProcessNextEvent();
     }
 
     /// <summary>Processes every event at the earliest pending timestamp.</summary>
@@ -191,7 +190,11 @@ public sealed class SimulationEngine
         int processed = 0;
         while (!_halted && _queue.TryPeek(out SimEvent next) && next.Time == timestamp)
         {
-            ProcessNextEvent();
+            if (!ProcessNextEvent())
+            {
+                break;
+            }
+
             processed++;
         }
 
@@ -270,14 +273,14 @@ public sealed class SimulationEngine
         }
     }
 
-    private void ProcessNextEvent()
+    private bool ProcessNextEvent()
     {
         if (_options.MaxEventsProcessed > 0 && EventsProcessed >= _options.MaxEventsProcessed)
         {
             Halt(
                 EventBudgetCode,
                 $"The event budget of {_options.MaxEventsProcessed} was exhausted after {EventsProcessed} events at time {_now}; increase the budget or set it to 0 to disable it.");
-            return;
+            return false;
         }
 
         SimEvent ev = _queue.Pop();
@@ -301,7 +304,7 @@ public sealed class SimulationEngine
             case SimEventKind.WakeComponent:
                 if (!_pendingEvaluation[ev.Target])
                 {
-                    return;
+                    return true;
                 }
 
                 _pendingEvaluation[ev.Target] = false;
@@ -310,7 +313,7 @@ public sealed class SimulationEngine
                     Halt(
                         NonConvergenceCode,
                         $"Component '{component!.InstanceId}' evaluated more than {_options.MaxEvaluationsPerComponentPerTimestamp} times at time {_now}; zero-delay feedback did not converge.");
-                    return;
+                    return true;
                 }
 
                 ComponentEvaluations++;
@@ -334,6 +337,8 @@ public sealed class SimulationEngine
             // misreported as zero-delay feedback that never converged.
             _evaluationTimestamp = -1;
         }
+
+        return true;
     }
 
     private void CommitOutput(int pinIndex, int value)

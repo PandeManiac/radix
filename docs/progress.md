@@ -1128,3 +1128,9 @@ summary and full local verification results; see the PR for the latest CI state.
      the unprocessed attempt in its count. Focused `EventBudgetTests` reproduce
      both failures (2 failed, 4 passed). Implementation and broader verification
      remain pending.
+
+118. Fixed event-budget stepping semantics. `ProcessNextEvent` now reports whether
+     it consumed an event; `Step()` returns that result, and `StepTimestamp()` only
+     counts consumed events. Consumed stale wake events still count as processed.
+     All six focused `EventBudgetTests` pass, including both regressions; broader
+     verification remains pending.
