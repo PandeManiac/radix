@@ -6420,6 +6420,18 @@ public sealed class EditorViewModel : ObservableObject
                         FormatElectricalValue(component.ChannelLengthModulation),
                         hint: "SPICE lambda in 1/V; 0 means the saturation current does not depend on the drain voltage",
                         apply: value => SetElectricalComponentChannelLengthModulation(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Gate-source capacitance (F)",
+                        FormatElectricalValue(component.GateSourceCapacitance),
+                        hint: "Cgs in farads; the gate must be charged through its drive before the channel follows, and a DC solve ignores it",
+                        apply: value => SetElectricalComponentGateCapacitance(
+                            circuit.Id, component.Id, value, drainToGate: false)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Gate-drain capacitance (F)",
+                        FormatElectricalValue(component.GateDrainCapacitance),
+                        hint: "Cgd in farads, the feedback path from drain to gate; 0 leaves the gate loading independent of the drain",
+                        apply: value => SetElectricalComponentGateCapacitance(
+                            circuit.Id, component.Id, value, drainToGate: true)));
                 }
             }
         }
@@ -8059,6 +8071,52 @@ public sealed class EditorViewModel : ObservableObject
         component.ChannelLengthModulation = parsed;
         AfterElectricalMutation(
             $"Updated '{component.Id}' channel-length modulation to {FormatElectricalValue(parsed)} 1/V");
+        return true;
+    }
+
+    /// <summary>
+    /// Sets one of a MOSFET's gate capacitances, in farads. Both are refused when negative or
+    /// non-finite: the solver would otherwise be asked to integrate a circuit that gains energy
+    /// from a capacitor, which no device does.
+    /// </summary>
+    private bool SetElectricalComponentGateCapacitance(
+        string circuitId,
+        string componentId,
+        string value,
+        bool drainToGate)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(value, out double parsed) || parsed < 0)
+        {
+            StatusText = "Gate capacitance must be a finite, non-negative number of farads, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+            return false;
+        }
+
+        double current = drainToGate
+            ? component.GateDrainCapacitance
+            : component.GateSourceCapacitance;
+        if (Math.Abs(current - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        if (drainToGate)
+        {
+            component.GateDrainCapacitance = parsed;
+        }
+        else
+        {
+            component.GateSourceCapacitance = parsed;
+        }
+
+        AfterElectricalMutation(
+            $"Updated '{component.Id}' {(drainToGate ? "gate-drain" : "gate-source")} capacitance to {FormatElectricalValue(parsed)} F");
         return true;
     }
 

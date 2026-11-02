@@ -288,10 +288,12 @@ public static class ProjectSerializer
         bool isMosfet = ElectricalComponentMetadata.IsMosfet(kind);
         if (!isMosfet && (dto.Channel is not null ||
             dto.ThresholdVoltage is not null ||
-            dto.ChannelLengthModulation is not null))
+            dto.ChannelLengthModulation is not null ||
+            dto.GateSourceCapacitance is not null ||
+            dto.GateDrainCapacitance is not null))
         {
             throw new ProjectFormatException(
-                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage' or 'channelLengthModulation'; those belong to a mosfet.");
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage', 'channelLengthModulation', 'gateSourceCapacitance' or 'gateDrainCapacitance'; those belong to a mosfet.");
         }
 
         if (isMosfet && dto.ThresholdVoltage is null)
@@ -324,6 +326,8 @@ public static class ProjectSerializer
             Channel = channel,
             ThresholdVoltage = dto.ThresholdVoltage ?? 1,
             ChannelLengthModulation = dto.ChannelLengthModulation ?? 0,
+            GateSourceCapacitance = dto.GateSourceCapacitance ?? 0,
+            GateDrainCapacitance = dto.GateDrainCapacitance ?? 0,
         };
 
         foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
@@ -717,6 +721,12 @@ public static class ProjectSerializer
                 : null,
             ChannelLengthModulation = ElectricalComponentMetadata.IsMosfet(component.Kind)
                 ? component.ChannelLengthModulation
+                : null,
+            GateSourceCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.GateSourceCapacitance
+                : null,
+            GateDrainCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.GateDrainCapacitance
                 : null,
             Waveform = component.Waveform.Count == 0
                 ? null

@@ -72,6 +72,16 @@ internal sealed class ElectricalComponentDto
     /// </summary>
     public double? ChannelLengthModulation { get; set; }
 
+    /// <summary>
+    /// MOSFET gate-source capacitance in farads; omitted means zero. Stored only for a mosfet.
+    /// </summary>
+    public double? GateSourceCapacitance { get; set; }
+
+    /// <summary>
+    /// MOSFET gate-drain capacitance in farads; omitted means zero. Stored only for a mosfet.
+    /// </summary>
+    public double? GateDrainCapacitance { get; set; }
+
     public List<ElectricalWaveformPointDto>? Waveform { get; set; }
 
     public List<ElectricalTerminalDto>? Terminals { get; set; }

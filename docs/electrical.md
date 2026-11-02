@@ -473,6 +473,11 @@ so the gate must be charged through whatever drives it before the channel can fo
 internal capacitors rather than authored elements: they carry state, energy and companion stamps
 like any other capacitor, but never appear in `Capacitors`, element tables or reports.
 
+An authored MOSFET carries the same two values as `gateSourceCapacitance` and
+`gateDrainCapacitance`, so a `.radix` circuit can be built with device charge from the Electrical
+panel's inspector; both default to zero, and a DC run ignores them because an operating point
+holds no charge.
+
 The closed form is checkable. A 10 kΩ resistor driving a gate with 1 pF of gate-source capacitance
 gives `RC = 10 ns`; the measured half-rise converts back to that constant, and adding 1 pF of
 gate-drain capacitance against a fixed drain doubles it, because both plates then see an AC ground.

@@ -60,6 +60,35 @@ public sealed class ElectricalMosfetEditorTests
     }
 
     [Fact]
+    public void GateCapacitanceIsEditableThroughTheInspector()
+    {
+        EditorViewModel viewModel = WithMosfet();
+        ElectricalComponent component = Assert.Single(
+            viewModel.SelectedElectricalCircuitModel!.Components);
+
+        EditableField cgs = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Gate-source capacitance (F)");
+        Assert.Equal("0", cgs.Value);
+        cgs.Value = "1p";
+        Assert.True(viewModel.ApplyField(cgs));
+        Assert.Equal(1e-12, component.GateSourceCapacitance, 15);
+
+        EditableField cgd = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Gate-drain capacitance (F)");
+        cgd.Value = "2p";
+        Assert.True(viewModel.ApplyField(cgd));
+        Assert.Equal(2e-12, component.GateDrainCapacitance, 15);
+
+        // A capacitor cannot deliver more energy than it stored, so a negative value is refused
+        // and the device keeps what it had.
+        EditableField rejected = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Gate-source capacitance (F)");
+        rejected.Value = "-1p";
+        Assert.False(viewModel.ApplyField(rejected));
+        Assert.Equal(1e-12, component.GateSourceCapacitance, 15);
+    }
+
+    [Fact]
     public void ChannelAndThresholdAreEditableThroughTheInspector()
     {
         EditorViewModel viewModel = WithMosfet();

@@ -226,6 +226,20 @@ public sealed class ElectricalComponent
     public double ChannelLengthModulation { get; set; }
 
     /// <summary>
+    /// MOSFET gate-source capacitance in farads. Zero, the default, means the gate holds no charge
+    /// and the device adds no dynamics. A DC solve ignores it either way, because charge only
+    /// shapes how fast a node moves. Meaningful only for <see cref="ElectricalComponentKind.Mosfet"/>;
+    /// other kinds ignore it and the serializer does not store it for them.
+    /// </summary>
+    public double GateSourceCapacitance { get; set; }
+
+    /// <summary>
+    /// MOSFET gate-drain capacitance in farads, the feedback path that couples a moving drain back
+    /// into its own gate. Zero by default; ignored by a DC solve.
+    /// </summary>
+    public double GateDrainCapacitance { get; set; }
+
+    /// <summary>
     /// Optional piecewise-linear drive for an independent source, in the source's unit.
     /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
     /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
@@ -305,6 +319,8 @@ public sealed class ElectricalCircuit
                     netlist.AddVoltageSource(component.Id, nodeA, nodeB, 0);
                     break;
                 case ElectricalComponentKind.Mosfet:
+                    // A DC operating point carries no charge, so gate capacitance is omitted here
+                    // rather than silently changed; ToTransientNetlist stamps it.
                     netlist.AddMosfet(
                         component.Id,
                         nodeA,
@@ -383,7 +399,9 @@ public sealed class ElectricalCircuit
                         component.Channel,
                         component.ThresholdVoltage,
                         component.Value,
-                        component.ChannelLengthModulation);
+                        component.ChannelLengthModulation,
+                        component.GateSourceCapacitance,
+                        component.GateDrainCapacitance);
                     break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
@@ -532,6 +550,19 @@ public static class ElectricalCircuitValidator
                     diagnostics.Error(
                         "RAD-ELEC-023",
                         $"Component '{component.Id}' has an invalid channel-length modulation; lambda must be a finite, non-negative number of 1/V.",
+                        path: path);
+                }
+
+                // A negative capacitance would deliver energy instead of storing it, and a
+                // non-finite one has no companion model, so both are refused rather than solved.
+                if (!double.IsFinite(component.GateSourceCapacitance) ||
+                    component.GateSourceCapacitance < 0 ||
+                    !double.IsFinite(component.GateDrainCapacitance) ||
+                    component.GateDrainCapacitance < 0)
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-024",
+                        $"Component '{component.Id}' has an invalid gate capacitance; cgs and cgd must be finite, non-negative numbers of farads.",
                         path: path);
                 }
             }

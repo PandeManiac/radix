@@ -398,6 +398,15 @@ is multiplied by `1 + lambda Vds`. It must be finite and non-negative (`RAD-ELEC
 omitted means zero, which makes the saturation current independent of the drain voltage.
 Like the other device fields it is rejected on any kind but a mosfet.
 
+Optional `gateSourceCapacitance` and `gateDrainCapacitance` give the device charge, in
+farads. Omitted means zero, which keeps an existing circuit's behaviour exactly: the
+gate holds no charge and adds no dynamics. Given, they are stamped between gate and
+source and between gate and drain during a transient run, so the gate must be charged
+through its drive before the channel follows; a DC solve ignores them because an
+operating point carries no charge. Both must be finite and non-negative
+(`RAD-ELEC-024`), and like the other device fields they are rejected on any kind but a
+mosfet.
+
 An independent source may also carry a `waveform`: a piecewise-linear drive in
 its own unit, given as absolute-time breakpoints. The transient solver
 interpolates between breakpoints and clamps outside their range, so a missing
@@ -429,7 +438,7 @@ one circuit selects it automatically.
 
 ## Versioning and migration
 
-Versions 1 through 12 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`; version 12 adds an optional electrical `channelLengthModulation`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 13 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`; version 12 adds an optional electrical `channelLengthModulation`; version 13 adds optional mosfet `gateSourceCapacitance` and `gateDrainCapacitance` in farads. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

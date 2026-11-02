@@ -274,6 +274,62 @@ public sealed class ElectricalMosfetCircuitTests
         Assert.DoesNotContain(
             ElectricalCircuitValidator.Validate(CmosInverter()),
             d => d.Code == "RAD-ELEC-023");
+
+        // Gate capacitance stores charge rather than delivering it, so a negative value would
+        // describe a device that creates energy, and a non-finite one has no companion model.
+        ElectricalCircuit negativeGate = CmosInverter();
+        negativeGate.FindComponent("MN")!.GateSourceCapacitance = -1e-12;
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(negativeGate),
+            d => d.Code == "RAD-ELEC-024");
+
+        ElectricalCircuit infiniteGate = CmosInverter();
+        infiniteGate.FindComponent("MP")!.GateDrainCapacitance = double.PositiveInfinity;
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(infiniteGate),
+            d => d.Code == "RAD-ELEC-024");
+
+        Assert.DoesNotContain(
+            ElectricalCircuitValidator.Validate(CmosInverter()),
+            d => d.Code == "RAD-ELEC-024");
+    }
+
+    [Fact]
+    public void GateCapacitanceReachesTheTransientNetlist()
+    {
+        // A gate driven through 10 kOhm: 1 pF of gate-source capacitance puts the gate's half rise
+        // at R C ln 2 = 6.93 ns after the drive steps, so a capacitance that never left the
+        // authored model would show up as an instant transition.
+        var circuit = new ElectricalCircuit { Id = "gate", GroundNodeId = "gnd" };
+        foreach (string node in new[] { "gnd", "in", "g", "d" })
+        {
+            circuit.Nodes.Add(new ElectricalNode { Id = node, Name = node });
+        }
+
+        circuit.Components.Add(Source("VIN", "in", "gnd", 0));
+        circuit.Components.Add(Resistor("RG", "in", "g", 10_000));
+        circuit.Components.Add(Resistor("RD", "d", "gnd", 1));
+        ElectricalComponent mosfet = Mosfet(
+            "M1", "d", "g", "gnd", DcMosfetChannel.NChannel, 5, 1e-3);
+        mosfet.GateSourceCapacitance = 1e-12;
+        circuit.Components.Add(mosfet);
+
+        circuit.FindComponent("VIN")!.Waveform.Add(new ElectricalWaveformPoint { Time = 0, Value = 0 });
+        circuit.FindComponent("VIN")!.Waveform.Add(new ElectricalWaveformPoint { Time = 1e-12, Value = 1 });
+
+        Assert.False(ElectricalCircuitValidator.Validate(circuit).HasErrors);
+
+        TransientResult result = circuit.ToTransientNetlist().Run(new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = 200e-9,
+            Steps = 4_000,
+        });
+
+        Assert.True(result.Failure is null, $"{result.Failure}: {result.Message}");
+        TransientPoint crossing = result.Points.First(point =>
+            point.Time > 2e-12 && point.NodeVoltages["g"] >= 0.5);
+        Assert.InRange((crossing.Time - 1e-12) / Math.Log(2), 9.5e-9, 10.5e-9);
     }
 
     [Fact]
