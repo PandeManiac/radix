@@ -69,8 +69,8 @@ public sealed record DcCurrentSource(string Id, string NodeA, string NodeB, doub
 /// <summary>
 /// A two-terminal Shockley diode: <c>I = Is * (exp(V / (N * Vt)) - 1)</c>, with
 /// current flowing from <see cref="DcElement.NodeA"/> (anode) to
-/// <see cref="DcElement.NodeB"/> (cathode). Reverse breakdown, junction
-/// capacitance, series resistance, and self-heating are not modelled.
+/// <see cref="DcElement.NodeB"/> (cathode). Optional reverse breakdown uses an
+/// exponential knee. Junction capacitance and self-heating are not modelled.
 /// </summary>
 /// <remarks>
 /// <see cref="DefaultThermalVoltage"/> is <c>kT/q</c> at 300.15 K (25.852 mV).
@@ -85,7 +85,9 @@ public sealed record DcDiode(
     double SaturationCurrent,
     double EmissionCoefficient,
     double ThermalVoltage,
-    double SeriesResistance = 0)
+    double SeriesResistance = 0,
+    double? BreakdownVoltage = null,
+    double? BreakdownCurrent = null)
     : DcElement(Id, NodeA, NodeB)
 {
     public const double DefaultThermalVoltage = 0.025852;
@@ -106,12 +108,52 @@ public sealed record DcDiode(
     /// The junction current at a junction voltage, before series resistance: the
     /// Shockley law <c>Is * (exp(V / (N * Vt)) - 1)</c>.
     /// </summary>
-    public double JunctionCurrent(double volts) =>
-        SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
+    public double JunctionCurrent(double volts)
+    {
+        double current = SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
+        if (BreakdownVoltage is double breakdownVoltage && BreakdownCurrent is double breakdownCurrent)
+        {
+            double argument = Math.Min((-volts - breakdownVoltage) / JunctionVoltage, MaximumExponentialArgument);
+            current -= breakdownCurrent * Math.Exp(argument);
+        }
+
+        return current;
+    }
 
     /// <summary>The junction small-signal conductance <c>dI/dV</c>.</summary>
-    public double JunctionConductance(double volts) =>
-        (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+    public double JunctionConductance(double volts)
+    {
+        double conductance = (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+        if (BreakdownVoltage is double breakdownVoltage && BreakdownCurrent is double breakdownCurrent)
+        {
+            double argument = Math.Min((-volts - breakdownVoltage) / JunctionVoltage, MaximumExponentialArgument);
+            conductance += (breakdownCurrent / JunctionVoltage) * Math.Exp(argument);
+        }
+
+        return conductance;
+    }
+
+    internal static void ValidateBreakdownParameters(double? voltage, double? current)
+    {
+        if (voltage.HasValue != current.HasValue)
+        {
+            throw new ArgumentException(
+                "Breakdown voltage and breakdown current must be specified together.",
+                voltage.HasValue ? nameof(current) : nameof(voltage));
+        }
+
+        if (voltage is double breakdownVoltage && (!double.IsFinite(breakdownVoltage) || breakdownVoltage <= 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(voltage), voltage, "Breakdown voltage must be finite and greater than zero.");
+        }
+
+        if (current is double breakdownCurrent && (!double.IsFinite(breakdownCurrent) || breakdownCurrent <= 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(current), current, "Breakdown current must be finite and greater than zero.");
+        }
+    }
 
     /// <summary>The terminal current after accounting for series resistance.</summary>
     public double CurrentAt(double terminalVolts) =>
@@ -305,7 +347,8 @@ public sealed class DcNetlist
     /// <summary>
     /// Adds a Shockley diode. <paramref name="saturationCurrent"/> is in amperes,
     /// <paramref name="emissionCoefficient"/> is dimensionless, and
-    /// <paramref name="thermalVoltage"/> is in volts.
+    /// <paramref name="thermalVoltage"/> is in volts. Specify both optional
+    /// breakdown parameters to model reverse breakdown.
     /// </summary>
     public DcNetlist AddDiode(
         string id,
@@ -314,7 +357,9 @@ public sealed class DcNetlist
         double saturationCurrent,
         double emissionCoefficient = 1.0,
         double thermalVoltage = DcDiode.DefaultThermalVoltage,
-        double seriesResistance = 0)
+        double seriesResistance = 0,
+        double? breakdownVoltage = null,
+        double? breakdownCurrent = null)
     {
         ValidateElement(id, nodeA, nodeB);
         if (!double.IsFinite(saturationCurrent) || saturationCurrent <= 0)
@@ -349,6 +394,8 @@ public sealed class DcNetlist
                 "Series resistance must be finite and non-negative.");
         }
 
+        DcDiode.ValidateBreakdownParameters(breakdownVoltage, breakdownCurrent);
+
         return Add(new DcDiode(
             id,
             nodeA,
@@ -356,7 +403,9 @@ public sealed class DcNetlist
             saturationCurrent,
             emissionCoefficient,
             thermalVoltage,
-            seriesResistance));
+            seriesResistance,
+            breakdownVoltage,
+            breakdownCurrent));
     }
 
     /// <summary>
@@ -590,6 +639,16 @@ public sealed class DcNetlist
     /// </summary>
     private static double LimitJunction(double vnew, double vold, DcDiode diode)
     {
+        if (diode.BreakdownVoltage is double breakdownVoltage &&
+            vold > -breakdownVoltage &&
+            vnew < -breakdownVoltage)
+        {
+            // Start a large reverse step at the breakdown knee. Without this
+            // continuation point, the exponential breakdown conductance can be
+            // evaluated at its numerical cap before Newton reaches the knee.
+            return -breakdownVoltage;
+        }
+
         double junctionVoltage = diode.JunctionVoltage;
         double critical = junctionVoltage / (Math.Sqrt(2) * diode.SaturationCurrent);
         if (critical <= 1)

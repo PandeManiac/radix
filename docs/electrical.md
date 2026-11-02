@@ -104,7 +104,7 @@ not a sparse or large-scale production simulator.
 
 ## Nonlinear diode model
 
-The netlist also supports a two-terminal Shockley diode:
+The netlist supports a two-terminal Shockley diode:
 
 ```
 I(V) = Is * (exp(V / (N * Vt)) - 1)
@@ -116,13 +116,25 @@ saturation current in amperes, `N` the dimensionless emission coefficient, and
 `Vt` the thermal voltage in volts. The default thermal voltage is 25.852 mV,
 corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep.
 
+Optional reverse breakdown parameters `BV` (positive breakdown voltage in volts)
+and `IBV` (positive reverse current at `-BV` in amperes) add the exponential
+breakdown branch:
+
+```
+I(V) = Is * (exp(V / (N * Vt)) - 1) - IBV * exp((-V - BV) / (N * Vt))
+```
+
+Both parameters must be supplied together; omitting them preserves the original
+Shockley-only model. At `V = -BV`, reverse current is approximately `-IBV`. This
+smooth knee is a compact model, not a manufacturer-specific avalanche curve.
+
 An optional series resistance `Rs` adds the terminal relation
 `Vterminal = Vjunction + Rs * I`. The junction voltage is recovered from the
 terminal voltage by a monotonic scalar bisection, and the circuit-level Newton
 iteration linearizes the combined terminal conductance
 `Gj / (1 + Rs * Gj)`. `Rs = 0` (the default) is the ideal junction. The model is
-isothermal and has no reverse breakdown, junction capacitance, or high-injection
-effects.
+isothermal and has no junction capacitance, self-heating, or high-injection
+effects. Reverse breakdown is included only when `BV` and `IBV` are supplied.
 
 Diodes are solved with a damped Newton iteration. Each iteration linearizes every
 junction around its current voltage, solves the same scaled-pivot MNA system used
@@ -151,18 +163,21 @@ Standalone netlists can express a diode:
     { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 5 },
     { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
     { "id": "D1", "type": "diode", "nodeA": "out", "nodeB": "gnd",
-      "saturationCurrent": 1e-12, "emissionCoefficient": 1, "thermalVoltage": 0.025852 }
+      "saturationCurrent": 1e-12, "emissionCoefficient": 1, "thermalVoltage": 0.025852,
+      "breakdownVoltage": 5.1, "breakdownCurrent": 0.005 }
   ]
 }
 ```
 
 `emissionCoefficient`, `thermalVoltage`, and `seriesResistance` are optional and
-default to `1`, `0.025852` V, and `0` Ω. The report adds all three model
-parameters to diode element objects. Authored `electricalCircuits` in project files do not expose
-diodes yet; that needs a second component parameter in the project format.
+default to `1`, `0.025852` V, and `0` Ω. `breakdownVoltage` and `breakdownCurrent`
+are an optional pair; the report includes all supplied diode model parameters.
+Authored `electricalCircuits` in project files do not expose diodes yet; that needs
+a second component parameter in the project format.
 
 ```bash
 radix dc examples/dc-diode.json
+radix dc examples/dc-zener.json
 ```
 
 ## Transient analysis
@@ -317,7 +332,7 @@ adaptive control, `tolerance`, `absoluteTolerance`, `initialStep`, `minStep`,
 | `resistor` | `ohms` | |
 | `voltage-source` | `volts` | `waveform` |
 | `current-source` | `amperes` | `waveform` |
-| `diode` | `saturationCurrent` | `emissionCoefficient`, `thermalVoltage`, `seriesResistance` |
+| `diode` | `saturationCurrent` | `emissionCoefficient`, `thermalVoltage`, `seriesResistance`, `breakdownVoltage`, `breakdownCurrent` |
 | `capacitor` | `farads` | `initialVolts` |
 | `inductor` | `henries` | `initialAmperes` |
 

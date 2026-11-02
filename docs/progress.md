@@ -889,3 +889,18 @@ completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
 Verification: focused `ElectricalEditorTests` passed 48/48; Release solution build
 completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
 242/242. GitHub CI is pending for the prefix-case correction.
+
+82. Added an optional reverse-breakdown branch to the Shockley diode for DC and
+    transient JSON netlists. `breakdownVoltage` and `breakdownCurrent` must be a
+    finite positive pair; the documented exponential branch keeps the diode's
+    current sign convention and terminal power accounting. Transient copies and
+    fingerprints include both parameters, and DC reports serialize them. Added an
+    independent scalar bisection oracle, conductance finite-difference check, KCL/
+    power checks, invalid-pair cases, transient JSON coverage, and
+    `examples/dc-zener.json`.
+
+Verification so far: focused diode/transient serialization/fingerprint tests pass
+46/46; broader Release build and Core/Editor suites are pending. This change is
+currently an unpublished working-tree milestone on
+`agent/radix-20261102-electrical-audit`; publish its tested checkpoint before
+continuing.

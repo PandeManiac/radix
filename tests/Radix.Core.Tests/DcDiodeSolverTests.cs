@@ -53,6 +53,61 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void ReverseBreakdownDiodeMatchesIndependentScalarBisectionAndConservesPower()
+    {
+        const double supply = -12;
+        const double resistance = 1_000;
+        const double breakdownVoltage = 5.1;
+        const double breakdownCurrent = 5e-3;
+        DcNetlist netlist = new DcNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", supply)
+            .AddResistor("R1", "in", "z", resistance)
+            .AddDiode(
+                "DZ1",
+                "z",
+                "gnd",
+                DefaultIs,
+                breakdownVoltage: breakdownVoltage,
+                breakdownCurrent: breakdownCurrent);
+
+        DcSolution solution = netlist.Solve();
+        DcDiode diode = Assert.IsType<DcDiode>(netlist.Elements[2]);
+        double expected = BisectBreakdownVoltage(
+            supply, resistance, diode.SaturationCurrent, diode.JunctionVoltage,
+            breakdownVoltage, breakdownCurrent);
+        double actual = solution.NodeVoltages["z"];
+
+        AssertClose(expected, actual, 1e-7);
+        Assert.InRange(actual, -5.2, -5.1);
+        Assert.True(solution.ElementCurrents["DZ1"] < -breakdownCurrent);
+        AssertClose(solution.ElementCurrents["R1"], solution.ElementCurrents["DZ1"], 1e-8);
+        Assert.True(Math.Abs(solution.ElementPowers.Values.Sum()) < 1e-8);
+        Assert.True(solution.RelativeResidual <= 1);
+
+        const double delta = 1e-7;
+        double numericalConductance =
+            (diode.CurrentAt(actual + delta) - diode.CurrentAt(actual - delta)) / (2 * delta);
+        Assert.InRange(
+            Math.Abs(numericalConductance - diode.ConductanceAt(actual)) / numericalConductance,
+            0,
+            1e-6);
+    }
+
+    [Fact]
+    public void ReverseBreakdownParametersMustBeASpecifiedFinitePositivePair()
+    {
+        DcNetlist netlist = new("gnd");
+        Assert.Throws<ArgumentException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: 5.1));
+        Assert.Throws<ArgumentException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownCurrent: 1e-3));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: 0, breakdownCurrent: 1e-3));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: 5.1, breakdownCurrent: double.NaN));
+    }
+
+    [Fact]
     public void LargeUnrelatedCurrentDoesNotLoosenDiodeKclConvergence()
     {
         // The reverse-biased diode draws 0.1 A, so a 5 V source and 10 ohm series
@@ -250,7 +305,7 @@ public sealed class DcDiodeSolverTests
                 { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
                 { "id": "D1", "type": "diode", "nodeA": "out", "nodeB": "gnd",
                   "saturationCurrent": 1e-12, "emissionCoefficient": 1.5, "thermalVoltage": 0.025852,
-                  "seriesResistance": 10 }
+                  "seriesResistance": 10, "breakdownVoltage": 5.1, "breakdownCurrent": 0.005 }
               ]
             }
             """);
@@ -265,6 +320,8 @@ public sealed class DcDiodeSolverTests
         Assert.Equal(1.5, diode.GetProperty("emissionCoefficient").GetDouble());
         Assert.Equal(0.025852, diode.GetProperty("thermalVoltage").GetDouble());
         Assert.Equal(10, diode.GetProperty("seriesResistance").GetDouble());
+        Assert.Equal(5.1, diode.GetProperty("breakdownVoltage").GetDouble());
+        Assert.Equal(0.005, diode.GetProperty("breakdownCurrent").GetDouble());
         Assert.InRange(diode.GetProperty("volts").GetDouble(), 0.6, 1.2);
         Assert.True(diode.GetProperty("volts").GetDouble() > 0);
     }
@@ -295,6 +352,15 @@ public sealed class DcDiodeSolverTests
               "elements": [
                 { "id": "R1", "type": "resistor", "nodeA": "a", "nodeB": "gnd",
                   "ohms": 1000, "saturationCurrent": 1e-12 }
+              ]
+            }
+            """));
+        Assert.Throws<ProjectFormatException>(() => DcNetlistJson.LoadFromString("""
+            {
+              "format": "radix-dc-netlist", "version": 1, "ground": "gnd",
+              "elements": [
+                { "id": "D1", "type": "diode", "nodeA": "a", "nodeB": "gnd",
+                  "saturationCurrent": 1e-12, "breakdownVoltage": 5.1 }
               ]
             }
             """));
@@ -362,6 +428,35 @@ public sealed class DcDiodeSolverTests
             else
             {
                 high = mid;
+            }
+        }
+
+        return (low + high) / 2;
+    }
+
+    private static double BisectBreakdownVoltage(
+        double supply,
+        double resistance,
+        double saturationCurrent,
+        double junctionVoltage,
+        double breakdownVoltage,
+        double breakdownCurrent)
+    {
+        double low = supply;
+        double high = 0;
+        for (int iteration = 0; iteration < 240; iteration++)
+        {
+            double voltage = (low + high) / 2;
+            double forward = saturationCurrent * (Math.Exp(Math.Min(voltage / junctionVoltage, 80)) - 1);
+            double reverse = breakdownCurrent * Math.Exp(Math.Min((-voltage - breakdownVoltage) / junctionVoltage, 80));
+            double residual = ((voltage - supply) / resistance) + forward - reverse;
+            if (residual > 0)
+            {
+                high = voltage;
+            }
+            else
+            {
+                low = voltage;
             }
         }
 

@@ -127,7 +127,9 @@ public static class DcNetlistJson
                     solution.ElementPowers[element.Id],
                     diode?.EmissionCoefficient,
                     diode?.ThermalVoltage,
-                    diode?.SeriesResistance);
+                    diode?.SeriesResistance,
+                    diode?.BreakdownVoltage,
+                    diode?.BreakdownCurrent);
             })
             .ToArray();
 
@@ -213,7 +215,7 @@ public static class DcNetlistJson
                         element,
                         id,
                         "resistor",
-                        ["volts", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance"]);
+                        ["volts", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
                     netlist.AddResistor(id, nodeA, nodeB, RequireValue(element.Ohms, id, "ohms"));
                     break;
                 case "voltage-source":
@@ -221,7 +223,7 @@ public static class DcNetlistJson
                         element,
                         id,
                         "voltage-source",
-                        ["ohms", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance"]);
+                        ["ohms", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
                     netlist.AddVoltageSource(id, nodeA, nodeB, RequireValue(element.Volts, id, "volts"));
                     break;
                 case "current-source":
@@ -229,7 +231,7 @@ public static class DcNetlistJson
                         element,
                         id,
                         "current-source",
-                        ["ohms", "volts", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance"]);
+                        ["ohms", "volts", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
                     netlist.AddCurrentSource(id, nodeA, nodeB, RequireValue(element.Amperes, id, "amperes"));
                     break;
                 case "diode":
@@ -241,7 +243,9 @@ public static class DcNetlistJson
                         RequireValue(element.SaturationCurrent, id, "saturationCurrent"),
                         element.EmissionCoefficient ?? 1.0,
                         element.ThermalVoltage ?? DcDiode.DefaultThermalVoltage,
-                        element.SeriesResistance ?? 0);
+                        element.SeriesResistance ?? 0,
+                        element.BreakdownVoltage,
+                        element.BreakdownCurrent);
                     break;
                 default:
                     throw new ProjectFormatException(
@@ -291,6 +295,8 @@ public static class DcNetlistJson
                 "emissionCoefficient" => element.EmissionCoefficient is not null,
                 "thermalVoltage" => element.ThermalVoltage is not null,
                 "seriesResistance" => element.SeriesResistance is not null,
+                "breakdownVoltage" => element.BreakdownVoltage is not null,
+                "breakdownCurrent" => element.BreakdownCurrent is not null,
                 _ => false,
             };
             if (present)
@@ -318,7 +324,9 @@ public static class DcNetlistJson
         double? SaturationCurrent,
         double? EmissionCoefficient,
         double? ThermalVoltage,
-        double? SeriesResistance);
+        double? SeriesResistance,
+        double? BreakdownVoltage,
+        double? BreakdownCurrent);
 
     private sealed record ReportDto(
         string Format,
@@ -346,5 +354,7 @@ public static class DcNetlistJson
         double AbsorbedPowerWatts,
         double? EmissionCoefficient,
         double? ThermalVoltage,
-        double? SeriesResistance);
+        double? SeriesResistance,
+        double? BreakdownVoltage,
+        double? BreakdownCurrent);
 }

@@ -492,7 +492,9 @@ public sealed class TransientNetlist
                         diode.SaturationCurrent,
                         diode.EmissionCoefficient,
                         diode.ThermalVoltage,
-                        diode.SeriesResistance);
+                        diode.SeriesResistance,
+                        diode.BreakdownVoltage,
+                        diode.BreakdownCurrent);
                     break;
                 default:
                     throw new InvalidOperationException(
@@ -640,7 +642,9 @@ public sealed class TransientNetlist
         double saturationCurrent,
         double emissionCoefficient = 1.0,
         double thermalVoltage = DcDiode.DefaultThermalVoltage,
-        double seriesResistance = 0)
+        double seriesResistance = 0,
+        double? breakdownVoltage = null,
+        double? breakdownCurrent = null)
     {
         ValidateElement(id, nodeA, nodeB);
         if (!double.IsFinite(saturationCurrent) || saturationCurrent <= 0)
@@ -675,6 +679,8 @@ public sealed class TransientNetlist
                 "Series resistance must be finite and non-negative.");
         }
 
+        DcDiode.ValidateBreakdownParameters(breakdownVoltage, breakdownCurrent);
+
         return AddStatic(new DcDiode(
             id,
             nodeA,
@@ -682,7 +688,9 @@ public sealed class TransientNetlist
             saturationCurrent,
             emissionCoefficient,
             thermalVoltage,
-            seriesResistance));
+            seriesResistance,
+            breakdownVoltage,
+            breakdownCurrent));
     }
 
     public TransientNetlist AddCapacitor(string id, string nodeA, string nodeB, double farads)
@@ -1652,7 +1660,9 @@ public sealed class TransientNetlist
                     text.Append("|d|").Append(Number(diode.SaturationCurrent))
                         .Append('|').Append(Number(diode.EmissionCoefficient))
                         .Append('|').Append(Number(diode.ThermalVoltage))
-                        .Append('|').Append(Number(diode.SeriesResistance));
+                        .Append('|').Append(Number(diode.SeriesResistance))
+                        .Append('|').Append(diode.BreakdownVoltage is double bv ? Number(bv) : "-")
+                        .Append('|').Append(diode.BreakdownCurrent is double bi ? Number(bi) : "-");
                     break;
                 default:
                     text.Append("|?|").Append(Number(element.Value));
@@ -1867,7 +1877,9 @@ public sealed class TransientNetlist
                     diode.SaturationCurrent,
                     diode.EmissionCoefficient,
                     diode.ThermalVoltage,
-                    diode.SeriesResistance);
+                    diode.SeriesResistance,
+                    diode.BreakdownVoltage,
+                    diode.BreakdownCurrent);
                 break;
             default:
                 throw new InvalidOperationException(

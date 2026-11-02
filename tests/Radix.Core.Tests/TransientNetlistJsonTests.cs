@@ -46,6 +46,45 @@ public sealed class TransientNetlistJsonTests
     }
 
     [Fact]
+    public void TransientNetlistCanRunADiodeWithReverseBreakdown()
+    {
+        TransientDocument document = TransientNetlistJson.LoadFromString("""
+            {
+              "format": "radix-transient-netlist", "version": 1, "ground": "gnd",
+              "elements": [
+                { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": -12 },
+                { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "z", "ohms": 1000 },
+                { "id": "DZ1", "type": "diode", "nodeA": "z", "nodeB": "gnd",
+                  "saturationCurrent": 1e-12, "breakdownVoltage": 5.1, "breakdownCurrent": 0.005 }
+              ],
+              "analysis": { "start": 0, "stop": 0.001, "steps": 2 }
+            }
+            """);
+
+        DcDiode diode = Assert.IsType<DcDiode>(document.Netlist.Elements[2]);
+        Assert.Equal(5.1, diode.BreakdownVoltage);
+        Assert.Equal(0.005, diode.BreakdownCurrent);
+        TransientResult result = document.Netlist.Run(document.Analysis!);
+
+        Assert.True(result.Completed, result.Message);
+        Assert.InRange(result.FinalPoint!.NodeVoltages["z"], -5.2, -5.1);
+    }
+
+    [Fact]
+    public void TransientNetlistRejectsAnIncompleteBreakdownParameterPair()
+    {
+        Assert.Throws<ProjectFormatException>(() => TransientNetlistJson.LoadFromString("""
+            {
+              "format": "radix-transient-netlist", "version": 1, "ground": "gnd",
+              "elements": [
+                { "id": "DZ1", "type": "diode", "nodeA": "a", "nodeB": "gnd",
+                  "saturationCurrent": 1e-12, "breakdownVoltage": 5.1 }
+              ]
+            }
+            """));
+    }
+
+    [Fact]
     public void ShippedTransientExamplesLoadSolveAndMatchHandCalculations()
     {
         string root = RepositoryRoot();
