@@ -254,6 +254,26 @@ public sealed class ElectricalMosfetCircuitTests
         Assert.Contains(
             ElectricalCircuitValidator.Validate(badChannel),
             d => d.Code == "RAD-ELEC-022");
+
+        // Lambda is a physical slope: zero means no channel-length modulation. A negative or
+        // non-finite value would describe a device that is not a transistor, so both are
+        // refused before a solve instead of being handed to Newton.
+        ElectricalCircuit negativeLambda = CmosInverter();
+        negativeLambda.FindComponent("MN")!.ChannelLengthModulation = -0.1;
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(negativeLambda),
+            d => d.Code == "RAD-ELEC-023");
+
+        ElectricalCircuit nonFiniteLambda = CmosInverter();
+        nonFiniteLambda.FindComponent("MP")!.ChannelLengthModulation = double.PositiveInfinity;
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(nonFiniteLambda),
+            d => d.Code == "RAD-ELEC-023");
+
+        // Zero itself is the documented default and must stay valid.
+        Assert.DoesNotContain(
+            ElectricalCircuitValidator.Validate(CmosInverter()),
+            d => d.Code == "RAD-ELEC-023");
     }
 
     [Fact]
