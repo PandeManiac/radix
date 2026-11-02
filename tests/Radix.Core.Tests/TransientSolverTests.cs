@@ -48,6 +48,43 @@ public sealed class TransientSolverTests
         }
     }
 
+    [Fact]
+    public void ZenerClampTransientSettlesAtTheReverseBreakdownOperatingPoint()
+    {
+        const double breakdownVoltage = 5.1;
+        const double breakdownCurrent = 5e-3;
+        var options = new TransientOptions { StopTime = 0.05, Steps = 2_500 };
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 0)
+            .SetWaveform("V1", [
+                new TransientWaveformPoint(0, 0),
+                new TransientWaveformPoint(1e-6, -12),
+            ])
+            .AddResistor("R1", "in", "z", 1_000)
+            .AddCapacitor("C1", "z", "gnd", 10e-6)
+            .SetCapacitorInitialVoltage("C1", 0)
+            .AddDiode(
+                "DZ1",
+                "z",
+                "gnd",
+                1e-12,
+                breakdownVoltage: breakdownVoltage,
+                breakdownCurrent: breakdownCurrent);
+
+        TransientResult result = netlist.Run(options);
+
+        Assert.True(result.Completed, result.Message);
+        TransientPoint afterRamp = Assert.Single(result.Points, point => point.Time == 1e-6);
+        AssertClose(0, afterRamp.NodeVoltages["z"], 1.5e-3);
+        Assert.Contains(result.Points, point => point.NodeVoltages["z"] < -1);
+        Assert.InRange(result.FinalPoint!.NodeVoltages["z"], -5.2, -5.1);
+        Assert.True(result.FinalPoint.ElementCurrents["DZ1"] < -breakdownCurrent);
+        AssertClose(
+            result.FinalPoint.ElementCurrents["R1"],
+            result.FinalPoint.ElementCurrents["DZ1"],
+            1e-8);
+    }
+
     [Theory]
     [InlineData(TransientMethod.BackwardEuler, 2.0)]
     [InlineData(TransientMethod.Trapezoidal, 4.0)]
