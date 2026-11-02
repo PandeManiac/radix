@@ -1151,3 +1151,10 @@ summary and full local verification results; see the PR for the latest CI state.
      finite. Opposite-extreme signed timestamps also produce an infinite interval
      and lose the expected midpoint. Focused test execution and implementation are
      pending.
+
+122. Fixed transient waveform interpolation overflow. For an overflowing timestamp
+     interval, interpolation now computes the normalized fraction after scaling
+     both endpoints and the query time. If an overflowing value delta spans
+     opposite signs, interpolation uses a convex weighted sum; ordinary ranges keep
+     the original delta form. Both extreme-scale regressions pass (2/2); broader
+     verification remains pending.

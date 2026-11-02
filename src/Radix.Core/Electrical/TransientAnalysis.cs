@@ -114,8 +114,32 @@ public sealed class TransientWaveform
 
         TransientWaveformPoint left = _points[low];
         TransientWaveformPoint right = _points[high];
-        return left.Value +
-            ((right.Value - left.Value) * ((time - left.Time) / (right.Time - left.Time)));
+        double interval = right.Time - left.Time;
+        double elapsed = time - left.Time;
+        double fraction;
+        if (double.IsFinite(interval) && double.IsFinite(elapsed))
+        {
+            fraction = elapsed / interval;
+        }
+        else
+        {
+            // Opposite-sign finite timestamps can have an infinite difference even
+            // though their normalized position is representable.
+            double timeScale = Math.Max(Math.Abs(left.Time), Math.Abs(right.Time));
+            fraction = ((time / timeScale) - (left.Time / timeScale)) /
+                ((right.Time / timeScale) - (left.Time / timeScale));
+        }
+
+        fraction = Math.Clamp(fraction, 0, 1);
+        double valueDelta = right.Value - left.Value;
+        if (double.IsFinite(valueDelta))
+        {
+            return left.Value + (valueDelta * fraction);
+        }
+
+        // The endpoints have opposite signs, so a convex weighted sum stays finite
+        // even when subtracting them would overflow.
+        return (left.Value * (1 - fraction)) + (right.Value * fraction);
     }
 }
 
