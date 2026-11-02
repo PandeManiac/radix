@@ -441,6 +441,30 @@ with the table above it. Being a difference quotient, it needs two solved points
 single-point sweep, a value that failed to solve, or repeated swept values report no slope
 instead of a fabricated zero.
 
+**Switching.** `examples/transient-ternary-inverter.radix` drives the same inverter from 0 V to
+2.5 V through a 1 ns ramp and puts 2 pF on the summing node, so the middle level becomes a state
+the network has to reach rather than a value the solver assigns:
+
+```bash
+radix transient examples/transient-ternary-inverter.radix --stop 600e-9 --steps 600
+```
+
+| `t` | 0 | 108 ns | 208 ns | 600 ns |
+| --- | --- | --- | --- | --- |
+| `out` | 5 | 3.5465 | 2.8891 | 2.50804 |
+
+The output leaves the rail at the step and settles exponentially on 2.508 V — the static middle
+level, approached from above — with a measured time constant of 99.7 ns against the closed form
+`(R/2) C = 50 kΩ × 2 pF = 100 ns`, and a 399 ns settling time in a 2 % band. Doubling the load
+capacitance doubles the measured constant, which the tests assert, so the delay belongs to the
+network rather than to the integrator. The run's energy ledger closes to 4 × 10⁻⁴ of the energy
+delivered, so the switching energy is accounted for instead of assumed.
+
+The transistor is still ideal: the capacitance is an explicit load on the summing node, not gate
+charge, so the delay is the interconnect's and the devices themselves switch instantaneously.
+What the run does establish is that the middle level is reachable in a finite time by a real
+network, which is a property no static table can show.
+
 The same topology ships as an authored project asset,
 `examples/dc-ternary-inverter.radix` (format v12), so the design opens in the Electrical
 inspector instead of living only in a netlist file. Authored MOSFETs carry a

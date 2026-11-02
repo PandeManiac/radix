@@ -115,6 +115,7 @@ dotnet run --project src/Radix.Cli -- dc examples/dc-ternary-inverter.radix --sw
 dotnet run --project src/Radix.Cli -- transient examples/transient-rc.json
 dotnet run --project src/Radix.Cli -- transient examples/transient-rlc.json --method trapezoidal
 dotnet run --project src/Radix.Cli -- transient examples/transient-rc.radix --circuit rc-charge --stop 0.005 --steps 60
+dotnet run --project src/Radix.Cli -- transient examples/transient-ternary-inverter.radix --stop 600e-9 --steps 600
 dotnet run --project src/Radix.Cli -- transient examples/transient-pulse.json \
   --stop 0.003 --steps 300 --json
 
@@ -210,6 +211,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 | [dc-divider.radix](examples/dc-divider.radix) | Authored DC voltage divider with explicit electrical terminals and component metadata |
 | [transient-rc.radix](examples/transient-rc.radix) | Authored RC charge with a capacitor initial voltage, solved by `radix transient` |
 | [transient-pulse.radix](examples/transient-pulse.radix) | Authored RC step response driven by a piecewise-linear source waveform |
+| [transient-ternary-inverter.radix](examples/transient-ternary-inverter.radix) | The authored ternary inverter switching from the rail to the middle level through a 2 pF summing-node load, with a measured 100 ns time constant |
 | [dc-mosfet-common-source.json](examples/dc-mosfet-common-source.json) | One n-channel MOSFET switching a resistor load: the drain follows the gate voltage by the square law |
 | [dc-cmos-inverter.json](examples/dc-cmos-inverter.json) | A static CMOS inverter solved from a p- and an n-channel MOSFET, with a rail-to-rail transfer curve |
 | [dc-ternary-inverter.json](examples/dc-ternary-inverter.json) | A resistor-summed dual-threshold ternary inverter: 0 V → 5 V, 2.5 V → 2.5 V, 5 V → 0 V from the network solution |
