@@ -1313,3 +1313,8 @@ summary and full local verification results; see the PR for the latest CI state.
      `TransientRefinementTests` suite passes 11/11; the linear extreme-scale trace
      now reports zero deviation at the refined samples. Broader verification is
      pending.
+
+148. Verified scale-safe refinement interpolation: Release solution build passed
+     with 0 warnings/errors, Core passed 665/665, and headless Editor passed
+     242/242 with `.local-native`. The extreme-range regression passes alongside
+     the full refinement suite; PR #6 needs its description refreshed.
