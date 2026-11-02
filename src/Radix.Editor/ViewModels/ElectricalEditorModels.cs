@@ -374,12 +374,22 @@ public sealed class ElectricalNodeResultItem
 /// <summary>One solved component with terminal voltage, current, and absorbed power.</summary>
 public sealed class ElectricalElementResultItem
 {
-    public ElectricalElementResultItem(DcElement element, ElectricalComponent? component, DcSolution solution)
+    public ElectricalElementResultItem(
+        DcElement element,
+        ElectricalComponent? component,
+        DcSolution solution,
+        string scope = "root",
+        string? name = null)
     {
         ArgumentNullException.ThrowIfNull(element);
         ArgumentNullException.ThrowIfNull(solution);
         Id = element.Id;
-        Name = component is null || string.IsNullOrWhiteSpace(component.Name) ? element.Id : component.Name;
+        Name = !string.IsNullOrWhiteSpace(name)
+            ? name
+            : component is null || string.IsNullOrWhiteSpace(component.Name)
+                ? element.Id
+                : component.Name;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
         NodeA = element.NodeA;
         NodeB = element.NodeB;
         Value = element.Value;
@@ -410,6 +420,9 @@ public sealed class ElectricalElementResultItem
     public string Id { get; }
 
     public string Name { get; }
+
+    /// <summary>The authored circuit root, or the instance path that owns this element.</summary>
+    public string Scope { get; }
 
     public string KindId { get; }
 

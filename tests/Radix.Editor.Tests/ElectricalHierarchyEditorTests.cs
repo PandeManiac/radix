@@ -115,6 +115,13 @@ public sealed class ElectricalHierarchyEditorTests
             viewModel.ElectricalNodeResults
                 .Select(node => node.Scope)
                 .Distinct(StringComparer.Ordinal));
+
+        ElectricalElementResultItem childElement = viewModel.ElectricalElementResults
+            .Single(element => element.Id == "X1/RSUM1");
+        Assert.Equal("X1", childElement.Scope);
+        Assert.Equal("Summing resistor", childElement.Name);
+        Assert.Equal("root", viewModel.ElectricalElementResults
+            .Single(element => element.Id == "VIN").Scope);
     }
 
     [Fact]

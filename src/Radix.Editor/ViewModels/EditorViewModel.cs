@@ -7221,10 +7221,13 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalElementResults.Clear();
         foreach (DcElement element in netlist.Elements)
         {
+            (string scope, string name) = DescribeElectricalElement(element.Id, circuit);
             ElectricalElementResults.Add(new ElectricalElementResultItem(
                 element,
                 circuit.FindComponent(element.Id),
-                solution));
+                solution,
+                scope,
+                name));
         }
 
         HasElectricalSolveResult = true;
@@ -7243,18 +7246,51 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalCircuit root)
     {
         int separator = netlistNodeId.LastIndexOf('/');
-        if (separator < 0)
+        string path = separator < 0 ? string.Empty : netlistNodeId[..separator];
+        string nodeId = separator < 0 ? netlistNodeId : netlistNodeId[(separator + 1)..];
+        ElectricalCircuit? circuit = ResolveElectricalScope(path, root, out string scope);
+        ElectricalNode? node = circuit?.FindNode(nodeId);
+        return (scope, string.IsNullOrWhiteSpace(node?.Name) ? nodeId : node.Name);
+    }
+
+    /// <summary>
+    /// Resolves the authored name and owning instance path of a possibly prefixed netlist
+    /// element. The final segment is a component ID; every earlier segment names a direct
+    /// subcircuit instance.
+    /// </summary>
+    private (string Scope, string Name) DescribeElectricalElement(
+        string netlistElementId,
+        ElectricalCircuit root)
+    {
+        int separator = netlistElementId.LastIndexOf('/');
+        string path = separator < 0 ? string.Empty : netlistElementId[..separator];
+        string componentId = separator < 0
+            ? netlistElementId
+            : netlistElementId[(separator + 1)..];
+        ElectricalCircuit? circuit = ResolveElectricalScope(path, root, out string scope);
+        ElectricalComponent? component = circuit?.FindComponent(componentId);
+        return (scope, string.IsNullOrWhiteSpace(component?.Name)
+            ? componentId
+            : component.Name);
+    }
+
+    /// <summary>
+    /// Walks an instance path such as X1/X2 and returns the referenced circuit. On failure the
+    /// scope remains the full path so the row still identifies the unresolved expansion.
+    /// </summary>
+    private ElectricalCircuit? ResolveElectricalScope(
+        string path,
+        ElectricalCircuit root,
+        out string scope)
+    {
+        scope = path.Length == 0 ? "root" : path;
+        if (path.Length == 0)
         {
-            ElectricalNode? rootNode = root.FindNode(netlistNodeId);
-            return ("root", string.IsNullOrWhiteSpace(rootNode?.Name)
-                ? netlistNodeId
-                : rootNode.Name);
+            return root;
         }
 
-        string path = netlistNodeId[..separator];
-        string nodeId = netlistNodeId[(separator + 1)..];
         ElectricalCircuit circuit = root;
-        var scope = new List<string>();
+        var resolved = new List<string>();
         foreach (string instanceId in path.Split('/'))
         {
             ElectricalComponent? instance = circuit.FindComponent(instanceId);
@@ -7264,17 +7300,15 @@ public sealed class EditorViewModel : ObservableObject
                     : null;
             if (child is null)
             {
-                return (path, nodeId);
+                return null;
             }
 
-            scope.Add(instanceId);
+            resolved.Add(instanceId);
             circuit = child;
         }
 
-        ElectricalNode? node = circuit.FindNode(nodeId);
-        return (string.Join("/", scope), string.IsNullOrWhiteSpace(node?.Name)
-            ? nodeId
-            : node.Name);
+        scope = string.Join("/", resolved);
+        return circuit;
     }
 
     /// <summary>

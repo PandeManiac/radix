@@ -1296,8 +1296,10 @@ select `chain` to see the two subcircuit instances, their terminal bindings, and
 operating point. After **Solve**, the NODES table includes unported child nodes under their
 prefixed ID, labels each with its owning instance path (`X1`, `X1/X1`, or `root`), and uses the
 child node's authored name; a ported node appears once at the parent boundary because it is the
-same electrical node. The internal implementation of each stage therefore remains inspectable
-rather than being replaced by a black box.
+same electrical node. The ELEMENTS table applies the same instance scope and resolves each child
+component's authored name, so a row such as `X1/RSUM1` reads as `X1 · Summing resistor` rather
+than an opaque prefixed ID. The internal implementation of each stage therefore remains
+inspectable rather than being replaced by a black box.
 
 Tests: `ElectricalHierarchyTests` covers flat-equivalent solves, two independent instances with
 different overrides, nested expansion, the serialized round trip, the transient RC closed form,

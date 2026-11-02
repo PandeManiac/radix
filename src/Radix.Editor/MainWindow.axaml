@@ -1304,9 +1304,10 @@
                           <DataTemplate x:DataType="vm:ElectricalElementResultItem">
                             <Border BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="0,3" Margin="0,1">
                               <StackPanel Spacing="1">
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="10" />
-                                  <TextBlock Grid.Column="1" Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                                  <TextBlock Text="{Binding Scope}" Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="10" ToolTip.Tip="{Binding Id}" />
+                                  <TextBlock Grid.Column="2" Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                                 </Grid>
                                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                                   <TextBlock Text="{Binding VoltageText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Terminal voltage from node a to node b" />

@@ -34,6 +34,9 @@ humans; update it at each milestone instead of relying on chat history.
   instance scope: `root` for the selected circuit, or the path such as `X1` or
   `X1/X1` for a nested instance. Ported nodes are not duplicated because they are
   the same electrical node as their parent binding.
+- The solved ELEMENTS table now resolves child component names and the same
+  instance scope. A nested prefix such as `X1/RSUM1` is shown as `X1` plus the
+  authored label `Summing resistor` instead of an opaque element ID.
 - Added a regression that loads `examples/electrical-ternary-hierarchy.radix`, solves
   `chain`, and checks that `X1/out_low` appears with scope `X1`, its authored name,
   and no duplicate `X1/out` row.
