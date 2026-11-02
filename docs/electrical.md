@@ -408,10 +408,11 @@ The full curve, rather than the three sampled points, is what the design is judg
   the divider carries 25 µA and both inverters sit in their own crossover region, so the
   5 V rail supplies about 49.5 µA — **0.248 mW**. This is inherent to resistor summing and
   would be removed by a buffered output stage.
-- **Noise margin (ideal, unloaded).** With output levels 0/2.5/5 V and a middle plateau from
-  1.5 V to 3.5 V, the worst-case input margin around a 2.5 V nominal is ±1.0 V. That figure
-  shrinks with load because the middle level moves; it is a property of this topology, not
-  a datasheet number.
+- **Noise margin (ideal, unloaded).** `radix dc --sweep … --margins out` finds the unity-gain
+  crossings and reports the windows between them: `0 → 1.042`, `1.422 → 3.578`, `3.958 → 5` V.
+  The middle window is 2.155 V wide, so a level placed at 2.5 V has ±1.078 V of margin, and each
+  rail window is 1.042 V wide. That figure shrinks with load because the middle level moves; it
+  is a property of this topology, not a datasheet number.
 - **Region of validity.** This is an *idealised educational* topology: the levels come from
   two ideal CMOS inverters and ideal resistors, with no mismatch, no temperature, no
   capacitance, and a fixed `lambda`. It demonstrates that an intermediate logic level can be
@@ -464,6 +465,29 @@ The transistor is still ideal: the capacitance is an explicit load on the summin
 charge, so the delay is the interconnect's and the devices themselves switch instantaneously.
 What the run does establish is that the middle level is reachable in a finite time by a real
 network, which is a property no static table can show.
+
+**Input windows.** `--margins <node>` turns the measured gain into the windows a level can
+occupy, by finding where `|dV(node)/d(swept)|` crosses one and reporting the ranges between those
+crossings:
+
+```bash
+radix dc examples/dc-ternary-inverter.radix --sweep VIN=0:5:64 --margins out
+```
+
+```text
+input windows for out over VIN: 3 windows where |dV(out)/dVIN| < 1
+  0 -> 1.042  (1.042 wide)
+  1.422 -> 3.578  (2.155 wide)
+  3.958 -> 5  (1.042 wide)
+unity-gain crossings: 1.042, 1.422, 3.578, 3.958
+```
+
+A circuit holds a level where it does not amplify, so the gaps are the legal levels and the bands
+between crossings are forbidden. The same command on the binary inverter reports two windows of
+2.085 V each meeting at a single transition, and on a resistive divider a single window covering
+the whole range, because a divider never amplifies. The crossings are interpolated from the
+measured gain, so they inherit its grid: a coarse sweep reports a correspondingly coarse edge,
+which is why the number is quoted with the sweep that produced it.
 
 The same topology ships as an authored project asset,
 `examples/dc-ternary-inverter.radix` (format v12), so the design opens in the Electrical

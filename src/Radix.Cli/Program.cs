@@ -112,6 +112,7 @@ internal static class Program
                   [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>]
                                              Solve once per value of one element parameter
                   [--gain <node>]            Add d(node)/d(swept) to the sweep table
+                  [--margins <node>]         Print the input windows where that curve is not amplified
                   [--csv]                    Emit the sweep as a wide CSV table
                   [--json]                   Emit one machine-readable DC report
               transient <netlist.json|project.radix>
@@ -266,7 +267,7 @@ internal static class Program
 
     private static int DcCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["circuit", "sweep", "gain"], ["json", "csv"]);
+        (var positional, var options) = Parse(args, ["circuit", "sweep", "gain", "margins"], ["json", "csv"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
@@ -277,6 +278,22 @@ internal static class Program
         bool json = options.ContainsKey("json");
         bool csv = options.ContainsKey("csv");
         string? sweepSpec = GetOption(options, "sweep");
+        string? marginsNode = GetOption(options, "margins");
+        if (marginsNode is not null)
+        {
+            if (sweepSpec is null)
+            {
+                Console.Error.WriteLine("--margins needs --sweep: it finds the unity-gain crossings of a swept curve.");
+                return 2;
+            }
+
+            if (csv)
+            {
+                Console.Error.WriteLine("--margins prints its own table; use it without --csv.");
+                return 2;
+            }
+        }
+
         string? gainNode = GetOption(options, "gain");
         if (gainNode is not null)
         {
@@ -342,11 +359,14 @@ internal static class Program
                 return 2;
             }
 
-            if (gainNode is not null && !netlist.Nodes.Contains(gainNode, StringComparer.Ordinal))
+            foreach (string? measured in new[] { gainNode, marginsNode })
             {
-                Console.Error.WriteLine(
-                    $"--gain node '{gainNode}' is not in this netlist; available: {string.Join(", ", netlist.Nodes)}.");
-                return 2;
+                if (measured is not null && !netlist.Nodes.Contains(measured, StringComparer.Ordinal))
+                {
+                    Console.Error.WriteLine(
+                        $"--gain/--margins node '{measured}' is not in this netlist; available: {string.Join(", ", netlist.Nodes)}.");
+                    return 2;
+                }
             }
 
             try
@@ -361,6 +381,14 @@ internal static class Program
                         sweptElement,
                         gainNode,
                         DcSweepGain.Along(rows, gainNode)));
+                }
+
+                if (marginsNode is not null)
+                {
+                    Console.Write(DcSweepMargins.ToText(
+                        sweptElement,
+                        marginsNode,
+                        DcSweepGain.Along(rows, marginsNode)));
                 }
 
                 return rows.All(row => row.Solved) ? 0 : 1;
