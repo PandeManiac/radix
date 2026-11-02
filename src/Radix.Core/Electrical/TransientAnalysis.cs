@@ -1571,8 +1571,8 @@ public sealed class TransientNetlist
 
             (double previousDelivered, double previousDissipated) = PowerFlow(points[index - 1]);
             (double currentDelivered, double currentDissipated) = PowerFlow(points[index]);
-            delivered += span * (previousDelivered + currentDelivered) / 2;
-            dissipated += span * (previousDissipated + currentDissipated) / 2;
+            delivered += span * Average(previousDelivered, currentDelivered);
+            dissipated += span * Average(previousDissipated, currentDissipated);
         }
 
         double lastStored = StoredEnergy(points[^1]);
@@ -1583,6 +1583,14 @@ public sealed class TransientNetlist
             stored,
             lastStored,
             delivered - dissipated - stored);
+    }
+
+    private static double Average(double left, double right)
+    {
+        double sum = left + right;
+        return double.IsFinite(sum)
+            ? sum / 2
+            : (left / 2) + (right / 2);
     }
 
     /// <summary>

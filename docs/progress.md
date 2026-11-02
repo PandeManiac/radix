@@ -1173,3 +1173,9 @@ summary and full local verification results; see the PR for the latest CI state.
      The energy ledger currently adds adjacent powers before dividing by two, which
      can overflow despite the finite average and final energy. Focused test and fix
      are pending.
+
+126. Fixed trapezoidal energy-average overflow. The ledger now divides each finite
+     sampled power by two before adding only if their direct sum overflowed; ordinary
+     finite sums still use sum-then-halving to preserve small-value precision.
+     All seven `TransientEnergyTests` pass, including the 1e308 W / 1e305 J analytic
+     regression. Broader verification remains pending.
