@@ -202,22 +202,9 @@ public static class AcAnalysis
         }
 
         // The bias fixes every device's region and slopes, so they are measured once here rather
-        // than re-derived from the matrix later.
-        var devices = new List<AcDeviceReport>();
-        foreach (DcMosfet mosfet in netlist.Elements.OfType<DcMosfet>())
-        {
-            double drainSource = NodeBias(bias, mosfet.Drain) - NodeBias(bias, mosfet.Source);
-            double gateSource = NodeBias(bias, mosfet.Gate) - NodeBias(bias, mosfet.Source);
-            DcMosfetOperatingPoint point = mosfet.Evaluate(drainSource, gateSource);
-            devices.Add(new AcDeviceReport(
-                mosfet.Id,
-                point.Region.ToString(),
-                gateSource,
-                drainSource,
-                point.Current,
-                point.GateTransconductance,
-                point.DrainConductance));
-        }
+        // than re-derived from the matrix later. A bias sweep reads the same numbers through the
+        // same helper.
+        IReadOnlyList<AcDeviceReport> devices = MosfetReports.Measure(netlist, bias);
 
         var sourceRow = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (DcVoltageSource source in sources)
@@ -337,8 +324,7 @@ public static class AcAnalysis
         return new AcResponse(drive.Id, amplitude, bias.RelativeResidual, points) { Devices = devices };
     }
 
-    private static double NodeBias(DcSolution bias, string node) =>
-        bias.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0;
+    private static double NodeBias(DcSolution bias, string node) => MosfetReports.NodeBias(bias, node);
 
     /// <summary>
     /// Solves the complex system by Gaussian elimination with partial pivoting. A pivot is judged

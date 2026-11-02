@@ -145,6 +145,8 @@ internal static class Program
                   [--compare <archive>]      Compare with a recorded sweep and report deviations
                   [--compare-tolerance <db>]  Gain deviation tolerated before exiting 1 (default 0)
                   [--devices]                Also print each MOSFET's region, gm and gds at the bias
+                  [--bias-sweep <from:to:count>]
+                                             Step the drive and report every device at each value
                   [--csv]                    Emit one row per node per frequency
                   [--json]                   Emit a versioned report that --compare can read back
               simulate <project.radix>       Compile and run a definition headlessly
@@ -484,7 +486,10 @@ internal static class Program
     {
         (var positional, var options) = Parse(
             args,
-            ["circuit", "drive", "from", "to", "points", "amplitude", "bias", "compare", "compare-tolerance"],
+            [
+                "circuit", "drive", "from", "to", "points", "amplitude", "bias",
+                "compare", "compare-tolerance", "bias-sweep",
+            ],
             ["csv", "json", "devices"]);
         string? drive = GetOption(options, "drive");
         if (positional.Count != 1 || drive is null)
@@ -672,7 +677,98 @@ internal static class Program
             }
         }
 
+        if (GetOption(options, "bias-sweep") is string biasSweepSpec)
+        {
+            if (!TryParseBiasSweep(biasSweepSpec, out double[] biases, out string biasError))
+            {
+                Console.Error.WriteLine(biasError);
+                return 2;
+            }
+
+            IReadOnlyList<MosfetBiasPoint> biasPoints;
+            try
+            {
+                biasPoints = MosfetBiasSweep.Run(netlist, drive, biases);
+            }
+            catch (Exception exception) when (exception is ArgumentException or DcSolveException)
+            {
+                Console.Error.WriteLine($"bias sweep failed: {exception.Message}");
+                return 1;
+            }
+
+            Console.WriteLine();
+            PrintMosfetBiasSweep(drive, biasPoints);
+        }
+
         return 0;
+    }
+
+    /// <summary>
+    /// Parses <c>from:to:count</c> for a bias sweep, reusing the even spacing the Core helper
+    /// defines so the CLI and the panel describe the same study.
+    /// </summary>
+    private static bool TryParseBiasSweep(string text, out double[] values, out string error)
+    {
+        values = [];
+        error = string.Empty;
+
+        string[] parts = text.Split(':');
+        if (parts.Length != 3 ||
+            !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) ||
+            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) ||
+            !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
+        {
+            error = "--bias-sweep takes from:to:count, for example 0:5:11.";
+            return false;
+        }
+
+        try
+        {
+            values = [.. MosfetBiasSweep.Linear(from, to, count)];
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            error = "--bias-sweep: " + exception.Message;
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Region and slopes for every transistor at every bias, so a table says where a device
+    /// switches rather than only where it sits.
+    /// </summary>
+    private static void PrintMosfetBiasSweep(string drive, IReadOnlyList<MosfetBiasPoint> points)
+    {
+        int devices = points.Count == 0 ? 0 : points[0].Devices.Count;
+        if (devices == 0)
+        {
+            Console.WriteLine($"Bias sweep of '{drive}': the netlist has no MOSFETs.");
+            return;
+        }
+
+        string Number(double value) =>
+            double.IsFinite(value) ? value.ToString("G4", CultureInfo.InvariantCulture) : "inf";
+
+        Console.WriteLine($"Bias sweep of '{drive}': {points.Count} values · {devices} devices");
+        Console.WriteLine("  bias    device  region      Vgs         Vds         gm          gds");
+        foreach (MosfetBiasPoint point in points)
+        {
+            bool first = true;
+            foreach (AcDeviceReport device in point.Devices)
+            {
+                Console.WriteLine(
+                    "  " + (first ? Number(point.BiasVolts) : string.Empty).PadRight(8) +
+                    device.Id.PadRight(8) +
+                    device.Region.PadRight(12) +
+                    Number(device.GateSourceVolts).PadRight(12) +
+                    Number(device.DrainSourceVolts).PadRight(12) +
+                    Number(device.Transconductance).PadRight(12) +
+                    Number(device.DrainConductance));
+                first = false;
+            }
+        }
     }
 
     /// <summary>

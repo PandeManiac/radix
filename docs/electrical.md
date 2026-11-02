@@ -539,7 +539,14 @@ gain traceable to a device instead of to a matrix.
 The editor's inspector shows the same numbers for the selected transistor, beside the bias it was
 measured at. Without a bias the circuit sits at its rest state — each source at its value at t = 0 —
 so a driven gate reads `Cutoff`; entering `VIN=1.3` puts it on the transition and the region, `gm`,
-`gds` and `|gm/gds|` appear next to the capacitances they are assembled with. Those are the same numbers the DC sweep measures as a slope at
+`gds` and `|gm/gds|` appear next to the capacitances they are assembled with.
+
+One operating point says where a device sits; a sweep says where it switches. `radix ac
+--bias-sweep 0:5:11` steps the drive and prints every transistor's region, `Vgs`, `Vds`, `gm` and
+`gds` at each value, so the ternary gate's two transitions appear as a sequence of regions rather
+than as one number taken at a bias somebody guessed. The sweep holds the source at each value in
+turn — a waveform would otherwise pin every point to the rest state — and it measures devices with
+the same helper the AC analysis uses, so the two cannot report different slopes for one bias. Those are the same numbers the DC sweep measures as a slope at
 the same bias: because the analysis is linearized at the operating point, the test asserts that the
 AC magnitude at 1 Hz agrees with the difference quotient within 15 %, so the frequency-domain
 assembly and the DC slope cross-check each other instead of each being trusted alone.
