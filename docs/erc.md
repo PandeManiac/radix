@@ -118,6 +118,9 @@ analysis come after that boundary, not by interpreting digital values as volts.
 ## Verification
 
 `ElectricalRuleCheckingTests` covers positive, negative, borderline,
-hierarchical, serialized, and 256-net cases. The existing example projects are
-also validated in CI; a rule that floods existing designs with false positives
-is treated as a regression.
+hierarchical, serialized, and 256-net cases. The hierarchy case reuses a child
+with a floating island in two parent instances and checks that the child gets one
+warning while the parent gets one aggregated warning naming both instance paths,
+without per-instance duplication. The existing example projects are also
+validated in CI; a rule that floods existing designs with false positives is
+treated as a regression.

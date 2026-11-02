@@ -20,7 +20,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Project-electrical-validation checkpoint: `55d63769b5bbd48e4c2a4bd0225feb638e1d5fad`
   (structural errors in `radix validate` and editor diagnostics).
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 833/833, CLI tests 3/3, Editor tests 312/312. The buffered example solves both
+  tests 834/834, CLI tests 3/3, Editor tests 312/312. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
   diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
@@ -60,6 +60,18 @@ humans; update it at each milestone instead of relying on chat history.
 - Verification: Release build clean (0 warnings/errors); Core 833/833, CLI 3/3,
   Editor 312/312; focused electrical rule tests 7/7. All 36 shipped `.radix`
   examples pass `radix validate` after the electrical structural report is included.
+
+## Session 2026-11-02 (hierarchical ERC ownership)
+
+- Added a regression for a child circuit with a floating island reused by two
+  parent instances. It asserts one `RAD-ERC-101` at `electrical/divider` and one
+  aggregated warning at `electrical/parent` naming both `X1/islandA` and
+  `X2/islandA`, with no per-instance duplicate.
+- Clarified that structurally invalid parents are skipped by ERC because their
+  expansion is incomplete; their `RAD-ELEC-*` errors come from project electrical
+  validation.
+- Verification: Release build clean (0 warnings/errors); Core 834/834, CLI 3/3,
+  Editor 312/312.
 
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 

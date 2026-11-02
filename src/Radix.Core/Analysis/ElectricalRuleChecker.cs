@@ -144,8 +144,9 @@ public static class ElectricalRuleChecker
             }
             catch (ElectricalCircuitValidationException)
             {
-                // Structural terminal/node errors are reported by the electrical
-                // validator; a topology rule cannot add anything reliable here.
+                // Structural terminal/node errors are reported by project electrical
+                // validation. A parent with an invalid child is skipped so ERC never
+                // analyzes a partial expansion.
                 continue;
             }
 
