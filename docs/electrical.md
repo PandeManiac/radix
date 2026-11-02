@@ -115,6 +115,9 @@ anode to cathode and the reported voltage is `V(anode) - V(cathode)`. `Is` is th
 saturation current in amperes, `N` the dimensionless emission coefficient, and
 `Vt` the thermal voltage in volts. The default thermal voltage is 25.852 mV,
 corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep.
+The derived junction voltage `N * Vt` must also be representable as a finite
+positive double; the netlist rejects parameter pairs whose product overflows or
+underflows to zero.
 
 Optional reverse breakdown parameters `BV` (positive breakdown voltage in volts)
 and `IBV` (positive reverse current at `-BV` in amperes) add the exponential

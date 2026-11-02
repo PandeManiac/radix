@@ -1039,3 +1039,9 @@ summary and full local verification results; see the PR for the latest CI state.
      `DcNetlist.AddDiode` currently accepts both, leaving an unusable junction
      voltage in the Shockley model. Focused test fails in both cases as expected;
      implementation and broader verification remain pending.
+
+103. Fixed the derived diode-scale validation exposed in item 102. `AddDiode` now
+     rejects emission/thermal parameter pairs whose product is non-finite or zero,
+     before an unusable junction model can enter MNA. Both overflow and underflow
+     regression cases pass, as do all 23 diode solver tests; broader verification
+     remains pending.

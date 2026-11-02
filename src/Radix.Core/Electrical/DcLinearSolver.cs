@@ -479,6 +479,15 @@ public sealed class DcNetlist
                 "Thermal voltage must be finite and greater than zero.");
         }
 
+        double junctionVoltage = emissionCoefficient * thermalVoltage;
+        if (!double.IsFinite(junctionVoltage) || junctionVoltage <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(emissionCoefficient),
+                emissionCoefficient,
+                "The product of emission coefficient and thermal voltage must be finite and greater than zero.");
+        }
+
         if (!double.IsFinite(seriesResistance) || seriesResistance < 0)
         {
             throw new ArgumentOutOfRangeException(
