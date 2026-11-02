@@ -39,6 +39,14 @@ public sealed class ElectricalDrivePlan
     public int ClaimedPins => Claims.Select(claim => claim.PinId).Distinct(StringComparer.Ordinal).Count();
 }
 
+/// <summary>
+/// A tolerance for one transition of an output pin, keyed by the levels it leaves and reaches.
+/// </summary>
+/// <param name="FromLevel">The output level before the transition.</param>
+/// <param name="ToLevel">The output level after it.</param>
+/// <param name="Ticks">How far the measured delay may differ from the declared one.</param>
+public readonly record struct ElectricalDelayTolerance(int FromLevel, int ToLevel, int Ticks);
+
 /// <summary>One output change, paired with the input change that preceded it.</summary>
 /// <param name="InputLevel">The level the driving pin had taken.</param>
 /// <param name="OutputLevel">The level the output pin then reached.</param>
@@ -66,20 +74,41 @@ public sealed class ElectricalPropagationReport
         string outputPinId,
         int? declaredTicks,
         int toleranceTicks,
+        IReadOnlyList<ElectricalDelayTolerance> overrides,
         IReadOnlyList<ElectricalPropagationStep> steps)
     {
+        ArgumentNullException.ThrowIfNull(overrides);
         ArgumentNullException.ThrowIfNull(steps);
         InputPinId = inputPinId;
         OutputPinId = outputPinId;
         DeclaredTicks = declaredTicks;
         ToleranceTicks = toleranceTicks;
+        Overrides = overrides;
         Steps = steps;
 
         // A pin with no declared delay cannot be judged: silence is not agreement, and it is not a
         // failure either, so nothing is listed.
         Mismatches = declaredTicks is int declared
-            ? [.. steps.Where(step => Math.Abs(step.Ticks - declared) > toleranceTicks)]
+            ? [.. steps.Where(step => Math.Abs(step.Ticks - declared) > ToleranceFor(step))]
             : [];
+    }
+
+    /// <summary>Tolerances that replace the circuit-wide one for a named transition.</summary>
+    public IReadOnlyList<ElectricalDelayTolerance> Overrides { get; }
+
+    /// <summary>The tolerance that applies to one transition: its own entry, else the circuit's.</summary>
+    public int ToleranceFor(ElectricalPropagationStep step)
+    {
+        foreach (ElectricalDelayTolerance tolerance in Overrides)
+        {
+            if (tolerance.FromLevel == step.PreviousOutputLevel &&
+                tolerance.ToLevel == step.OutputLevel)
+            {
+                return tolerance.Ticks;
+            }
+        }
+
+        return ToleranceTicks;
     }
 
     public string InputPinId { get; }
@@ -408,6 +437,7 @@ public static class ElectricalDriveSimulation
             output.PinId,
             DeclaredDelayTicks(definition, output.PinId),
             circuit.DelayToleranceTicks,
+            circuit.DelayTolerances,
             steps);
     }
 

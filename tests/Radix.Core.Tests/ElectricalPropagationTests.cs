@@ -54,10 +54,12 @@ public sealed class ElectricalPropagationTests
         Assert.Equal("y", report.OutputPinId);
         Assert.Equal(2, report.Steps.Count);
 
-        // The file declares no transport delay and a 44-tick tolerance, which admits both measured
-        // transitions: the network is slower than the table says, and the file records by how much.
+        // The file declares no transport delay and gives each transition its own tolerance: the
+        // network is slower than the table says, and the file records by exactly how much.
         Assert.Equal(0, report.DeclaredTicks);
-        Assert.Equal(44, report.ToleranceTicks);
+        Assert.Equal(0, report.ToleranceTicks);
+        Assert.Equal(23, report.ToleranceFor(report.Steps[0]));
+        Assert.Equal(44, report.ToleranceFor(report.Steps[1]));
         Assert.True(report.Agrees);
 
         // The input reached level 1 at tick 21; the output only crossed at 44.
@@ -93,9 +95,10 @@ public sealed class ElectricalPropagationTests
 
         Assert.Equal(5, report.DeclaredTicks);
 
-        // The authored 44-tick tolerance admits both transitions even against five declared ticks;
-        // the tightened case below is where the judgement actually bites.
-        Assert.Equal(44, report.ToleranceTicks);
+        // The per-transition tolerances still govern, so the 23- and 44-tick delays stay inside them
+        // even against five declared ticks; the tightened case below is where the judgement bites.
+        Assert.Equal(0, report.ToleranceTicks);
+        Assert.Equal(23, report.ToleranceFor(report.Steps[0]));
         Assert.True(report.Agrees);
 
         // The measurement does not move: it describes the circuit, not the declaration.
@@ -111,13 +114,20 @@ public sealed class ElectricalPropagationTests
         Assert.True(Assert.IsType<ElectricalPropagationReport>(
             ElectricalDriveSimulation.Propagation(project, circuit, run, sampler)).Agrees);
 
-        // The authored tolerance is what makes the file checkable; zero demands the declared delay.
-        circuit.DelayToleranceTicks = 0;
-        ElectricalPropagationReport tight = Assert.IsType<ElectricalPropagationReport>(
+        // Tightening one transition fails that transition alone: per-transition tolerances are not
+        // all-or-nothing.
+        circuit.DelayTolerances[0] = new ElectricalDelayTolerance(2, 1, 0);
+        ElectricalPropagationReport one = Assert.IsType<ElectricalPropagationReport>(
             ElectricalDriveSimulation.Propagation(project, circuit, run, sampler));
+        Assert.False(one.Agrees);
+        ElectricalPropagationStep mismatch = Assert.Single(one.Mismatches);
+        Assert.Equal(2, mismatch.PreviousOutputLevel);
 
-        Assert.False(tight.Agrees);
-        Assert.Equal(2, tight.Mismatches.Count);
+        // Removing the table falls back to the circuit-wide zero and fails both transitions.
+        circuit.DelayTolerances.Clear();
+        ElectricalPropagationReport both = Assert.IsType<ElectricalPropagationReport>(
+            ElectricalDriveSimulation.Propagation(project, circuit, run, sampler));
+        Assert.Equal(2, both.Mismatches.Count);
     }
 
     [Fact]
@@ -132,7 +142,10 @@ public sealed class ElectricalPropagationTests
             ProjectSerializer.Save(path, project);
             CircuitProject reloaded = ProjectSerializer.Load(path, validate: false);
 
-            Assert.Equal(44, Assert.Single(reloaded.ElectricalCircuits).DelayToleranceTicks);
+            ElectricalCircuit loaded = Assert.Single(reloaded.ElectricalCircuits);
+            Assert.Equal(2, loaded.DelayTolerances.Count);
+            Assert.Equal(new ElectricalDelayTolerance(2, 1, 23), loaded.DelayTolerances[0]);
+            Assert.Equal(new ElectricalDelayTolerance(1, 0, 44), loaded.DelayTolerances[1]);
         }
         finally
         {

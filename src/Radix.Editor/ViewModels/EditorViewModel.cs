@@ -6653,6 +6653,11 @@ public sealed class EditorViewModel : ObservableObject
             hint: "how far a measured propagation delay may differ from the declared one before a run fails; 0 demands the declared value",
             apply: value => SetElectricalCircuitDelayTolerance(circuit.Id, value)));
         ElectricalCircuitFields.Add(new EditableField(
+            "Delay tolerances",
+            FormatDelayTolerances(circuit),
+            hint: "per-transition tolerance as from>to=ticks, semicolon separated; a transition named here ignores the circuit-wide tolerance",
+            apply: value => SetElectricalCircuitDelayTolerances(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
             "Drive bindings",
             FormatDriveBindings(circuit),
             hint: "node:pin@ticksPerSecond, semicolon separated; a trailing ? states what the pin should read instead of driving it. Blank removes every binding",
@@ -9136,6 +9141,63 @@ public sealed class EditorViewModel : ObservableObject
     /// to say "this network is asymmetric" without lying in the declared number, so it is authored
     /// beside the circuit rather than hidden in the check.
     /// </summary>
+    private static string FormatDelayTolerances(ElectricalCircuit circuit) =>
+        string.Join(
+            "; ",
+            circuit.DelayTolerances.Select(tolerance => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{tolerance.FromLevel}>{tolerance.ToLevel}={tolerance.Ticks}")));
+
+    /// <summary>
+    /// Authors per-transition tolerances. On success the whole list is replaced, so the field always
+    /// shows the circuit's state, and a malformed token refuses the edit instead of dropping silently.
+    /// </summary>
+    private bool SetElectricalCircuitDelayTolerances(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            return false;
+        }
+
+        var parsed = new List<ElectricalDelayTolerance>();
+        foreach (string token in value.Split(
+                     [';', ','],
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string[] halves = token.Split('>');
+            int equals = halves.Length == 2 ? halves[1].IndexOf('=') : -1;
+            if (halves.Length != 2 ||
+                equals <= 0 ||
+                !int.TryParse(halves[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int from) ||
+                !int.TryParse(halves[1][..equals].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int to) ||
+                !int.TryParse(halves[1][(equals + 1)..].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int ticks) ||
+                ticks < 0)
+            {
+                StatusText = $"'{token}' is not a transition; write from>to=ticks with a tolerance of 0 or more.";
+                return false;
+            }
+
+            parsed.Add(new ElectricalDelayTolerance(from, to, ticks));
+        }
+
+        bool changed = parsed.Count != circuit.DelayTolerances.Count ||
+                       parsed.Where((tolerance, index) => !tolerance.Equals(circuit.DelayTolerances[index])).Any();
+        if (!changed)
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.DelayTolerances.Clear();
+        circuit.DelayTolerances.AddRange(parsed);
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = parsed.Count == 0
+            ? "No transition carries its own tolerance."
+            : $"{parsed.Count} transition(s) carry their own tolerance.";
+        return true;
+    }
+
     private bool SetElectricalCircuitDelayTolerance(string circuitId, string value)
     {
         if (!int.TryParse(
@@ -9305,8 +9367,15 @@ public sealed class EditorViewModel : ObservableObject
             string declared = timing.DeclaredTicks is int ticks
                 ? ticks.ToString(CultureInfo.InvariantCulture)
                 : "no";
+            string perTransition = timing.Overrides.Count == 0
+                ? string.Empty
+                : " (" + string.Join(
+                    ", ",
+                    timing.Overrides.Select(tolerance => string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{tolerance.FromLevel}->{tolerance.ToLevel} within {tolerance.Ticks}"))) + ")";
             verdict +=
-                $" Timing: {measured}; the definition declares {declared} tick(s) within {timing.ToleranceTicks} tick(s).";
+                $" Timing: {measured}; the definition declares {declared} tick(s) within {timing.ToleranceTicks} tick(s){perTransition}.";
         }
 
         ElectricalDriveSummary = verdict;

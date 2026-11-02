@@ -66,9 +66,21 @@ internal sealed class ElectricalCircuitDto
         Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public int? DelayToleranceTicks { get; set; }
 
+    /// <summary>Tolerances for individual transitions; omitted when the circuit-wide one governs all.</summary>
+    public List<ElectricalDelayToleranceDto>? DelayTolerances { get; set; }
+
     public List<ElectricalNodeDto>? Nodes { get; set; }
 
     public List<ElectricalComponentDto>? Components { get; set; }
+}
+
+internal sealed class ElectricalDelayToleranceDto
+{
+    public int From { get; set; }
+
+    public int To { get; set; }
+
+    public int Ticks { get; set; }
 }
 
 internal sealed class ElectricalNodeDto

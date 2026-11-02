@@ -1070,7 +1070,7 @@ internal static class Program
                     foreach (ElectricalPropagationStep step in timing.Mismatches)
                     {
                         Console.Error.WriteLine(
-                            $"timing: {step.PreviousOutputLevel} -> {step.OutputLevel} took {step.Ticks} tick(s), declared {declaredDelay} with a tolerance of {timing.ToleranceTicks}.");
+                            $"timing: {step.PreviousOutputLevel} -> {step.OutputLevel} took {step.Ticks} tick(s), declared {declaredDelay} with a tolerance of {timing.ToleranceFor(step)}.");
                     }
 
                     Console.Error.WriteLine(

@@ -265,6 +265,17 @@ public static class ProjectSerializer
         };
 
         circuit.DelayToleranceTicks = Math.Max(0, dto.DelayToleranceTicks ?? 0);
+        foreach (ElectricalDelayToleranceDto tolerance in dto.DelayTolerances ?? [])
+        {
+            if (tolerance.Ticks < 0)
+            {
+                throw new ProjectFormatException(
+                    $"Circuit '{circuit.Id}' has a negative tolerance for transition {tolerance.From}->{tolerance.To}.");
+            }
+
+            circuit.DelayTolerances.Add(
+                new ElectricalDelayTolerance(tolerance.From, tolerance.To, tolerance.Ticks));
+        }
 
         foreach (double threshold in dto.LevelThresholds ?? [])
         {
@@ -754,6 +765,14 @@ public static class ProjectSerializer
         Ground = circuit.GroundNodeId,
         LevelThresholds = circuit.LevelThresholds.Count == 0 ? null : [.. circuit.LevelThresholds],
         DelayToleranceTicks = circuit.DelayToleranceTicks == 0 ? null : circuit.DelayToleranceTicks,
+        DelayTolerances = circuit.DelayTolerances.Count == 0
+            ? null
+            : [.. circuit.DelayTolerances.Select(tolerance => new ElectricalDelayToleranceDto
+            {
+                From = tolerance.FromLevel,
+                To = tolerance.ToLevel,
+                Ticks = tolerance.Ticks,
+            })],
         DriveBindings = circuit.DriveBindings.Count == 0
             ? null
             : [.. circuit.DriveBindings.Select(binding => new ElectricalDriveBindingDto

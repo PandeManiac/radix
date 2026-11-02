@@ -313,6 +313,14 @@ public sealed class ElectricalCircuit
     public int DelayToleranceTicks { get; set; }
 
     /// <summary>
+    /// Tolerances that apply to a single transition, keyed by the output level it leaves and the one
+    /// it reaches, so a file can demand exactness where it is confident and allow for a slow
+    /// direction where it is not. An entry replaces the circuit-wide tolerance for that transition
+    /// only; everything else falls back to it.
+    /// </summary>
+    public List<ElectricalDelayTolerance> DelayTolerances { get; } = [];
+
+    /// <summary>
     /// Digital pins this circuit's nodes drive, with the rate that converts solved seconds into
     /// simulator ticks. Stored on the circuit because a binding is a claim about what this network
     /// means to the rest of the project, and one node may feed several pins.
