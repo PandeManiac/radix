@@ -1144,3 +1144,10 @@ summary and full local verification results; see the PR for the latest CI state.
      `8a995ca78ce7a9ca9fb050ca20f6811c47d61c55` (two completed runs per platform,
      all successful). Updated the `Step` API comment to describe its false result
      in terms of whether an event was processed, including budget-limited halt.
+
+121. WIP: added two transient-waveform interpolation regressions. With finite
+     opposite-sign endpoints near `double.MaxValue`, the current `right - left`
+     interpolation delta overflows even when the interpolated voltage should be
+     finite. Opposite-extreme signed timestamps also produce an infinite interval
+     and lose the expected midpoint. Focused test execution and implementation are
+     pending.
