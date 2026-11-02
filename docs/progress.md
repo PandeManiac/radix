@@ -899,8 +899,11 @@ completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
     power checks, invalid-pair cases, transient JSON coverage, and
     `examples/dc-zener.json`.
 
-Verification so far: focused diode/transient serialization/fingerprint tests pass
-46/46; broader Release build and Core/Editor suites are pending. This change is
-currently an unpublished working-tree milestone on
-`agent/radix-20261102-electrical-audit`; publish its tested checkpoint before
-continuing.
+Verification: focused diode/transient serialization/fingerprint tests passed
+46/46; Release solution build passed with 0 warnings/errors; Core passed 637/637;
+headless Editor passed 242/242 using the documented Linux native-library setup.
+`radix dc examples/dc-zener.json --json` solved to -5.108295403806094 V and
+reported equal resistor/diode branch currents (-6.8917 mA) with element powers
+summing to zero within the solver's numerical tolerance. The published code
+checkpoint is `19073dd5df9e847880cfb0ee8c11cab9642bea6c`; GitHub CI was still
+running when checked. Next step: confirm CI and update draft PR #6.
