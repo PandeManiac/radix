@@ -1,0 +1,15 @@
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    { "id": "VDD", "type": "voltage-source", "nodeA": "vdd", "nodeB": "gnd", "volts": 5 },
+    { "id": "VIN", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 0 },
+    { "id": "MP", "type": "mosfet", "drain": "out", "gate": "in", "source": "vdd",
+      "channel": "p", "thresholdVoltage": 1, "transconductance": 0.001,
+      "channelLengthModulation": 0.02 },
+    { "id": "MN", "type": "mosfet", "drain": "out", "gate": "in", "source": "gnd",
+      "channel": "n", "thresholdVoltage": 1, "transconductance": 0.001,
+      "channelLengthModulation": 0.02 }
+  ]
+}

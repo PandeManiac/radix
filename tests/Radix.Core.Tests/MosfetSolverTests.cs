@@ -331,6 +331,57 @@ public sealed class MosfetSolverTests
     }
 
     [Fact]
+    public void CmosInverterSwitchesInTimeUnderAWaveformDrive()
+    {
+        // A 5 V pulse on a 10 pF load: the drive is an ordinary piecewise-linear source,
+        // so the only thing making this switch is the solved transistor pair. With
+        // Vov = 4 V in saturation the n-channel device starts at 8 mA, so a 10 pF load
+        // falls at about 0.8 V/ns and the edge completes well inside a nanosecond.
+        var waveform = new[]
+        {
+            new TransientWaveformPoint(0, 0),
+            new TransientWaveformPoint(1e-9, 0),
+            new TransientWaveformPoint(1.1e-9, 5),
+        };
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("VDD", "vdd", "gnd", 5)
+            .AddVoltageSource("VIN", "in", "gnd", 0)
+            .AddMosfet("MP", "out", "in", "vdd", DcMosfetChannel.PChannel, 1, K, 0.02)
+            .AddMosfet("MN", "out", "in", "gnd", DcMosfetChannel.NChannel, 1, K, 0.02)
+            .AddCapacitor("CL", "out", "gnd", 2e-12)
+            .SetWaveform("VIN", waveform);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = 10e-9,
+            Steps = 500,
+            Method = TransientMethod.BackwardEuler,
+        });
+
+        Assert.True(result.Completed);
+        Assert.True(
+            result.Points[0].NodeVoltages["out"] > 4.9,
+            $"initial operating point put the output at {result.Points[0].NodeVoltages["out"]} V");
+        // Before the edge the output has not moved appreciably.
+        TransientPoint beforeEdge = result.Points.Last(point => point.Time <= 1e-9);
+        Assert.True(
+            beforeEdge.NodeVoltages["out"] > 4.9,
+            $"output was {beforeEdge.NodeVoltages["out"]} V before the drive edge");
+        // The drive is already at 5 V just after its edge while the load is still charged,
+        // so the falling output is the transistor's work and not the source's.
+        Assert.True(
+            result.Points.First(point => point.Time >= 1.1e-9).NodeVoltages["out"] > 3.5,
+            "the output fell faster than the load capacitance allows");
+        Assert.True(
+            result.Points[^1].NodeVoltages["out"] < 0.1,
+            $"output settled at {result.Points[^1].NodeVoltages["out"]} V instead of the low rail");
+        // A switching event must not lose track of energy bookkeeping.
+        Assert.NotNull(result.Energy);
+        Assert.InRange(result.Energy!.RelativeResidual, 0, 0.05);
+    }
+
+    [Fact]
     public void AuthoredCircuitWithMosfetSolvesThroughTheTransientBridge()
     {
         // The transient netlist copies every static element into each step, so a MOSFET

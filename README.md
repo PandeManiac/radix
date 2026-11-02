@@ -21,7 +21,7 @@ The repository currently contains a working simulation kernel, a hierarchical st
 | Reusable parts and libraries | Extract selection to a pinned definition, promote nets to pins, carry numeric formats, import/export `.radixlib`, generate arbitrary-width register/adder/ALU/counter/mux/comparator/RAM/ROM libraries |
 | Editor view persistence | Active definition and canvas zoom/pan save with the project; panning does not mark it dirty |
 | Headless GUI tests and screenshots | Working with Avalonia Headless + Skia |
-| DC electrical solver | Core MNA solver for ideal resistors, independent voltage/current sources, and ground, plus Shockley diodes with optional reverse breakdown; authored v10 electrical circuits (resistors, independent sources with optional piecewise-linear waveforms, capacitors, inductors) plus JSON netlists; CLI and reports; editor inspector for circuits, nodes, components, and explicit terminals, with an on-demand solve preview; still separate from the digital model |
+| DC electrical solver | Core MNA solver for ideal resistors, independent voltage/current sources, and ground, plus Shockley diodes with optional reverse breakdown and three-terminal square-law MOSFETs with channel-length modulation; `radix dc --sweep` measures a transfer curve as one real operating point per value; authored v10 electrical circuits (resistors, independent sources with optional piecewise-linear waveforms, capacitors, inductors) plus JSON netlists; CLI and reports; editor inspector for circuits, nodes, components, and explicit terminals, with an on-demand solve preview; still separate from the digital model |
 | Transient electrical solver | Implicit time-domain analysis of resistors, capacitors, inductors, ideal sources with optional piecewise-linear waveforms, and Shockley diodes; backward Euler and trapezoidal methods, fixed or adaptive step size; `radix transient` over JSON netlists or authored `.radix` circuits with a versioned JSON report and a per-run energy ledger; waveform breakpoints are step boundaries, so a pulse narrower than the step is never skipped; each run also reports per-node minimum, maximum, peak time, and settling time; separate from the digital model, plus a transient run and point table in the Electrical tab |
 | JIT/compiled native evaluation | Not implemented; managed engine benchmarked |
 
@@ -103,6 +103,11 @@ dotnet run --project src/Radix.Cli -- validate examples/tiny-cpu.radix --all --j
 dotnet run --project src/Radix.Cli -- dc examples/dc-divider.radix
 dotnet run --project src/Radix.Cli -- dc examples/dc-divider.radix --json
 dotnet run --project src/Radix.Cli -- dc examples/dc-divider.json
+
+# Measure a voltage-transfer characteristic: one solve per value, table or CSV
+dotnet run --project src/Radix.Cli -- dc examples/dc-mosfet-common-source.json --sweep VG=0:5:11
+dotnet run --project src/Radix.Cli -- dc examples/dc-cmos-inverter.json --sweep VIN=0:5:21
+dotnet run --project src/Radix.Cli -- dc examples/dc-ternary-inverter.json --sweep VIN=0:5:51 --csv
 
 # Integrate a transient circuit in time: RC charge, RLC ring, or a pulse drive
 dotnet run --project src/Radix.Cli -- transient examples/transient-rc.json
@@ -203,6 +208,9 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 | [dc-divider.radix](examples/dc-divider.radix) | Authored DC voltage divider with explicit electrical terminals and component metadata |
 | [transient-rc.radix](examples/transient-rc.radix) | Authored RC charge with a capacitor initial voltage, solved by `radix transient` |
 | [transient-pulse.radix](examples/transient-pulse.radix) | Authored RC step response driven by a piecewise-linear source waveform |
+| [dc-mosfet-common-source.json](examples/dc-mosfet-common-source.json) | One n-channel MOSFET switching a resistor load: the drain follows the gate voltage by the square law |
+| [dc-cmos-inverter.json](examples/dc-cmos-inverter.json) | A static CMOS inverter solved from a p- and an n-channel MOSFET, with a rail-to-rail transfer curve |
+| [dc-ternary-inverter.json](examples/dc-ternary-inverter.json) | A resistor-summed dual-threshold ternary inverter: 0 V → 5 V, 2.5 V → 2.5 V, 5 V → 0 V from the network solution |
 | [full-adder.radix](examples/full-adder.radix) | Hierarchical half adders combined into a full adder |
 | [8-bit-alu.radix](examples/8-bit-alu.radix) | An 8-bit ADD/AND/OR/XOR unit with carry and zero flags, built from the 8-bit adder, gates, and muxes |
 | [multiplier.radix](examples/multiplier.radix) | A 4 × 4 array multiplier: sixteen AND partial products accumulated by three 8-bit adders, with A, B, and P numeric lanes |
@@ -284,7 +292,7 @@ Library definitions can be inspected, copied, modified, or deleted like any othe
 
 These are deliberate current boundaries, not hidden behavior:
 
-- No integrated analog/electrical simulation in the editor or digital compiler. Separate core solvers provide DC operating points (resistors, independent voltage and current sources, Shockley diodes with optional reverse breakdown) and transient analysis with fixed or adaptive steps (capacitors, inductors, piecewise-linear source waveforms) through `radix dc` and `radix transient`. Authored v9 circuits may also contain capacitors and inductors with optional initial values; `radix dc` makes the usual DC assumptions (open capacitor, shorted inductor) and `radix transient` integrates the same circuit. There is no AC or frequency-domain analysis, no transistor or op-amp model, no junction capacitance or self-heating, no implicit method switching or stiffness detection, no gmin or source continuation, and no automatic mapping of digital `.radix` nets; the editor's Electrical tab stays a DC inspector and preview. See [docs/electrical.md](docs/electrical.md).
+- No integrated analog/electrical simulation in the editor or digital compiler. Separate core solvers provide DC operating points (resistors, independent voltage and current sources, Shockley diodes with optional reverse breakdown) and transient analysis with fixed or adaptive steps (capacitors, inductors, piecewise-linear source waveforms) through `radix dc` and `radix transient`. Authored v9 circuits may also contain capacitors and inductors with optional initial values; `radix dc` makes the usual DC assumptions (open capacitor, shorted inductor) and `radix transient` integrates the same circuit. There is no AC or frequency-domain analysis, no op-amp or other dependent-source model, no junction capacitance or self-heating, no implicit method switching or stiffness detection, no source continuation, and no automatic mapping of digital `.radix` nets; the editor's Electrical tab stays a DC inspector and preview. The MOSFET is a charge-free square-law level-1 compact model (body tied to source, `GMIN` leakage, no subthreshold conduction), not a production SPICE device, and it can only be authored in JSON netlists today — the Electrical inspector does not offer it yet. See [docs/electrical.md](docs/electrical.md).
 - No JIT or native code generation. The managed engine measured roughly 9–10 million events per second on the development machine.
 - The tiny CPU's `STACK_ERROR` detects stack-pointer wrap only; it has no knowledge of a software stack boundary or of data placed in RAM.
 - The 8-bit machine has a 16-word program ROM, 16 data words, a 4-bit PC, and no stack, subroutine, interrupt, or conditional branch beyond JZ. `JMP`/`JZ` targets and program flow wrap at 16, `HLT` holds the PC and accumulator until reset, and `STA`/`LDA@`/`ADD@` use only the low operand nibble as an address. Its generated ROM and RAM are fixed definitions, not runtime-sized memories.

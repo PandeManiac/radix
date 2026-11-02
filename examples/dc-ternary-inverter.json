@@ -1,0 +1,23 @@
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    { "id": "VDD", "type": "voltage-source", "nodeA": "vdd", "nodeB": "gnd", "volts": 5 },
+    { "id": "VIN", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 0 },
+    { "id": "MPL", "type": "mosfet", "drain": "out_low", "gate": "in", "source": "vdd",
+      "channel": "p", "thresholdVoltage": 1, "transconductance": 0.00001,
+      "channelLengthModulation": 0.02 },
+    { "id": "MNL", "type": "mosfet", "drain": "out_low", "gate": "in", "source": "gnd",
+      "channel": "n", "thresholdVoltage": 1, "transconductance": 0.00121,
+      "channelLengthModulation": 0.02 },
+    { "id": "MPH", "type": "mosfet", "drain": "out_high", "gate": "in", "source": "vdd",
+      "channel": "p", "thresholdVoltage": 1, "transconductance": 0.00121,
+      "channelLengthModulation": 0.02 },
+    { "id": "MNH", "type": "mosfet", "drain": "out_high", "gate": "in", "source": "gnd",
+      "channel": "n", "thresholdVoltage": 1, "transconductance": 0.00001,
+      "channelLengthModulation": 0.02 },
+    { "id": "RSUM1", "type": "resistor", "nodeA": "out_low", "nodeB": "out", "ohms": 100000 },
+    { "id": "RSUM2", "type": "resistor", "nodeA": "out_high", "nodeB": "out", "ohms": 100000 }
+  ]
+}

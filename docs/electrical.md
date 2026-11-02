@@ -7,6 +7,7 @@ electrical-analysis layer:
 - ideal independent voltage sources;
 - ideal independent current sources;
 - a two-terminal Shockley diode with optional series resistance;
+- a three-terminal square-law MOSFET (n- or p-channel) with channel-length modulation;
 - one explicit ground reference.
 
 The solvers are **not** connected to the digital event engine: electrical
@@ -197,6 +198,224 @@ radix dc examples/dc-diode.json
 radix dc examples/dc-zener.json
 ```
 
+## MOSFET model
+
+A three-terminal device whose channel current is set by another node's voltage is the
+first genuinely electrical control element. It is what lets a circuit switch itself, so
+the model is deliberately small and written down in full rather than hidden behind a
+library call.
+
+```bash
+radix dc examples/dc-mosfet-common-source.json
+radix dc examples/dc-mosfet-common-source.json --sweep VG=0:5:11
+```
+
+### Terminals and parameters
+
+| Netlist field | Meaning | Unit |
+| --- | --- | --- |
+| `drain`, `source` | the channel terminals; also reported as `nodeA` and `nodeB` | node id |
+| `gate` | the insulated control terminal; draws exactly zero current | node id |
+| `channel` | `n` or `p` | — |
+| `thresholdVoltage` | threshold voltage magnitude; negative for a depletion device | V |
+| `transconductance` | SPICE `KP`, i.e. `mu Cox W/L` | A/V² |
+| `channelLengthModulation` | SPICE `lambda`; optional, defaults to 0 | 1/V |
+
+`transconductance` is required and must be greater than zero. The **body/bulk terminal is
+not exposed**: it is tied to the source, so there is no body effect and the device is
+exactly symmetric in drain and source.
+
+### Governing equations
+
+With `Vgs` and `Vds` the terminal voltages, `Vt` the threshold voltage and `Vov = Vgs - Vt`:
+
+```text
+cutoff      Vov <= 0:          Ids = 0
+triode      0 < Vds <  Vov:    Ids = K (Vov Vds - Vds^2/2) (1 + lambda Vds)
+saturation  Vds >= Vov:        Ids = K/2 Vov^2 (1 + lambda Vds)
+```
+
+That is the Shichman-Hodges square law, SPICE's level 1. A p-channel device negates both
+driving voltages and negates the resulting current, so one set of equations covers both
+polarities. Because the device is symmetric, a negative `Vds` is evaluated with the drain
+and source roles exchanged, which keeps reverse conduction signed correctly instead of
+reporting a saturation current with the wrong direction. The derivatives used by Newton
+follow from the same three branches:
+
+```text
+triode:      gds = K((Vov - Vds)(1 + lambda Vds) + lambda (Vov Vds - Vds^2/2))
+             gm  = K Vds (1 + lambda Vds)
+saturation:  gds = lambda K Vov^2 / 2
+             gm  = K Vov (1 + lambda Vds)
+cutoff:      gds = gm = 0
+```
+
+A leakage conductance `GMIN = 1e-12 S` is added across drain and source at every operating
+point — five picoamperes at five volts. It stands in for SPICE's `GMIN` and keeps a cutoff
+device from making the Jacobian exactly singular, which is what would otherwise happen when
+a CMOS output node is driven only by an off transistor. It is part of the reported device
+current, so KCL and the convergence residual stay consistent.
+
+### MNA stamping
+
+Linearizing `Ids ~ I0 + gds (Vds - Vds0) + gm (Vgs - Vgs0)` around the previous Newton
+iterate gives one equivalent current
+`Ieq = I0 - gds Vds0 - gm Vgs0` plus conductance and transconductance terms, with
+`d` the drain, `s` the source and `g` the gate node:
+
+```text
+G[d,d] += gds   G[s,s] += gds   G[d,s] -= gds   G[s,d] -= gds
+G[d,g] += gm    G[s,g] -= gm    G[d,s] -= gm    G[s,s] += gm
+rhs[d] -= Ieq   rhs[s] += Ieq
+```
+
+The gate contributes no row of its own; it appears only as the control node in the drain
+and source KCL rows. Newton carries no extra state for a MOSFET — it is a pure
+voltage-controlled current source — so each iteration linearizes it at the previous
+iterate's node voltages, starting from zero volts. Convergence is unchanged: node voltages
+must stop moving within `1e-9` relative and the nonlinear KCL/source residual must fall
+within its acceptance bound. Failing to converge in 100 iterations raises
+`NonConvergent`; the solver never returns a partly converged point.
+
+A MOSFET's gate node is added to the solved node set so its voltage is reported, but it is
+**not** added to the conductive adjacency used by the floating-network check. Gate oxide
+conducts nothing, so a node attached only to gates has no DC operating point and is
+reported as `FloatingNetwork` instead of being given an invented voltage.
+
+### Conservation and conventions
+
+The reported element current is the channel current from drain to source, and the reported
+element voltage is `V(drain) - V(source)`, so absorbed power is `Vds * Ids` and the gate
+draws no power. The algebraic sum of all absorbed element powers is zero at any solved
+operating point, which the tests assert. `radix dc` and the JSON report list a MOSFET's
+`channel`, `gate`, `thresholdVoltage`, `transconductance` and
+`channelLengthModulation` beside its solved values.
+
+### What this model is not
+
+It is a **compact teaching model, not a production SPICE transistor**. In particular:
+
+- no gate, junction or overlap capacitance, so it is charge-free and adds no dynamics;
+  a switching transient is limited only by the surrounding circuit and the step size;
+- no subthreshold conduction, so current is exactly zero below the threshold apart from
+  `GMIN`;
+- no mobility degradation, velocity saturation, high-injection, drain-induced barrier
+  lowering or gate leakage;
+- no body effect, no temperature dependence, no self-heating, no noise, no mismatch, no
+  process corners, and no breakdown;
+- no channel-length modulation unless `lambda` is given, and `lambda` here is a constant
+  rather than a geometry lookup.
+
+### Milestone A: controlled-device validation
+
+`examples/dc-mosfet-common-source.json` is an n-channel device with a 1 kΩ resistor to a
+5 V rail, driven by the gate source `VG`:
+
+| `VG` | `out` | region |
+| --- | --- | --- |
+| 0, 0.5, 1 | 5 | cutoff |
+| 2 | 4.45545 | saturation (`Vov = 1 V`) |
+| 3 | 2.88462 | saturation |
+| 5 | 1.10533 | triode |
+
+Every value matches the closed form. At `VG = 2` the saturation current is
+`0.5 mA (1 + lambda Vds)`, and `Vds = 5 - 1000 Ids` gives `Vds = 4.5 / 1.01 = 4.45545 V`. At
+`VG = 5` the triode law and the load together give `Vds^2 - 10 Vds + 10 = 0`, so
+`Vds = 5 - sqrt(15) = 1.127 V`. The tests check those two roots directly, the p-channel
+mirror, reverse conduction (`Vds < 0`, where the device sources 6 mA into a grounded drain
+and the 2 V source delivers exactly the channel's absorbed 12 mW), and that the summed
+absorbed power is zero.
+
+### Milestone B: electrical binary inverter
+
+`examples/dc-cmos-inverter.json` is a static CMOS inverter: a p-channel pull-up to the
+5 V rail, an n-channel pull-down, both gates driven by `VIN`, `K = 1 mA/V²`,
+`Vt = 1 V`, `lambda = 0.02 1/V`.
+
+```bash
+radix dc examples/dc-cmos-inverter.json --sweep VIN=0:5:21
+```
+
+| `VIN` | `out` | | `VIN` | `out` |
+| --- | --- | --- | --- | --- |
+| 0 | 5 | | 2.5 | 2.5 |
+| 1 | 5 | | 2.75 | 0.574822 |
+| 1.5 | 4.9445 | | 3 | 0.293467 |
+| 2 | 4.70653 | | 3.5 | 0.0554996 |
+| 2.25 | 4.42518 | | 4 | 1.67e-9 |
+| 2.45 | 3.88167 | | 5 | 1.25e-9 |
+
+- **Static current**: at either rail exactly one device has overdrive, so the rail supplies
+  only the `GMIN` leakage (`< 1e-9 A`). The inverter pays current only while switching.
+- **Transition**: matched devices put the switching point at `VDD/2` by symmetry, and the
+  measured maximum small-signal gain over a 50 mV grid is about 28 V/V. The curve has real
+  analog shoulders (a 21-point sweep shows 4.43 V at 2.25 V and 0.575 V at 2.75 V), which a
+  behavioural inverter could not produce.
+- **Output loading**: the output resistance in the transition is `1/(gm (ro_n || ro_p))`;
+  with `lambda = 0` it would be a pure current balance with no finite conductance, which is
+  why the example sets `lambda` explicitly.
+
+### Milestone C: electrical ternary inverter
+
+`examples/dc-ternary-inverter.json` is a resistor-summed dual-threshold standard ternary
+inverter. Two CMOS inverters share `VIN` but have opposite device-strength ratios, which
+moves their switching points to 1.25 V and 3.75 V:
+
+```text
+sqrt(K_n/K_p) = 11   =>  Vin_sw = (beta Vtn + VDD - |Vtp|) / (beta + 1) = 15/12 = 1.25 V
+sqrt(K_n/K_p) = 1/11 =>  Vin_sw = 4.0909/1.0909 = 3.75 V
+```
+
+The two outputs are summed by two 100 kΩ resistors (`out_low`, `out_high` → `out`), so the
+output is a solved divider between two low-impedance nodes:
+
+```bash
+radix dc examples/dc-ternary-inverter.json --sweep VIN=0:5:21
+radix dc examples/dc-ternary-inverter.json --sweep VIN=0,2.5,5
+```
+
+| `VIN` | `out` | `out_low` | `out_high` |
+| --- | --- | --- | --- |
+| 0 | 5 | 5 | 5 |
+| 1.25 | 4.1933 | 3.38912 | 4.99748 |
+| 1.5 | 2.55006 | 0.108655 | 4.99146 |
+| 2 | 2.51341 | 0.0393598 | 4.98747 |
+| **2.5** | **2.5** | 0.0206093 | 4.97939 |
+| 3 | 2.48659 | 0.0125317 | 4.96064 |
+| 3.5 | 2.44994 | 0.00853836 | 4.89134 |
+| 3.75 | 0.806701 | 0.0025211 | 1.61088 |
+| 5 | 2.9e-8 | 1.6e-9 | 5.6e-8 |
+
+The truth table is a result, not an assignment: `0 V → 5 V`, `2.5 V → 2.5 V`, `5 V → 0 V`,
+and the middle rail appears because one inverter output is low while the other is high.
+
+The full curve, rather than the three sampled points, is what the design is judged on:
+
+- **Middle plateau.** Every input from 1.5 V to 3.5 V resolves within 100 mV of 2.5 V, a
+  2 V wide input band, so the intermediate state is not a knife edge. Over that band the
+  output stays within ±0.05 V of 2.5 V.
+- **Shoulders.** The transitions are the two inverters' own crossings, so the curve is
+  monotone and crosses 2.5 V only once from either side. Between 1.25 V and 1.5 V the output
+  moves from 4.19 V to 2.55 V, and between 3.5 V and 3.75 V from 2.45 V to 0.81 V.
+- **Output impedance.** In the middle state the output is `R/2 = 50 kΩ` from a Thevenin pair
+  of about 0 V and 5 V. A 100 kΩ load to ground therefore divides 2.5 V by
+  `(2 + R/R_load) = 3`, and the solve returns **1.667 V**; a 1 MΩ load returns 2.487 V. The
+  tests assert that the loaded result matches the two-source prediction, so the loading is
+  characterised rather than discovered later.
+- **Static power.** At either rail one inverter per pair is fully off and the summing path
+  carries only leakage, so the total is below a microwatt. The middle state is not free:
+  the divider carries 25 µA and both inverters sit in their own crossover region, so the
+  5 V rail supplies about 49.5 µA — **0.248 mW**. This is inherent to resistor summing and
+  would be removed by a buffered output stage.
+- **Noise margin (ideal, unloaded).** With output levels 0/2.5/5 V and a middle plateau from
+  1.5 V to 3.5 V, the worst-case input margin around a 2.5 V nominal is ±1.0 V. That figure
+  shrinks with load because the middle level moves; it is a property of this topology, not
+  a datasheet number.
+- **Region of validity.** This is an *idealised educational* topology: the levels come from
+  two ideal CMOS inverters and ideal resistors, with no mismatch, no temperature, no
+  capacitance, and a fixed `lambda`. It demonstrates that an intermediate logic level can be
+  produced by a solved electrical network; it is not a manufacturable ternary gate.
+
 ## Transient analysis
 
 `TransientNetlist` adds ideal capacitors and inductors to the element set and
@@ -377,8 +596,9 @@ invalid options. The command never writes project or netlist state.
 ### Not modelled
 
 There is no junction capacitance, carrier storage, high-injection, self-heating,
-noise, temperature dependence, transformer, dependent source, switch, relay, or
-transmission-line model. There is no AC or small-signal analysis, no
+noise, temperature dependence, transformer, other dependent-source model
+(VCVS/VCCS/CCCS), switch, relay, or transmission-line model, and the MOSFET has no
+charge storage of its own. There is no AC or small-signal analysis, no
 stiffness detection or implicit method switching, no gmin or source
 continuation, and no SPICE-style built-in source functions beyond
 piecewise-linear tables. Adaptive control uses step doubling with one method at
@@ -880,11 +1100,12 @@ Supported now:
 
 Not supported:
 
-- transformers, dependent sources, switches, relays, fuses, or transmission
-  lines;
+- transformers, op-amps, switches, relays, fuses, or transmission lines;
+- dependent sources other than the MOSFET's gate-controlled channel;
 - frequency-domain/AC analysis or small-signal extraction;
-- transistors, MOSFETs, op-amps, regulators, LEDs, or temperature-dependent
-  models;
+- op-amps, regulators, LEDs, or temperature-dependent models;
+- a production transistor model: the MOSFET is a charge-free square-law level-1
+  compact model, not a SPICE device with capacitances or subthreshold conduction;
 - junction capacitance, carrier storage, high-injection, self-heating, or noise;
 - gmin continuation, or SPICE-style built-in source functions beyond
   piecewise-linear tables;
