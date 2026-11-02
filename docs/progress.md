@@ -876,5 +876,6 @@ GitHub CI passed on Ubuntu and Windows for code commit
     rejected without changing the existing waveform or running a partial sweep.
     Headless regressions cover doubled and trailing commas in both input paths.
 
-Verification: focused `ElectricalEditorTests` passed 43/43. Full build/suites and
-GitHub CI are pending for this validation change.
+Verification: focused `ElectricalEditorTests` passed 43/43; Release solution build
+completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
+237/237. GitHub CI is pending for this validation change.
