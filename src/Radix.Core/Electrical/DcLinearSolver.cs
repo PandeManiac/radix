@@ -111,7 +111,7 @@ public sealed record DcDiode(
     /// </summary>
     public double JunctionCurrent(double volts)
     {
-        double current = SaturationCurrent * (LimitedExponential(ExponentialArgument(volts)) - 1);
+        double current = SaturationCurrent * LimitedExponentialMinusOne(ExponentialArgument(volts));
         if (BreakdownVoltage is double breakdownVoltage && BreakdownCurrent is double breakdownCurrent)
         {
             double argument = (-volts - breakdownVoltage) / JunctionVoltage;
@@ -269,6 +269,34 @@ public sealed record DcDiode(
         junctionVolts + (SeriesResistance * JunctionCurrent(junctionVolts)) - terminalVolts;
 
     private double ExponentialArgument(double volts) => volts / JunctionVoltage;
+
+    private static double LimitedExponentialMinusOne(double argument)
+    {
+        if (argument > MaximumExponentialArgument)
+        {
+            return (MaximumExponentialValue * (1 + (argument - MaximumExponentialArgument))) - 1;
+        }
+
+        if (argument < -40)
+        {
+            return -1;
+        }
+
+        if (Math.Abs(argument) < 1e-5)
+        {
+            // The polynomial preserves tiny values (including subnormals) that
+            // would be lost by subtracting 1 from exp(x).
+            double correction = 1.0 / 120;
+            correction = (1.0 / 24) + (argument * correction);
+            correction = (1.0 / 6) + (argument * correction);
+            correction = 0.5 + (argument * correction);
+            return argument * (1 + (argument * correction));
+        }
+
+        // This product is stable near zero, unlike exp(x) - 1, and remains finite
+        // throughout the uncontinued range [-40, 80].
+        return 2 * Math.Sinh(argument / 2) * Math.Exp(argument / 2);
+    }
 
     private static double LimitedExponential(double argument)
     {

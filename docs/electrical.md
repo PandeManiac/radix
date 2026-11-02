@@ -128,7 +128,9 @@ Both parameters must be supplied together; omitting them preserves the original
 Shockley-only model. At `V = -BV`, reverse current is approximately `-IBV`. This
 smooth knee is a compact model, not a manufacturer-specific avalanche curve.
 
-For numerical safety, exponential arguments above 80 use the linear tangent
+The forward Shockley current evaluates `exp(x) - 1` with a cancellation-safe
+small-argument expansion and a stable identity near zero, preserving low-current
+behavior. For numerical safety, exponential arguments above 80 use the linear tangent
 continuation of `exp(x)` at 80 for both forward conduction and reverse breakdown.
 The continuation keeps the reported conductance equal to the derivative of the
 current law and avoids exponential overflow. Results far beyond this numerical

@@ -1018,3 +1018,11 @@ summary and full local verification results; see the PR for the latest CI state.
     2.0e22 ohm series resistance, and 7.2e-9 A saturation current; reconstructed
     terminal voltage was effectively zero. The regression currently fails and is
     published before changing the Shockley current evaluation.
+
+
+100. Fixed low-voltage Shockley cancellation discovered by the seeded series-resistance
+     equation sweep. The forward branch now uses a small-argument polynomial and a
+     stable hyperbolic/exponential identity rather than subtracting one from `exp(x)`;
+     the tangent continuation above exponent 80 is unchanged. The seeded 96-case
+     terminal-equation sweep and all 20 diode solver tests pass. Broader verification
+     remains pending.

@@ -104,7 +104,8 @@ public sealed class DcDiodeSolverTests
             Assert.True(
                 Math.Abs(reconstructedTerminal - terminalVoltage) <= allowedError,
                 $"case {caseIndex}: terminal {terminalVoltage:G17} V reconstructed as {reconstructedTerminal:G17} V; " +
-                $"junction {junctionVoltage:G17} V, Rs {seriesResistance:G6} ohm, Is {saturationCurrent:G6} A.");
+                $"junction {junctionVoltage:G17} V, I {expectedCurrent:G17} A, " +
+                $"x {junctionVoltage / diode.JunctionVoltage:G17}, Rs {seriesResistance:G6} ohm, Is {saturationCurrent:G6} A.");
             AssertClose(expectedCurrent, diode.CurrentAt(terminalVoltage), 1e-8);
         }
     }
@@ -649,10 +650,20 @@ public sealed class DcDiodeSolverTests
         double volts)
     {
         double argument = volts / junctionVoltage;
-        double exponential = argument <= 80
-            ? Math.Exp(argument)
-            : Math.Exp(80) * (1 + (argument - 80));
-        return saturationCurrent * (exponential - 1);
+        double exponentialMinusOne = argument > 80
+            ? (Math.Exp(80) * (1 + (argument - 80))) - 1
+            : IndependentExponentialMinusOne(argument);
+        return saturationCurrent * exponentialMinusOne;
+    }
+
+    private static double IndependentExponentialMinusOne(double argument)
+    {
+        if (argument < -40)
+        {
+            return -1;
+        }
+
+        return 2 * Math.Sinh(argument / 2) * Math.Exp(argument / 2);
     }
 
     private static double BisectForwardVoltage(double source, double resistance, DcDiode diode)
@@ -689,7 +700,7 @@ public sealed class DcDiodeSolverTests
         for (int iteration = 0; iteration < 240; iteration++)
         {
             double voltage = (low + high) / 2;
-            double forward = saturationCurrent * (Math.Exp(Math.Min(voltage / junctionVoltage, 80)) - 1);
+            double forward = saturationCurrent * (IndependentExponentialMinusOne(Math.Min(voltage / junctionVoltage, 80)));
             double reverse = breakdownCurrent * Math.Exp(Math.Min((-voltage - breakdownVoltage) / junctionVoltage, 80));
             double residual = ((voltage - supply) / resistance) + forward - reverse;
             if (residual > 0)
@@ -718,7 +729,7 @@ public sealed class DcDiodeSolverTests
         for (int iteration = 0; iteration < 240; iteration++)
         {
             double voltage = (low + high) / 2;
-            double forward = saturationCurrent * (Math.Exp(Math.Min(voltage / junctionVoltage, 80)) - 1);
+            double forward = saturationCurrent * (IndependentExponentialMinusOne(Math.Min(voltage / junctionVoltage, 80)));
             double reverse = breakdownCurrent * Math.Exp(Math.Min((-voltage - breakdownVoltage) / junctionVoltage, 80));
             double residual = voltage + (totalResistance * (forward - reverse)) - supply;
             if (residual > 0)
