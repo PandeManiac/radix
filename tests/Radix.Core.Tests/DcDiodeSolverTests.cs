@@ -222,6 +222,38 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void DiodeExponentContinuationKeepsCurrentAndConductanceConsistent()
+    {
+        DcDiode forward = Assert.IsType<DcDiode>(
+            new DcNetlist("gnd").AddDiode("D1", "a", "gnd", DefaultIs).Elements[0]);
+        DcDiode breakdown = Assert.IsType<DcDiode>(
+            new DcNetlist("gnd").AddDiode(
+                "DZ1", "a", "gnd", DefaultIs,
+                breakdownVoltage: 5.1,
+                breakdownCurrent: 5e-3).Elements[0]);
+
+        AssertContinuationDerivative(forward, 80 * forward.JunctionVoltage);
+        AssertContinuationDerivative(forward, 82 * forward.JunctionVoltage);
+        AssertContinuationDerivative(
+            breakdown,
+            -breakdown.BreakdownVoltage!.Value - (80 * breakdown.JunctionVoltage));
+        AssertContinuationDerivative(
+            breakdown,
+            -breakdown.BreakdownVoltage!.Value - (82 * breakdown.JunctionVoltage));
+    }
+
+    private static void AssertContinuationDerivative(DcDiode diode, double volts)
+    {
+        double delta = diode.JunctionVoltage * 1e-7;
+        double numerical =
+            (diode.JunctionCurrent(volts + delta) - diode.JunctionCurrent(volts - delta)) /
+            (2 * delta);
+        double analytic = diode.JunctionConductance(volts);
+        Assert.True(double.IsFinite(numerical) && double.IsFinite(analytic));
+        Assert.InRange(Math.Abs(numerical - analytic) / analytic, 0, 1e-6);
+    }
+
+    [Fact]
     public void LargeUnrelatedCurrentDoesNotLoosenDiodeKclConvergence()
     {
         // The reverse-biased diode draws 0.1 A, so a 5 V source and 10 ohm series

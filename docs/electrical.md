@@ -128,6 +128,13 @@ Both parameters must be supplied together; omitting them preserves the original
 Shockley-only model. At `V = -BV`, reverse current is approximately `-IBV`. This
 smooth knee is a compact model, not a manufacturer-specific avalanche curve.
 
+For numerical safety, exponential arguments above 80 use the linear tangent
+continuation of `exp(x)` at 80 for both forward conduction and reverse breakdown.
+The continuation keeps the reported conductance equal to the derivative of the
+current law and avoids exponential overflow. Results far beyond this numerical
+knee are solver continuation values, not a physical high-injection or avalanche
+prediction.
+
 An optional series resistance `Rs` adds the terminal relation
 `Vterminal = Vjunction + Rs * I`. The junction voltage is recovered from the
 terminal voltage by a monotonic scalar bisection, and the circuit-level Newton

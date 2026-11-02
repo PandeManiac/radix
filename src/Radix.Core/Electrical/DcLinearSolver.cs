@@ -93,6 +93,7 @@ public sealed record DcDiode(
     public const double DefaultThermalVoltage = 0.025852;
 
     private const double MaximumExponentialArgument = 80;
+    private static readonly double MaximumExponentialValue = Math.Exp(MaximumExponentialArgument);
 
     public override DcElementKind Kind => DcElementKind.Diode;
 
@@ -110,11 +111,11 @@ public sealed record DcDiode(
     /// </summary>
     public double JunctionCurrent(double volts)
     {
-        double current = SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
+        double current = SaturationCurrent * (LimitedExponential(ExponentialArgument(volts)) - 1);
         if (BreakdownVoltage is double breakdownVoltage && BreakdownCurrent is double breakdownCurrent)
         {
-            double argument = Math.Min((-volts - breakdownVoltage) / JunctionVoltage, MaximumExponentialArgument);
-            current -= breakdownCurrent * Math.Exp(argument);
+            double argument = (-volts - breakdownVoltage) / JunctionVoltage;
+            current -= breakdownCurrent * LimitedExponential(argument);
         }
 
         return current;
@@ -123,11 +124,11 @@ public sealed record DcDiode(
     /// <summary>The junction small-signal conductance <c>dI/dV</c>.</summary>
     public double JunctionConductance(double volts)
     {
-        double conductance = (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+        double conductance = (SaturationCurrent / JunctionVoltage) * LimitedExponentialDerivative(ExponentialArgument(volts));
         if (BreakdownVoltage is double breakdownVoltage && BreakdownCurrent is double breakdownCurrent)
         {
-            double argument = Math.Min((-volts - breakdownVoltage) / JunctionVoltage, MaximumExponentialArgument);
-            conductance += (breakdownCurrent / JunctionVoltage) * Math.Exp(argument);
+            double argument = (-volts - breakdownVoltage) / JunctionVoltage;
+            conductance += (breakdownCurrent / JunctionVoltage) * LimitedExponentialDerivative(argument);
         }
 
         return conductance;
@@ -216,8 +217,19 @@ public sealed record DcDiode(
     private double JunctionResidual(double junctionVolts, double terminalVolts) =>
         junctionVolts + (SeriesResistance * JunctionCurrent(junctionVolts)) - terminalVolts;
 
-    private double ExponentialArgument(double volts) =>
-        Math.Min(volts / JunctionVoltage, MaximumExponentialArgument);
+    private double ExponentialArgument(double volts) => volts / JunctionVoltage;
+
+    private static double LimitedExponential(double argument)
+    {
+        return argument <= MaximumExponentialArgument
+            ? Math.Exp(argument)
+            : MaximumExponentialValue * (1 + (argument - MaximumExponentialArgument));
+    }
+
+    private static double LimitedExponentialDerivative(double argument) =>
+        argument <= MaximumExponentialArgument
+            ? Math.Exp(argument)
+            : MaximumExponentialValue;
 }
 
 public enum DcSolveFailure

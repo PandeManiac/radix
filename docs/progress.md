@@ -937,3 +937,12 @@ summary and full local verification results; see the PR for the latest CI state.
     diode current and checks power balance plus the solver residual. Failures include
     the fixed seed and case parameters. Focused campaign passes 1/1; after adding
     it, the full Core suite passes 640/640.
+
+87. Corrected diode exponential overflow limiting. The current law previously hard-
+    clamped `exp(x)` above x=80 while the Jacobian continued to report the nonzero
+    exponential slope, so Newton's current and conductance disagreed. Forward and
+    reverse-breakdown branches now use a linear tangent continuation above the
+    threshold, with the matching constant derivative. Documented the continuation's
+    numerical purpose and physical limitation. A finite-difference regression checks
+    both branches at and above the threshold; focused diode and Zener transient tests
+    pass 19/19. Full suites are pending.
