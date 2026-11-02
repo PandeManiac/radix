@@ -40,7 +40,8 @@ internal static class ElectricalCircuitNetlist
         ElectricalCircuit circuit,
         string prefix,
         IReadOnlyDictionary<string, string> nodes,
-        Func<string, ElectricalCircuit?>? resolve)
+        Func<string, ElectricalCircuit?>? resolve,
+        IReadOnlyDictionary<string, double>? overrides = null)
     {
         foreach (ElectricalComponent component in circuit.Components)
         {
@@ -51,17 +52,18 @@ internal static class ElectricalCircuitNetlist
             }
 
             string id = prefix + component.Id;
+            double value = EffectiveValue(component, overrides);
             (string nodeA, string nodeB) = BranchNodes(component, nodes);
             switch (component.Kind)
             {
                 case ElectricalComponentKind.Resistor:
-                    netlist.AddResistor(id, nodeA, nodeB, component.Value);
+                    netlist.AddResistor(id, nodeA, nodeB, value);
                     break;
                 case ElectricalComponentKind.VoltageSource:
-                    netlist.AddVoltageSource(id, nodeA, nodeB, component.Value);
+                    netlist.AddVoltageSource(id, nodeA, nodeB, value);
                     break;
                 case ElectricalComponentKind.CurrentSource:
-                    netlist.AddCurrentSource(id, nodeA, nodeB, component.Value);
+                    netlist.AddCurrentSource(id, nodeA, nodeB, value);
                     break;
                 case ElectricalComponentKind.Capacitor:
                     // A capacitor is an open circuit at DC, so it contributes no DC element.
@@ -80,7 +82,7 @@ internal static class ElectricalCircuitNetlist
                         nodeB,
                         component.Channel,
                         component.ThresholdVoltage,
-                        component.Value,
+                        value,
                         component.ChannelLengthModulation);
                     break;
                 default:
@@ -105,7 +107,7 @@ internal static class ElectricalCircuitNetlist
             instance,
             childPrefix,
             parentNodes);
-        AddDc(netlist, child, childPrefix, childNodes, resolve);
+        AddDc(netlist, child, childPrefix, childNodes, resolve, OverridesOf(instance));
     }
 
     private static void AddTransient(
@@ -113,7 +115,8 @@ internal static class ElectricalCircuitNetlist
         ElectricalCircuit circuit,
         string prefix,
         IReadOnlyDictionary<string, string> nodes,
-        Func<string, ElectricalCircuit?>? resolve)
+        Func<string, ElectricalCircuit?>? resolve,
+        IReadOnlyDictionary<string, double>? overrides = null)
     {
         foreach (ElectricalComponent component in circuit.Components)
         {
@@ -124,22 +127,23 @@ internal static class ElectricalCircuitNetlist
             }
 
             string id = prefix + component.Id;
+            double value = EffectiveValue(component, overrides);
             (string nodeA, string nodeB) = BranchNodes(component, nodes);
             switch (component.Kind)
             {
                 case ElectricalComponentKind.Resistor:
-                    netlist.AddResistor(id, nodeA, nodeB, component.Value);
+                    netlist.AddResistor(id, nodeA, nodeB, value);
                     break;
                 case ElectricalComponentKind.VoltageSource:
-                    netlist.AddVoltageSource(id, nodeA, nodeB, component.Value);
+                    netlist.AddVoltageSource(id, nodeA, nodeB, value);
                     ApplyWaveform(netlist, component, id);
                     break;
                 case ElectricalComponentKind.CurrentSource:
-                    netlist.AddCurrentSource(id, nodeA, nodeB, component.Value);
+                    netlist.AddCurrentSource(id, nodeA, nodeB, value);
                     ApplyWaveform(netlist, component, id);
                     break;
                 case ElectricalComponentKind.Capacitor:
-                    netlist.AddCapacitor(id, nodeA, nodeB, component.Value);
+                    netlist.AddCapacitor(id, nodeA, nodeB, value);
                     if (component.InitialValue is double volts)
                     {
                         netlist.SetCapacitorInitialVoltage(id, volts);
@@ -147,7 +151,7 @@ internal static class ElectricalCircuitNetlist
 
                     break;
                 case ElectricalComponentKind.Inductor:
-                    netlist.AddInductor(id, nodeA, nodeB, component.Value);
+                    netlist.AddInductor(id, nodeA, nodeB, value);
                     if (component.InitialValue is double amperes)
                     {
                         netlist.SetInductorInitialCurrent(id, amperes);
@@ -162,7 +166,7 @@ internal static class ElectricalCircuitNetlist
                         nodeB,
                         component.Channel,
                         component.ThresholdVoltage,
-                        component.Value,
+                        value,
                         component.ChannelLengthModulation,
                         component.GateSourceCapacitance,
                         component.GateDrainCapacitance,
@@ -198,7 +202,7 @@ internal static class ElectricalCircuitNetlist
             instance,
             childPrefix,
             parentNodes);
-        AddTransient(netlist, child, childPrefix, childNodes, resolve);
+        AddTransient(netlist, child, childPrefix, childNodes, resolve, OverridesOf(instance));
     }
 
     /// <summary>
@@ -227,6 +231,21 @@ internal static class ElectricalCircuitNetlist
 
         return map;
     }
+
+    private static double EffectiveValue(
+        ElectricalComponent component,
+        IReadOnlyDictionary<string, double>? overrides) =>
+        overrides is not null && overrides.TryGetValue(component.Id, out double value)
+            ? value
+            : component.Value;
+
+    private static IReadOnlyDictionary<string, double>? OverridesOf(ElectricalComponent instance) =>
+        instance.Overrides.Count == 0
+            ? null
+            : instance.Overrides.ToDictionary(
+                entry => entry.ComponentId,
+                entry => entry.Value,
+                StringComparer.Ordinal);
 
     private static ElectricalCircuit ReferencedCircuit(
         ElectricalComponent instance,

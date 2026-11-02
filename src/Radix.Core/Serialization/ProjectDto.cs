@@ -118,6 +118,9 @@ internal sealed class ElectricalComponentDto
     /// <summary>Referenced circuit for a subcircuit kind; omitted for every built-in kind.</summary>
     public string? Circuit { get; set; }
 
+    /// <summary>Primary-value overrides for a subcircuit instance; omitted for every built-in kind.</summary>
+    public List<ElectricalOverrideDto>? Overrides { get; set; }
+
     public double? Value { get; set; }
 
     public double? InitialValue { get; set; }
@@ -158,6 +161,13 @@ internal sealed class ElectricalComponentDto
     public List<ElectricalWaveformPointDto>? Waveform { get; set; }
 
     public List<ElectricalTerminalDto>? Terminals { get; set; }
+}
+
+internal sealed class ElectricalOverrideDto
+{
+    public string? Component { get; set; }
+
+    public double? Value { get; set; }
 }
 
 internal sealed class ElectricalWaveformPointDto

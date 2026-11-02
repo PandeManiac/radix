@@ -239,6 +239,20 @@ public sealed class ElectricalWaveformPoint
     public override string ToString() => $"{Time}:{Value}";
 }
 
+/// <summary>
+/// A per-instance replacement for one direct child component's primary value. The target is a
+/// component ID inside the referenced circuit, not a port: a subcircuit may reuse one child with
+/// different resistor, source, capacitor, inductor, or MOSFET transconductance values.
+/// </summary>
+public sealed class ElectricalOverride
+{
+    public string ComponentId { get; set; } = string.Empty;
+
+    public double Value { get; set; }
+
+    public override string ToString() => $"{ComponentId}={Value}";
+}
+
 /// <summary>One authored electrical component with an explicit value and terminal bindings.</summary>
 public sealed class ElectricalComponent
 {
@@ -320,6 +334,13 @@ public sealed class ElectricalComponent
     /// the parent netlist under a prefix derived from this component's ID.
     /// </summary>
     public string CircuitId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Primary-value replacements applied only to this subcircuit instance. Each target must be a
+    /// direct non-subcircuit component of <see cref="CircuitId"/>; an empty list uses the child's
+    /// authored values unchanged.
+    /// </summary>
+    public List<ElectricalOverride> Overrides { get; } = [];
 
     /// <summary>
     /// Optional piecewise-linear drive for an independent source, in the source's unit.
@@ -631,6 +652,43 @@ public static class ElectricalCircuitValidator
                 }
             }
 
+            if (ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+            {
+                var overrideIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (ElectricalOverride entry in component.Overrides)
+                {
+                    if (!Identifiers.IsValid(entry.ComponentId))
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-038",
+                            $"Subcircuit '{component.Id}' has an override with invalid component ID '{entry.ComponentId}'. {Identifiers.Rule}",
+                            path: path);
+                    }
+                    else if (!overrideIds.Add(entry.ComponentId))
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-039",
+                            $"Subcircuit '{component.Id}' overrides component '{entry.ComponentId}' more than once.",
+                            path: path);
+                    }
+
+                    if (!double.IsFinite(entry.Value))
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-040",
+                            $"Subcircuit '{component.Id}' has a non-finite override for '{entry.ComponentId}'.",
+                            path: path);
+                    }
+                }
+            }
+            else if (component.Overrides.Count > 0)
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-037",
+                    $"Component '{component.Id}' is a {component.Kind} and cannot carry subcircuit overrides; only a subcircuit instance can override a child value.",
+                    path: path);
+            }
+
             if (ElectricalComponentMetadata.IsMosfet(component.Kind))
             {
                 if (!double.IsFinite(component.ThresholdVoltage))
@@ -914,6 +972,7 @@ public static class ElectricalCircuitValidator
             }
 
             ValidateSubcircuitTerminals(circuit, component, child, diagnostics, path);
+            ValidateSubcircuitOverrides(component, child, diagnostics, path);
 
             if (!validated.Add(child.Id))
             {
@@ -924,6 +983,57 @@ public static class ElectricalCircuitValidator
             stack.Add(child.Id);
             ValidateHierarchy(child, resolve, diagnostics, validated, stack);
             stack.Remove(child.Id);
+        }
+    }
+
+    private static void ValidateSubcircuitOverrides(
+        ElectricalComponent instance,
+        ElectricalCircuit child,
+        DiagnosticBag diagnostics,
+        string path)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ElectricalOverride entry in instance.Overrides)
+        {
+            if (!Identifiers.IsValid(entry.ComponentId) || !seen.Add(entry.ComponentId))
+            {
+                continue;
+            }
+
+            ElectricalComponent? target = child.FindComponent(entry.ComponentId);
+            if (target is null)
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-041",
+                    $"Subcircuit '{instance.Id}' overrides unknown component '{entry.ComponentId}' in circuit '{child.Id}'.",
+                    path: path);
+                continue;
+            }
+
+            if (ElectricalComponentMetadata.IsSubcircuit(target.Kind))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-042",
+                    $"Subcircuit '{instance.Id}' overrides '{entry.ComponentId}', which is itself a subcircuit; override a component inside that child instead.",
+                    path: path);
+                continue;
+            }
+
+            if (ElectricalComponentMetadata.RequiresPositiveValue(target.Kind) && entry.Value <= 0)
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-043",
+                    $"Subcircuit '{instance.Id}' overrides {target.Kind} '{entry.ComponentId}' with a value that must be strictly positive.",
+                    path: path);
+            }
+
+            if (target.Waveform.Count > 0)
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-044",
+                    $"Subcircuit '{instance.Id}' overrides source '{entry.ComponentId}', which has a piecewise-linear waveform; a waveform drive has no single primary value to replace.",
+                    path: path);
+            }
         }
     }
 

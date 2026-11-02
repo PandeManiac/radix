@@ -58,6 +58,107 @@ public sealed class ElectricalHierarchyTests
     }
 
     [Fact]
+    public void InstanceOverridesChangeOnlyThatInstance()
+    {
+        ElectricalCircuit divider = CreateDividerChild();
+        var parent = new ElectricalCircuit
+        {
+            Id = "override",
+            Name = "Different loads",
+            GroundNodeId = "gnd",
+        };
+        parent.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
+        parent.Nodes.Add(new ElectricalNode { Id = "in1", Name = "Input one" });
+        parent.Nodes.Add(new ElectricalNode { Id = "in2", Name = "Input two" });
+        parent.Nodes.Add(new ElectricalNode { Id = "out1", Name = "Output one" });
+        parent.Nodes.Add(new ElectricalNode { Id = "out2", Name = "Output two" });
+        parent.Components.Add(VoltageSource("V1", "in1", "gnd", 10));
+        parent.Components.Add(VoltageSource("V2", "in2", "gnd", 10));
+        ElectricalComponent first = Subcircuit("X1", divider, "in1", "out1", "gnd");
+        first.Overrides.Add(new ElectricalOverride { ComponentId = "R3", Value = 3_000 });
+        parent.Components.Add(first);
+        parent.Components.Add(Subcircuit("X2", divider, "in2", "out2", "gnd"));
+
+        DcSolution solution = parent.ToDcNetlist(Resolve(divider)).Solve();
+
+        // The child is 1k + 1k + 1k, so X1 with R3=3k divides 10 V as 10*3/(1+1+3).
+        // X2 keeps the authored 1k and stays at 10/3 V; the override is not global.
+        Assert.Equal(6, solution.NodeVoltages["out1"], 12);
+        Assert.Equal(10.0 / 3.0, solution.NodeVoltages["out2"], 12);
+        Assert.Equal(2e-3, solution.ElementCurrents["X1/R3"], 12);
+        Assert.Equal(10.0 / 3_000.0, solution.ElementCurrents["X2/R3"], 12);
+    }
+
+    [Fact]
+    public void InstanceOverridesRoundTripAndAffectTheSolvedValue()
+    {
+        ElectricalCircuit divider = CreateDividerChild();
+        ElectricalCircuit parent = CreateParent(divider.Id, 10);
+        parent.FindComponent("X1")!.Overrides.Add(new ElectricalOverride
+        {
+            ComponentId = "R3",
+            Value = 3_000,
+        });
+
+        CircuitProject project = CreateProject();
+        project.ElectricalCircuits.Add(divider);
+        project.ElectricalCircuits.Add(parent);
+
+        string json = ProjectSerializer.SaveToString(project);
+        Assert.Contains("\"overrides\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"component\": \"R3\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"version\": 23", json, StringComparison.Ordinal);
+
+        CircuitProject loaded = ProjectSerializer.LoadFromString(json, validate: false);
+        ElectricalCircuit reloadedParent = loaded.FindElectricalCircuit("parent")!;
+        ElectricalOverride entry = Assert.Single(
+            reloadedParent.FindComponent("X1")!.Overrides);
+        Assert.Equal("R3", entry.ComponentId);
+        Assert.Equal(3_000, entry.Value);
+        Assert.Equal(
+            6,
+            reloadedParent.ToDcNetlist(loaded.FindElectricalCircuit)
+                .Solve().NodeVoltages["out"],
+            12);
+    }
+
+    [Fact]
+    public void InvalidInstanceOverridesAreRejected()
+    {
+        ElectricalCircuit divider = CreateDividerChild();
+        ElectricalCircuit parent = CreateParent(divider.Id, 10);
+        ElectricalComponent instance = parent.FindComponent("X1")!;
+
+        instance.Overrides.Add(new ElectricalOverride { ComponentId = "missing", Value = 1 });
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(parent, Resolve(divider)),
+            diagnostic => diagnostic.Code == "RAD-ELEC-041");
+
+        instance.Overrides.Clear();
+        instance.Overrides.Add(new ElectricalOverride { ComponentId = "R3", Value = 0 });
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(parent, Resolve(divider)),
+            diagnostic => diagnostic.Code == "RAD-ELEC-043");
+
+        instance.Overrides.Clear();
+        instance.Overrides.Add(new ElectricalOverride { ComponentId = "R3", Value = 1_000 });
+        instance.Overrides.Add(new ElectricalOverride { ComponentId = "R3", Value = 2_000 });
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(parent, Resolve(divider)),
+            diagnostic => diagnostic.Code == "RAD-ELEC-039");
+
+        ElectricalCircuit builtIn = CreateParent(divider.Id, 10);
+        builtIn.FindComponent("V1")!.Overrides.Add(new ElectricalOverride
+        {
+            ComponentId = "R3",
+            Value = 2_000,
+        });
+        Assert.Contains(
+            ElectricalCircuitValidator.Validate(builtIn, Resolve(divider)),
+            diagnostic => diagnostic.Code == "RAD-ELEC-037");
+    }
+
+    [Fact]
     public void NestedSubcircuitsExpandRecursively()
     {
         ElectricalCircuit divider = CreateDividerChild();

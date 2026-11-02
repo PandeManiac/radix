@@ -26,7 +26,8 @@ public static class ProjectSerializer
     /// Version 7 adds the pending-event limit. Version 8 adds optional authored
     /// electrical circuits. Version 11 adds the authored MOSFET component kind with
     /// its optional channel and threshold-voltage fields. Version 22 adds electrical
-    /// circuit ports and the subcircuit component kind. Older files load unchanged;
+    /// circuit ports and the subcircuit component kind. Version 23 adds optional
+    /// primary-value overrides on a subcircuit instance. Older files load unchanged;
     /// every version up to
     /// <see cref="CurrentVersion"/> is accepted, and saving always writes the current
     /// version.
@@ -368,6 +369,12 @@ public static class ProjectSerializer
         ElectricalComponentKind kind = ParseElectricalKind(dto.Kind, circuitId, id);
         bool isMosfet = ElectricalComponentMetadata.IsMosfet(kind);
         bool isSubcircuit = ElectricalComponentMetadata.IsSubcircuit(kind);
+        if (!isSubcircuit && dto.Overrides is not null)
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'overrides'; only a subcircuit can override a child value.");
+        }
+
         if (!isMosfet && (dto.Channel is not null ||
             dto.ThresholdVoltage is not null ||
             dto.ChannelLengthModulation is not null ||
@@ -430,6 +437,35 @@ public static class ProjectSerializer
             DrainSourceCapacitance = dto.DrainSourceCapacitance ?? 0,
             BiasDependentCapacitance = dto.BiasDependentCapacitance ?? false,
         };
+
+        if (isSubcircuit)
+        {
+            var overrideIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (ElectricalOverrideDto overrideDto in dto.Overrides ?? [])
+            {
+                string target = overrideDto.Component ?? throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' has an override without 'component'.");
+                if (!overrideIds.Add(target))
+                {
+                    throw new ProjectFormatException(
+                        $"Electrical component '{circuitId}.{id}' overrides '{target}' more than once.");
+                }
+
+                double overrideValue = overrideDto.Value ?? throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' overrides '{target}' without 'value'.");
+                if (!double.IsFinite(overrideValue))
+                {
+                    throw new ProjectFormatException(
+                        $"Electrical component '{circuitId}.{id}' has a non-finite override for '{target}'.");
+                }
+
+                component.Overrides.Add(new ElectricalOverride
+                {
+                    ComponentId = target,
+                    Value = overrideValue,
+                });
+            }
+        }
 
         foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
         {
@@ -845,6 +881,13 @@ public static class ProjectSerializer
             Circuit = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
                 ? component.CircuitId
                 : null,
+            Overrides = component.Overrides.Count == 0
+                ? null
+                : component.Overrides.Select(entry => new ElectricalOverrideDto
+                {
+                    Component = entry.ComponentId,
+                    Value = entry.Value,
+                }).ToList(),
             Value = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
                 ? null
                 : component.Value,
