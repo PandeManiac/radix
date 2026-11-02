@@ -1505,9 +1505,19 @@ returns the reader to the rail, and a descending, duplicated or non-numeric list
 and in the inspector rather than stored in a shape no reading could use. Editing the boundaries
 invalidates the last run, as any circuit change does.
 
-This is the electrical-to-digital half of the bridge and nothing more: a level is produced, but no
-level yet drives the simulator's inputs, so the behavioural and electrical sides still meet only in
-a person's head.
+`ElectricalDriveSchedule` carries a level into the simulator. Only changes are emitted — a drive
+repeating a held value adds events without adding information — and a level is written as its index,
+which is how a domain identifies a value, so a ternary pin accepts it. Seconds and ticks are
+different clocks, so the rate is supplied rather than guessed; when scheduling, two changes landing
+on the same tick collapse to the later one, while the plain drive list keeps every change.
+
+An end-to-end test builds a script from the ternary inverter's own run, drives a ternary gate with
+it and lets the script runner's expectations check that the output followed: the circuit reads 2
+then 1, and the gate turns those into 0 then 1. The runner applies the drives through the same
+compiler and engine the editor and CLI use, so this is the handoff executed, not a type match.
+
+Nothing exposes the schedule in the CLI or editor yet, so the handoff lives in the library and its
+tests rather than in a file a reader can run.
 
 Project format 15 stores the choice per device as `biasDependentCapacitance`, so a file can ask
 for it; the field is written only for a MOSFET, and a non-MOSFET that sets it is rejected on load
