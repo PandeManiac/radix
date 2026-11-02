@@ -12,6 +12,9 @@ humans; update it at each milestone instead of relying on chat history.
 - Base checkpoint before the hierarchy-results change: `426626bbfbedff217f815f4a350166b55b6f5c77`
   (verified editor overrides, v23 examples, format/electrical/README docs).
 - Backend override checkpoint: `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`.
+- Hierarchy-analysis checkpoints: `37d6c69cfe6e8d2125f8f1ccabb971760d7c0e51`
+  (transient/AC labels) and `54eb630448c2552cc362cc954eb4c8a6a599d58b`
+  (DC sweep private nodes and labels).
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
   tests 830/830, CLI tests 2/2, Editor tests 312/312. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
