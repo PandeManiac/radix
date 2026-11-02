@@ -524,6 +524,12 @@ radix ac examples/transient-ternary-inverter.radix --drive VIN --bias VIN=1.3 --
   4.64159E+06   -1.02871  -16.7123         0         0  9.52886   79.6753  ...
 ```
 
+`--csv` writes the sweep as one row per node per frequency and `--json` as a versioned report;
+`--compare <archive.json> --compare-tolerance <db>` reads such a report back and prints how far each
+node's gain and phase moved, exiting non-zero when the gain moves further than the tolerance. That is
+how a capacitance change is shown rather than described: doubling the RC example's capacitor is
+6.02 dB down well above the corner, which is exactly what the comparison reports.
+
 The gate has 29.4 dB of gain at low frequency, inverting at 180°, and is 3 dB down near 500 kHz,
 with the phase past 136° by 447 kHz. Those are the same numbers the DC sweep measures as a slope at
 the same bias: because the analysis is linearized at the operating point, the test asserts that the

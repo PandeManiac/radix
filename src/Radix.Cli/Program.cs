@@ -142,6 +142,10 @@ internal static class Program
                   [--amplitude <v>]          Drive amplitude in volts (default 1)
                   [--bias <source-id>=<v>]   Hold a source at this value for the operating point
                                              (a waveform would otherwise bias at its start value)
+                  [--compare <archive>]      Compare with a recorded sweep and report deviations
+                  [--compare-tolerance <db>]  Gain deviation tolerated before exiting 1 (default 0)
+                  [--csv]                    Emit one row per node per frequency
+                  [--json]                   Emit a versioned report that --compare can read back
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -479,24 +483,35 @@ internal static class Program
     {
         (var positional, var options) = Parse(
             args,
-            ["circuit", "drive", "from", "to", "points", "amplitude", "bias"],
-            []);
+            ["circuit", "drive", "from", "to", "points", "amplitude", "bias", "compare", "compare-tolerance"],
+            ["csv", "json"]);
         string? drive = GetOption(options, "drive");
         if (positional.Count != 1 || drive is null)
         {
             Console.Error.WriteLine(
-                "usage: radix ac <netlist.json|project.radix> --drive <source-id> [--circuit <id>] [--from <hz>] [--to <hz>] [--points <n>] [--amplitude <v>]");
+                "usage: radix ac <netlist.json|project.radix> --drive <source-id> [--circuit <id>] [--from <hz>] [--to <hz>] [--points <n>] [--amplitude <v>] [--bias <source>=<v>] [--compare <archived-ac.json>] [--compare-tolerance <db>] [--csv|--json]");
+            return 2;
+        }
+
+        bool csv = options.ContainsKey("csv");
+        bool json = options.ContainsKey("json");
+        if (csv && json)
+        {
+            Console.Error.WriteLine("--csv and --json are mutually exclusive.");
             return 2;
         }
 
         string source = positional[0];
+        string? circuitId = null;
         TransientNetlist netlist;
         try
         {
             if (string.Equals(Path.GetExtension(source), ".radix", StringComparison.OrdinalIgnoreCase))
             {
                 CircuitProject project = ProjectSerializer.Load(source, validate: false);
-                netlist = SelectElectricalCircuit(project, GetOption(options, "circuit")).ToTransientNetlist();
+                ElectricalCircuit circuit = SelectElectricalCircuit(project, GetOption(options, "circuit"));
+                circuitId = circuit.Id;
+                netlist = circuit.ToTransientNetlist();
             }
             else
             {
@@ -568,18 +583,113 @@ internal static class Program
             return 2;
         }
 
+        string? compareSpec = GetOption(options, "compare");
+        double compareTolerance = 0;
+        if (GetOption(options, "compare-tolerance") is not null)
+        {
+            compareTolerance = GetDoubleOption(options, "compare-tolerance", 0);
+            if (!double.IsFinite(compareTolerance) || compareTolerance < 0)
+            {
+                Console.Error.WriteLine("--compare-tolerance takes a non-negative number of decibels.");
+                return 2;
+            }
+
+            if (compareSpec is null)
+            {
+                Console.Error.WriteLine("--compare-tolerance needs --compare.");
+                return 2;
+            }
+        }
+
+        if (compareSpec is not null && (csv || json))
+        {
+            Console.Error.WriteLine("--compare prints a comparison; drop --csv or --json.");
+            return 2;
+        }
+
+        AcResponse response;
         try
         {
-            AcResponse response = AcAnalysis.Run(
+            response = AcAnalysis.Run(
                 netlist, drive, AcFrequencySweep.Logarithmic(from, to, points), amplitude);
-            Console.Write(response.ToText());
-            return 0;
         }
         catch (DcSolveException exception)
         {
             Console.Error.WriteLine($"ac failed: {exception.Message}");
             return 1;
         }
+
+        AcReport report = AcReport.From(response, source, circuitId);
+        if (compareSpec is not null)
+        {
+            AcReport archived;
+            try
+            {
+                archived = AcReport.Load(compareSpec);
+            }
+            catch (ProjectFormatException exception)
+            {
+                Console.Error.WriteLine($"archived sweep error: {exception.Message}");
+                return 2;
+            }
+
+            IReadOnlyList<AcDeviation> deviations;
+            try
+            {
+                deviations = AcComparison.Compare(archived, response);
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"--compare: {exception.Message}");
+                return 2;
+            }
+
+            PrintAcComparison(report, deviations, Path.GetFileName(compareSpec), compareTolerance);
+            return deviations.Any(deviation => deviation.GainDeviationDb > compareTolerance) ? 1 : 0;
+        }
+
+        if (csv)
+        {
+            Console.Write(report.ToCsv());
+        }
+        else if (json)
+        {
+            Console.WriteLine(report.ToJson());
+        }
+        else
+        {
+            Console.Write(response.ToText());
+        }
+
+        return 0;
+    }
+
+    private static void PrintAcComparison(
+        AcReport report,
+        IReadOnlyList<AcDeviation> deviations,
+        string against,
+        double toleranceDb)
+    {
+        Console.WriteLine(
+            $"AC comparison against {against}: drive '{report.Drive}' at " +
+            $"{report.Amplitude.ToString("G6", CultureInfo.InvariantCulture)} V, " +
+            $"{report.Points.Count} frequencies");
+        Console.WriteLine("  node  worst Hz  gain dB  phase deg");
+        foreach (AcDeviation deviation in deviations)
+        {
+            Console.WriteLine(
+                "  " + deviation.Node.PadRight(12) +
+                FormatDcNumber(deviation.WorstGainFrequencyHz).PadRight(12) +
+                FormatDcNumber(deviation.GainDeviationDb).PadRight(10) +
+                FormatDcNumber(deviation.MaximumPhaseDeviationDegrees));
+        }
+
+        AcDeviation worst = deviations.MaxBy(deviation => deviation.GainDeviationDb)!;
+        int exceeded = deviations.Count(deviation => deviation.GainDeviationDb > toleranceDb);
+        Console.WriteLine(
+            $"Worst gain deviation {FormatDcNumber(worst.GainDeviationDb)} dB on '{worst.Node}' " +
+            $"at {FormatDcNumber(worst.WorstGainFrequencyHz)} Hz; tolerance " +
+            $"{FormatDcNumber(toleranceDb)} dB, {exceeded} of {deviations.Count} node(s) outside it.");
     }
 
     private static int TransientCommand(string[] args)
