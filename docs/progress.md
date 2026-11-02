@@ -1289,3 +1289,9 @@ summary and full local verification results; see the PR for the latest CI state.
      infinity, making the existing tolerance infinite and incorrectly reporting
      immediate settling. Focused execution and scale-safe relative comparisons
      are pending.
+
+144. Normalize final-value and swing differences by the largest observed voltage
+     magnitude before applying the settling band. The range and band comparison
+     now remain finite for opposite-sign extremes. The new 1e308 V sweep regression
+     reports the expected 0.5 s settling time, and all eight focused
+     `TransientMetricsTests` pass; broader verification remains pending.

@@ -1665,15 +1665,22 @@ public sealed class TransientNetlist
             }
 
             double final = NodeVoltage(points[^1].NodeVoltages, node);
-            double tolerance = settlingBand * Math.Max(Math.Abs(final), maximum - minimum);
+            double scale = Math.Max(Math.Abs(final), Math.Max(Math.Abs(minimum), Math.Abs(maximum)));
+            double normalizedFinal = scale > 0 ? final / scale : 0;
+            double normalizedSwing = scale > 0 ? (maximum / scale) - (minimum / scale) : 0;
+            double normalizedTolerance = settlingBand * Math.Max(
+                Math.Abs(normalizedFinal), normalizedSwing);
+            double NormalizedDifference(double volts) => scale > 0
+                ? Math.Abs((volts / scale) - normalizedFinal)
+                : 0;
             double? settling = 0;
-            if (tolerance > 0)
+            if (normalizedTolerance > 0)
             {
                 double lastOutside = 0;
                 bool outside = false;
                 foreach (TransientPoint point in points)
                 {
-                    if (Math.Abs(NodeVoltage(point.NodeVoltages, node) - final) > tolerance)
+                    if (NormalizedDifference(NodeVoltage(point.NodeVoltages, node)) > normalizedTolerance)
                     {
                         lastOutside = point.Time;
                         outside = true;
@@ -1682,7 +1689,8 @@ public sealed class TransientNetlist
 
                 if (outside)
                 {
-                    settling = Math.Abs(NodeVoltage(points[^1].NodeVoltages, node) - final) > tolerance
+                    settling = NormalizedDifference(NodeVoltage(points[^1].NodeVoltages, node)) >
+                        normalizedTolerance
                         ? null
                         : lastOutside;
                 }

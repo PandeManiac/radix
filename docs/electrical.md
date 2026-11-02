@@ -397,7 +397,9 @@ silently turn a settling report into a trivial one. The band is a fraction of th
 node's own numbers, so it means the same thing for a 5 V step and a millivolt
 ripple, and a null settling time is the honest report of a node that was still
 moving at the last solved point, which is what an oscillation or a diverging run
-looks like.
+looks like. The band comparison is normalized by the largest voltage magnitude,
+so a finite swing from a large negative to a large positive value does not overflow
+its range or appear settled immediately.
 
 The metrics describe the reported points rather than a second solve, so they cannot
 disagree with the values the caller already has, and the panel lists them directly
