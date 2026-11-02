@@ -1224,3 +1224,9 @@ summary and full local verification results; see the PR for the latest CI state.
      242/242 with `.local-native`. The Zener CLI solves at -5.108295403806094 V;
      the divider CLI returns the expected 5 V midpoint. The new non-finite-power
      regression and all prior Core coverage pass.
+
+134. WIP: added a transient-energy regression for a 1e-323 F capacitor at
+     1e154 V. Its stored energy (5e-16 J) is representable, but the current
+     `0.5 * C * V * V` evaluation halves capacitance first and rounds that
+     intermediate to zero. Focused execution, a scale-safe calculation, and
+     broader verification are pending.

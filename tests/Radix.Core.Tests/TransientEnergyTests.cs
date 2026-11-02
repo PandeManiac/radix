@@ -95,6 +95,28 @@ public sealed class TransientEnergyTests
     }
 
     [Fact]
+    public void StoredEnergyDoesNotLoseSmallCapacitanceBeforeSquaringVoltage()
+    {
+        // 0.5 * C * V^2 is 2.5e-16 J. Halving the minimum-subnormal
+        // capacitance first rounds it to zero, even though the final energy is
+        // representable.
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddCapacitor("C1", "out", "gnd", 1e-323)
+            .SetCapacitorInitialVoltage("C1", 1e154);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 1e-3,
+            Steps = 1,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        TransientEnergyBalance energy = Assert.IsType<TransientEnergyBalance>(result.Energy);
+        Assert.True(double.IsFinite(energy.FinalStoredJoules));
+        AssertClose(5e-16, energy.FinalStoredJoules, 1e-15);
+    }
+
+    [Fact]
     public void LosslessTankConservesEnergyUnderTheTrapezoidalRule()
     {
         double initial = 0.5 * 1e-6 * 25;
