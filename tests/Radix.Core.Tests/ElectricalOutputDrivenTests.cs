@@ -7,10 +7,12 @@ using Xunit;
 namespace Radix.Core.Tests;
 
 /// <summary>
-/// The electrical side can feed an input and check an output, but it cannot answer for one: the
-/// kernel refuses to drive an output port. That is a deliberate invariant, not a gap in the CLI, so
-/// it is pinned here. A future change that opens the direction has to change this test knowingly
-/// rather than discover the behaviour by accident.
+/// The electrical side can feed an input and check an output, but it cannot answer for one unless
+/// the pin says so: the kernel refuses to drive an output port, and a pin whose declaration opts in
+/// with <see cref="PinDeclaration.ExternalSupply"/> is the one exception. That default is a
+/// deliberate invariant, not a gap in the CLI, so it is pinned here. A future change that opens the
+/// direction more widely has to change this test knowingly rather than discover the behaviour by
+/// accident.
 /// </summary>
 public sealed class ElectricalOutputDrivenTests
 {

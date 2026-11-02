@@ -296,7 +296,13 @@ public sealed class CircuitCompiler
                     continue;
                 }
 
-                ports.Add(new CompiledPort(pin.Id, pin.Name, pin.Direction, nets[netIndex].Domain, netIndex));
+                ports.Add(new CompiledPort(
+                    pin.Id,
+                    pin.Name,
+                    pin.Direction,
+                    nets[netIndex].Domain,
+                    netIndex,
+                    pin.ExternalSupply));
             }
 
             return ports;

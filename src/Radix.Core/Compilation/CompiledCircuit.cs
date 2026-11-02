@@ -40,7 +40,8 @@ public sealed record CompiledPort(
     string Name,
     PinDirection Direction,
     SignalDomain Domain,
-    int Net);
+    int Net,
+    bool ExternalSupply = false);
 
 /// <summary>Location of an authored net at a specific hierarchy path.</summary>
 public readonly record struct NetLocation(string Path, string NetId);

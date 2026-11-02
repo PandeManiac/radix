@@ -77,7 +77,8 @@ public sealed class DefinitionBuilder
         string name,
         PinDirection direction,
         string domainId,
-        string? netId = null)
+        string? netId = null,
+        bool externalSupply = false)
     {
         if (_project.FindDomain(domainId) is null)
         {
@@ -95,6 +96,7 @@ public sealed class DefinitionBuilder
             Name = name,
             Direction = direction,
             DomainId = domainId,
+            ExternalSupply = externalSupply,
         });
 
         string resolvedNetId = UniqueNetId(netId ?? $"{id}_net");

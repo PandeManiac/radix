@@ -542,6 +542,7 @@ public static class ProjectSerializer
                 Name = pin.Name ?? pin.Id ?? string.Empty,
                 Direction = ParseDirection(pin.Direction, $"definition '{id}' pin '{pin.Id}'"),
                 DomainId = pin.Domain ?? throw new ProjectFormatException($"Pin '{pin.Id}' in definition '{id}' is missing 'domain'."),
+                ExternalSupply = pin.ExternalSupply,
             });
         }
 
@@ -868,6 +869,7 @@ public static class ProjectSerializer
             Name = pin.Name,
             Direction = pin.Direction == PinDirection.Input ? "input" : "output",
             Domain = pin.DomainId,
+            ExternalSupply = pin.ExternalSupply,
         }).ToList(),
         Instances = definition.Instances.Select(MapInstanceDto).ToList(),
         Nets = definition.Nets.Select(net => new NetDto

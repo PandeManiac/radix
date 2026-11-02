@@ -246,6 +246,13 @@ internal sealed class PinDto
     public string? Direction { get; set; }
 
     public string? Domain { get; set; }
+
+    /// <summary>
+    /// Written only when true, so a project without externally supplied pins keeps the file it had.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ExternalSupply { get; set; }
 }
 
 internal sealed class InstanceDto

@@ -23,6 +23,15 @@ public sealed class PinDeclaration
 
     public string DomainId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Declares that this output is supplied from outside the model rather than computed by it. It is
+    /// off by default, so every pin that does not say so keeps the rule that an output cannot be
+    /// driven; a pin that does say so is an interface the outside world is allowed to write. This is
+    /// what lets a solved electrical node feed a digital output, and it has to be declared because
+    /// nothing else in the file would tell a reader that a net has two authors.
+    /// </summary>
+    public bool ExternalSupply { get; set; }
+
     public PinDescriptor ToDescriptor() => new(Id, Name, Direction, DomainId);
 }
 
@@ -308,7 +317,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 17;
+    public const int CurrentFormatVersion = 18;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 
