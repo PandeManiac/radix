@@ -854,3 +854,13 @@ Verification: focused `ElectricalEditorTests` passed 43/43; Release solution bui
 completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
 237/237. GitHub CI passed on Ubuntu and Windows for branch tip
 `bd0d130f3a9f0df45208175bf4181b70e2dab876`.
+
+79. Completed the Electrical inspector's SI entry across the transient controls:
+    stop/probe times and comma-list or range sweep values now accept the same finite
+    suffix syntax as component values, initial state, and source waveforms. The
+    view-model inputs remain text and project serialization remains numeric. Updated
+    control hints and `docs/electrical.md`; headless tests exercise `10m`, `1.2345m`,
+    `500,1k,2k`, and `1k:2k:3` in the existing run/probe/sweep flows.
+
+Verification: focused `ElectricalEditorTests` passed 43/43. Full build/suites and
+GitHub CI are pending for this milestone.

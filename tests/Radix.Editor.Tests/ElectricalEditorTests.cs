@@ -215,7 +215,7 @@ public sealed class ElectricalEditorTests
 
         EditableField stop = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Transient stop (s)");
-        stop.Value = "0.01";
+        stop.Value = "10m";
         Assert.True(viewModel.ApplyField(stop));
         Assert.False(viewModel.HasElectricalTransientResult);
         Assert.False(viewModel.TryBuildElectricalTransientJson(out _));
@@ -520,7 +520,7 @@ public sealed class ElectricalEditorTests
         capacitor.InitialValue = 0;
         circuit.Components.Add(capacitor);
 
-        viewModel.ElectricalTransientProbeInput = "0.0012345";
+        viewModel.ElectricalTransientProbeInput = "1.2345m";
         Assert.False(viewModel.ProbeElectricalTransient());
         Assert.Contains("Run a transient", viewModel.StatusText);
 
@@ -950,7 +950,7 @@ public sealed class ElectricalEditorTests
         Assert.True(viewModel.SolveElectricalTransient());
 
         viewModel.ElectricalSweepElementText = "R1";
-        viewModel.ElectricalSweepValuesText = "500,1000,2000";
+        viewModel.ElectricalSweepValuesText = "500,1k,2k";
 
         Assert.True(viewModel.RunElectricalSweep());
         Assert.True(viewModel.HasElectricalSweepResult);
@@ -962,6 +962,13 @@ public sealed class ElectricalEditorTests
         // The value is printed once per block, not on every node row.
         Assert.Equal("500", viewModel.ElectricalSweepRows[0].ValueText);
         Assert.Equal(string.Empty, viewModel.ElectricalSweepRows[1].ValueText);
+        Assert.Equal("1000", viewModel.ElectricalSweepRows[2].ValueText);
+
+        viewModel.ElectricalSweepValuesText = "1k:2k:3";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.Equal("1000", viewModel.ElectricalSweepRows[0].ValueText);
+        Assert.Equal("1500", viewModel.ElectricalSweepRows[2].ValueText);
+        Assert.Equal("2000", viewModel.ElectricalSweepRows[4].ValueText);
     }
 
     [Fact]
@@ -990,7 +997,7 @@ public sealed class ElectricalEditorTests
         viewModel.ElectricalSweepElementText = "R1";
         viewModel.ElectricalSweepValuesText = "500";
         Assert.False(viewModel.RunElectricalSweep());
-        Assert.Contains("800:1200:5", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+        Assert.Contains("800:1.2k:5", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
 
         viewModel.ElectricalSweepValuesText = "500,abc";
         Assert.False(viewModel.RunElectricalSweep());

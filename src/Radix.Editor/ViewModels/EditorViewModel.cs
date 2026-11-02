@@ -6254,7 +6254,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalCircuitFields.Add(new EditableField(
             "Transient stop (s)",
             _electricalTransientStopText,
-            hint: "End of a transient run in seconds; a view setting, not saved with the project",
+            hint: "End of a transient run in seconds (SI suffixes p, n, u, m, k, M, G supported); a view setting, not saved with the project",
             apply: SetElectricalTransientStop));
         ElectricalCircuitFields.Add(new EditableField(
             "Transient steps",
@@ -6435,7 +6435,7 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        if (!TryParseElectricalNumber(_electricalTransientStopText, out double stop) || stop <= 0)
+        if (!TryParseEngineeringValue(_electricalTransientStopText, out double stop) || stop <= 0)
         {
             ShowElectricalTransientError(
                 "Transient stop time must be a positive number of seconds.",
@@ -6868,9 +6868,9 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Parses the panel's sweep values: <c>800,1000,1200</c> or <c>800:1200:5</c>. The spelling is
-    /// kept here so a typo produces a sentence instead of a stack trace, and the same shapes work
-    /// as on the command line.
+    /// Parses panel sweep values with optional SI suffixes: <c>800,1k,1.2k</c> or
+    /// <c>800:1.2k:5</c>. The spelling is kept here so a typo produces a sentence instead of a
+    /// stack trace, and the same shapes work as on the command line.
     /// </summary>
     private static bool TryParseSweepValues(string? text, out double[] values, out string error)
     {
@@ -6879,7 +6879,7 @@ public sealed class EditorViewModel : ObservableObject
         string trimmed = (text ?? string.Empty).Trim();
         if (trimmed.Length == 0)
         {
-            error = "Enter values as 800,1000,1200 or as from:to:count, for example 800:1200:5.";
+            error = "Enter values as 800,1k,1.2k or as from:to:count, for example 800:1.2k:5.";
             return false;
         }
 
@@ -6890,9 +6890,7 @@ public sealed class EditorViewModel : ObservableObject
             var parsed = new double[parts.Length];
             for (int index = 0; index < parts.Length; index++)
             {
-                if (!double.TryParse(
-                        parts[index], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[index]) ||
-                    !double.IsFinite(parsed[index]))
+                if (!TryParseEngineeringValue(parts[index], out parsed[index]))
                 {
                     error = $"'{parts[index]}' is not a finite number.";
                     return false;
@@ -6905,8 +6903,8 @@ public sealed class EditorViewModel : ObservableObject
 
         string[] range = trimmed.Split(':', StringSplitOptions.TrimEntries);
         if (range.Length == 3 &&
-            double.TryParse(range[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) &&
-            double.TryParse(range[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) &&
+            TryParseEngineeringValue(range[0], out double from) &&
+            TryParseEngineeringValue(range[1], out double to) &&
             int.TryParse(range[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
         {
             try
@@ -6921,7 +6919,7 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
 
-        error = "Use a comma list of at least two values, or from:to:count (for example 800:1200:5).";
+        error = "Use a comma list of at least two values, or from:to:count (for example 800:1.2k:5). SI suffixes are supported.";
         return false;
     }
 
@@ -7028,7 +7026,7 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        if (!TryParseElectricalNumber(_electricalTransientProbeInput, out double time) ||
+        if (!TryParseEngineeringValue(_electricalTransientProbeInput, out double time) ||
             !double.IsFinite(time))
         {
             StatusText = "Probe time must be a number of seconds.";
@@ -7164,7 +7162,7 @@ public sealed class EditorViewModel : ObservableObject
 
     private bool SetElectricalTransientStop(string value)
     {
-        if (!TryParseElectricalNumber(value, out double stop) || stop <= 0)
+        if (!TryParseEngineeringValue(value, out double stop) || stop <= 0)
         {
             StatusText = "Transient stop time must be a positive number of seconds.";
             return false;
