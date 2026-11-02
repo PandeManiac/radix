@@ -912,10 +912,12 @@ internal static class Program
         });
 
         SimulationScriptResult? simulation = null;
+        ElectricalDrivePlan? plan = null;
         if (options.ContainsKey("simulate"))
         {
+            plan = ElectricalDriveSimulation.Plan(circuit, run, sampler);
             simulation = ElectricalDriveSimulation.Run(
-                project, circuit, run, sampler, GetOption(options, "definition"));
+                project, plan, GetOption(options, "definition"));
             if (!simulation.Passed)
             {
                 if (options.ContainsKey("json"))
@@ -999,10 +1001,19 @@ internal static class Program
             }
         }
 
-        if (simulation is not null)
+        if (simulation is not null && plan is not null)
         {
             Console.WriteLine(
-                $"simulated {simulation.StepsExecuted} drive step(s) in definition '{simulation.DefinitionId}' to t={simulation.FinalTime}.");
+                $"simulated {simulation.StepsExecuted} step(s) in definition '{simulation.DefinitionId}' to t={simulation.FinalTime}.");
+            if (plan.Claims.Count > 0)
+            {
+                Console.WriteLine(
+                    $"checked {plan.Claims.Count} claim tick(s) on {plan.ClaimedPins} pin(s): the definition agreed with the network everywhere it was asked.");
+            }
+            else
+            {
+                Console.WriteLine("no output was claimed, so the definition's answer was not checked.");
+            }
         }
 
         return 0;

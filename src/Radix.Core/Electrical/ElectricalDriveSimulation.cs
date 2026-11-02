@@ -7,6 +7,38 @@ using Radix.Core.Testing;
 namespace Radix.Core.Electrical;
 
 /// <summary>
+/// One tick at which a binding says what a pin should read, with the level the solved network gave.
+/// Recording these lets a report say how much of the run was actually compared, instead of only
+/// whether the whole thing passed.
+/// </summary>
+/// <param name="PinId">The pin the claim is about.</param>
+/// <param name="At">The simulated tick.</param>
+/// <param name="Level">The level the bound node held there.</param>
+public readonly record struct ElectricalLevelClaim(string PinId, long At, int Level);
+
+/// <summary>The script a circuit's bindings produce, and every claim it makes.</summary>
+public sealed class ElectricalDrivePlan
+{
+    public ElectricalDrivePlan(
+        SimulationScript script,
+        IReadOnlyList<ElectricalLevelClaim> claims)
+    {
+        ArgumentNullException.ThrowIfNull(script);
+        ArgumentNullException.ThrowIfNull(claims);
+        Script = script;
+        Claims = claims;
+    }
+
+    public SimulationScript Script { get; }
+
+    /// <summary>Every claim, one per tick per claiming binding.</summary>
+    public IReadOnlyList<ElectricalLevelClaim> Claims { get; }
+
+    /// <summary>How many distinct pins are claimed.</summary>
+    public int ClaimedPins => Claims.Select(claim => claim.PinId).Distinct(StringComparer.Ordinal).Count();
+}
+
+/// <summary>
 /// Applying a circuit's drive bindings to a simulation: the levels a solved network produces become
 /// a script, and the script goes through the same runner the editor, the CLI and the tests use.
 /// </summary>
@@ -23,8 +55,9 @@ public static class ElectricalDriveSimulation
     /// one - it just takes longer to fail.
     /// </summary>
     public const int MaximumChecksPerBinding = 512;
-    /// <summary>The script a circuit's bindings produce for a completed run.</summary>
-    public static SimulationScript Script(
+
+    /// <summary>The script and the claims a circuit's bindings produce for a completed run.</summary>
+    public static ElectricalDrivePlan Plan(
         ElectricalCircuit circuit,
         TransientResult run,
         ElectricalLevelSampler sampler)
@@ -54,6 +87,7 @@ public static class ElectricalDriveSimulation
         // A claim is made at every tick the run covers, not only where its node changes level: a
         // definition that drifts between changes has to fail too, and a check at the changes alone
         // could not see it.
+        var claims = new List<ElectricalLevelClaim>();
         long endTick = ticks.Count == 0 ? 0 : ticks.Keys.Max();
         long window = endTick + 1;
         long stride = window <= MaximumChecksPerBinding
@@ -78,7 +112,9 @@ public static class ElectricalDriveSimulation
                     ticks[tick] = entry;
                 }
 
-                entry.Checks.Add($"\"{binding.PinId}\": {LevelAt(steps, tick)}");
+                int level = LevelAt(steps, tick);
+                entry.Checks.Add($"\"{binding.PinId}\": {level}");
+                claims.Add(new ElectricalLevelClaim(binding.PinId, tick, level));
             }
         }
 
@@ -108,7 +144,35 @@ public static class ElectricalDriveSimulation
         }
 
         text.Append("]}");
-        return SimulationScript.LoadFromString(text.ToString());
+        return new ElectricalDrivePlan(SimulationScript.LoadFromString(text.ToString()), claims);
+    }
+
+    /// <summary>The script a circuit's bindings produce for a completed run.</summary>
+    public static SimulationScript Script(
+        ElectricalCircuit circuit,
+        TransientResult run,
+        ElectricalLevelSampler sampler) => Plan(circuit, run, sampler).Script;
+
+    /// <summary>
+    /// Runs the drives against a definition of the same project. A definition that has no such pin
+    /// fails in the runner with its own message, which is better than a message invented here.
+    /// </summary>
+    public static SimulationScriptResult Run(
+        CircuitProject project,
+        ElectricalCircuit circuit,
+        TransientResult run,
+        ElectricalLevelSampler sampler,
+        string? definitionId = null) =>
+        SimulationScriptRunner.Run(project, Plan(circuit, run, sampler).Script, definitionId);
+
+    /// <summary>Runs an already-built plan, so a caller that reports it does not build it twice.</summary>
+    public static SimulationScriptResult Run(
+        CircuitProject project,
+        ElectricalDrivePlan plan,
+        string? definitionId = null)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return SimulationScriptRunner.Run(project, plan.Script, definitionId);
     }
 
     /// <summary>The level the node held at a tick: the last change at or before it.</summary>
@@ -127,16 +191,4 @@ public static class ElectricalDriveSimulation
 
         return level;
     }
-
-    /// <summary>
-    /// Runs the drives against a definition of the same project. A definition that has no such pin
-    /// fails in the runner with its own message, which is better than a message invented here.
-    /// </summary>
-    public static SimulationScriptResult Run(
-        CircuitProject project,
-        ElectricalCircuit circuit,
-        TransientResult run,
-        ElectricalLevelSampler sampler,
-        string? definitionId = null) =>
-        SimulationScriptRunner.Run(project, Script(circuit, run, sampler), definitionId);
 }

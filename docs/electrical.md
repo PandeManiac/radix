@@ -1549,7 +1549,16 @@ turns it into an expectation, because an output cannot be driven. Each claim is 
 tick the run covers — not only where the node changes level, so a definition that drifts between
 changes fails too — and a disagreement fails the simulation with the runner's own expectation
 message. A window wider than 512 ticks is sampled rather than written out in full, because a rate
-that maps a long run onto millions of ticks is not a better check, only a slower failure. A test feeds an
+that maps a long run onto millions of ticks is not a better check, only a slower failure.
+
+The report says how much was compared rather than only whether everything passed:
+`radix drive --simulate` prints `checked 45 claim tick(s) on 1 pin(s)`, and a run with no claim says
+so instead of implying the definition's answer was verified when it was only fed.
+
+What is still missing is the opposite direction. The kernel accepts drives on input pins only, so a
+script cannot *supply* an output: the circuit can be cross-examined against a definition, but it
+cannot yet answer for one. Making a solved node supply a pin's value is a kernel facility that does
+not exist, and pretending otherwise with a claim would make the check look stronger than it is. A test feeds an
 inverting definition a claim that its output equals the level and requires that to fail — otherwise
 a claim that was silently ignored would look exactly like a claim that holds.
 

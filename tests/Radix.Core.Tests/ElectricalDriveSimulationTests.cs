@@ -62,8 +62,9 @@ public sealed class ElectricalDriveSimulationTests
         SimulationScript script = ElectricalDriveSimulation.Script(circuit, run, sampler);
 
         // Drives alone appear only where the level changes: a drive repeating a value nobody moved
-        // would add events without adding information.
+        // would add events without adding information, and nothing is claimed about an output.
         Assert.Equal(2, script.Steps.Count);
+        Assert.Empty(ElectricalDriveSimulation.Plan(circuit, run, sampler).Claims);
 
         SimulationScriptResult result = ElectricalDriveSimulation.Run(
             TernaryInverter(), circuit, run, sampler, "invert");
@@ -108,10 +109,15 @@ public sealed class ElectricalDriveSimulationTests
         ElectricalLevelSampler sampler = Assert.IsType<ElectricalLevelSampler>(
             ElectricalLevelSampler.ForCircuit(circuit));
 
-        // A claim is made at every tick the run covers, so a tick with no drive still carries one.
-        SimulationScript script = ElectricalDriveSimulation.Script(circuit, run, sampler);
-        Assert.Equal(45, script.Steps.Count);
-        Assert.Contains(script.Steps, step => step.At == 1);
+        // A claim is made at every tick the run covers, so a tick with no drive still carries one,
+        // and the plan says how many ticks were compared rather than only whether all of them held.
+        ElectricalDrivePlan plan = ElectricalDriveSimulation.Plan(circuit, run, sampler);
+        Assert.Equal(45, plan.Script.Steps.Count);
+        Assert.Contains(plan.Script.Steps, step => step.At == 1);
+        Assert.Equal(45, plan.Claims.Count);
+        Assert.Equal(1, plan.ClaimedPins);
+        Assert.All(plan.Claims, claim => Assert.Equal("y", claim.PinId));
+        Assert.Equal([2, 1], [plan.Claims[0].Level, plan.Claims[^1].Level]);
 
         // The definition inverts a, so claiming y equals the level must fail. Without this, a claim
         // that is silently ignored would look exactly like a claim that holds.
