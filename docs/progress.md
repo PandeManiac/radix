@@ -1329,3 +1329,57 @@ summary and full local verification results; see the PR for the latest CI state.
      passed with 0 warnings/errors, Core passed 666/666, and headless Editor passed
      242/242 with `.local-native`. The regression confirms a finite order for a
      deviation ratio near 1e328; the checkpoint is pushed and PR/CI update pending.
+
+## Session 2026-11-02 (hierarchical electrical circuits)
+
+151. Inspected the current electrical branch rather than assuming the earlier
+     milestone state. The branch already had the square-law MOSFET, CMOS and
+     resistor-summed ternary inverters, transient and AC analysis, editor previews,
+     and extensive nonlinear tests. The smallest missing architectural capability
+     was electrical reuse: circuits had no ports and no subcircuit composition.
+
+152. Added authored interface ports and a `subcircuit` component kind. A port is a
+     named alias for an internal node; a subcircuit instance has one passive
+     terminal per referenced port. `ElectricalCircuitNetlist` expands references
+     recursively into the parent MNA system, prefixing internal node and element
+     IDs with the instance path (`X1/out_low`). `/` is forbidden in authored IDs,
+     so expanded names cannot collide. Flat circuits keep their existing
+     `ToDcNetlist()`/`ToTransientNetlist()` calls because the resolver is optional.
+
+153. Added hierarchy validation: unknown references (`RAD-ELEC-029`), no ports
+     (`RAD-ELEC-030`), an unexposed child ground (`RAD-ELEC-031`), missing or
+     unexpected terminals (`RAD-ELEC-032`), reference cycles (`RAD-ELEC-033`),
+     subcircuit terminal polarity/node errors (`RAD-ELEC-034`), a `circuit` field on
+     a built-in kind (`RAD-ELEC-035`), and duplicate subcircuit terminals
+     (`RAD-ELEC-036`). Port IDs, duplicate ports, unknown port nodes, and duplicate
+     exposed nodes are rejected as `RAD-ELEC-025` to `RAD-ELEC-028`.
+
+154. Serialized the hierarchy in project format 22: circuit `ports` and component
+     `circuit`, with `value` omitted for a subcircuit. The CLI, electrical rule
+     checker, and editor pass the project's circuit lookup into validation and
+     netlist construction. The Electrical panel authors ports as `id:node` pairs,
+     offers `Subcircuit` as a kind, fills terminals from the referenced circuit,
+     and synchronizes direct parent instances when an interface changes.
+
+155. Shipped `examples/electrical-ternary-hierarchy.radix`: the resistor-summed
+     ternary inverter is authored once as `sti`, then instantiated twice in
+     `chain`. Verified with
+     `radix dc examples/electrical-ternary-hierarchy.radix --circuit chain --sweep VIN=0,2.5,5`:
+     `mid` is 5 V, 2.5 V, and ~0 V; `out` is ~0 V, 2.5 V, and 5 V. The middle state
+     draws about 99 uA from the 5 V supply, and element power sums to zero within
+     solver tolerance. No behavioural lookup is involved.
+
+156. Verification at checkpoint `dca618e541c03c30414dc00aa473cbf8eee3f08a`:
+     Release solution build passed with 0 warnings/errors; Core passed 820/820;
+     headless Editor passed 311/311; the focused hierarchy editor tests passed 3/3;
+     and the CLI sweep above reported the expected levels. The branch is pushed to
+     `origin/agent/radix-20261102-electrical-audit` at the same SHA. Draft PR #7 is
+     open against `main` with the hierarchy summary and limitations.
+
+157. Remaining hierarchy limitations: a referenced circuit must expose its ground
+     as a port; ports have no analog direction; all instances share the referenced
+     parameters and there are no per-instance overrides; internal nodes appear in
+     reports under prefixed names only; and the Electrical tab is still a form-based
+     inspector rather than a graphical analog schematic canvas. A useful next step
+     is per-instance parameter overrides or a hierarchical probe view, not a
+     behavioural replacement for the expanded circuit.

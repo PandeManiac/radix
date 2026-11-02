@@ -350,6 +350,11 @@ engine. A circuit has its own ground reference, nodes, and components:
       { "id": "in", "name": "Input" },
       { "id": "out", "name": "Output" }
     ],
+    "ports": [
+      { "id": "in", "name": "Input", "node": "in" },
+      { "id": "out", "name": "Output", "node": "out" },
+      { "id": "gnd", "name": "Ground", "node": "gnd" }
+    ],
     "components": [
       {
         "id": "R1",
@@ -376,6 +381,7 @@ Component kinds and terminal contracts:
 | `capacitor` | `a`/`b`, both `passive` | F |
 | `inductor` | `a`/`b`, both `passive` | H |
 | `mosfet` | `drain`/`gate`/`source`, all `passive` | A/V^2 |
+| `subcircuit` | one per referenced-circuit port, all `passive` | none; `circuit` names the referenced circuit |
 
 A capacitor or inductor may carry an optional `initialValue`: the initial
 capacitor voltage in volts, or the initial inductor current in amperes, with the
@@ -406,6 +412,37 @@ through its drive before the channel follows; a DC solve ignores them because an
 operating point carries no charge. Both must be finite and non-negative
 (`RAD-ELEC-024`), and like the other device fields they are rejected on any kind but a
 mosfet.
+
+A circuit may expose interface nodes as `ports`. A port is a named alias for an internal node,
+not an element: it carries no current of its own. A `subcircuit` component names another
+authored circuit with `circuit` and has exactly one terminal per port of that circuit, so a
+parent wires the child's interface rather than reaching into its internals:
+
+```json
+{
+  "id": "X1",
+  "name": "First inverter",
+  "kind": "subcircuit",
+  "circuit": "sti",
+  "terminals": [
+    { "id": "in", "name": "Input", "polarity": "passive", "node": "in" },
+    { "id": "out", "name": "Output", "polarity": "passive", "node": "mid" },
+    { "id": "vdd", "name": "5 V rail", "polarity": "passive", "node": "vdd" },
+    { "id": "gnd", "name": "Ground", "polarity": "passive", "node": "gnd" }
+  ]
+}
+```
+
+The referenced circuit's elements are expanded into the parent netlist with every internal
+node and element ID prefixed by the instance path (`X1/out_low`, `X1/R1`). A prefixed name
+cannot collide with an authored ID because `/` is forbidden in identifiers. Ported nodes
+become the parent node named by the instance terminal; unported internal nodes stay private
+to that instance. A referenced circuit must expose at least one port
+(`RAD-ELEC-030`) and must expose its ground node as a port (`RAD-ELEC-031`); a subcircuit
+has no implicit global ground. References must resolve (`RAD-ELEC-029`), cannot form a cycle
+(`RAD-ELEC-033`), and each instance must carry exactly the referenced ports with no extra or
+missing terminal (`RAD-ELEC-032`). A `value` is omitted on a subcircuit; device fields such as
+`channel` also belong only to a mosfet.
 
 An independent source may also carry a `waveform`: a piecewise-linear drive in
 its own unit, given as absolute-time breakpoints. The transient solver
@@ -438,7 +475,7 @@ one circuit selects it automatically.
 
 ## Versioning and migration
 
-Versions 1 through 14 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`; version 12 adds an optional electrical `channelLengthModulation`; version 13 adds optional mosfet `gateSourceCapacitance` and `gateDrainCapacitance` in farads; version 14 adds `drainSourceCapacitance`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 22 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`; version 12 adds an optional electrical `channelLengthModulation`; version 13 adds optional mosfet `gateSourceCapacitance` and `gateDrainCapacitance` in farads; version 14 adds `drainSourceCapacitance`. Later versions add the bias-dependent capacitance choice, circuit level thresholds, node-to-pin drive bindings, and per-transition delay tolerances. Version 22 adds electrical circuit `ports` and the `subcircuit` component kind. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

@@ -1173,6 +1173,67 @@ If a project has exactly one electrical circuit, `--circuit` may be omitted. A
 project with several circuits requires it. Standalone JSON netlists remain
 supported for tools that do not author a project.
 
+## Hierarchical authored circuits
+
+An authored circuit can expose named interface nodes as `ports`, and another circuit can
+instantiate it as a `subcircuit`. This is electrical hierarchy, not a behavioural shortcut: the
+referenced circuit's components are expanded recursively into the parent's modified-nodal system.
+The child keeps its actual resistors, transistors, sources and reactive elements, and every
+internal node and element ID is prefixed by the instance path (`X1/out_low`, `X1/R1`). A ported
+node becomes the parent node named by the instance terminal, so the child's `out` port and the
+parent's `mid` node are the same electrical node; an unported node stays private to that instance.
+
+The port editor writes `id:node` pairs separated by semicolons, for example
+`in:in; out:out; vdd:vdd; gnd:gnd`. A subcircuit instance has exactly one passive terminal per
+port of the referenced circuit. Choosing the referenced circuit in the component inspector fills
+those terminals; editing the child's ports later updates every direct parent instance, preserving
+bindings by terminal ID and putting a newly added port on the parent's ground node. A referenced
+circuit must expose its ground as a port, because a subcircuit has no implicit global ground.
+References must resolve, cannot form a cycle, and are validated with stable `RAD-ELEC-*` messages
+(`RAD-ELEC-029` to `RAD-ELEC-036`) before a solve.
+
+`examples/electrical-ternary-hierarchy.radix` authors the resistor-summed ternary inverter once as
+the `sti` circuit, with ports `in`, `out`, `vdd` and `gnd`, then instantiates it twice in the
+`chain` root. The first stage drives `mid`; the second drives `out`. The root supplies 5 V and the
+input source.
+
+```bash
+radix dc examples/electrical-ternary-hierarchy.radix --circuit chain --sweep VIN=0,2.5,5
+radix dc examples/electrical-ternary-hierarchy.radix --circuit chain --sweep VIN=0:5:21 --gain out
+radix dc examples/electrical-ternary-hierarchy.radix --circuit sti
+```
+
+| `VIN` | `mid` | `out` |
+| --- | --- | --- |
+| 0 V | 5 V | ~0 V (5.6 × 10⁻⁸) |
+| 2.5 V | 2.5 V | 2.5 V |
+| 5 V | ~0 V (5.6 × 10⁻⁸) | 5 V |
+
+The two-stage chain is identity at the three nominal levels because each stage inverts the
+ternary ordering. At the middle level each stage's summing divider carries about 25 µA, so the
+chain's 5 V supply delivers about 99 µA (0.50 mW); the stage outputs and the middle node are
+driven by the network, not by a lookup. The `--gain out` study differentiates the composed
+transfer curve, so the two shoulders are measured in the same units as the single-stage example.
+
+Open the file in the editor with
+`dotnet run --project src/Radix.Editor -- examples/electrical-ternary-hierarchy.radix`. The
+Electrical tab lists both circuits; select `sti` to see its ports and independent devices, then
+select `chain` to see the two subcircuit instances, their terminal bindings, and the solved
+operating point. The instance nodes are reported under their prefixed names, so the internal
+implementation of each stage remains inspectable rather than being replaced by a black box.
+
+Tests: `ElectricalHierarchyTests` covers flat-equivalent solves, two independent instances,
+nested expansion, the serialized round trip, the transient RC closed form, every validation
+failure above, and the shipped chain at all three levels. `ElectricalHierarchyEditorTests` covers
+authoring ports, choosing a referenced circuit, filling and rebinding terminals, interface
+synchronization, invalid port text, and a solved parent.
+
+Limitations: ports are bidirectional node aliases with no analog direction; a referenced circuit
+must expose its ground; all instances share the referenced circuit's parameters, with no
+per-instance override; there is no graphical analog schematic canvas; and hierarchical reports
+identify internal nodes only by their prefixed names. These are deliberate boundaries of this
+intermediate hierarchy, not silent approximations of a full analogue design system.
+
 ## Editor DC sweep
 
 One operating point does not show a transfer characteristic, so the panel has its own
