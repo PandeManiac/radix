@@ -929,3 +929,11 @@ summary and full local verification results; see the PR for the latest CI state.
     build completed with 0 warnings/errors, Core tests passed 639/639, and headless
     Editor tests passed 242/242 with the Linux native-library setup. GitHub CI for
     `580006aeb7e05e49f25e3f6e86068800489c4089` was still running when checked.
+
+86. Added an 80-case seeded DC reverse-breakdown differential campaign. Each case
+    varies BV, IBV, external resistance, diode series resistance, and negative supply
+    over bounded linear/logarithmic ranges. An independent scalar bisection solves
+    the combined resistor/junction equation; the test compares terminal voltage and
+    diode current and checks power balance plus the solver residual. Failures include
+    the fixed seed and case parameters. Focused campaign passes 1/1; broader suites
+    are pending.

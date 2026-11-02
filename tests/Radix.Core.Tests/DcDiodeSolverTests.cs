@@ -157,6 +157,71 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void SeededReverseBreakdownCasesMatchIndependentScalarBisection()
+    {
+        const int seed = 0x5A3E12;
+        const int cases = 80;
+        var random = new Random(seed);
+
+        for (int trial = 0; trial < cases; trial++)
+        {
+            double breakdownVoltage = 3 + (5 * random.NextDouble());
+            double breakdownCurrent = Math.Pow(10, -4 + (1.5 * random.NextDouble()));
+            double externalResistance = Math.Pow(10, 2 + (3 * random.NextDouble()));
+            double seriesResistance = Math.Pow(10, 3 * random.NextDouble()) - 1;
+            double supply = -breakdownVoltage - (0.1 + (20 * random.NextDouble()));
+            DcNetlist netlist = new DcNetlist("gnd")
+                .AddVoltageSource("V1", "in", "gnd", supply)
+                .AddResistor("R1", "in", "z", externalResistance)
+                .AddDiode(
+                    "DZ1",
+                    "z",
+                    "gnd",
+                    DefaultIs,
+                    seriesResistance: seriesResistance,
+                    breakdownVoltage: breakdownVoltage,
+                    breakdownCurrent: breakdownCurrent);
+
+            DcSolution solution;
+            try
+            {
+                solution = netlist.Solve();
+            }
+            catch (DcSolveException exception)
+            {
+                throw new Xunit.Sdk.XunitException(
+                    $"Seed {seed}, case {trial}: solve failed for BV={breakdownVoltage:G6} V, " +
+                    $"IBV={breakdownCurrent:G6} A, R={externalResistance:G6} Ω, " +
+                    $"Rs={seriesResistance:G6} Ω, supply={supply:G6} V: {exception.Message}");
+            }
+
+            DcDiode diode = Assert.IsType<DcDiode>(netlist.Elements[2]);
+            double expectedJunction = BisectBreakdownJunction(
+                supply,
+                externalResistance + seriesResistance,
+                diode.SaturationCurrent,
+                diode.JunctionVoltage,
+                breakdownVoltage,
+                breakdownCurrent);
+            double expectedCurrent = diode.JunctionCurrent(expectedJunction);
+            double expectedTerminal = expectedJunction + (seriesResistance * expectedCurrent);
+
+            Assert.True(
+                Math.Abs(solution.NodeVoltages["z"] - expectedTerminal) <= 2e-6,
+                $"Seed {seed}, case {trial}: terminal voltage {solution.NodeVoltages["z"]:G17} V " +
+                $"differs from bisection {expectedTerminal:G17} V.");
+            Assert.True(
+                Math.Abs(solution.ElementCurrents["DZ1"] - expectedCurrent) <= Math.Max(1e-9, Math.Abs(expectedCurrent) * 2e-6),
+                $"Seed {seed}, case {trial}: diode current {solution.ElementCurrents["DZ1"]:G17} A " +
+                $"differs from bisection {expectedCurrent:G17} A.");
+            Assert.True(
+                Math.Abs(solution.ElementPowers.Values.Sum()) <= 1e-8,
+                $"Seed {seed}, case {trial}: power residual is {solution.ElementPowers.Values.Sum():G6} W.");
+            Assert.True(solution.RelativeResidual <= 1);
+        }
+    }
+
+    [Fact]
     public void LargeUnrelatedCurrentDoesNotLoosenDiodeKclConvergence()
     {
         // The reverse-biased diode draws 0.1 A, so a 5 V source and 10 ohm series
