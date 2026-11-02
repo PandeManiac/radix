@@ -967,3 +967,6 @@ summary and full local verification results; see the PR for the latest CI state.
     branch currents; the adaptive energy-ledger relative residual must also be lower
     than the fixed-step run. Focused adaptive clamp test passes 1/1; Release build passed
     with 0 warnings/errors, Core passed 641/641, and headless Editor passed 242/242.
+
+92. Reran the full Core suite after adding the energy-ledger comparison; all 641
+    tests passed. No production code changed in this test-only follow-up.
