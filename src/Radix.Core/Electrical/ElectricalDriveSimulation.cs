@@ -39,6 +39,51 @@ public sealed class ElectricalDrivePlan
     public int ClaimedPins => Claims.Select(claim => claim.PinId).Distinct(StringComparer.Ordinal).Count();
 }
 
+/// <summary>One output change, paired with the input change that preceded it.</summary>
+/// <param name="InputLevel">The level the driving pin had taken.</param>
+/// <param name="OutputLevel">The level the output pin then reached.</param>
+/// <param name="InputAt">The tick the input changed at.</param>
+/// <param name="OutputAt">The tick the output changed at.</param>
+/// <param name="Ticks">The delay in simulator ticks.</param>
+/// <param name="Seconds">The same delay in solved seconds.</param>
+public readonly record struct ElectricalPropagationStep(
+    int InputLevel,
+    int PreviousOutputLevel,
+    int OutputLevel,
+    long InputAt,
+    long OutputAt,
+    long Ticks,
+    double Seconds);
+
+/// <summary>
+/// How long the network takes to answer: every output change with the input change that caused it,
+/// beside the transport delay the definition declares for that pin.
+/// </summary>
+public sealed class ElectricalPropagationReport
+{
+    public ElectricalPropagationReport(
+        string inputPinId,
+        string outputPinId,
+        int? declaredTicks,
+        IReadOnlyList<ElectricalPropagationStep> steps)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+        InputPinId = inputPinId;
+        OutputPinId = outputPinId;
+        DeclaredTicks = declaredTicks;
+        Steps = steps;
+    }
+
+    public string InputPinId { get; }
+
+    public string OutputPinId { get; }
+
+    /// <summary>The declared transport delay, or null when the driving instance declares none.</summary>
+    public int? DeclaredTicks { get; }
+
+    public IReadOnlyList<ElectricalPropagationStep> Steps { get; }
+}
+
 /// <summary>
 /// A second run in which the supplied outputs are claimed instead of written: what the definition
 /// would have computed for the pins the network took over.
@@ -277,6 +322,106 @@ public static class ElectricalDriveSimulation
         return new ElectricalDriveAudit(
             auditPlan,
             SimulationScriptRunner.Run(project, auditPlan.Script, definitionId));
+    }
+
+    /// <summary>
+    /// Measures how long the network takes to answer: for each change of the supplied output, the
+    /// most recent change of the driven input, and the delay between them. A definition is static, so
+    /// this is the half of the comparison the audit cannot make - it says where the answer comes from,
+    /// not when.
+    /// </summary>
+    /// <returns>Null when the definition has no driven input and supplied output to pair.</returns>
+    public static ElectricalPropagationReport? Propagation(
+        CircuitProject project,
+        ElectricalCircuit circuit,
+        TransientResult run,
+        ElectricalLevelSampler sampler,
+        string? definitionId = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        CircuitDefinition? definition = project.FindDefinition(definitionId ?? project.RootDefinitionId);
+        if (definition is null)
+        {
+            return null;
+        }
+
+        ElectricalDriveBinding? input = circuit.DriveBindings.FirstOrDefault(binding =>
+            !binding.Checks && definition.FindPin(binding.PinId) is { Direction: PinDirection.Input });
+        ElectricalDriveBinding? output = circuit.DriveBindings.FirstOrDefault(binding =>
+            definition.FindPin(binding.PinId) is { Direction: PinDirection.Output });
+        if (input is null || output is null)
+        {
+            return null;
+        }
+
+        List<(ElectricalDriveStep Step, long At)> inputs = [.. input.Steps(run, sampler)];
+        List<(ElectricalDriveStep Step, long At)> outputs = [.. output.Steps(run, sampler)];
+        var steps = new List<ElectricalPropagationStep>();
+
+        // Index 0 is the initial state, not an answer to a change, so pairs start at the second one.
+        for (int index = 1; index < outputs.Count && inputs.Count > 0; index++)
+        {
+            (ElectricalDriveStep step, long at) = outputs[index];
+            (ElectricalDriveStep Step, long At) prior = inputs[0];
+            foreach ((ElectricalDriveStep candidateStep, long candidateAt) in inputs)
+            {
+                if (candidateAt <= at)
+                {
+                    prior = (candidateStep, candidateAt);
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            long ticks = at - prior.At;
+            steps.Add(new ElectricalPropagationStep(
+                prior.Step.Level,
+                outputs[index - 1].Step.Level,
+                step.Level,
+                prior.At,
+                at,
+                ticks,
+                ticks / output.TicksPerSecond));
+        }
+
+        return new ElectricalPropagationReport(
+            input.PinId,
+            output.PinId,
+            DeclaredDelayTicks(definition, output.PinId),
+            steps);
+    }
+
+    /// <summary>
+    /// The transport delay the definition declares on the instance that drives a pin. Only primitives
+    /// carry a delay, so a pin fed through a sub-definition reports none rather than guessing.
+    /// </summary>
+    private static int? DeclaredDelayTicks(CircuitDefinition definition, string pinId)
+    {
+        Net? net = definition.FindPortNet(pinId);
+        if (net is null)
+        {
+            return null;
+        }
+
+        foreach (PinRef pin in net.Pins)
+        {
+            ComponentInstance? instance = definition.Instances.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, pin.InstanceId, StringComparison.Ordinal));
+            long? delay = instance?.Primitive switch
+            {
+                LookupSpec lookup => lookup.DelayTicks,
+                DelaySpec delayed => delayed.DelayTicks,
+                _ => null,
+            };
+            if (delay is long declared)
+            {
+                return (int)declared;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The level the node held at a tick: the last change at or before it.</summary>

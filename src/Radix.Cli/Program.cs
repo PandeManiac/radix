@@ -1050,6 +1050,21 @@ internal static class Program
                     $"audited {audit.CheckedTicks} supplied tick(s) on {audit.AuditedPins} pin(s): the definition would have answered differently - " +
                     $"{audit.Result.Failures[0].Message}.");
             }
+
+            // The audit says the answer is right; this says when it arrives, which a static
+            // definition cannot describe and the circuit's own settling makes visible.
+            ElectricalPropagationReport? timing = ElectricalDriveSimulation.Propagation(
+                project, circuit, run, sampler, GetOption(options, "definition"));
+            if (timing is not null)
+            {
+                Console.WriteLine(
+                    $"timing: {timing.InputPinId} to {timing.OutputPinId}, declared {(timing.DeclaredTicks is int declared ? declared.ToString(CultureInfo.InvariantCulture) : "no")} tick(s)");
+                foreach (ElectricalPropagationStep step in timing.Steps)
+                {
+                    Console.WriteLine(
+                        $"  {step.PreviousOutputLevel} -> {step.OutputLevel}: {step.Ticks} tick(s), {step.Seconds:E3} s after the input became level {step.InputLevel} at {step.InputAt}");
+                }
+            }
         }
 
         return 0;
