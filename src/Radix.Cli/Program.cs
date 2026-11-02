@@ -957,6 +957,11 @@ internal static class Program
             : ElectricalDriveSimulation.Audit(
                 project, circuit, run, sampler, GetOption(options, "definition"));
 
+        // Timing describes the circuit and the declaration, not the script, so both reports can carry
+        // it. Computing it here is what lets --json say what the text report says.
+        ElectricalPropagationReport? timing = ElectricalDriveSimulation.Propagation(
+            project, circuit, run, sampler, GetOption(options, "definition"));
+
         if (options.ContainsKey("json"))
         {
             Console.WriteLine(JsonSerializer.Serialize(
@@ -1002,9 +1007,58 @@ internal static class Program
                                 message = failure.Message,
                             }),
                         },
+                    timing = timing is null
+                        ? null
+                        : new
+                        {
+                            input = timing.InputPinId,
+                            output = timing.OutputPinId,
+                            declaredTicks = timing.DeclaredTicks,
+                            toleranceTicks = timing.ToleranceTicks,
+                            agreed = timing.Agrees,
+                            steps = timing.Steps.Select(step => new
+                            {
+                                from = step.PreviousOutputLevel,
+                                to = step.OutputLevel,
+                                inputLevel = step.InputLevel,
+                                inputAt = step.InputAt,
+                                outputAt = step.OutputAt,
+                                ticks = step.Ticks,
+                                seconds = step.Seconds,
+                                tolerance = timing.ToleranceFor(step),
+                            }),
+                            mismatches = timing.Mismatches.Select(step => new
+                            {
+                                from = step.PreviousOutputLevel,
+                                to = step.OutputLevel,
+                                ticks = step.Ticks,
+                                tolerance = timing.ToleranceFor(step),
+                            }),
+                            unusedTolerances = timing.UnusedTolerances.Select(tolerance => new
+                            {
+                                pin = tolerance.PinId,
+                                from = tolerance.FromLevel,
+                                to = tolerance.ToLevel,
+                                ticks = tolerance.Ticks,
+                            }),
+                            unknownPinTolerances = timing.UnknownPinTolerances.Select(tolerance => new
+                            {
+                                pin = tolerance.PinId,
+                                from = tolerance.FromLevel,
+                                to = tolerance.ToLevel,
+                                ticks = tolerance.Ticks,
+                            }),
+                        },
                 },
                 ReportJsonOptions));
-            return 0;
+
+            // The JSON says whether it agreed; the exit code has to mean the same thing as the text
+            // path, or a script that parses the report would treat a failure as a pass.
+            return timing is not null &&
+                   (timing.UnknownPinTolerances.Count > 0 ||
+                    (timing.DeclaredTicks is not null && !timing.Agrees))
+                ? 1
+                : 0;
         }
 
         Console.WriteLine(
@@ -1051,10 +1105,8 @@ internal static class Program
                     $"{audit.Result.Failures[0].Message}.");
             }
 
-            // The audit says the answer is right; this says when it arrives, which a static
+            // The audit says the answer is right; timing says when it arrives, which a static
             // definition cannot describe and the circuit's own settling makes visible.
-            ElectricalPropagationReport? timing = ElectricalDriveSimulation.Propagation(
-                project, circuit, run, sampler, GetOption(options, "definition"));
             if (timing is not null)
             {
                 Console.WriteLine(
