@@ -913,5 +913,6 @@ running when checked. Next step: confirm CI and update draft PR #6.
     combined external and junction resistance, then independently reconstructs the
     terminal voltage. The test also checks the nested junction solve, terminal
     conductance against finite differences, KCL, power conservation, and the solver
-    residual. Focused `DcDiodeSolverTests` pass 16/16. This test-only follow-up is
-    checkpointed on the same feature branch.
+    residual. Focused `DcDiodeSolverTests` pass 16/16; after this addition the
+    full Core suite passes 638/638. This test-only follow-up is checkpointed on the
+    same feature branch.
