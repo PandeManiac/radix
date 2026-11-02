@@ -1191,6 +1191,49 @@
                       </StackPanel>
                     </StackPanel>
                   </Border>
+
+                  <TextBlock Text="AC SWEEP" Classes="section" />
+                  <Grid ColumnDefinitions="58,*,58,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBox x:Name="ElectricalAcSweepDriveBox" Text="{Binding ElectricalAcSweepDriveText, Mode=TwoWay}" Width="58" FontSize="9.5" Watermark="VIN" ToolTip.Tip="Id of the voltage source whose transfer function is measured" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalAcSweepRangeText, Mode=TwoWay}" FontSize="9.5" Watermark="10:1e6:21" ToolTip.Tip="from:to:points in hertz, log-spaced; SI suffixes p, n, u, m, k, M, and G are supported" />
+                    <TextBox Grid.Column="2" Text="{Binding ElectricalAcSweepBiasText, Mode=TwoWay}" Width="58" FontSize="9.5" Watermark="bias" ToolTip.Tip="Optional operating-point override as source=volts, for example VIN=1.3; a waveform would otherwise bias at its start value" />
+                    <Button Grid.Column="3" Content="Sweep" Command="{Binding RunElectricalAcSweepCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Linearize the circuit at its operating point and solve each frequency" />
+                  </Grid>
+                  <TextBlock Text="{Binding ElectricalAcSweepSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" Margin="0,0,0,4" />
+                  <Border
+                      IsVisible="{Binding HasElectricalAcSweepResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,4">
+                    <StackPanel Spacing="3">
+                      <controls:TransientPlotView Plot="{Binding ElectricalAcSweepPlot}" Height="150" Margin="0,2,0,4" IsVisible="{Binding HasElectricalAcSweepPlot}" />
+                      <Grid ColumnDefinitions="72,*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Text="hz" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="1" Text="node" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="2" Text="gain" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" ToolTip.Tip="Transfer function magnitude in decibels; the curve plots it against log10(Hz)" />
+                        <TextBlock Grid.Column="3" Text="phase" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" />
+                      </Grid>
+                      <ItemsControl ItemsSource="{Binding ElectricalAcSweepRows}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalAcSweepRowItem">
+                            <Grid ColumnDefinitions="72,*,Auto,Auto" ColumnSpacing="8" Margin="0,1">
+                              <TextBlock Text="{Binding FrequencyText}" FontFamily="monospace" FontSize="9.5" />
+                              <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontSize="9.5" />
+                              <TextBlock Grid.Column="2" Text="{Binding GainText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" HorizontalAlignment="Right" />
+                              <TextBlock Grid.Column="3" Text="{Binding PhaseText}" FontFamily="monospace" FontSize="9.5" Classes="muted" HorizontalAlignment="Right" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
+                        <Button x:Name="ElectricalAcSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalAcSweepCopyCsv_Click" ToolTip.Tip="Copy the response as the same CSV table radix ac --csv writes" />
+                        <Button x:Name="ElectricalAcSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalAcSweepSaveCsv_Click" ToolTip.Tip="Save the response as CSV" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
                   <Border
                       IsVisible="{Binding HasElectricalSolveResult}"
                       Background="{DynamicResource App.PanelAltBackground}"

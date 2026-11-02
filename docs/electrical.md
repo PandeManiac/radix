@@ -536,6 +536,12 @@ the same bias: because the analysis is linearized at the operating point, the te
 AC magnitude at 1 Hz agrees with the difference quotient within 15 %, so the frequency-domain
 assembly and the DC slope cross-check each other instead of each being trusted alone.
 
+The editor's **AC SWEEP** panel runs the same analysis on the selected circuit: name the drive, a
+`from:to:points` range, and optionally `source=volts` as a bias. It lists every node's gain and phase
+per frequency, plots gain in dB against log frequency, and copies the table as the same CSV
+`radix ac --csv` writes. Editing the circuit drops the response, because a curve describing an older
+circuit is worse than no curve.
+
 **Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,
 or `cgs`/`cgd` in a transient JSON netlist, both defaulting to zero so an existing netlist keeps its
 behaviour. Given, they are stamped between gate and source and between gate and drain on every step,

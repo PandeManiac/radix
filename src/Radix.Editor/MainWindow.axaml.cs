@@ -426,6 +426,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalAcSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalAcSweepCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied AC sweep as CSV");
+        }
+    }
+
+    private async void ElectricalAcSweepSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalAcSweepCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, csv, "csv", CsvFileType);
+        }
+    }
+
     private async void ElectricalTransientCopyJson_Click(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientJson(out string json))

@@ -199,6 +199,14 @@ public sealed class EditorViewModel : ObservableObject
     private DcNetlist? _electricalDcSweepNetlist;
     private string _electricalDcSweepElementId = string.Empty;
     private TransientPlot? _electricalDcSweepPlot;
+    private const string DefaultElectricalAcSweepSummary =
+        "Name a voltage source and a frequency range, then Sweep to measure a response.";
+    private string _electricalAcSweepDriveText = "VIN";
+    private string _electricalAcSweepRangeText = "10:1e6:21";
+    private string _electricalAcSweepBiasText = string.Empty;
+    private string _electricalAcSweepSummary = DefaultElectricalAcSweepSummary;
+    private AcReport? _electricalAcSweepReport;
+    private TransientPlot? _electricalAcSweepPlot;
     private string _electricalSweepSummary =
         "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
@@ -320,6 +328,7 @@ public sealed class EditorViewModel : ObservableObject
         ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
         RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
         RunElectricalDcSweepCommand = new RelayCommand(() => RunElectricalDcSweep());
+        RunElectricalAcSweepCommand = new RelayCommand(() => RunElectricalAcSweep());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -540,6 +549,62 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Whether any node has a measured window to show.</summary>
     public bool HasElectricalDcSweepWindows => ElectricalDcSweepWindows.Count > 0;
+
+    /// <summary>Rows of the last AC sweep: one per frequency and node.</summary>
+    public ObservableCollection<ElectricalAcSweepRowItem> ElectricalAcSweepRows { get; } = [];
+
+    /// <summary>Whether the AC sweep table has rows to show.</summary>
+    public bool HasElectricalAcSweepResult => ElectricalAcSweepRows.Count > 0;
+
+    /// <summary>Id of the voltage source whose transfer function is measured.</summary>
+    public string ElectricalAcSweepDriveText
+    {
+        get => _electricalAcSweepDriveText;
+        set => SetField(ref _electricalAcSweepDriveText, value ?? string.Empty);
+    }
+
+    /// <summary>Frequency range as typed: <c>from:to:points</c>, log-spaced.</summary>
+    public string ElectricalAcSweepRangeText
+    {
+        get => _electricalAcSweepRangeText;
+        set => SetField(ref _electricalAcSweepRangeText, value ?? string.Empty);
+    }
+
+    /// <summary>
+    /// An operating-point override as typed, <c>source=volts</c>. Without one a source biases at
+    /// its waveform's value at t = 0, which is the rest state rather than a gate's switching point.
+    /// </summary>
+    public string ElectricalAcSweepBiasText
+    {
+        get => _electricalAcSweepBiasText;
+        set => SetField(ref _electricalAcSweepBiasText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the AC sweep, or why it could not run.</summary>
+    public string ElectricalAcSweepSummary
+    {
+        get => _electricalAcSweepSummary;
+        private set => SetField(ref _electricalAcSweepSummary, value);
+    }
+
+    /// <summary>
+    /// The response as screen-independent geometry: log frequency on the horizontal axis and gain
+    /// in decibels on the vertical, one series per responding node. Decibels make a decade of
+    /// roll-off a straight line, which is the point of reading a response on this scale.
+    /// </summary>
+    public TransientPlot? ElectricalAcSweepPlot
+    {
+        get => _electricalAcSweepPlot;
+        private set
+        {
+            _electricalAcSweepPlot = value;
+            RaisePropertyChanged(nameof(ElectricalAcSweepPlot));
+            RaisePropertyChanged(nameof(HasElectricalAcSweepPlot));
+        }
+    }
+
+    /// <summary>Whether the response has a curve to draw.</summary>
+    public bool HasElectricalAcSweepPlot => ElectricalAcSweepPlot is { IsEmpty: false };
 
     /// <summary>Whether the refinement table has rows to show.</summary>
     public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
@@ -1272,6 +1337,9 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand RunElectricalSweepCommand { get; }
 
     public ICommand RunElectricalDcSweepCommand { get; }
+
+    /// <summary>Measures the small-signal response of the selected circuit at its operating point.</summary>
+    public ICommand RunElectricalAcSweepCommand { get; }
 
     public bool IsEditingFormat => _editingFormatId is not null;
 
@@ -7064,6 +7132,308 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Measures a small-signal frequency response from the panel, using the same
+    /// <see cref="AcAnalysis"/> the <c>radix ac</c> command runs. The circuit is linearized at the
+    /// operating point a transient run would start from, so the response describes the circuit as
+    /// authored rather than a separate small-signal copy of it.
+    /// </summary>
+    public bool RunElectricalAcSweep()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ClearElectricalAcSweep("Select an authored circuit before sweeping.");
+            StatusText = "No electrical circuit selected.";
+            return false;
+        }
+
+        string drive = (ElectricalAcSweepDriveText ?? string.Empty).Trim();
+        if (drive.Length == 0)
+        {
+            ClearElectricalAcSweep("Enter the id of a voltage source to drive, for example VIN.");
+            StatusText = "No AC drive source given.";
+            return false;
+        }
+
+        ElectricalComponent? source = circuit.FindComponent(drive);
+        if (source is null)
+        {
+            ClearElectricalAcSweep($"Circuit '{circuit.Id}' has no component '{drive}'.");
+            StatusText = "Unknown AC drive source.";
+            return false;
+        }
+
+        if (source.Kind != ElectricalComponentKind.VoltageSource)
+        {
+            ClearElectricalAcSweep(
+                $"'{drive}' is a {source.Kind}; a transfer function is measured from a voltage source.");
+            StatusText = "AC drive is not a voltage source.";
+            return false;
+        }
+
+        if (!TryParseElectricalAcRange(
+                ElectricalAcSweepRangeText, out double from, out double to, out int points, out string error))
+        {
+            ClearElectricalAcSweep(error);
+            StatusText = "Invalid frequency range.";
+            return false;
+        }
+
+        TransientNetlist netlist;
+        try
+        {
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+            if (validation.HasErrors)
+            {
+                ClearElectricalAcSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
+                    "Fix the validation messages above.");
+                StatusText = "AC sweep blocked by structural errors.";
+                return false;
+            }
+
+            netlist = circuit.ToTransientNetlist();
+        }
+        catch (Exception exception) when (
+            exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
+        {
+            ClearElectricalAcSweep("Cannot build the electrical netlist: " + exception.Message);
+            StatusText = "Electrical netlist construction failed.";
+            return false;
+        }
+
+        if ((ElectricalAcSweepBiasText ?? string.Empty).Trim() is { Length: > 0 } biasText)
+        {
+            if (!TryApplyElectricalAcBias(
+                    netlist, biasText, out TransientNetlist biased, out string biasError))
+            {
+                ClearElectricalAcSweep(biasError);
+                StatusText = "Invalid operating-point override.";
+                return false;
+            }
+
+            netlist = biased;
+        }
+
+        AcResponse response;
+        try
+        {
+            response = AcAnalysis.Run(netlist, drive, AcFrequencySweep.Logarithmic(from, to, points));
+        }
+        catch (Exception exception) when (exception is DcSolveException or ArgumentException)
+        {
+            ClearElectricalAcSweep("Cannot solve the frequency response: " + exception.Message);
+            StatusText = "AC solve failed.";
+            return false;
+        }
+
+        IReadOnlyList<string> nodes = response.Nodes;
+        ElectricalAcSweepRows.Clear();
+        foreach (AcPoint point in response.Points)
+        {
+            bool first = true;
+            foreach (string node in nodes)
+            {
+                double magnitude = point.NodeVoltages[node].Magnitude;
+                ElectricalAcSweepRows.Add(new ElectricalAcSweepRowItem(
+                    point.FrequencyHertz,
+                    node,
+                    magnitude <= 0 ? null : 20 * Math.Log10(magnitude),
+                    magnitude <= 0 ? null : AcResponse.PhaseDegrees(point.NodeVoltages[node]),
+                    first));
+                first = false;
+            }
+        }
+
+        // Keep the study, not the formatted table: the export must describe what the solver
+        // produced, so it is built from the response and not from the display strings.
+        _electricalAcSweepReport = AcReport.From(response, null, circuit.Id);
+        RebuildElectricalAcSweepPlot(response, nodes);
+        RaisePropertyChanged(nameof(HasElectricalAcSweepResult));
+
+        // Name the loudest responding node and where it starts rolling off: a response is judged
+        // by its gain and its corner, and both come from the numbers just solved.
+        string? loudest = null;
+        double loudestDb = double.NegativeInfinity;
+        foreach (string node in nodes)
+        {
+            double magnitude = response.Points[0].NodeVoltages[node].Magnitude;
+            if (magnitude <= 0)
+            {
+                continue;
+            }
+
+            double db = Math.Abs(20 * Math.Log10(magnitude));
+            if (db > loudestDb)
+            {
+                loudestDb = db;
+                loudest = node;
+            }
+        }
+
+        if (loudest is null)
+        {
+            ElectricalAcSweepSummary =
+                $"{circuit.Id}: drove '{drive}' over {response.Points.Count} frequencies; no node responds.";
+            StatusText = "AC sweep found no response.";
+            return false;
+        }
+
+        double referenceDb = 20 * Math.Log10(response.Points[0].NodeVoltages[loudest].Magnitude);
+        double cornerDb = referenceDb - 3;
+        double? corner = null;
+        foreach (AcPoint point in response.Points)
+        {
+            double magnitude = point.NodeVoltages[loudest].Magnitude;
+            if (magnitude > 0 && 20 * Math.Log10(magnitude) <= cornerDb)
+            {
+                corner = point.FrequencyHertz;
+                break;
+            }
+        }
+
+        string cornerNote = corner is double frequency
+            ? $"3 dB down by {frequency.ToString("G4", CultureInfo.InvariantCulture)} Hz"
+            : "no 3 dB point inside the sweep";
+        ElectricalAcSweepSummary =
+            $"{circuit.Id}: drove '{drive}' over {response.Points.Count} frequencies · " +
+            $"{loudest} {referenceDb.ToString("G4", CultureInfo.InvariantCulture)} dB at " +
+            $"{from.ToString("G4", CultureInfo.InvariantCulture)} Hz, {cornerNote} · " +
+            $"{ElectricalAcSweepRows.Count} rows.";
+        StatusText = $"Swept '{drive}' over {response.Points.Count} frequencies";
+        return true;
+    }
+
+    /// <summary>
+    /// The response as CSV, written by the same writer as <c>radix ac --csv</c>, so a table copied
+    /// from the panel and one produced by a script describe the same study.
+    /// </summary>
+    public bool TryBuildElectricalAcSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalAcSweepReport is not { Points.Count: > 0 } report)
+        {
+            return false;
+        }
+
+        csv = report.ToCsv();
+        return true;
+    }
+
+    private void RebuildElectricalAcSweepPlot(AcResponse response, IReadOnlyList<string> nodes)
+    {
+        var series = new List<TransientPlotSeries>();
+        for (int index = 0; index < nodes.Count; index++)
+        {
+            string nodeId = nodes[index];
+            var points = new List<TransientPlotPoint>(response.Points.Count);
+            foreach (AcPoint point in response.Points)
+            {
+                double magnitude = point.NodeVoltages[nodeId].Magnitude;
+                if (magnitude <= 0)
+                {
+                    continue;
+                }
+
+                points.Add(new TransientPlotPoint(
+                    Math.Log10(point.FrequencyHertz), 20 * Math.Log10(magnitude)));
+            }
+
+            // A node with no response anywhere would flatten the vertical range to its floor.
+            if (points.Count > 1)
+            {
+                series.Add(new TransientPlotSeries(nodeId, points, index));
+            }
+        }
+
+        ElectricalAcSweepPlot = series.Count == 0 ? null : TransientPlot.Create(series);
+    }
+
+    private void ClearElectricalAcSweep(string summary)
+    {
+        ElectricalAcSweepRows.Clear();
+        ElectricalAcSweepPlot = null;
+        _electricalAcSweepReport = null;
+        ElectricalAcSweepSummary = summary;
+        RaisePropertyChanged(nameof(HasElectricalAcSweepResult));
+    }
+
+    /// <summary>
+    /// Applies an <c>id=volts</c> override for the operating point. A waveform biases its source at
+    /// its value at t = 0, which is the rest state, so a gate is only analysed on a transition when
+    /// the drive is held there explicitly.
+    /// </summary>
+    private static bool TryApplyElectricalAcBias(
+        TransientNetlist netlist,
+        string text,
+        out TransientNetlist biasedNetlist,
+        out string error)
+    {
+        biasedNetlist = netlist;
+        error = string.Empty;
+        int equals = text.IndexOf('=');
+        if (equals <= 0 ||
+            !TryParseEngineeringValue(text[(equals + 1)..], out double volts))
+        {
+            error = "Enter the bias as source=volts, for example VIN=1.3.";
+            return false;
+        }
+
+        string id = text[..equals].Trim();
+        if (!netlist.Elements.Any(element => string.Equals(element.Id, id, StringComparison.Ordinal)))
+        {
+            error = $"The circuit has no component '{id}' to bias.";
+            return false;
+        }
+
+        TransientNetlist biased = netlist.Clone().WithElementValue(id, volts);
+        biased.SetWaveform(id, [new TransientWaveformPoint(0, volts)]);
+        biasedNetlist = biased;
+        return true;
+    }
+
+    private static bool TryParseElectricalAcRange(
+        string? text,
+        out double from,
+        out double to,
+        out int points,
+        out string error)
+    {
+        from = 0;
+        to = 0;
+        points = 0;
+        error = string.Empty;
+
+        string[] parts = (text ?? string.Empty).Split(':');
+        if (parts.Length != 3)
+        {
+            error = "Enter a frequency range as from:to:points, for example 10:1e6:21.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(parts[0], out from) || from <= 0)
+        {
+            error = "The start frequency must be a finite value greater than zero.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(parts[1], out to) || to < from)
+        {
+            error = "The stop frequency must be at least the start frequency.";
+            return false;
+        }
+
+        if (!int.TryParse(parts[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out points) ||
+            points < 2 ||
+            points > AcFrequencySweep.MaximumCount)
+        {
+            error = $"The point count must be from 2 to {AcFrequencySweep.MaximumCount}.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// The sweep table as CSV, written by the same writer as <c>radix transient --sweep --csv</c>.
     /// Returning false rather than an empty document keeps "nothing to export" distinct from a
     /// study that legitimately has no rows.
@@ -7771,6 +8141,7 @@ public sealed class EditorViewModel : ObservableObject
     private void ClearElectricalSolveResult()
     {
         ClearElectricalDcSweep(DefaultElectricalDcSweepSummary);
+        ClearElectricalAcSweep(DefaultElectricalAcSweepSummary);
         ElectricalNodeResults.Clear();
         ElectricalElementResults.Clear();
         HasElectricalSolveResult = false;
