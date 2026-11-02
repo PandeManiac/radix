@@ -960,3 +960,9 @@ summary and full local verification results; see the PR for the latest CI state.
 90. Reverified the updated diode edge handling: Release solution build completed
     with 0 warnings/errors, Core passed 641/641, and headless Editor passed 242/242
     with the documented Linux native-library setup.
+
+91. Extended the RC/Zener transient regression to run both fixed-step and adaptive
+    step-doubling analyses across the source breakpoint. Both analyses must complete,
+    finish at the clamp operating point, and agree within 20 mV with balanced final
+    branch currents. Focused adaptive clamp test passes 1/1; full Core verification
+    is pending.

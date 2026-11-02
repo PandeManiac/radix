@@ -83,6 +83,22 @@ public sealed class TransientSolverTests
             result.FinalPoint.ElementCurrents["R1"],
             result.FinalPoint.ElementCurrents["DZ1"],
             1e-8);
+
+        TransientResult adaptive = netlist.Run(options with
+        {
+            Steps = 250,
+            AdaptiveTolerance = 1e-5,
+            AdaptiveAbsoluteTolerance = 1e-8,
+        });
+
+        Assert.True(adaptive.Completed, adaptive.Message);
+        Assert.Equal(options.StopTime, adaptive.FinalPoint!.Time);
+        Assert.InRange(adaptive.FinalPoint.NodeVoltages["z"], -5.2, -5.1);
+        AssertClose(result.FinalPoint.NodeVoltages["z"], adaptive.FinalPoint.NodeVoltages["z"], 0.02);
+        AssertClose(
+            adaptive.FinalPoint.ElementCurrents["R1"],
+            adaptive.FinalPoint.ElementCurrents["DZ1"],
+            1e-8);
     }
 
     [Theory]
