@@ -1093,3 +1093,9 @@ summary and full local verification results; see the PR for the latest CI state.
      advances are ignored and the partial state is presented as halted. The test
      reproduces a value change from 1 to 0 without processing another event;
      implementation and broader verification remain pending.
+
+112. Fixed external drive behavior after halt. `SetExternalInput` and therefore
+     `SetPortValue` now retain normal net/value validation but ignore valid drives
+     once halted, preserving the frozen partial simulation until `Reset`. The
+     regression and all four event-budget tests pass; broader verification remains
+     pending.

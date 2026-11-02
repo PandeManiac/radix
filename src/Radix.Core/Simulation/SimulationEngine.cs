@@ -534,7 +534,8 @@ public sealed class SimulationEngine
     /// <summary>
     /// Drives a net from outside the circuit (switches, test harnesses, interactive
     /// input). One external value is allowed per net; -1 clears it. The net re-resolves
-    /// immediately and downstream components are scheduled at the current time.
+    /// immediately and downstream components are scheduled at the current time. Drives
+    /// are ignored after the engine halts, preserving its inspectable partial state.
     /// </summary>
     public void SetExternalInput(int netIndex, int value)
     {
@@ -544,17 +545,22 @@ public sealed class SimulationEngine
         }
 
         CompiledNet net = _circuit.Nets[netIndex];
+        if (value != SignalValue.UndrivenIndex && !net.Domain.IsValidValue(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), $"Value {value} is outside domain '{net.Domain.Id}'.");
+        }
+
+        if (_halted)
+        {
+            return;
+        }
+
         if (value == SignalValue.UndrivenIndex)
         {
             _externalValues.Remove(netIndex);
         }
         else
         {
-            if (!net.Domain.IsValidValue(value))
-            {
-                throw new ArgumentOutOfRangeException(nameof(value), $"Value {value} is outside domain '{net.Domain.Id}'.");
-            }
-
             _externalValues[netIndex] = value;
         }
 
