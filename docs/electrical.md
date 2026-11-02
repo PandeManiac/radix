@@ -1013,7 +1013,12 @@ copy with that one value changed, so a difference between rows belongs to the va
 rather than to how the circuit was rebuilt.
 
 The table prints the swept value once per value and one row per non-ground node, because
-ground is the reference by definition and a 0 V row is not information. A value that
+ground is the reference by definition and a 0 V row is not information. Each row also carries
+the measured `dV(node)/d(swept)` — the same difference quotient as `radix dc --gain` — and the
+summary names the steepest point, so the shoulder a gate is judged on is visible in the panel
+rather than only on the command line. A value with no solved neighbour shows `-` instead of a
+zero. CSV export stays the CLI's table, which carries values only, so a file saved in the panel
+and one written by `radix dc --sweep --csv` remain identical. A value that
 cannot solve keeps a row saying which failure it hit instead of vanishing, so a transfer
 curve with a missing point is visible as such. **Copy sweep CSV** / **Save sweep CSV…**
 write the table through `DcSweepReport.ToCsv`, the same writer the CLI uses, so a file

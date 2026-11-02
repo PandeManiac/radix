@@ -1154,13 +1154,20 @@
                       Margin="0,0,0,4">
                     <StackPanel Spacing="3">
                       <controls:TransientPlotView Plot="{Binding ElectricalDcSweepPlot}" Height="150" Margin="0,2,0,4" IsVisible="{Binding HasElectricalDcSweepPlot}" />
+                      <Grid ColumnDefinitions="62,*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Text="value" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="1" Text="node" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="2" Text="volts" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="3" Text="dV/dV" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" ToolTip.Tip="Measured local gain d(node)/d(swept), the same difference quotient as radix dc --gain" />
+                      </Grid>
                       <ItemsControl ItemsSource="{Binding ElectricalDcSweepRows}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalDcSweepRowItem">
-                            <Grid ColumnDefinitions="62,*,Auto" ColumnSpacing="8" Margin="0,1">
+                            <Grid ColumnDefinitions="62,*,Auto,Auto" ColumnSpacing="8" Margin="0,1">
                               <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" />
                               <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontSize="9.5" />
-                              <TextBlock Grid.Column="2" Text="{Binding VoltsText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" />
+                              <TextBlock Grid.Column="2" Text="{Binding VoltsText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" HorizontalAlignment="Right" />
+                              <TextBlock Grid.Column="3" Text="{Binding GainText}" FontFamily="monospace" FontSize="9.5" Classes="muted" HorizontalAlignment="Right" ToolTip.Tip="Measured dV(node)/d(swept); '-' means no slope is defined at this point" />
                             </Grid>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>

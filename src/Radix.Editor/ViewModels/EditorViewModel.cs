@@ -6848,16 +6848,29 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
+        // Measure each node's slope once, by the same difference quotient as `radix dc --gain`:
+        // the gain points are in sweep order, so a row's gain is the entry with the same index.
+        var slopes = new Dictionary<string, IReadOnlyList<DcSweepGainPoint>>(StringComparer.Ordinal);
+        foreach (ElectricalNode node in circuit.Nodes)
+        {
+            if (!string.Equals(node.Id, netlist.GroundNodeId, StringComparison.Ordinal))
+            {
+                slopes[node.Id] = DcSweepGain.Along(rows, node.Id);
+            }
+        }
+
         ElectricalDcSweepRows.Clear();
         int failed = 0;
-        foreach (DcSweepRow row in rows)
+        for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
         {
+            DcSweepRow row = rows[rowIndex];
             if (row.Solution is not DcSolution solution)
             {
                 failed++;
                 ElectricalDcSweepRows.Add(new ElectricalDcSweepRowItem(
                     row.Value,
                     $"failed: {FailureLabel(row.Failure ?? DcSolveFailure.NonConvergent)}",
+                    null,
                     null,
                     showValue: true));
                 continue;
@@ -6873,7 +6886,12 @@ public sealed class EditorViewModel : ObservableObject
                     continue;
                 }
 
-                ElectricalDcSweepRows.Add(new ElectricalDcSweepRowItem(row.Value, node.Id, volts, first));
+                double? gain = slopes.TryGetValue(node.Id, out IReadOnlyList<DcSweepGainPoint>? points) &&
+                    rowIndex < points.Count
+                        ? points[rowIndex].Gain
+                        : null;
+                ElectricalDcSweepRows.Add(
+                    new ElectricalDcSweepRowItem(row.Value, node.Id, volts, gain, first));
                 first = false;
             }
         }
@@ -6885,9 +6903,26 @@ public sealed class EditorViewModel : ObservableObject
         _electricalDcSweepElementId = elementId;
         RebuildElectricalDcSweepPlot(rows, netlist);
         RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
+        // Name the steepest measured slope: a transfer curve is judged where it switches.
+        (string NodeId, double Gain)? steepest = null;
+        foreach (KeyValuePair<string, IReadOnlyList<DcSweepGainPoint>> entry in slopes)
+        {
+            foreach (DcSweepGainPoint point in entry.Value)
+            {
+                if (point.Gain is double gain &&
+                    (steepest is null || Math.Abs(gain) > Math.Abs(steepest.Value.Gain)))
+                {
+                    steepest = (entry.Key, gain);
+                }
+            }
+        }
+
+        string gainNote = steepest is { } peak
+            ? $" · max |gain| {Math.Abs(peak.Gain).ToString("G4", CultureInfo.InvariantCulture)} V/V at {peak.NodeId}"
+            : " · no defined slope yet";
         ElectricalDcSweepSummary = failed == 0
-            ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalDcSweepRows.Count} rows."
-            : $"Swept '{elementId}' over {rows.Count} values; {failed} could not solve.";
+            ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalDcSweepRows.Count} rows{gainNote}."
+            : $"Swept '{elementId}' over {rows.Count} values; {failed} could not solve{gainNote}.";
         StatusText = failed == 0
             ? $"Swept '{elementId}' over {rows.Count} values"
             : $"Swept '{elementId}': {failed} value(s) failed.";

@@ -57,6 +57,27 @@ public sealed class ElectricalDcSweepTests
         // value and prints it; a value spanning several nodes prints it once.
         Assert.Equal(["0", "5", "10"], viewModel.ElectricalDcSweepRows.Select(row => row.ValueText).ToArray());
         Assert.Contains("Swept 'r1'", viewModel.ElectricalDcSweepSummary, StringComparison.Ordinal);
+
+        // The driven node moves one volt per volt, so every row carries the same measured slope;
+        // this is the same difference quotient the CLI reports with --gain.
+        Assert.Equal(
+            ["1", "1", "1"],
+            viewModel.ElectricalDcSweepRows.Select(row => row.GainText).ToArray());
+        Assert.Contains("max |gain| 1 V/V at n1", viewModel.ElectricalDcSweepSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ASingleValueIsNotASweep()
+    {
+        EditorViewModel viewModel = DividerWithSource();
+        viewModel.ElectricalDcSweepElementText = "r1";
+        viewModel.ElectricalDcSweepValuesText = "5";
+
+        // One value is not a transfer curve and cannot carry a slope, so the panel refuses it
+        // and names the accepted shapes instead of producing a one-row "sweep".
+        Assert.False(viewModel.RunElectricalDcSweep());
+        Assert.False(viewModel.HasElectricalDcSweepResult);
+        Assert.Contains("from:to:count", viewModel.ElectricalDcSweepSummary, StringComparison.Ordinal);
     }
 
     [Fact]
