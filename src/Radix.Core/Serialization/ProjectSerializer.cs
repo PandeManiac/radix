@@ -264,6 +264,8 @@ public static class ProjectSerializer
             GroundNodeId = dto.Ground ?? throw new ProjectFormatException($"Electrical circuit '{id}' is missing 'ground'."),
         };
 
+        circuit.DelayToleranceTicks = Math.Max(0, dto.DelayToleranceTicks ?? 0);
+
         foreach (double threshold in dto.LevelThresholds ?? [])
         {
             if (!double.IsFinite(threshold) ||
@@ -751,6 +753,7 @@ public static class ProjectSerializer
         Description = circuit.Description,
         Ground = circuit.GroundNodeId,
         LevelThresholds = circuit.LevelThresholds.Count == 0 ? null : [.. circuit.LevelThresholds],
+        DelayToleranceTicks = circuit.DelayToleranceTicks == 0 ? null : circuit.DelayToleranceTicks,
         DriveBindings = circuit.DriveBindings.Count == 0
             ? null
             : [.. circuit.DriveBindings.Select(binding => new ElectricalDriveBindingDto

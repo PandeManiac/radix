@@ -65,13 +65,21 @@ public sealed class ElectricalPropagationReport
         string inputPinId,
         string outputPinId,
         int? declaredTicks,
+        int toleranceTicks,
         IReadOnlyList<ElectricalPropagationStep> steps)
     {
         ArgumentNullException.ThrowIfNull(steps);
         InputPinId = inputPinId;
         OutputPinId = outputPinId;
         DeclaredTicks = declaredTicks;
+        ToleranceTicks = toleranceTicks;
         Steps = steps;
+
+        // A pin with no declared delay cannot be judged: silence is not agreement, and it is not a
+        // failure either, so nothing is listed.
+        Mismatches = declaredTicks is int declared
+            ? [.. steps.Where(step => Math.Abs(step.Ticks - declared) > toleranceTicks)]
+            : [];
     }
 
     public string InputPinId { get; }
@@ -81,7 +89,16 @@ public sealed class ElectricalPropagationReport
     /// <summary>The declared transport delay, or null when the driving instance declares none.</summary>
     public int? DeclaredTicks { get; }
 
+    /// <summary>How far a measured delay may differ from the declared one.</summary>
+    public int ToleranceTicks { get; }
+
     public IReadOnlyList<ElectricalPropagationStep> Steps { get; }
+
+    /// <summary>Every measured transition outside the declared delay and its tolerance.</summary>
+    public IReadOnlyList<ElectricalPropagationStep> Mismatches { get; }
+
+    /// <summary>Whether every measured transition landed within the declared delay.</summary>
+    public bool Agrees => Mismatches.Count == 0;
 }
 
 /// <summary>
@@ -390,6 +407,7 @@ public static class ElectricalDriveSimulation
             input.PinId,
             output.PinId,
             DeclaredDelayTicks(definition, output.PinId),
+            circuit.DelayToleranceTicks,
             steps);
     }
 

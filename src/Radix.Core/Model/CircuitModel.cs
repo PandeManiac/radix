@@ -317,7 +317,7 @@ public sealed class CircuitDefinition
 /// </summary>
 public sealed class CircuitProject
 {
-    public const int CurrentFormatVersion = 18;
+    public const int CurrentFormatVersion = 19;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 

@@ -305,6 +305,14 @@ public sealed class ElectricalCircuit
     public List<double> LevelThresholds { get; } = [];
 
     /// <summary>
+    /// How many ticks a measured propagation delay may differ from the declared one before a run
+    /// fails. Zero demands the declared number exactly. The tolerance is authored because a static
+    /// transport delay cannot describe an asymmetric network - the sweep rises in 23 ticks and falls
+    /// in 44 - and pretending otherwise would make every such circuit uncheckable.
+    /// </summary>
+    public int DelayToleranceTicks { get; set; }
+
+    /// <summary>
     /// Digital pins this circuit's nodes drive, with the rate that converts solved seconds into
     /// simulator ticks. Stored on the circuit because a binding is a claim about what this network
     /// means to the rest of the project, and one node may feed several pins.

@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 18,
+  "version": 19,
   "name": "Electrical ternary sweep",
   "root": "demo.inverter",
   "settings": {
@@ -159,7 +159,7 @@
     {
       "id": "ternary-switch",
       "name": "Ternary inverter, swept",
-      "description": "The same four-device network as the paired examples, with the input swept 0 V to 2.5 V to 5 V. Each plateau is held long enough for the gate bus and the summing node to settle, so the output should read level 2, then 1, then 0.",
+      "description": "The same four-device network as the paired examples, with the input swept 0 V to 2.5 V to 5 V. Each plateau is held long enough for the gate bus and the summing node to settle, so the output should read level 2, then 1, then 0. The table declares no transport delay; the network takes 23 ticks to rise and 44 to fall, and the circuit records a 44-tick tolerance rather than pretending one number describes both directions.",
       "ground": "gnd",
       "driveBindings": [
         {
@@ -454,7 +454,8 @@
             }
           ]
         }
-      ]
+      ],
+      "delayToleranceTicks": 44
     }
   ],
   "description": "The dual-threshold network driven through all three input levels. Unlike the paired examples, the definition here is a real ternary inverter and the two bindings read different nodes: pin a follows the input, pin y is supplied from the output. The audit therefore asks whether the table reproduces the network at every level, not whether a node agrees with itself."

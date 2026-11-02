@@ -1064,6 +1064,19 @@ internal static class Program
                     Console.WriteLine(
                         $"  {step.PreviousOutputLevel} -> {step.OutputLevel}: {step.Ticks} tick(s), {step.Seconds:E3} s after the input became level {step.InputLevel} at {step.InputAt}");
                 }
+
+                if (timing.DeclaredTicks is int declaredDelay && !timing.Agrees)
+                {
+                    foreach (ElectricalPropagationStep step in timing.Mismatches)
+                    {
+                        Console.Error.WriteLine(
+                            $"timing: {step.PreviousOutputLevel} -> {step.OutputLevel} took {step.Ticks} tick(s), declared {declaredDelay} with a tolerance of {timing.ToleranceTicks}.");
+                    }
+
+                    Console.Error.WriteLine(
+                        $"timing failed: {timing.Mismatches.Count} transition(s) outside the declared delay.");
+                    return 1;
+                }
             }
         }
 

@@ -54,8 +54,11 @@ public sealed class ElectricalPropagationTests
         Assert.Equal("y", report.OutputPinId);
         Assert.Equal(2, report.Steps.Count);
 
-        // The file declares no transport delay on the gate that drives y.
+        // The file declares no transport delay and a 44-tick tolerance, which admits both measured
+        // transitions: the network is slower than the table says, and the file records by how much.
         Assert.Equal(0, report.DeclaredTicks);
+        Assert.Equal(44, report.ToleranceTicks);
+        Assert.True(report.Agrees);
 
         // The input reached level 1 at tick 21; the output only crossed at 44.
         ElectricalPropagationStep first = report.Steps[0];
@@ -90,9 +93,51 @@ public sealed class ElectricalPropagationTests
 
         Assert.Equal(5, report.DeclaredTicks);
 
+        // The authored 44-tick tolerance admits both transitions even against five declared ticks;
+        // the tightened case below is where the judgement actually bites.
+        Assert.Equal(44, report.ToleranceTicks);
+        Assert.True(report.Agrees);
+
         // The measurement does not move: it describes the circuit, not the declaration.
         Assert.Equal(23, report.Steps[0].Ticks);
         Assert.NotEqual(5L, report.Steps[0].Ticks);
+    }
+
+    [Fact]
+    public void TighteningTheToleranceFailsTheRun()
+    {
+        (CircuitProject project, ElectricalCircuit circuit, TransientResult run, ElectricalLevelSampler sampler) =
+            Load();
+        Assert.True(Assert.IsType<ElectricalPropagationReport>(
+            ElectricalDriveSimulation.Propagation(project, circuit, run, sampler)).Agrees);
+
+        // The authored tolerance is what makes the file checkable; zero demands the declared delay.
+        circuit.DelayToleranceTicks = 0;
+        ElectricalPropagationReport tight = Assert.IsType<ElectricalPropagationReport>(
+            ElectricalDriveSimulation.Propagation(project, circuit, run, sampler));
+
+        Assert.False(tight.Agrees);
+        Assert.Equal(2, tight.Mismatches.Count);
+    }
+
+    [Fact]
+    public void TheToleranceSurvivesAFile()
+    {
+        (CircuitProject project, _, _, _) = Load();
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"radix-tolerance-{Guid.NewGuid():N}.radix");
+        try
+        {
+            ProjectSerializer.Save(path, project);
+            CircuitProject reloaded = ProjectSerializer.Load(path, validate: false);
+
+            Assert.Equal(44, Assert.Single(reloaded.ElectricalCircuits).DelayToleranceTicks);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]

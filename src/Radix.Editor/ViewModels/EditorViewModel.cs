@@ -6648,6 +6648,11 @@ public sealed class EditorViewModel : ObservableObject
             hint: "ascending boundaries for reading nodes as levels, comma separated; blank falls back to equal thirds of the circuit's rail",
             apply: value => SetElectricalCircuitLevelThresholds(circuit.Id, value)));
         ElectricalCircuitFields.Add(new EditableField(
+            "Delay tolerance (ticks)",
+            circuit.DelayToleranceTicks.ToString(CultureInfo.InvariantCulture),
+            hint: "how far a measured propagation delay may differ from the declared one before a run fails; 0 demands the declared value",
+            apply: value => SetElectricalCircuitDelayTolerance(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
             "Drive bindings",
             FormatDriveBindings(circuit),
             hint: "node:pin@ticksPerSecond, semicolon separated; a trailing ? states what the pin should read instead of driving it. Blank removes every binding",
@@ -9126,6 +9131,41 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Sets how far a measured delay may differ from the declared one. The tolerance is the only way
+    /// to say "this network is asymmetric" without lying in the declared number, so it is authored
+    /// beside the circuit rather than hidden in the check.
+    /// </summary>
+    private bool SetElectricalCircuitDelayTolerance(string circuitId, string value)
+    {
+        if (!int.TryParse(
+                value,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int ticks) || ticks < 0)
+        {
+            StatusText = "Delay tolerance must be a whole number of ticks, 0 or more.";
+            return false;
+        }
+
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            return false;
+        }
+
+        if (circuit.DelayToleranceTicks == ticks)
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.DelayToleranceTicks = ticks;
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = $"A measured delay may differ by up to {ticks} tick(s).";
+        return true;
+    }
+
     private bool SetElectricalDriveDefinition(string value)
     {
         string id = value.Trim();
@@ -9266,11 +9306,11 @@ public sealed class EditorViewModel : ObservableObject
                 ? ticks.ToString(CultureInfo.InvariantCulture)
                 : "no";
             verdict +=
-                $" Timing: {measured}; the definition declares {declared} tick(s).";
+                $" Timing: {measured}; the definition declares {declared} tick(s) within {timing.ToleranceTicks} tick(s).";
         }
 
         ElectricalDriveSummary = verdict;
-        return simulation.Passed && (audit?.Passed ?? true);
+        return simulation.Passed && (audit?.Passed ?? true) && (timing?.Agrees ?? true);
     }
 
     public bool ShowElectricalTransientRun()

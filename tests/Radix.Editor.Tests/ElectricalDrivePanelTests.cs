@@ -116,7 +116,7 @@ public sealed class ElectricalDrivePanelTests
         string summary = viewModel.ElectricalDriveSummary;
         Assert.Contains("Timing: 2->1 in 23 tick(s)", summary, StringComparison.Ordinal);
         Assert.Contains("1->0 in 44 tick(s)", summary, StringComparison.Ordinal);
-        Assert.Contains("declares 0 tick(s)", summary, StringComparison.Ordinal);
+        Assert.Contains("declares 0 tick(s) within 44 tick(s)", summary, StringComparison.Ordinal);
     }
 
     [Fact]

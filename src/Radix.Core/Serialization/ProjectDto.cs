@@ -58,6 +58,14 @@ internal sealed class ElectricalCircuitDto
     /// <summary>Digital pins this circuit's nodes drive; omitted when the circuit drives none.</summary>
     public List<ElectricalDriveBindingDto>? DriveBindings { get; set; }
 
+    /// <summary>
+    /// Ticks a measured delay may differ from the declared one; omitted means zero, so a file that
+    /// says nothing is judged exactly.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int? DelayToleranceTicks { get; set; }
+
     public List<ElectricalNodeDto>? Nodes { get; set; }
 
     public List<ElectricalComponentDto>? Components { get; set; }
