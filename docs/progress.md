@@ -866,4 +866,6 @@ Verification: focused `ElectricalEditorTests` passed 43/43; Release solution bui
 completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
 237/237. `radix dc examples/dc-divider.radix --json` solved at the expected 5 V
 midpoint, and `radix transient examples/transient-rc.radix --json` completed.
-GitHub CI is pending for this code commit.
+GitHub CI passed on Ubuntu and Windows for code commit
+`d4aef6d1526a55f4871e7f19177ff41c33ad1688` and documentation-only tip
+`859b42646b1fe7e6b3182105f43866bfb19cadf5`.
