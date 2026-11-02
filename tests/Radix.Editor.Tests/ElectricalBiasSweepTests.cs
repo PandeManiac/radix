@@ -72,11 +72,12 @@ public sealed class ElectricalBiasSweepTests
         Assert.Contains("4 devices", summary, StringComparison.Ordinal);
         Assert.Contains("peaks at", summary, StringComparison.Ordinal);
 
-        // The named device must be one the sweep actually measured; which one conducts hardest in
-        // this range is a property of the circuit, not something to pin in a test.
+        // The named device must be one the sweep actually measured, using the same display label
+        // as its curve; which one conducts hardest is a property of the circuit, not a test pin.
+        TransientPlot plot = Assert.IsType<TransientPlot>(viewModel.ElectricalBiasSweepPlot);
         Assert.Contains(
-            viewModel.SelectedElectricalCircuitModel!.Components.Select(component => component.Id),
-            id => summary.Contains(id + " peaks at", StringComparison.Ordinal));
+            plot.Series,
+            series => summary.Contains(series.Label + " peaks at", StringComparison.Ordinal));
     }
 
     [Fact]

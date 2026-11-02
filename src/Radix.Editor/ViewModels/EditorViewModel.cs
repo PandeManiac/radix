@@ -8175,8 +8175,12 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
+        var biasDeviceLabels = points[0].Devices.ToDictionary(
+            device => device.Id,
+            device => DescribeElectricalElement(device.Id, circuit),
+            StringComparer.Ordinal);
         _electricalBiasSweepPoints = points;
-        RebuildElectricalBiasSweepPlot(points);
+        RebuildElectricalBiasSweepPlot(points, biasDeviceLabels);
         RaisePropertyChanged(nameof(HasElectricalBiasSweepResult));
 
         // Name the device that reaches the largest transconductance and the bias where it does: the
@@ -8199,7 +8203,8 @@ public sealed class EditorViewModel : ObservableObject
 
         string peakNote = peakDevice is null
             ? "no device conducts in this range"
-            : $"{peakDevice.Id} peaks at {Number(peakBias)} V with {Number(peakGm)} S";
+            : $"{FormatElectricalHierarchyLabel(biasDeviceLabels[peakDevice.Id])} peaks at " +
+              $"{Number(peakBias)} V with {Number(peakGm)} S";
         ElectricalBiasSweepSummary =
             $"{circuit.Id}: stepped '{drive}' over {points.Count} values · " +
             $"{points[0].Devices.Count} devices · {peakNote}.";
@@ -8255,7 +8260,9 @@ public sealed class EditorViewModel : ObservableObject
                 : "inf";
     }
 
-    private void RebuildElectricalBiasSweepPlot(IReadOnlyList<MosfetBiasPoint> points)
+    private void RebuildElectricalBiasSweepPlot(
+        IReadOnlyList<MosfetBiasPoint> points,
+        IReadOnlyDictionary<string, (string Scope, string Name)> deviceLabels)
     {
         IReadOnlyList<AcDeviceReport> devices = points[0].Devices;
         var series = new List<TransientPlotSeries>();
@@ -8275,7 +8282,11 @@ public sealed class EditorViewModel : ObservableObject
 
             if (samples.Count > 1)
             {
-                series.Add(new TransientPlotSeries(deviceId, samples, index));
+                series.Add(new TransientPlotSeries(
+                    deviceId,
+                    samples,
+                    index,
+                    FormatElectricalHierarchyLabel(deviceLabels[deviceId])));
             }
         }
 

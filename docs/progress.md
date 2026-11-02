@@ -47,6 +47,8 @@ humans; update it at each milestone instead of relying on chat history.
 - The DC sweep now enumerates private child nodes as well as root-authored nodes.
   Before this, the solver and plot included child nodes but the table and input
   windows silently omitted them.
+- Bias-sweep curves and the peak-device summary use the resolved child element
+  name and instance scope. CSV exports keep stable netlist device IDs.
 - Added a regression that loads `examples/electrical-ternary-hierarchy.radix`, solves
   `chain`, and checks that `X1/out_low` appears with scope `X1`, its authored name,
   and no duplicate `X1/out` row.

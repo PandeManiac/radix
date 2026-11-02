@@ -156,6 +156,18 @@ public sealed class ElectricalHierarchyEditorTests
             "X1",
             dcPlot.Series.Single(item => item.NodeId == "X1/out_low").Label,
             StringComparison.Ordinal);
+
+        viewModel.ElectricalBiasSweepRangeText = "0:5:3";
+        Assert.True(viewModel.RunElectricalBiasSweep(), viewModel.ElectricalBiasSweepSummary);
+        TransientPlot biasPlot = Assert.IsType<TransientPlot>(viewModel.ElectricalBiasSweepPlot);
+        TransientPlotSeries childDevice = biasPlot.Series
+            .Single(item => item.NodeId == "X1/MNL");
+        Assert.Contains("X1", childDevice.Label, StringComparison.Ordinal);
+        Assert.Contains("Strong n-channel pull-down", childDevice.Label, StringComparison.Ordinal);
+        Assert.Contains(
+            biasPlot.Series,
+            series => viewModel.ElectricalBiasSweepSummary.Contains(
+                series.Label + " peaks at", StringComparison.Ordinal));
     }
 
     [Fact]
