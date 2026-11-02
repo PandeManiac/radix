@@ -1116,3 +1116,8 @@ summary and full local verification results; see the PR for the latest CI state.
      and trace caps may be zero to disable them but cannot be negative. Settings
      normalization remains unchanged. Both direct-construction validation tests
      pass, including the zero-disabled cases; broader verification remains pending.
+
+116. Verified runtime-option validation: Release solution build passed with 0
+     warnings/errors, Core passed 654/654, and headless Editor passed 242/242 with
+     `.local-native`. Both option tests pass: invalid direct limits are rejected,
+     and zero correctly disables the optional runtime caps.
