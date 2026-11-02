@@ -51,6 +51,27 @@ public static class AcFrequencySweep
 public sealed record AcPoint(double FrequencyHertz, IReadOnlyDictionary<string, Complex> NodeVoltages);
 
 /// <summary>
+/// One transistor at the operating point, as the small-signal analysis sees it. The gain in the
+/// node table is assembled from exactly these numbers, so naming them lets a response be traced
+/// back to a device instead of to an opaque matrix.
+/// </summary>
+public sealed record AcDeviceReport(
+    string Id,
+    string Region,
+    double GateSourceVolts,
+    double DrainSourceVolts,
+    double CurrentAmperes,
+    double Transconductance,
+    double DrainConductance)
+{
+    /// <summary>|gm/gds|: the largest voltage gain this device could give with an ideal load.</summary>
+    public double IntrinsicGain =>
+        DrainConductance > 0
+            ? Math.Abs(Transconductance / DrainConductance)
+            : double.PositiveInfinity;
+}
+
+/// <summary>
 /// The small-signal response of a circuit over frequency. Each node's phasor is its voltage for the
 /// driven source's unit amplitude, so the ratio to 1 V is the transfer function from that source to
 /// that node, phase included.
@@ -61,6 +82,9 @@ public sealed record AcResponse(
     double BiasResidual,
     IReadOnlyList<AcPoint> Points)
 {
+    /// <summary>Each transistor's region and small-signal slopes at the operating point.</summary>
+    public IReadOnlyList<AcDeviceReport> Devices { get; init; } = [];
+
     /// <summary>The non-ground node IDs, in ordinal order.</summary>
     public IReadOnlyList<string> Nodes =>
         Points.Count == 0
@@ -175,6 +199,24 @@ public static class AcAnalysis
             {
                 nodeIndex[node] = nodeIndex.Count;
             }
+        }
+
+        // The bias fixes every device's region and slopes, so they are measured once here rather
+        // than re-derived from the matrix later.
+        var devices = new List<AcDeviceReport>();
+        foreach (DcMosfet mosfet in netlist.Elements.OfType<DcMosfet>())
+        {
+            double drainSource = NodeBias(bias, mosfet.Drain) - NodeBias(bias, mosfet.Source);
+            double gateSource = NodeBias(bias, mosfet.Gate) - NodeBias(bias, mosfet.Source);
+            DcMosfetOperatingPoint point = mosfet.Evaluate(drainSource, gateSource);
+            devices.Add(new AcDeviceReport(
+                mosfet.Id,
+                point.Region.ToString(),
+                gateSource,
+                drainSource,
+                point.Current,
+                point.GateTransconductance,
+                point.DrainConductance));
         }
 
         var sourceRow = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -292,7 +334,7 @@ public static class AcAnalysis
                     : nodeIndex[node];
         }
 
-        return new AcResponse(drive.Id, amplitude, bias.RelativeResidual, points);
+        return new AcResponse(drive.Id, amplitude, bias.RelativeResidual, points) { Devices = devices };
     }
 
     private static double NodeBias(DcSolution bias, string node) =>

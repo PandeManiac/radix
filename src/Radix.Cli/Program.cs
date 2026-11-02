@@ -144,6 +144,7 @@ internal static class Program
                                              (a waveform would otherwise bias at its start value)
                   [--compare <archive>]      Compare with a recorded sweep and report deviations
                   [--compare-tolerance <db>]  Gain deviation tolerated before exiting 1 (default 0)
+                  [--devices]                Also print each MOSFET's region, gm and gds at the bias
                   [--csv]                    Emit one row per node per frequency
                   [--json]                   Emit a versioned report that --compare can read back
               simulate <project.radix>       Compile and run a definition headlessly
@@ -484,7 +485,7 @@ internal static class Program
         (var positional, var options) = Parse(
             args,
             ["circuit", "drive", "from", "to", "points", "amplitude", "bias", "compare", "compare-tolerance"],
-            ["csv", "json"]);
+            ["csv", "json", "devices"]);
         string? drive = GetOption(options, "drive");
         if (positional.Count != 1 || drive is null)
         {
@@ -607,6 +608,12 @@ internal static class Program
             return 2;
         }
 
+        if (options.ContainsKey("devices") && (csv || json))
+        {
+            Console.Error.WriteLine("--devices prints a device table; drop --csv or --json.");
+            return 2;
+        }
+
         AcResponse response;
         try
         {
@@ -659,9 +666,48 @@ internal static class Program
         else
         {
             Console.Write(response.ToText());
+            if (options.ContainsKey("devices"))
+            {
+                PrintAcDevices(response);
+            }
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Each transistor's region and small-signal slopes at the bias. The gain table is assembled
+    /// from these numbers, so printing them is what makes a response traceable to a device.
+    /// </summary>
+    private static void PrintAcDevices(AcResponse response)
+    {
+        if (response.Devices.Count == 0)
+        {
+            Console.WriteLine("Devices: the netlist has no MOSFETs.");
+            return;
+        }
+
+        // Fixed field widths around a five-significant-digit number keep the columns apart: a
+        // longer format ran an exponent straight into the next value.
+        string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G5", CultureInfo.InvariantCulture)
+                : "inf";
+
+        Console.WriteLine("Devices at the operating point:");
+        Console.WriteLine("  id    region      Vgs         Vds         Id          gm          gds         gm/gds");
+        foreach (AcDeviceReport device in response.Devices)
+        {
+            Console.WriteLine(
+                "  " + device.Id.PadRight(6) +
+                device.Region.PadRight(12) +
+                Number(device.GateSourceVolts).PadRight(12) +
+                Number(device.DrainSourceVolts).PadRight(12) +
+                Number(device.CurrentAmperes).PadRight(12) +
+                Number(device.Transconductance).PadRight(12) +
+                Number(device.DrainConductance).PadRight(12) +
+                Number(device.IntrinsicGain));
+        }
     }
 
     private static void PrintAcComparison(

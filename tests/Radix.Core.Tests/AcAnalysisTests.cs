@@ -168,6 +168,56 @@ public sealed class AcAnalysisTests
     }
 
     [Fact]
+    public void TheDeviceReportNamesTheSlopesTheGainIsBuiltFrom()
+    {
+        // Same stage as the common-source case: K = 1 mA/V^2, Vth = 1 V, gate at 2 V, so the
+        // overdrive is 1 V and gm = K * Vov = 1 mA/V. A report that did not match that closed form
+        // would not be describing the device the gain was assembled from.
+        var netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("VDD", "vdd", "gnd", 5)
+            .AddVoltageSource("VIN", "in", "gnd", 2)
+            .AddResistor("RD", "vdd", "out", 1_000)
+            .AddMosfet("M1", "out", "in", "gnd", DcMosfetChannel.NChannel, 1, 1e-3, 0, 0, 0, 1e-12);
+
+        AcDeviceReport device = Assert.Single(AcAnalysis.Run(netlist, "VIN", [10]).Devices);
+
+        Assert.Equal("M1", device.Id);
+        Assert.Equal(2, device.GateSourceVolts, 9);
+        Assert.Equal(1e-3, device.Transconductance, 12);
+
+        // Level 1 without channel-length modulation has no drain conductance beyond GMIN, so the
+        // device's intrinsic gain is enormous: the stage's gain is set by the resistor alone.
+        Assert.InRange(device.DrainConductance, 0, 1.01e-12);
+
+        // The only drain conductance left is GMIN (1e-12 S), so the intrinsic gain is gm/GMIN =
+        // 1e9: large, but a definite number rather than the infinite ratio a model without GMIN
+        // would claim. The stage's own gain is set by its resistor, far below this ceiling.
+        Assert.InRange(device.IntrinsicGain, 9.9e8, 1.01e9);
+    }
+
+    [Fact]
+    public void ACutOffDeviceIsReportedInAnotherRegionWithNoGain()
+    {
+        static TransientNetlist Stage(double gateVolts) =>
+            new TransientNetlist("gnd")
+                .AddVoltageSource("VDD", "vdd", "gnd", 5)
+                .AddVoltageSource("VIN", "in", "gnd", gateVolts)
+                .AddResistor("RD", "vdd", "out", 1_000)
+                .AddMosfet("M1", "out", "in", "gnd", DcMosfetChannel.NChannel, 1, 1e-3);
+
+        AcDeviceReport on = Assert.Single(AcAnalysis.Run(Stage(2), "VIN", [10]).Devices);
+        AcDeviceReport off = Assert.Single(AcAnalysis.Run(Stage(0.5), "VIN", [10]).Devices);
+
+        // Below the threshold the device is in a different region and contributes no
+        // transconductance, so an amplifier built on it has no gain to speak of. The region names
+        // are the model's own, so the test compares the two classifications rather than spelling
+        // them; a report that always said one region would fail here.
+        Assert.NotEqual(on.Region, off.Region);
+        Assert.InRange(off.Transconductance, -1e-15, 1e-15);
+        Assert.True(on.Transconductance > 100 * Math.Abs(off.Transconductance));
+    }
+
+    [Fact]
     public void ASweepIsLogarithmicAndBounded()
     {
         IReadOnlyList<double> decade = AcFrequencySweep.Logarithmic(10, 1_000, 3);
