@@ -1166,3 +1166,10 @@ summary and full local verification results; see the PR for the latest CI state.
      regressions (extreme signed times and opposite-extreme values) pass.
 
 124. GitHub Actions passed all four reported checks on `d8d055d0a89e7c66d70b16de5e60839cbf7885ec`: Ubuntu and Windows for both push and pull-request workflows. Local Release build, Core 658/658, headless Editor 242/242, and the 61-point transient CLI check were also green at that tip.
+
+125. WIP: added a transient-energy regression with a 1e154 V ideal source and a
+     1 ohm load over 1 ms. Source and load powers are each finite at 1e308 W, so
+     expected delivered and dissipated energies are each representable as 1e305 J.
+     The energy ledger currently adds adjacent powers before dividing by two, which
+     can overflow despite the finite average and final energy. Focused test and fix
+     are pending.

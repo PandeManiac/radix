@@ -45,6 +45,31 @@ public sealed class TransientEnergyTests
     }
 
     [Fact]
+    public void EnergyLedgerAveragesLargeFinitePowersWithoutOverflow()
+    {
+        // The source and resistor each carry 1e308 W, but across a 1 ms interval
+        // the delivered and dissipated energies are both a representable 1e305 J.
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 1e154)
+            .AddResistor("R1", "in", "gnd", 1);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 1e-3,
+            Steps = 1,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        TransientEnergyBalance energy = Assert.IsType<TransientEnergyBalance>(result.Energy);
+        Assert.True(double.IsFinite(energy.DeliveredJoules));
+        Assert.True(double.IsFinite(energy.DissipatedJoules));
+        AssertClose(1e305, energy.DeliveredJoules, 1e-12);
+        AssertClose(1e305, energy.DissipatedJoules, 1e-12);
+        Assert.Equal(0, energy.StoredChangeJoules);
+        Assert.Equal(0, energy.ResidualJoules);
+    }
+
+    [Fact]
     public void LosslessTankConservesEnergyUnderTheTrapezoidalRule()
     {
         double initial = 0.5 * 1e-6 * 25;
