@@ -906,7 +906,8 @@ headless Editor passed 242/242 using the documented Linux native-library setup.
 reported equal resistor/diode branch currents (-6.8917 mA) with element powers
 summing to zero within the solver's numerical tolerance. The published code
 checkpoint is `19073dd5df9e847880cfb0ee8c11cab9642bea6c`; GitHub CI was still
-running when checked. Next step: confirm CI and update draft PR #6.
+running when checked. Draft PR #6 has since been updated with this milestone's
+summary and full local verification results; see the PR for the latest CI state.
 
 83. Extended the independent reverse-breakdown regression to include nonzero diode
     series resistance. The oracle bisects the internal junction equation using the
