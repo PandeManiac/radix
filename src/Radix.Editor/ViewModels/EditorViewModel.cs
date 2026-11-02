@@ -208,6 +208,8 @@ public sealed class EditorViewModel : ObservableObject
     private AcReport? _electricalAcSweepReport;
     private TransientPlot? _electricalAcSweepPlot;
     private TransientPlot? _electricalAcSweepPhasePlot;
+    private string? _electricalDeviceOperatingPoint;
+    private string _electricalDeviceBiasText = string.Empty;
     private string _electricalSweepSummary =
         "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
@@ -624,6 +626,114 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Whether the phase has a curve to draw.</summary>
     public bool HasElectricalAcSweepPhasePlot => ElectricalAcSweepPhasePlot is { IsEmpty: false };
+
+    /// <summary>
+    /// The selected transistor's region and small-signal slopes at the circuit's DC operating
+    /// point, or why they cannot be measured. These are the numbers the AC analysis is assembled
+    /// from, so showing them beside the device's capacitances explains the response rather than
+    /// just reporting it.
+    /// </summary>
+    public string ElectricalDeviceOperatingPointText
+    {
+        get
+        {
+            _electricalDeviceOperatingPoint ??= DescribeElectricalDeviceOperatingPoint();
+            return _electricalDeviceOperatingPoint;
+        }
+    }
+
+    /// <summary>Whether the selected component has an operating point to show.</summary>
+    public bool HasElectricalDeviceOperatingPoint => ElectricalDeviceOperatingPointText.Length > 0;
+
+    /// <summary>
+    /// An operating-point override as typed, <c>source=volts</c>. Without one the circuit sits at
+    /// its rest state — the value each source holds at t = 0 — which for a driven gate means off.
+    /// </summary>
+    public string ElectricalDeviceBiasText
+    {
+        get => _electricalDeviceBiasText;
+        set
+        {
+            if (SetField(ref _electricalDeviceBiasText, value ?? string.Empty))
+            {
+                InvalidateElectricalDeviceOperatingPoint();
+            }
+        }
+    }
+
+    private void InvalidateElectricalDeviceOperatingPoint()
+    {
+        _electricalDeviceOperatingPoint = null;
+        RaisePropertyChanged(nameof(ElectricalDeviceOperatingPointText));
+        RaisePropertyChanged(nameof(HasElectricalDeviceOperatingPoint));
+    }
+
+    /// <summary>
+    /// Solves the circuit and evaluates the selected device. The solve is the same one the panel's
+    /// Solve button performs, so the slopes here cannot describe a different operating point than
+    /// the one the user is looking at.
+    /// </summary>
+    private string DescribeElectricalDeviceOperatingPoint()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        string? componentId = _selectedElectricalComponent?.Id;
+        if (circuit is null || componentId is null)
+        {
+            return string.Empty;
+        }
+
+        ElectricalComponent? component = circuit.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            TransientNetlist netlist = circuit.ToTransientNetlist();
+            if ((ElectricalDeviceBiasText ?? string.Empty).Trim() is { Length: > 0 } biasText)
+            {
+                if (!TryApplyElectricalAcBias(netlist, biasText, out TransientNetlist biased, out string biasError))
+                {
+                    return "Operating point unavailable: " + biasError;
+                }
+
+                netlist = biased;
+            }
+
+            DcSolution bias = netlist.SolveDc();
+            DcMosfet? device = netlist.Elements
+                .OfType<DcMosfet>()
+                .FirstOrDefault(element => string.Equals(element.Id, component.Id, StringComparison.Ordinal));
+            if (device is null)
+            {
+                return string.Empty;
+            }
+
+            double gateSource = Bias(bias, device.Gate) - Bias(bias, device.Source);
+            double drainSource = Bias(bias, device.Drain) - Bias(bias, device.Source);
+            DcMosfetOperatingPoint point = device.Evaluate(drainSource, gateSource);
+            double intrinsic = point.DrainConductance > 0
+                ? Math.Abs(point.GateTransconductance / point.DrainConductance)
+                : double.PositiveInfinity;
+
+            return $"{point.Region} · Vgs {Number(gateSource)} V · Vds {Number(drainSource)} V · " +
+                $"Id {Number(point.Current)} A · gm {Number(point.GateTransconductance)} S · " +
+                $"gds {Number(point.DrainConductance)} S · |gm/gds| {Number(intrinsic)}";
+        }
+        catch (Exception exception) when (exception is DcSolveException or ArgumentException)
+        {
+            return "Operating point unavailable: " + exception.Message;
+        }
+
+        static double Bias(DcSolution solution, string node) =>
+            solution.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0;
+
+        static string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G4", CultureInfo.InvariantCulture)
+                : "inf";
+    }
 
     /// <summary>Whether the refinement table has rows to show.</summary>
     public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
@@ -6335,6 +6445,7 @@ public sealed class EditorViewModel : ObservableObject
                 ? null
                 : ElectricalComponentKinds.First(choice => choice.Kind == _selectedElectricalComponent.Kind);
             RefreshElectricalDetails(circuit);
+            InvalidateElectricalDeviceOperatingPoint();
         }
         finally
         {
@@ -8256,6 +8367,7 @@ public sealed class EditorViewModel : ObservableObject
         ClearElectricalAcSweep(DefaultElectricalAcSweepSummary);
         ElectricalNodeResults.Clear();
         ElectricalElementResults.Clear();
+        InvalidateElectricalDeviceOperatingPoint();
         HasElectricalSolveResult = false;
         HasElectricalSolveError = false;
         ElectricalSolveSummary = "Choose Solve to compute the DC operating point.";

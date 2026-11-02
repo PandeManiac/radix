@@ -534,7 +534,12 @@ The gate has 29.4 dB of gain at low frequency, inverting at 180°, and is 3 dB d
 with the phase past 136° by 447 kHz. `--devices` adds the transistors themselves: each one's
 region at the bias, its `gm` and `gds`, and their ratio, which is the largest gain the device could
 manage into an ideal load. The node table is assembled from those slopes, so printing them makes a
-gain traceable to a device instead of to a matrix. Those are the same numbers the DC sweep measures as a slope at
+gain traceable to a device instead of to a matrix.
+
+The editor's inspector shows the same numbers for the selected transistor, beside the bias it was
+measured at. Without a bias the circuit sits at its rest state — each source at its value at t = 0 —
+so a driven gate reads `Cutoff`; entering `VIN=1.3` puts it on the transition and the region, `gm`,
+`gds` and `|gm/gds|` appear next to the capacitances they are assembled with. Those are the same numbers the DC sweep measures as a slope at
 the same bias: because the analysis is linearized at the operating point, the test asserts that the
 AC magnitude at 1 Hz agrees with the difference quotient within 15 %, so the frequency-domain
 assembly and the DC slope cross-check each other instead of each being trusted alone.
