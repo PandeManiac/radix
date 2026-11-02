@@ -1258,3 +1258,10 @@ summary and full local verification results; see the PR for the latest CI state.
      points remain available, while `TransientNetlistJson` can serialize the failed
      report as valid JSON. The focused regression now checks the serialized failure
      and absence of an energy object; broader verification remains pending.
+
+139. Verified the transient-ledger failure and JSON behavior end to end: Release
+     solution build passed with 0 warnings/errors, Core passed 662/662, and
+     headless Editor passed 242/242 with `.local-native`. The focused test confirms
+     finite solved points are retained, the result is classified as
+     `NonFiniteResult`, and the report remains valid JSON with no unrepresentable
+     energy object.
