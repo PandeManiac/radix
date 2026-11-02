@@ -32,8 +32,9 @@ public sealed class ElectricalDriveBinding
 
     /// <summary>
     /// Whether this binding states what a pin should read rather than what it should be driven to.
-    /// An output cannot be driven, so a claim about one can only be checked: the digital side is
-    /// asked to agree with the solved network, and a disagreement fails the simulation.
+    /// A claim asks the digital side to agree with the solved network, and a disagreement fails the
+    /// simulation. A plain drive writes the level instead, which an output only accepts when its
+    /// declaration marks it externally supplied; otherwise the runner refuses it as before.
     /// </summary>
     public bool Checks { get; set; }
 

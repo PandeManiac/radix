@@ -708,7 +708,9 @@ public static class SimulationScriptRunner
             return;
         }
 
-        if (port.Direction != PinDirection.Input)
+        // An output is the model's to answer for unless its declaration hands it to the outside; the
+        // engine applies the same rule, so the runner refuses nothing the engine would accept.
+        if (port.Direction != PinDirection.Input && !port.ExternalSupply)
         {
             failures.Add(new ScriptFailure(
                 stepNumber,
