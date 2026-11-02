@@ -181,6 +181,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientComparisonText = string.Empty;
     private string _electricalDriveSummary =
         "Run the bindings to see what this circuit would drive.";
+    private string _electricalDriveDefinitionId = string.Empty;
     private double? _electricalTransientProbeTime;
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
         new SortedDictionary<string, double>(StringComparer.Ordinal);
@@ -6652,6 +6653,11 @@ public sealed class EditorViewModel : ObservableObject
             hint: "node:pin@ticksPerSecond, semicolon separated; a trailing ? states what the pin should read instead of driving it. Blank removes every binding",
             apply: value => SetElectricalCircuitDriveBindings(circuit.Id, value)));
         ElectricalCircuitFields.Add(new EditableField(
+            "Drive definition",
+            _electricalDriveDefinitionId,
+            hint: "which definition the bindings are applied to, by id; blank uses the project's root. A view setting, not saved with the project",
+            apply: SetElectricalDriveDefinition));
+        ElectricalCircuitFields.Add(new EditableField(
             "Transient tolerance",
             _electricalTransientToleranceText,
             hint: "Blank runs the fixed step count; a positive relative tolerance enables adaptive stepping",
@@ -9059,6 +9065,32 @@ public sealed class EditorViewModel : ObservableObject
     /// checkbox does the same thing through the rebuild it already calls.
     /// </summary>
     /// <summary>
+    /// Chooses the definition the bindings are applied to. The choice is view state rather than part
+    /// of the project, because which definition a reader wants to exercise is a question about the
+    /// session, not about the circuit - the bindings themselves are the circuit's claim.
+    /// </summary>
+    private bool SetElectricalDriveDefinition(string value)
+    {
+        string id = value.Trim();
+        if (id.Length > 0 &&
+            !_project.Definitions.Any(definition =>
+                string.Equals(definition.Id, id, StringComparison.Ordinal)))
+        {
+            StatusText = $"No definition '{id}' in this project.";
+            return false;
+        }
+
+        // The target is stated even when the value did not change: applying a blank line to an
+        // already-blank field should tell the reader where the bindings will go, not stay silent.
+        _electricalDriveDefinitionId = id;
+        ElectricalDriveRows.Clear();
+        ElectricalDriveSummary = id.Length == 0
+            ? "Bindings apply to the root definition."
+            : $"Bindings apply to '{id}'.";
+        return true;
+    }
+
+    /// <summary>
     /// Solves the selected circuit and applies its drive bindings, reporting each change and whether
     /// the root definition agreed. This is the command line's drive table inside the panel, so a
     /// reader who authored a binding does not have to leave the editor to find out what it does.
@@ -9122,7 +9154,10 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         ElectricalDrivePlan plan = ElectricalDriveSimulation.Plan(circuit, result, sampler);
-        var simulation = ElectricalDriveSimulation.Run(_project, plan);
+        var simulation = ElectricalDriveSimulation.Run(
+            _project,
+            plan,
+            _electricalDriveDefinitionId.Length == 0 ? null : _electricalDriveDefinitionId);
 
         ElectricalDriveRows.Clear();
         foreach (ElectricalDriveBinding binding in circuit.DriveBindings)

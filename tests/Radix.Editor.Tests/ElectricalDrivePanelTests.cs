@@ -56,6 +56,36 @@ public sealed class ElectricalDrivePanelTests
     }
 
     [Fact]
+    public void TheDefinitionFieldPicksWhatTheBindingsAreAppliedTo()
+    {
+        EditorViewModel viewModel = Load("electrical-ternary-drive.radix");
+        SetField(viewModel, "Transient stop (s)", "120e-9");
+        SetField(viewModel, "Transient steps", "1280");
+        SetField(viewModel, "Drive definition", "demo.follow");
+
+        Assert.True(viewModel.RunElectricalDriveBindings());
+        Assert.Contains("'demo.follow' agreed", viewModel.ElectricalDriveSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ADefinitionTheProjectDoesNotHaveIsRefused()
+    {
+        EditorViewModel viewModel = Load("electrical-ternary-drive.radix");
+        EditableField? field = Assert.Single(
+            viewModel.ElectricalCircuitFields,
+            candidate => candidate.Label == "Drive definition");
+        Assert.NotNull(field);
+        Assert.NotNull(field!.Apply);
+
+        Assert.False(field.Apply("not-a-definition"));
+        Assert.Contains("No definition 'not-a-definition'", viewModel.StatusText, StringComparison.Ordinal);
+
+        // Blank is always allowed and returns the panel to the root definition.
+        Assert.True(field.Apply(string.Empty));
+        Assert.Contains("root definition", viewModel.ElectricalDriveSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ACircuitWithoutBindingsSaysSoInsteadOfReportingSuccess()
     {
         EditorViewModel viewModel = Load("transient-ternary-inverter.radix");
