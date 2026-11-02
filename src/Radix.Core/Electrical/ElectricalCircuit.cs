@@ -296,6 +296,14 @@ public sealed class ElectricalCircuit
 
     public List<ElectricalComponent> Components { get; } = [];
 
+    /// <summary>
+    /// Ascending voltage boundaries for reading this circuit's nodes as levels, empty when the
+    /// circuit authors none and a reading should fall back to equal thirds of its rail. Stored on
+    /// the circuit rather than per node because a circuit has one supply and one signalling scheme:
+    /// two nodes reading against different boundaries would not describe a single logic family.
+    /// </summary>
+    public List<double> LevelThresholds { get; } = [];
+
     public ElectricalNode? FindNode(string nodeId) =>
         Nodes.FirstOrDefault(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal));
 

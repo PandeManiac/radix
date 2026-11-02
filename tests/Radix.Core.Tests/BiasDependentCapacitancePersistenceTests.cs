@@ -41,7 +41,7 @@ public sealed class BiasDependentCapacitancePersistenceTests
             Assert.Contains("\"biasDependentCapacitance\": true", saved, StringComparison.Ordinal);
 
             CircuitProject reloaded = ProjectSerializer.Load(path);
-            Assert.Equal(15, reloaded.FormatVersion);
+            Assert.Equal(CircuitProject.CurrentFormatVersion, reloaded.FormatVersion);
 
             ElectricalCircuit reloadedCircuit = Assert.Single(reloaded.ElectricalCircuits);
             Assert.True(reloadedCircuit.FindComponent("MNL")!.BiasDependentCapacitance);

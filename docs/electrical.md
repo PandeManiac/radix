@@ -1498,6 +1498,13 @@ level taken against the circuit's own rail — the highest source value, split i
 the digital reading is visible beside the voltage it came from. A circuit with no positive source
 has no rail to read against and reports no levels rather than inventing one.
 
+A circuit may author the boundaries itself with `levelThresholds` (project format 16), an ascending
+list of volts, edited as `Level thresholds (V)` in the inspector. Authored boundaries outrank the
+rail, so a 5 V circuit that signals between 2.5 V and 5 V can read 2.5 V as level 0; an empty list
+returns the reader to the rail, and a descending, duplicated or non-numeric list is refused on load
+and in the inspector rather than stored in a shape no reading could use. Editing the boundaries
+invalidates the last run, as any circuit change does.
+
 This is the electrical-to-digital half of the bridge and nothing more: a level is produced, but no
 level yet drives the simulator's inputs, so the behavioural and electrical sides still meet only in
 a person's head.

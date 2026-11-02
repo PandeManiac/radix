@@ -56,6 +56,29 @@ public sealed class ElectricalLevelSampler
         return new ElectricalLevelSampler([rail / 3.0, rail * 2.0 / 3.0]);
     }
 
+    /// <summary>
+    /// The sampler a reading should use for a circuit: the boundaries the circuit authors when it
+    /// has them, otherwise equal thirds of the supplied rail. Null when neither is available, so a
+    /// caller reports no level instead of reading against a boundary it made up.
+    /// </summary>
+    public static ElectricalLevelSampler? ForCircuit(ElectricalCircuit circuit, double rail)
+    {
+        ArgumentNullException.ThrowIfNull(circuit);
+        if (circuit.LevelThresholds.Count > 0)
+        {
+            try
+            {
+                return new ElectricalLevelSampler(circuit.LevelThresholds);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        return double.IsFinite(rail) && rail > 0 ? TernaryFromRail(rail) : null;
+    }
+
     /// <summary>The ascending boundaries in volts.</summary>
     public IReadOnlyList<double> Thresholds => _thresholds;
 

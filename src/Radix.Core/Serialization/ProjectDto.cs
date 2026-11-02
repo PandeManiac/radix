@@ -36,6 +36,12 @@ internal sealed class ElectricalCircuitDto
 
     public string? Ground { get; set; }
 
+    /// <summary>
+    /// Ascending voltage boundaries for reading this circuit's nodes as levels; omitted means the
+    /// reader falls back to equal thirds of the circuit's rail.
+    /// </summary>
+    public List<double>? LevelThresholds { get; set; }
+
     public List<ElectricalNodeDto>? Nodes { get; set; }
 
     public List<ElectricalComponentDto>? Components { get; set; }

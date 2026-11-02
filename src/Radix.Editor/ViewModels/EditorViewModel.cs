@@ -6622,6 +6622,14 @@ public sealed class EditorViewModel : ObservableObject
             hint: "backward-euler or trapezoidal",
             apply: SetElectricalTransientMethod));
         ElectricalCircuitFields.Add(new EditableField(
+            "Level thresholds (V)",
+            string.Join(
+                ", ",
+                circuit.LevelThresholds.Select(value =>
+                    value.ToString("G6", CultureInfo.InvariantCulture))),
+            hint: "ascending boundaries for reading nodes as levels, comma separated; blank falls back to equal thirds of the circuit's rail",
+            apply: value => SetElectricalCircuitLevelThresholds(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
             "Transient tolerance",
             _electricalTransientToleranceText,
             hint: "Blank runs the fixed step count; a positive relative tolerance enables adaptive stepping",
@@ -7946,6 +7954,52 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Sets the voltage boundaries this circuit's nodes are read as levels against. Blank clears
+    /// them, which returns the reader to equal thirds of the rail; a descending or non-numeric list
+    /// is refused rather than stored in a shape no reading could use.
+    /// </summary>
+    private bool SetElectricalCircuitLevelThresholds(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            StatusText = $"No circuit '{circuitId}' to edit.";
+            return false;
+        }
+
+        List<double> thresholds = [];
+        foreach (string part in value.Split([',', ' ', ';', '·'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!TryParseEngineeringValue(part, out double threshold) || !double.IsFinite(threshold))
+            {
+                StatusText = $"'{part}' is not a number of volts.";
+                return false;
+            }
+
+            if (thresholds.Count > 0 && threshold <= thresholds[^1])
+            {
+                StatusText = "Level thresholds must ascend.";
+                return false;
+            }
+
+            thresholds.Add(threshold);
+        }
+
+        if (circuit.LevelThresholds.SequenceEqual(thresholds))
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.LevelThresholds.Clear();
+        circuit.LevelThresholds.AddRange(thresholds);
+        AfterElectricalMutation(thresholds.Count == 0
+            ? "Level boundaries cleared; readings fall back to the rail"
+            : $"Level boundaries at {string.Join(", ", thresholds.Select(threshold => threshold.ToString("G6", CultureInfo.InvariantCulture)))} V");
+        return true;
+    }
+
+    /// <summary>
     /// Turns the bias-dependent capacitance model on or off for a device, from the inspector's
     /// yes/no field. The solver applies it per circuit, which the field's hint says.
     /// </summary>
@@ -8381,7 +8435,12 @@ public sealed class EditorViewModel : ObservableObject
             return new SortedDictionary<string, int>(StringComparer.Ordinal);
         }
 
-        var sampler = ElectricalLevelSampler.TernaryFromRail(rail);
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit, rail);
+        if (sampler is null)
+        {
+            return new SortedDictionary<string, int>(StringComparer.Ordinal);
+        }
+
         return new SortedDictionary<string, int>(
             values.ToDictionary(pair => pair.Key, pair => sampler.LevelFor(pair.Value)),
             StringComparer.Ordinal);

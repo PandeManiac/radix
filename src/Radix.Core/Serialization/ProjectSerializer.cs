@@ -264,6 +264,18 @@ public static class ProjectSerializer
             GroundNodeId = dto.Ground ?? throw new ProjectFormatException($"Electrical circuit '{id}' is missing 'ground'."),
         };
 
+        foreach (double threshold in dto.LevelThresholds ?? [])
+        {
+            if (!double.IsFinite(threshold) ||
+                (circuit.LevelThresholds.Count > 0 && threshold <= circuit.LevelThresholds[^1]))
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' has level thresholds that must be finite and ascending; '{threshold}' does not follow its predecessor.");
+            }
+
+            circuit.LevelThresholds.Add(threshold);
+        }
+
         foreach (ElectricalNodeDto nodeDto in dto.Nodes ?? [])
         {
             circuit.Nodes.Add(new ElectricalNode
@@ -705,6 +717,7 @@ public static class ProjectSerializer
         Name = circuit.Name,
         Description = circuit.Description,
         Ground = circuit.GroundNodeId,
+        LevelThresholds = circuit.LevelThresholds.Count == 0 ? null : [.. circuit.LevelThresholds],
         Nodes = circuit.Nodes.Select(node => new ElectricalNodeDto
         {
             Id = node.Id,
