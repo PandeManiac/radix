@@ -1480,6 +1480,23 @@ its mean, so the figure is an effect of the model rather than of where samples l
 remain quantised by the step, which is why the comparison is stated as a ratio between two runs on
 the same grid.
 
+## Reading a solved node as a level
+
+`ElectricalLevelSampler` turns a solved node voltage into a domain level, which is the index of a
+value in that domain's list. Boundaries ascend; a voltage exactly on one reads as the level above
+it, as a comparator with no offset would; outside the outermost boundaries the ends clamp, so a rail
+that overshoots is still that rail. `TernaryFromRail(5)` places the boundaries at 1.667 V and
+3.333 V, and the ternary inverter then reads level 2 at 0 s (4.98 V) and level 1 once settled
+(2.50 V).
+
+Sampling a time the run did not land on interpolates linearly between the two bracketing points, so a
+probe does not have to coincide with a step. A time outside the run answers with the nearest end
+rather than inventing an extrapolation.
+
+This is the electrical-to-digital half of the bridge and nothing more: a level is produced, but no
+level yet drives the simulator's inputs, so the behavioural and electrical sides still meet only in
+a person's head.
+
 Project format 15 stores the choice per device as `biasDependentCapacitance`, so a file can ask
 for it; the field is written only for a MOSFET, and a non-MOSFET that sets it is rejected on load
 with the same rule that guards the other device fields. Format 14 files have no such field and load
