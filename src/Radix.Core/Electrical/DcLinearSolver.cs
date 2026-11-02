@@ -979,9 +979,17 @@ public sealed class DcNetlist
                     $"Solving element '{element.Id}' produced a non-finite voltage or current.");
             }
 
+            double power = voltage * current;
+            if (!double.IsFinite(power))
+            {
+                throw new DcSolveException(
+                    DcSolveFailure.NonFiniteResult,
+                    $"Solving element '{element.Id}' produced a non-finite power.");
+            }
+
             elementVoltages[element.Id] = voltage;
             currents[element.Id] = current;
-            powers[element.Id] = voltage * current;
+            powers[element.Id] = power;
         }
 
         return new DcSolution(voltages, currents, elementVoltages, powers)

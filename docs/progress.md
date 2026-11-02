@@ -1212,3 +1212,9 @@ summary and full local verification results; see the PR for the latest CI state.
      product overflows; `BuildSolution` currently returns the operating point with
      infinite element power. The expected behavior is a deterministic
      `NonFiniteResult` failure. Focused test execution and the guard are pending.
+
+132. Guarded DC solution construction against non-finite element power. The
+     solver now rejects an element when finite terminal voltage and current multiply
+     to infinity, returning `DcSolveFailure.NonFiniteResult` with the element ID.
+     The new overflow regression and the DC linear plus transient-energy focused
+     suites pass (23/23); broader verification remains pending.
