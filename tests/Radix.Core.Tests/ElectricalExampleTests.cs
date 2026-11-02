@@ -38,6 +38,7 @@ public sealed class ElectricalExampleTests
     [InlineData("dc-mosfet-common-source.json")]
     [InlineData("dc-cmos-inverter.json")]
     [InlineData("dc-ternary-inverter.json")]
+    [InlineData("dc-ternary-inverter-buffered.json")]
     public void EveryElectricalExampleReopensAndSolves(string fileName)
     {
         DcNetlist netlist = DcNetlistJson.Load(ExamplePath(fileName));

@@ -7,13 +7,14 @@ humans; update it at each milestone instead of relying on chat history.
 
 - Remote: `origin` = https://github.com/PandeManiac/radix (write access verified).
 - Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
-- Latest verified feature commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
-- Draft PR #6 is open against `main`: nonlinear DC convergence scaling and
-  engineering-suffix entry for authored electrical values.
+- Draft PR #7 is open against `main`: electrical hierarchy, reusable subcircuits,
+  and the buffered ternary inverter.
+- Solver continuation checkpoint: `a6a82c3b7c83d489e74d1ab0424fce6c2d05d1c6`.
+  This checkpoint adds the buffered ternary example, its tests, and documentation.
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 632/632, Editor tests 234/234, and the DC divider CLI example reports the
-  expected 5 V midpoint. GitHub CI passed on Ubuntu and Windows for feature commit
-  `649444659bfd6d0d351217fa5aff3af4566c36a6`; the branch tip adds only this note.
+  tests 826/826, Editor tests 311/311. The buffered example solves both from JSON and
+  as an authored project; its 100 kOhm loaded operating point exercises the new
+  MOSFET-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
   but the tests pass when Ubuntu native packages are extracted under ignored
   `.local-native` and `LD_LIBRARY_PATH`/`FONTCONFIG_FILE` are set.
@@ -23,6 +24,26 @@ humans; update it at each milestone instead of relying on chat history.
 - Latest verified code commit: see `git log agent/radix-verification`; benchmark documentation has a fresh seven-sample run recorded below.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
+
+## Session 2026-11-02 (buffered ternary inverter)
+
+- Added a MOSFET-current continuation fallback to `DcNetlist.Solve()`: after a direct
+  Newton failure on a MOSFET-only nonlinear netlist, solve the devices-off linear
+  system and ramp channel current to full, seeding each step from the previous
+  operating point. The 1 pS leakage floor is not scaled.
+- Added `examples/dc-ternary-inverter-buffered.json` and the authored twin
+  `examples/dc-ternary-inverter-buffered.radix`. The dual-threshold pair now drives
+  complementary CMOS inverters before the 100 kOhm summing network, preserving the
+  2 V middle plateau. A two-stage CMOS feedback amplifier buffers the sum.
+- Measured unloaded levels: 4.9955 V at 0 V input, 2.5081 V at 2.5 V, 0.00471 V at
+  5 V. Into 100 kOhm: 4.9776 V, 2.5078 V, 0.00470 V; the unbuffered gate collapses
+  to 3.2088 V, 1.6636 V, ~0 V under the same load. Mid-state supply power is
+  2.178 mW unloaded and 2.274 mW loaded; the rails draw 0.64-0.68 mW.
+- Added `BufferedTernaryInverterTests` for JSON/authored equivalence, nominal levels,
+  plateau, 100 kOhm load regulation, power balance, and the loaded continuation path.
+- Verification: build clean (0 warnings/errors), Core 826/826, Editor 311/311.
+- Limitation: the output stage is class-A-ish and burns quiescent power at the rails;
+  it has no compensation capacitor, mismatch, temperature, or transient-stability claim.
 
 ## Reproducible setup and commands
 

@@ -1,0 +1,231 @@
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    {
+      "id": "VDD",
+      "type": "voltage-source",
+      "nodeA": "vdd",
+      "nodeB": "gnd",
+      "volts": 5
+    },
+    {
+      "id": "VIN",
+      "type": "voltage-source",
+      "nodeA": "in",
+      "nodeB": "gnd",
+      "volts": 0
+    },
+    {
+      "id": "MPL",
+      "type": "mosfet",
+      "drain": "out_low",
+      "gate": "in",
+      "source": "vdd",
+      "channel": "p",
+      "thresholdVoltage": 1,
+      "transconductance": 1e-05,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "MNL",
+      "type": "mosfet",
+      "drain": "out_low",
+      "gate": "in",
+      "source": "gnd",
+      "channel": "n",
+      "thresholdVoltage": 1,
+      "transconductance": 0.00121,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "MPH",
+      "type": "mosfet",
+      "drain": "out_high",
+      "gate": "in",
+      "source": "vdd",
+      "channel": "p",
+      "thresholdVoltage": 1,
+      "transconductance": 0.00121,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "MNH",
+      "type": "mosfet",
+      "drain": "out_high",
+      "gate": "in",
+      "source": "gnd",
+      "channel": "n",
+      "thresholdVoltage": 1,
+      "transconductance": 1e-05,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "CLP",
+      "type": "mosfet",
+      "drain": "comp_low",
+      "gate": "out_low",
+      "source": "vdd",
+      "channel": "p",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0001,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "CLN",
+      "type": "mosfet",
+      "drain": "comp_low",
+      "gate": "out_low",
+      "source": "gnd",
+      "channel": "n",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0001,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "CHP",
+      "type": "mosfet",
+      "drain": "comp_high",
+      "gate": "out_high",
+      "source": "vdd",
+      "channel": "p",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0001,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "CHN",
+      "type": "mosfet",
+      "drain": "comp_high",
+      "gate": "out_high",
+      "source": "gnd",
+      "channel": "n",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0001,
+      "channelLengthModulation": 0.02
+    },
+    {
+      "id": "RSUM1",
+      "type": "resistor",
+      "nodeA": "comp_low",
+      "nodeB": "sum",
+      "ohms": 100000
+    },
+    {
+      "id": "RSUM2",
+      "type": "resistor",
+      "nodeA": "comp_high",
+      "nodeB": "sum",
+      "ohms": 100000
+    },
+    {
+      "id": "RREF1",
+      "type": "resistor",
+      "nodeA": "vdd",
+      "nodeB": "ref",
+      "ohms": 100000
+    },
+    {
+      "id": "RREF2",
+      "type": "resistor",
+      "nodeA": "ref",
+      "nodeB": "gnd",
+      "ohms": 100000
+    },
+    {
+      "id": "MN1",
+      "type": "mosfet",
+      "drain": "d1",
+      "gate": "fb",
+      "source": "tail",
+      "channel": "n",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0004,
+      "channelLengthModulation": 0.002
+    },
+    {
+      "id": "MN2",
+      "type": "mosfet",
+      "drain": "d2",
+      "gate": "ref",
+      "source": "tail",
+      "channel": "n",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0004,
+      "channelLengthModulation": 0.002
+    },
+    {
+      "id": "RTAIL",
+      "type": "resistor",
+      "nodeA": "tail",
+      "nodeB": "gnd",
+      "ohms": 10000
+    },
+    {
+      "id": "MP1",
+      "type": "mosfet",
+      "drain": "d1",
+      "gate": "d1",
+      "source": "vdd",
+      "channel": "p",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0004,
+      "channelLengthModulation": 0.002
+    },
+    {
+      "id": "MP2",
+      "type": "mosfet",
+      "drain": "d2",
+      "gate": "d1",
+      "source": "vdd",
+      "channel": "p",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0004,
+      "channelLengthModulation": 0.002
+    },
+    {
+      "id": "RBIAS",
+      "type": "resistor",
+      "nodeA": "d2",
+      "nodeB": "ref",
+      "ohms": 10000000
+    },
+    {
+      "id": "MP3",
+      "type": "mosfet",
+      "drain": "out",
+      "gate": "d2",
+      "source": "vdd",
+      "channel": "p",
+      "thresholdVoltage": 1,
+      "transconductance": 0.001,
+      "channelLengthModulation": 0.002
+    },
+    {
+      "id": "MN3",
+      "type": "mosfet",
+      "drain": "out",
+      "gate": "d2",
+      "source": "gnd",
+      "channel": "n",
+      "thresholdVoltage": 1,
+      "transconductance": 0.0001,
+      "channelLengthModulation": 0.002
+    },
+    {
+      "id": "RIN",
+      "type": "resistor",
+      "nodeA": "sum",
+      "nodeB": "fb",
+      "ohms": 10000000
+    },
+    {
+      "id": "RF",
+      "type": "resistor",
+      "nodeA": "out",
+      "nodeB": "fb",
+      "ohms": 10100000
+    }
+  ]
+}

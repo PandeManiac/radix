@@ -1,0 +1,704 @@
+{
+  "format": "radix-project",
+  "version": 22,
+  "name": "Buffered ternary inverter",
+  "root": "main",
+  "domains": [
+    {
+      "id": "ternary",
+      "name": "Ternary",
+      "values": [
+        "0",
+        "1",
+        "2"
+      ],
+      "drivers": {
+        "kind": "single"
+      }
+    }
+  ],
+  "definitions": [
+    {
+      "id": "main",
+      "name": "Main",
+      "pins": [],
+      "instances": [],
+      "nets": [],
+      "ports": []
+    }
+  ],
+  "electricalCircuits": [
+    {
+      "id": "ternary-buffered",
+      "name": "Buffered ternary inverter",
+      "description": "Two dual-threshold CMOS inverters drive complementary CMOS inverters; the four resulting outputs are summed through 100 kOhm resistors. A two-stage CMOS feedback amplifier buffers the summed node. The pre-summing complements preserve the middle plateau while restoring inverter polarity. The output stage is asymmetric: the p-channel source device is 10x the n-channel sink, so the high level can drive a ground-referenced load while the n-channel sets the mid-state quiescent current.",
+      "ground": "gnd",
+      "nodes": [
+        {
+          "id": "gnd",
+          "name": "gnd"
+        },
+        {
+          "id": "comp_high",
+          "name": "comp_high"
+        },
+        {
+          "id": "comp_low",
+          "name": "comp_low"
+        },
+        {
+          "id": "d1",
+          "name": "d1"
+        },
+        {
+          "id": "d2",
+          "name": "d2"
+        },
+        {
+          "id": "fb",
+          "name": "fb"
+        },
+        {
+          "id": "in",
+          "name": "in"
+        },
+        {
+          "id": "out",
+          "name": "out"
+        },
+        {
+          "id": "out_high",
+          "name": "out_high"
+        },
+        {
+          "id": "out_low",
+          "name": "out_low"
+        },
+        {
+          "id": "ref",
+          "name": "ref"
+        },
+        {
+          "id": "sum",
+          "name": "sum"
+        },
+        {
+          "id": "tail",
+          "name": "tail"
+        },
+        {
+          "id": "vdd",
+          "name": "vdd"
+        }
+      ],
+      "components": [
+        {
+          "id": "VDD",
+          "name": "VDD",
+          "kind": "voltage-source",
+          "value": 5,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "Positive",
+              "polarity": "positive",
+              "node": "vdd"
+            },
+            {
+              "id": "b",
+              "name": "Negative",
+              "polarity": "negative",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "VIN",
+          "name": "VIN",
+          "kind": "voltage-source",
+          "value": 0,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "Positive",
+              "polarity": "positive",
+              "node": "in"
+            },
+            {
+              "id": "b",
+              "name": "Negative",
+              "polarity": "negative",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "MPL",
+          "name": "MPL",
+          "kind": "mosfet",
+          "value": 1e-05,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_low"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "in"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "MNL",
+          "name": "MNL",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_low"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "in"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "MPH",
+          "name": "MPH",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_high"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "in"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "MNH",
+          "name": "MNH",
+          "kind": "mosfet",
+          "value": 1e-05,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_high"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "in"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "CLP",
+          "name": "CLP",
+          "kind": "mosfet",
+          "value": 0.0001,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "comp_low"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "out_low"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "CLN",
+          "name": "CLN",
+          "kind": "mosfet",
+          "value": 0.0001,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "comp_low"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "out_low"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "CHP",
+          "name": "CHP",
+          "kind": "mosfet",
+          "value": 0.0001,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "comp_high"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "out_high"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "CHN",
+          "name": "CHN",
+          "kind": "mosfet",
+          "value": 0.0001,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "comp_high"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "out_high"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "RSUM1",
+          "name": "RSUM1",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "comp_low"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "sum"
+            }
+          ]
+        },
+        {
+          "id": "RSUM2",
+          "name": "RSUM2",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "comp_high"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "sum"
+            }
+          ]
+        },
+        {
+          "id": "RREF1",
+          "name": "RREF1",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "vdd"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "ref"
+            }
+          ]
+        },
+        {
+          "id": "RREF2",
+          "name": "RREF2",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "ref"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "MN1",
+          "name": "MN1",
+          "kind": "mosfet",
+          "value": 0.0004,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.002,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "d1"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "fb"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "tail"
+            }
+          ]
+        },
+        {
+          "id": "MN2",
+          "name": "MN2",
+          "kind": "mosfet",
+          "value": 0.0004,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.002,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "d2"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "ref"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "tail"
+            }
+          ]
+        },
+        {
+          "id": "RTAIL",
+          "name": "RTAIL",
+          "kind": "resistor",
+          "value": 10000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "tail"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "MP1",
+          "name": "MP1",
+          "kind": "mosfet",
+          "value": 0.0004,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.002,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "d1"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "d1"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "MP2",
+          "name": "MP2",
+          "kind": "mosfet",
+          "value": 0.0004,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.002,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "d2"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "d1"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "RBIAS",
+          "name": "RBIAS",
+          "kind": "resistor",
+          "value": 10000000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "d2"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "ref"
+            }
+          ]
+        },
+        {
+          "id": "MP3",
+          "name": "MP3",
+          "kind": "mosfet",
+          "value": 0.001,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.002,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "d2"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "MN3",
+          "name": "MN3",
+          "kind": "mosfet",
+          "value": 0.0001,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.002,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "d2"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "RIN",
+          "name": "RIN",
+          "kind": "resistor",
+          "value": 10000000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "sum"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "fb"
+            }
+          ]
+        },
+        {
+          "id": "RF",
+          "name": "RF",
+          "kind": "resistor",
+          "value": 10100000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "out"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "fb"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

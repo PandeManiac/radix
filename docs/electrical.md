@@ -406,8 +406,8 @@ The full curve, rather than the three sampled points, is what the design is judg
 - **Static power.** At either rail one inverter per pair is fully off and the summing path
   carries only leakage, so the total is below a microwatt. The middle state is not free:
   the divider carries 25 µA and both inverters sit in their own crossover region, so the
-  5 V rail supplies about 49.5 µA — **0.248 mW**. This is inherent to resistor summing and
-  would be removed by a buffered output stage.
+  5 V rail supplies about 49.5 µA — **0.248 mW**. This is inherent to resistor summing; the
+  buffered variant below trades additional quiescent power for a low-impedance output.
 - **Noise margin (ideal, unloaded).** `radix dc --sweep … --margins out` finds the unity-gain
   crossings and reports the windows between them: `0 → 1.042`, `1.422 → 3.578`, `3.958 → 5` V.
   The middle window is 2.155 V wide, so a level placed at 2.5 V has ±1.078 V of margin, and each
@@ -417,6 +417,55 @@ The full curve, rather than the three sampled points, is what the design is judg
   two ideal CMOS inverters and ideal resistors, with no mismatch, no temperature, no
   capacitance, and a fixed `lambda`. It demonstrates that an intermediate logic level can be
   produced by a solved electrical network; it is not a manufacturable ternary gate.
+
+#### Buffered ternary inverter
+
+`examples/dc-ternary-inverter-buffered.json` and the authored
+`examples/dc-ternary-inverter-buffered.radix` keep the same dual-threshold front end but make
+the summed node an internal high-impedance node instead of the output. Four small CMOS
+inverters first complement each `out_low`/`out_high` pair; the complementary outputs are
+summed through the same 100 kΩ resistors, and a two-stage CMOS feedback amplifier buffers
+the result.
+
+The complements are placed **before** the summing resistors on purpose. A high-gain stage
+placed after the summing node amplifies the summing network's 100 mV middle plateau into a
+full transition, destroying the intermediate level. Complementing the two inverter outputs
+before the divider preserves the plateau and restores inverter polarity: 0 V input gives a
+5 V output, 2.5 V gives 2.5 V, and 5 V gives 0 V.
+
+The amplifier is a differential pair (`MN1`/`MN2`, 0.4 mA/V², `lambda = 0.002`), a p-channel
+mirror load (`MP1`/`MP2`), and an asymmetric push-pull output (`MP3` at 1 mA/V², `MN3` at
+0.1 mA/V²). `RIN = 10 MΩ` and `RF = 10.1 MΩ` set a closed-loop gain near -1; the 100 kΩ/100 kΩ
+divider sets the 2.5 V reference. The output p device is ten times the n device so the high
+state can source a ground-referenced load while the n device sets the mid-state quiescent
+current.
+
+```bash
+radix dc examples/dc-ternary-inverter-buffered.json --sweep VIN=0,2.5,5
+radix dc examples/dc-ternary-inverter-buffered.radix --sweep VIN=0:5:51 --csv
+```
+
+| `VIN` | buffered, open | buffered, 100 kΩ | original, 100 kΩ |
+| --- | --- | --- | --- |
+| 0 V | 4.9955 V | 4.9776 V | 3.2088 V |
+| 2.5 V | 2.5081 V | 2.5078 V | 1.6636 V |
+| 5 V | 0.00471 V | 0.00470 V | ~0 V |
+
+The middle level moves by only 0.0003 V when a 100 kΩ load is attached, versus 0.836 V for
+the unbuffered gate. The full 0–5 V sweep is monotone and every input from 1.5 V to 3.5 V
+stays within 2.5076–2.5086 V, so the buffered output keeps a real plateau rather than
+sharpening it into a comparator.
+
+Power is the price of the buffer. The first-stage tail and reference divider are always
+biased, so the rail supplies about **0.68 mW at 0 V**, **2.18 mW at 2.5 V**, and **0.64 mW at
+5 V** with no load; a 100 kΩ load raises those to 0.91 mW, 2.27 mW, and 0.64 mW. The
+unbuffered design's 0.248 mW middle-state figure is therefore not the whole comparison:
+the buffer pays quiescent power at every level in exchange for load regulation.
+
+Limitations: the output stage is class-A-ish rather than a production class-AB stage, so it
+burns quiescent current at the rails; lower load resistances are current-limited; the model
+still has no mismatch, temperature, compensation capacitor, or transient stability claim.
+The 100 kΩ case is the verified load, and the DC path is what the example and tests cover.
 
 **Gain.** `radix dc --sweep … --gain <node>` differentiates the measured curve and reports
 `d(node)/d(swept)`, so the shoulder sharpness a gate is judged on is a number rather than an
