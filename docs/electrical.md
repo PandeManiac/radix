@@ -314,7 +314,10 @@ finite ramp is preferred when the charging current itself matters.
 A run keeps every operating point that solved before a later step failed, and
 reports the failing step index with the same `DcSolveFailure` classification as
 the DC solver. A failure at the initial operating point returns no points. A
-partially solved run is never presented as a completed one.
+partially solved run is never presented as a completed one. A completed run is
+also rejected with `NonFiniteResult` if its derived energy ledger overflows, even
+when each solved voltage, current, and element power is finite; the solved points
+remain available for inspection.
 
 ### Command line and JSON
 

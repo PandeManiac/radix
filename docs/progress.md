@@ -1239,3 +1239,9 @@ summary and full local verification results; see the PR for the latest CI state.
      node voltages and element powers while rejecting the overflowing stored-energy
      total. All nine focused `TransientEnergyTests` pass; broader verification is
      pending.
+
+136. Verified transient energy reporting end to end: Release solution build passed
+     with 0 warnings/errors, Core passed 662/662, and headless Editor passed
+     242/242 with `.local-native`. The transient RC CLI report completed 63 points
+     with a finite energy ledger; the DC divider CLI report returned its expected
+     5 V midpoint. The energy-overflow regression and all prior Core coverage pass.
