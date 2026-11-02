@@ -1537,6 +1537,13 @@ The output crossing 3.333 V at 43.6 ns is the same settle the capacitance compar
 as a digital change 44 ticks in. `--json` emits the same report for a script, and a circuit that
 declares no bindings is refused rather than silently doing nothing.
 
+`--simulate` goes one step further and applies those drives: the changes become a script, the script
+runs through the same runner the editor, the CLI and the tests use, and a definition of the project
+takes the value. `--definition <id>` picks which definition (the root otherwise). The script carries
+drives only — expectations belong to whoever knows what the digital side should answer — so a
+definition without the bound pin fails with the runner's own message, `unknown interface pin 'a'
+(available: d, q)`, rather than reporting a pass that proved nothing.
+
 The editor has no equivalent control yet, so a binding is authored in the file and run from the
 command line.
 
