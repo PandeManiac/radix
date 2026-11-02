@@ -1005,3 +1005,9 @@ summary and full local verification results; see the PR for the latest CI state.
     failure, so it cannot silently produce a fabricated operating point. The new
     1e100 V / 1e308 ohm regression passes alongside all 20 `DcDiodeSolverTests`;
     broader verification remains pending.
+
+98. Verified the scale-safe diode junction solve end to end: focused diode/transient
+    tests passed 70/70; Release solution build passed with 0 warnings/errors; Core
+    passed 643/643; headless Editor passed 242/242. The DC Zener CLI remains at
+    -5.1082954 V with balanced branch currents and power, and the resistor divider
+    still reports its expected 5 V midpoint. GitHub CI for this checkpoint is pending.
