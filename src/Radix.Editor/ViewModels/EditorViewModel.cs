@@ -6630,6 +6630,11 @@ public sealed class EditorViewModel : ObservableObject
             hint: "ascending boundaries for reading nodes as levels, comma separated; blank falls back to equal thirds of the circuit's rail",
             apply: value => SetElectricalCircuitLevelThresholds(circuit.Id, value)));
         ElectricalCircuitFields.Add(new EditableField(
+            "Drive bindings",
+            FormatDriveBindings(circuit),
+            hint: "node:pin@ticksPerSecond, semicolon separated; a trailing ? states what the pin should read instead of driving it. Blank removes every binding",
+            apply: value => SetElectricalCircuitDriveBindings(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
             "Transient tolerance",
             _electricalTransientToleranceText,
             hint: "Blank runs the fixed step count; a positive relative tolerance enables adaptive stepping",
@@ -7996,6 +8001,95 @@ public sealed class EditorViewModel : ObservableObject
         AfterElectricalMutation(thresholds.Count == 0
             ? "Level boundaries cleared; readings fall back to the rail"
             : $"Level boundaries at {string.Join(", ", thresholds.Select(threshold => threshold.ToString("G6", CultureInfo.InvariantCulture)))} V");
+        return true;
+    }
+
+    private static string FormatDriveBindings(ElectricalCircuit circuit) =>
+        string.Join(
+            "; ",
+            circuit.DriveBindings.Select(binding =>
+                $"{binding.NodeId}:{binding.PinId}@{binding.TicksPerSecond.ToString("G6", CultureInfo.InvariantCulture)}{(binding.Checks ? "?" : string.Empty)}"));
+
+    /// <summary>
+    /// Replaces the circuit's drive bindings from one line of text. The compact form exists because a
+    /// binding is three short facts, and a table for three facts takes more panel than it is worth;
+    /// the trailing <c>?</c> is what distinguishes a claim about an output from a drive, and it is
+    /// easy to see and hard to type by accident.
+    /// </summary>
+    private bool SetElectricalCircuitDriveBindings(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            StatusText = $"No circuit '{circuitId}' to edit.";
+            return false;
+        }
+
+        List<ElectricalDriveBinding> bindings = [];
+        foreach (string part in value.Split([';', ','], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string text = part.Trim();
+            bool checks = text.EndsWith('?');
+            if (checks)
+            {
+                text = text[..^1].Trim();
+            }
+
+            string[] sides = text.Split(':');
+            if (sides.Length != 2)
+            {
+                StatusText = $"'{part}' is not node:pin@rate.";
+                return false;
+            }
+
+            string nodeId = sides[0].Trim();
+            if (circuit.FindNode(nodeId) is null)
+            {
+                StatusText = $"'{nodeId}' is not a node of this circuit.";
+                return false;
+            }
+
+            int at = sides[1].IndexOf('@');
+            string pinId = at < 0 ? string.Empty : sides[1][..at].Trim();
+            if (pinId.Length == 0)
+            {
+                StatusText = $"'{part}' needs a pin and a rate, as in out:a@1e9.";
+                return false;
+            }
+
+            if (!TryParseEngineeringValue(sides[1][(at + 1)..], out double rate) ||
+                !double.IsFinite(rate) || rate <= 0)
+            {
+                StatusText = $"'{part}' needs a positive tick rate after @.";
+                return false;
+            }
+
+            bindings.Add(new ElectricalDriveBinding
+            {
+                NodeId = nodeId,
+                PinId = pinId,
+                TicksPerSecond = rate,
+                Checks = checks,
+            });
+        }
+
+        bool unchanged = circuit.DriveBindings.Count == bindings.Count &&
+            circuit.DriveBindings.Zip(bindings).All(pair =>
+                pair.First.NodeId == pair.Second.NodeId &&
+                pair.First.PinId == pair.Second.PinId &&
+                pair.First.TicksPerSecond == pair.Second.TicksPerSecond &&
+                pair.First.Checks == pair.Second.Checks);
+        if (unchanged)
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.DriveBindings.Clear();
+        circuit.DriveBindings.AddRange(bindings);
+        AfterElectricalMutation(bindings.Count == 0
+            ? "Drive bindings cleared"
+            : $"{bindings.Count} drive binding(s): {FormatDriveBindings(circuit)}");
         return true;
     }
 
