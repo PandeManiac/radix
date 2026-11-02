@@ -1066,7 +1066,12 @@ the measured `dV(node)/d(swept)` — the same difference quotient as `radix dc -
 summary names the steepest point, so the shoulder a gate is judged on is visible in the panel
 rather than only on the command line. A value with no solved neighbour shows `-` instead of a
 zero. CSV export stays the CLI's table, which carries values only, so a file saved in the panel
-and one written by `radix dc --sweep --csv` remain identical. A value that
+and one written by `radix dc --sweep --csv` remain identical.
+
+Below the table the panel lists each node's measured **input windows** — the ranges where the
+curve does not amplify, using the same analysis as `radix dc --margins` — so the levels a gate
+can hold are visible next to the curve that produced them. A node whose curve never crosses
+unity gain reports one window covering the sweep instead of an empty list. A value that
 cannot solve keeps a row saying which failure it hit instead of vanishing, so a transfer
 curve with a missing point is visible as such. **Copy sweep CSV** / **Save sweep CSV…**
 write the table through `DcSweepReport.ToCsv`, the same writer the CLI uses, so a file

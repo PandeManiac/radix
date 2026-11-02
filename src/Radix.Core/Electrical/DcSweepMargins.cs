@@ -37,31 +37,23 @@ public static class DcSweepMargins
                 continue;
             }
 
+            // A crossing is where the curve starts or stops amplifying. Unity gain itself is not
+            // amplification, so a curve that sits exactly on it the whole way has no crossings and
+            // one legal window; treating the boundary as a crossing would shred that window.
+            bool leftAmplified = Math.Abs(left) > 1;
+            bool rightAmplified = Math.Abs(right) > 1;
+            if (leftAmplified == rightAmplified)
+            {
+                continue;
+            }
+
             double leftExcess = Math.Abs(left) - 1;
             double rightExcess = Math.Abs(right) - 1;
-            if (leftExcess == 0)
-            {
-                crossings.Add(gains[index].Value);
-                continue;
-            }
-
-            // A crossing needs a sign change in |gain| - 1; two points on the same side of unity
-            // do not bracket one, however steep the curve is.
-            if (leftExcess * rightExcess > 0)
-            {
-                continue;
-            }
-
             double span = rightExcess - leftExcess;
             crossings.Add(span == 0
                 ? gains[index].Value
                 : gains[index].Value +
                   ((gains[index + 1].Value - gains[index].Value) * (-leftExcess / span)));
-        }
-
-        if (gains.Count > 0 && gains[^1].Gain is double last && Math.Abs(last) == 1)
-        {
-            crossings.Add(gains[^1].Value);
         }
 
         return crossings;

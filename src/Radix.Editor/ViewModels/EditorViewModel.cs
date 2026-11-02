@@ -535,6 +535,12 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>Whether the sweep has a curve to draw.</summary>
     public bool HasElectricalDcSweepPlot => ElectricalDcSweepPlot is { IsEmpty: false };
 
+    /// <summary>Measured input windows per non-ground node: where the curve does not amplify.</summary>
+    public ObservableCollection<ElectricalDcSweepWindowItem> ElectricalDcSweepWindows { get; } = [];
+
+    /// <summary>Whether any node has a measured window to show.</summary>
+    public bool HasElectricalDcSweepWindows => ElectricalDcSweepWindows.Count > 0;
+
     /// <summary>Whether the refinement table has rows to show.</summary>
     public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
 
@@ -6902,6 +6908,7 @@ public sealed class EditorViewModel : ObservableObject
         _electricalDcSweepNetlist = netlist;
         _electricalDcSweepElementId = elementId;
         RebuildElectricalDcSweepPlot(rows, netlist);
+        RebuildElectricalDcSweepWindows(circuit, slopes);
         RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
         // Name the steepest measured slope: a transfer curve is judged where it switches.
         (string NodeId, double Gain)? steepest = null;
@@ -7003,9 +7010,33 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// The input windows each node holds, from the same measured slopes the table shows. A node
+    /// whose curve never crosses unity gain reports one window covering the sweep, which is the
+    /// honest answer for a circuit that only attenuates.
+    /// </summary>
+    private void RebuildElectricalDcSweepWindows(
+        ElectricalCircuit circuit,
+        Dictionary<string, IReadOnlyList<DcSweepGainPoint>> slopes)
+    {
+        ElectricalDcSweepWindows.Clear();
+        foreach (ElectricalNode node in circuit.Nodes)
+        {
+            if (slopes.TryGetValue(node.Id, out IReadOnlyList<DcSweepGainPoint>? points))
+            {
+                ElectricalDcSweepWindows.Add(
+                    new ElectricalDcSweepWindowItem(node.Id, DcSweepMargins.Windows(points)));
+            }
+        }
+
+        RaisePropertyChanged(nameof(HasElectricalDcSweepWindows));
+    }
+
     private void ClearElectricalDcSweep(string summary)
     {
         ElectricalDcSweepRows.Clear();
+        ElectricalDcSweepWindows.Clear();
+        RaisePropertyChanged(nameof(HasElectricalDcSweepWindows));
         ElectricalDcSweepPlot = null;
         _electricalDcSweepResult = null;
         _electricalDcSweepNetlist = null;

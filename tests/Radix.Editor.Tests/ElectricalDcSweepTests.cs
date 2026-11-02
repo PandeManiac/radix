@@ -67,6 +67,38 @@ public sealed class ElectricalDcSweepTests
     }
 
     [Fact]
+    public void TheSweepReportsTheInputWindowsItMeasured()
+    {
+        EditorViewModel viewModel = DividerWithSource();
+        viewModel.ElectricalDcSweepElementText = "r1";
+        viewModel.ElectricalDcSweepValuesText = "0:10:5";
+        Assert.True(viewModel.RunElectricalDcSweep());
+        Assert.True(viewModel.HasElectricalDcSweepWindows);
+
+        // A driven node moves one volt per volt, which is exactly unity gain, so nothing is
+        // amplified and the whole sweep is one legal window rather than a shredded set of them.
+        ElectricalDcSweepWindowItem windows = Assert.Single(viewModel.ElectricalDcSweepWindows);
+        Assert.Equal("n1", windows.NodeId);
+        Assert.Equal("0 → 10", windows.WindowsText);
+        Assert.Equal("1 window, 10 wide", windows.SummaryText);
+    }
+
+    [Fact]
+    public void EditingTheCircuitDropsTheMeasuredWindows()
+    {
+        EditorViewModel viewModel = DividerWithSource();
+        viewModel.ElectricalDcSweepElementText = "r1";
+        viewModel.ElectricalDcSweepValuesText = "0:10:5";
+        Assert.True(viewModel.RunElectricalDcSweep());
+        Assert.True(viewModel.HasElectricalDcSweepWindows);
+
+        viewModel.AddElectricalComponent();
+
+        Assert.False(viewModel.HasElectricalDcSweepWindows);
+        Assert.Empty(viewModel.ElectricalDcSweepWindows);
+    }
+
+    [Fact]
     public void ASingleValueIsNotASweep()
     {
         EditorViewModel viewModel = DividerWithSource();
