@@ -88,7 +88,13 @@ public sealed class ElectricalBiasSweepTests
         string[] rows = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Contains("# format: radix-mosfet-bias-sweep", rows);
-        Assert.Contains("bias_v,device,region,vgs_v,vds_v,id_a,gm_s,gds_s", rows);
+        Assert.Contains("bias_v,device,region,vgs_v,vds_v,id_a,gm_s,gds_s,cgs_fraction,cgd_fraction", rows);
+
+        // The gate-charge fractions travel with the table: a saturated device reads 2/3 and 0, a
+        // cut-off one reads zero twice, so a reader can see the region's effect on the charge.
+        Assert.Contains(
+            rows,
+            row => row.StartsWith("2.5,MNL,Triode,", StringComparison.Ordinal) && row.Contains(",0.5,0.5", StringComparison.Ordinal));
 
         string[] data = [.. rows.Where(row => !row.StartsWith('#'))];
         Assert.Equal(1 + (5 * 4), data.Length);

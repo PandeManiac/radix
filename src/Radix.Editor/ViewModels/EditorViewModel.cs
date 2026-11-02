@@ -759,9 +759,13 @@ public sealed class EditorViewModel : ObservableObject
                 ? Math.Abs(point.GateTransconductance / point.DrainConductance)
                 : double.PositiveInfinity;
 
+            // The gate charge is part of the operating point too: a saturated channel presents
+            // two thirds of its gate-source capacitance and none of its gate-drain capacitance.
             return $"{point.Region} · Vgs {Number(gateSource)} V · Vds {Number(drainSource)} V · " +
                 $"Id {Number(point.Current)} A · gm {Number(point.GateTransconductance)} S · " +
-                $"gds {Number(point.DrainConductance)} S · |gm/gds| {Number(intrinsic)}";
+                $"gds {Number(point.DrainConductance)} S · |gm/gds| {Number(intrinsic)} · " +
+                $"Cgs ×{Number(MosfetCapacitance.GateSourceFraction(point.Region))} · " +
+                $"Cgd ×{Number(MosfetCapacitance.GateDrainFraction(point.Region))}";
         }
         catch (Exception exception) when (exception is DcSolveException or ArgumentException)
         {
@@ -7630,7 +7634,7 @@ public sealed class EditorViewModel : ObservableObject
         builder.Append("# format: radix-mosfet-bias-sweep\n");
         builder.Append("# version: 1\n");
         builder.Append("# device_count: ").Append(points[0].Devices.Count).Append('\n');
-        builder.Append("bias_v,device,region,vgs_v,vds_v,id_a,gm_s,gds_s\n");
+        builder.Append("bias_v,device,region,vgs_v,vds_v,id_a,gm_s,gds_s,cgs_fraction,cgd_fraction\n");
         foreach (MosfetBiasPoint point in points)
         {
             foreach (AcDeviceReport device in point.Devices)
@@ -7642,7 +7646,9 @@ public sealed class EditorViewModel : ObservableObject
                     .Append(Number(device.DrainSourceVolts)).Append(',')
                     .Append(Number(device.CurrentAmperes)).Append(',')
                     .Append(Number(device.Transconductance)).Append(',')
-                    .Append(Number(device.DrainConductance)).Append('\n');
+                    .Append(Number(device.DrainConductance)).Append(',')
+                    .Append(Number(device.GateSourceFraction)).Append(',')
+                    .Append(Number(device.GateDrainFraction)).Append('\n');
             }
         }
 

@@ -539,7 +539,10 @@ gain traceable to a device instead of to a matrix.
 The editor's inspector shows the same numbers for the selected transistor, beside the bias it was
 measured at. Without a bias the circuit sits at its rest state — each source at its value at t = 0 —
 so a driven gate reads `Cutoff`; entering `VIN=1.3` puts it on the transition and the region, `gm`,
-`gds` and `|gm/gds|` appear next to the capacitances they are assembled with.
+`gds` and `|gm/gds|` appear next to the capacitances they are assembled with, together with the
+gate-charge fractions that region presents (`Cgs ×`, `Cgd ×`), so the bias dependence sits beside
+the fields that author it. The bias-sweep CSV carries the same two columns for every device at
+every bias.
 
 One operating point says where a device sits; a sweep says where it switches. `radix ac
 --bias-sweep 0:5:11` steps the drive and prints every transistor's region, `Vgs`, `Vds`, `gm` and

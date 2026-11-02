@@ -52,8 +52,14 @@ public sealed class ElectricalDeviceOperatingPointTests
         // The same ratio the CLI reports for this device at the same bias: the panel and the
         // command line evaluate one device model, so they cannot disagree.
         string ratio = text[(text.IndexOf("|gm/gds| ", StringComparison.Ordinal) + 9)..];
-        double intrinsic = double.Parse(ratio, System.Globalization.CultureInfo.InvariantCulture);
+        double intrinsic = double.Parse(
+            ratio[..ratio.IndexOf(' ')], System.Globalization.CultureInfo.InvariantCulture);
         Assert.InRange(intrinsic, 300, 400);
+
+        // A saturated channel presents two thirds of its gate-source capacitance and none of its
+        // gate-drain capacitance: the inspector says so where the capacitances are edited.
+        Assert.Contains("Cgs ×0.6667", text, StringComparison.Ordinal);
+        Assert.Contains("Cgd ×0", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -70,7 +76,14 @@ public sealed class ElectricalDeviceOperatingPointTests
 
         string text = viewModel.ElectricalDeviceOperatingPointText;
         string ratio = text[(text.IndexOf("|gm/gds| ", StringComparison.Ordinal) + 9)..];
-        Assert.InRange(double.Parse(ratio, System.Globalization.CultureInfo.InvariantCulture), 0, 0.01);
+        Assert.InRange(
+            double.Parse(ratio[..ratio.IndexOf(' ')], System.Globalization.CultureInfo.InvariantCulture),
+            0,
+            0.01);
+
+        // Triode, so the channel connects gate to both terminals equally.
+        Assert.Contains("Cgs ×0.5", text, StringComparison.Ordinal);
+        Assert.Contains("Cgd ×0.5", text, StringComparison.Ordinal);
     }
 
     [Fact]
