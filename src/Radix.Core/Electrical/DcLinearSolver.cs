@@ -183,35 +183,86 @@ public sealed record DcDiode(
 
         double low = Math.Min(terminalVolts, 0) - 1;
         double high = Math.Max(terminalVolts, 0) + 1;
-        for (int index = 0; index < 80 && JunctionResidual(low, terminalVolts) > 0; index++)
+        double lowResidual = JunctionResidual(low, terminalVolts);
+        double highResidual = JunctionResidual(high, terminalVolts);
+        for (int index = 0; index < 2_048 && lowResidual > 0; index++)
         {
-            low -= Math.Max(1, Math.Abs(low));
+            double next = low - Math.Max(1, Math.Abs(low));
+            if (!double.IsFinite(next) || next >= low)
+            {
+                next = -double.MaxValue;
+            }
+
+            if (next == low)
+            {
+                break;
+            }
+
+            low = next;
+            lowResidual = JunctionResidual(low, terminalVolts);
         }
 
-        for (int index = 0; index < 80 && JunctionResidual(high, terminalVolts) < 0; index++)
+        for (int index = 0; index < 2_048 && highResidual < 0; index++)
         {
-            high += Math.Max(1, Math.Abs(high));
+            double next = high + Math.Max(1, Math.Abs(high));
+            if (!double.IsFinite(next) || next <= high)
+            {
+                next = double.MaxValue;
+            }
+
+            if (next == high)
+            {
+                break;
+            }
+
+            high = next;
+            highResidual = JunctionResidual(high, terminalVolts);
         }
 
-        if (JunctionResidual(low, terminalVolts) > 0 || JunctionResidual(high, terminalVolts) < 0)
+        if (double.IsNaN(lowResidual) || double.IsNaN(highResidual) ||
+            lowResidual > 0 || highResidual < 0)
         {
-            return terminalVolts;
+            throw new InvalidOperationException(
+                "Could not bracket a finite diode junction voltage for the requested terminal voltage.");
         }
 
-        for (int index = 0; index < 120; index++)
+        for (int index = 0; index < 2_200; index++)
         {
-            double mid = (low + high) / 2;
-            if (JunctionResidual(mid, terminalVolts) > 0)
+            double span = high - low;
+            double mid = double.IsFinite(span)
+                ? low + (span / 2)
+                : (low / 2) + (high / 2);
+            if (mid == low || mid == high)
+            {
+                return Math.Abs(lowResidual) <= Math.Abs(highResidual) ? low : high;
+            }
+
+            double midResidual = JunctionResidual(mid, terminalVolts);
+            if (double.IsNaN(midResidual))
+            {
+                throw new InvalidOperationException(
+                    "Diode junction evaluation produced an indeterminate residual.");
+            }
+
+            if (midResidual == 0)
+            {
+                return mid;
+            }
+
+            if (midResidual > 0)
             {
                 high = mid;
+                highResidual = midResidual;
             }
             else
             {
                 low = mid;
+                lowResidual = midResidual;
             }
         }
 
-        return (low + high) / 2;
+        throw new InvalidOperationException(
+            "Diode junction bisection exceeded its bounded iteration limit.");
     }
 
     private double JunctionResidual(double junctionVolts, double terminalVolts) =>

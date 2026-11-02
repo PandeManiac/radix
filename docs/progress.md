@@ -997,3 +997,11 @@ summary and full local verification results; see the PR for the latest CI state.
     existing fixed 120-step bisection returned about 3.76e63 V instead of the
     small-signal reference near 2.59e-199 V, violating the terminal relation. The
     test currently fails and is published before changing the solver.
+
+
+97. Replaced the fixed 120-step junction bisection with bounded bracket expansion
+    and bisection through representable floating-point values. The old fallback that
+    returned terminal voltage when bracketing failed is now an explicit numerical
+    failure, so it cannot silently produce a fabricated operating point. The new
+    1e100 V / 1e308 ohm regression passes alongside all 20 `DcDiodeSolverTests`;
+    broader verification remains pending.

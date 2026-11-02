@@ -137,8 +137,9 @@ prediction.
 
 An optional series resistance `Rs` adds the terminal relation
 `Vterminal = Vjunction + Rs * I`. The junction voltage is recovered from the
-terminal voltage by a monotonic scalar bisection, and the circuit-level Newton
-iteration linearizes the combined terminal conductance
+terminal voltage by a monotonic scalar bisection that continues until the floating-
+point bracket can no longer be narrowed. The circuit-level Newton iteration
+linearizes the combined terminal conductance
 `Gj / (1 + Rs * Gj)`. `Rs = 0` (the default) is the ideal junction. The model is
 isothermal and has no junction capacitance, self-heating, or high-injection
 effects. Reverse breakdown is included only when `BV` and `IBV` are supplied.
