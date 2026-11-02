@@ -20,7 +20,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Project-electrical-validation checkpoint: `55d63769b5bbd48e4c2a4bd0225feb638e1d5fad`
   (structural errors in `radix validate` and editor diagnostics).
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 834/834, CLI tests 3/3, Editor tests 313/313. The buffered example solves both
+  tests 836/836, CLI tests 3/3, Editor tests 313/313. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
   diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
@@ -85,6 +85,20 @@ humans; update it at each milestone instead of relying on chat history.
   when a circuit-level diagnostic is located.
 - Verification: Release build clean (0 warnings/errors); Core 834/834, CLI 3/3,
   Editor 313/313; focused diagnostic navigation/rendering tests 3/3.
+
+## Session 2026-11-02 (electrical project validation cache)
+
+- `ElectricalCircuitValidator.ValidateProject` now caches each authored circuit's own
+  structural report and each subcircuit edge's terminal/override report. The recursive
+  walk is retained because depth and cycle diagnostics depend on the root context.
+- Added an opt-in 65-circuit maximum-depth benchmark and an equivalence regression
+  that checks `ValidateProject` against the deduplicated union of per-circuit
+  `Validate` calls on a shared child hierarchy.
+- Measured on this VM: 2.80 ms before; 1.17, 1.17, and 1.41 ms after (three runs,
+  200 project validations each). The benchmark is opt-in under
+  `RADIX_ELECTRICAL_VALIDATION_BENCH=1`.
+- Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
+  Editor 313/313.
 
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 

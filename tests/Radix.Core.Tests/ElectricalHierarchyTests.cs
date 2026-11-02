@@ -1,12 +1,46 @@
+using System.Diagnostics;
+using System.Globalization;
 using Radix.Core.Electrical;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Radix.Core.Tests;
 
-public sealed class ElectricalHierarchyTests
+public sealed class ElectricalHierarchyTests(ITestOutputHelper output)
 {
+    [Fact]
+    public void ProjectValidationCostAtMaximumHierarchyIsMeasured()
+    {
+        if (Environment.GetEnvironmentVariable("RADIX_ELECTRICAL_VALIDATION_BENCH") != "1")
+        {
+            return;
+        }
+
+        (ElectricalCircuit root, ElectricalCircuit[] circuits) = CreateHierarchyChain(
+            ElectricalCircuitValidator.MaxHierarchyDepth);
+        Assert.Contains(root, circuits);
+        CircuitProject project = CreateProject();
+        project.ElectricalCircuits.AddRange(circuits);
+
+        _ = ElectricalCircuitValidator.ValidateProject(project);
+        const int runs = 200;
+        DiagnosticBag last = null!;
+        var watch = Stopwatch.StartNew();
+        for (int run = 0; run < runs; run++)
+        {
+            last = ElectricalCircuitValidator.ValidateProject(project);
+        }
+
+        watch.Stop();
+        Assert.False(last.HasErrors);
+        output.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{circuits.Length} circuits at depth {ElectricalCircuitValidator.MaxHierarchyDepth}: " +
+            $"{watch.Elapsed.TotalMilliseconds / runs:F3} ms per project validation ({runs} runs)"));
+    }
+
     [Fact]
     public void SubcircuitExpandsIntoTheParentSolveWithPrefixedInternalNodes()
     {
@@ -207,6 +241,35 @@ public sealed class ElectricalHierarchyTests
         Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "RAD-ELEC-045");
         Assert.Throws<ElectricalCircuitValidationException>(
             () => root.ToDcNetlist(Resolve(circuits)));
+    }
+
+    [Fact]
+    public void ProjectValidationMatchesPerCircuitValidationForASharedHierarchy()
+    {
+        ElectricalCircuit divider = CreateDividerChild();
+        divider.FindComponent("R1")!.FindTerminal("a")!.NodeId = "missing";
+        ElectricalCircuit first = CreateWrapper("first", divider);
+        ElectricalCircuit second = CreateWrapper("second", divider);
+        CircuitProject project = CreateProject();
+        project.ElectricalCircuits.Add(divider);
+        project.ElectricalCircuits.Add(first);
+        project.ElectricalCircuits.Add(second);
+
+        var expected = new DiagnosticBag();
+        foreach (ElectricalCircuit circuit in project.ElectricalCircuits)
+        {
+            foreach (Diagnostic diagnostic in ElectricalCircuitValidator.Validate(
+                circuit,
+                project.FindElectricalCircuit))
+            {
+                expected.AddUnique(diagnostic);
+            }
+        }
+
+        DiagnosticBag actual = ElectricalCircuitValidator.ValidateProject(project);
+
+        Assert.Equal(expected.ToArray(), actual.ToArray());
+        Assert.Contains(actual, diagnostic => diagnostic.Code == "RAD-ELEC-011");
     }
 
     [Fact]

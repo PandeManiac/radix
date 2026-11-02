@@ -514,9 +514,15 @@ public static class ElectricalCircuitValidator
     {
         ArgumentNullException.ThrowIfNull(project);
         var diagnostics = new DiagnosticBag();
+        var ownCache = new Dictionary<ElectricalCircuit, DiagnosticBag>();
+        var referenceCache = new Dictionary<ElectricalComponent, DiagnosticBag>();
         foreach (ElectricalCircuit circuit in project.ElectricalCircuits)
         {
-            foreach (Diagnostic diagnostic in Validate(circuit, project.FindElectricalCircuit))
+            foreach (Diagnostic diagnostic in Validate(
+                circuit,
+                project.FindElectricalCircuit,
+                ownCache,
+                referenceCache))
             {
                 diagnostics.AddUnique(diagnostic);
             }
@@ -532,10 +538,17 @@ public static class ElectricalCircuitValidator
     /// </summary>
     public static DiagnosticBag Validate(
         ElectricalCircuit circuit,
-        Func<string, ElectricalCircuit?>? resolve)
+        Func<string, ElectricalCircuit?>? resolve) =>
+        Validate(circuit, resolve, ownCache: null, referenceCache: null);
+
+    private static DiagnosticBag Validate(
+        ElectricalCircuit circuit,
+        Func<string, ElectricalCircuit?>? resolve,
+        Dictionary<ElectricalCircuit, DiagnosticBag>? ownCache,
+        Dictionary<ElectricalComponent, DiagnosticBag>? referenceCache)
     {
         ArgumentNullException.ThrowIfNull(circuit);
-        DiagnosticBag diagnostics = ValidateOwn(circuit);
+        DiagnosticBag diagnostics = ValidateOwnCached(circuit, ownCache);
         if (!circuit.Components.Any(component =>
             ElectricalComponentMetadata.IsSubcircuit(component.Kind)))
         {
@@ -553,7 +566,33 @@ public static class ElectricalCircuitValidator
 
         var validated = new HashSet<string>(StringComparer.Ordinal) { circuit.Id };
         var stack = new HashSet<string>(StringComparer.Ordinal) { circuit.Id };
-        ValidateHierarchy(circuit, resolve, diagnostics, validated, stack, depth: 0);
+        ValidateHierarchy(
+            circuit,
+            resolve,
+            diagnostics,
+            validated,
+            stack,
+            depth: 0,
+            ownCache,
+            referenceCache);
+        return diagnostics;
+    }
+
+    private static DiagnosticBag ValidateOwnCached(
+        ElectricalCircuit circuit,
+        Dictionary<ElectricalCircuit, DiagnosticBag>? cache)
+    {
+        if (cache is null)
+        {
+            return ValidateOwn(circuit);
+        }
+
+        if (!cache.TryGetValue(circuit, out DiagnosticBag? diagnostics))
+        {
+            diagnostics = ValidateOwn(circuit);
+            cache.Add(circuit, diagnostics);
+        }
+
         return diagnostics;
     }
 
@@ -962,7 +1001,9 @@ public static class ElectricalCircuitValidator
         DiagnosticBag diagnostics,
         HashSet<string> validated,
         HashSet<string> stack,
-        int depth)
+        int depth,
+        Dictionary<ElectricalCircuit, DiagnosticBag>? ownCache = null,
+        Dictionary<ElectricalComponent, DiagnosticBag>? referenceCache = null)
     {
         foreach (ElectricalComponent component in circuit.Components)
         {
@@ -1009,17 +1050,40 @@ public static class ElectricalCircuitValidator
                 continue;
             }
 
-            ValidateSubcircuitTerminals(circuit, component, child, diagnostics, path);
-            ValidateSubcircuitOverrides(component, child, diagnostics, path);
+            if (referenceCache is null)
+            {
+                ValidateSubcircuitTerminals(circuit, component, child, diagnostics, path);
+                ValidateSubcircuitOverrides(component, child, diagnostics, path);
+            }
+            else
+            {
+                if (!referenceCache.TryGetValue(component, out DiagnosticBag? referenceDiagnostics))
+                {
+                    referenceDiagnostics = new DiagnosticBag();
+                    ValidateSubcircuitTerminals(circuit, component, child, referenceDiagnostics, path);
+                    ValidateSubcircuitOverrides(component, child, referenceDiagnostics, path);
+                    referenceCache.Add(component, referenceDiagnostics);
+                }
+
+                diagnostics.AddRange(referenceDiagnostics);
+            }
 
             if (!validated.Add(child.Id))
             {
                 continue;
             }
 
-            diagnostics.AddRange(ValidateOwn(child));
+            diagnostics.AddRange(ValidateOwnCached(child, ownCache));
             stack.Add(child.Id);
-            ValidateHierarchy(child, resolve, diagnostics, validated, stack, depth + 1);
+            ValidateHierarchy(
+                child,
+                resolve,
+                diagnostics,
+                validated,
+                stack,
+                depth + 1,
+                ownCache,
+                referenceCache);
             stack.Remove(child.Id);
         }
     }

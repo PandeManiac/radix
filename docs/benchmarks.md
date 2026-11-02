@@ -289,3 +289,16 @@ Measured on an AMD Ryzen 9 9950X3D (32 logical cores), .NET SDK 10.0.113, releas
 Two things stand out. First, per-step cost at these sizes is dominated by fixed work per point — assembling companion models, building the dictionaries behind each `TransientPoint`, and the solve — rather than by the cubic factorisation: 50 nodes cost about the same per step as 25 nodes at 1,000 steps, and only ~1.8× at 5,000 steps. The cubic term is therefore not yet the wall at the circuit sizes the editor handles; per-point allocation is. Second, the benchmark immediately found a correctness defect: with `stop = 0.01` and 1,000 steps the run reported 1,002 points instead of 1,001, because the remainder tolerance `|stop| * 1e-14` was smaller than the rounding accumulated over 1,000 additions, so a sliver step survived. The tolerance now scales with the number of points, and `TransientTimeGridTests` pins the grid across several stop-time and step-count pairs.
 
 An honest note on the numbers: they are single-threaded (the solver does not parallelise), recorded on a shared desktop, and only lightly warmed up, so the ratios are the useful signal rather than the absolute microseconds.
+
+## Electrical project validation
+
+`ElectricalHierarchyTests.ProjectValidationCostAtMaximumHierarchyIsMeasured` builds a 65-circuit chain with the maximum 64 nested subcircuit edges and validates the whole project 200 times. It is opt-in, so the normal suite only checks correctness:
+
+```bash
+RADIX_ELECTRICAL_VALIDATION_BENCH=1 dotnet test \
+  tests/Radix.Core.Tests/Radix.Core.Tests.csproj -c Release \
+  --filter FullyQualifiedName~ProjectValidationCostAtMaximumHierarchyIsMeasured \
+  --logger "console;verbosity=detailed"
+```
+
+On this VM, the pre-change sample was **2.80 ms per project validation**. Caching each circuit's own structural report and each subcircuit edge's terminal/override report brought three post-change samples to **1.17, 1.17, and 1.41 ms**. The recursive walk remains, because depth and cycle diagnostics depend on the root context; only repeated, context-independent validation is cached.
