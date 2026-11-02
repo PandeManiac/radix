@@ -99,6 +99,11 @@ public sealed class TransientSolverTests
             adaptive.FinalPoint.ElementCurrents["R1"],
             adaptive.FinalPoint.ElementCurrents["DZ1"],
             1e-8);
+        Assert.NotNull(result.Energy);
+        Assert.NotNull(adaptive.Energy);
+        Assert.True(
+            adaptive.Energy.RelativeResidual < result.Energy.RelativeResidual,
+            $"adaptive energy residual {adaptive.Energy.RelativeResidual:G6} was not below fixed-step residual {result.Energy.RelativeResidual:G6}.");
     }
 
     [Theory]
