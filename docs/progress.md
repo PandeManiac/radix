@@ -1295,3 +1295,9 @@ summary and full local verification results; see the PR for the latest CI state.
      now remain finite for opposite-sign extremes. The new 1e308 V sweep regression
      reports the expected 0.5 s settling time, and all eight focused
      `TransientMetricsTests` pass; broader verification remains pending.
+
+145. Verified scale-safe settling metrics: Release solution build passed with 0
+     warnings/errors, Core passed 664/664, and headless Editor passed 242/242 with
+     `.local-native`. The extreme swing regression reports 0.5 s rather than
+     immediate settling, and `radix transient examples/transient-rc.json --json`
+     still completes with 63 points and the expected finite settling metric.
