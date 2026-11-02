@@ -123,6 +123,9 @@ internal static class Program
                   [--stop <s>]               Stop time in seconds (default: file analysis or 1)
                   [--steps <n>]              Fixed steps, 1..10000 (default: file analysis or 100)
                   [--method <name>]          backward-euler (default) or trapezoidal
+                  [--bias-dependent-capacitance]
+                                             Re-evaluate each MOSFET's gate capacitance from the
+                                             region it is solved in, at every step
                   [--tol <x>]                Adaptive step control with this relative tolerance
                   [--atol <x>]               Absolute adaptive tolerance (default: derived from the circuit)
                   [--initial-step <s>]       First adaptive step (default: (stop-start)/steps)
@@ -846,7 +849,7 @@ internal static class Program
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
                 "refine-levels", "sweep", "compare", "compare-tolerance",
             ],
-            ["json", "refine", "csv"]);
+            ["json", "refine", "csv", "bias-dependent-capacitance"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
@@ -888,6 +891,14 @@ internal static class Program
         {
             Console.Error.WriteLine($"transient input error: {exception.Message}");
             return 2;
+        }
+
+        // Device capacitances follow the region each step solves, instead of holding the authored
+        // values for the whole run. Off by default because the authored values are what every
+        // earlier measurement was taken with.
+        if (options.ContainsKey("bias-dependent-capacitance"))
+        {
+            document.Netlist.UseBiasDependentCapacitance();
         }
 
         TransientOptions defaults = document.Analysis ?? new TransientOptions();

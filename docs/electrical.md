@@ -1451,9 +1451,28 @@ capacitor from the last accepted solution at the start of every step, so a satur
 charged through two thirds of its gate-source capacitance and none of its gate-drain. It is off by
 default, because a constant capacitance is what every earlier measurement was taken with, and the
 stamps stay explicit — the value is constant within a step, taken from the previous one, so the
-charge moved is that value times the voltage change it saw. A gate driven through 10 kΩ into a
-saturated device settles in two thirds of the time, which is the closed form the test checks
-against 3/2.
+charge moved is that value times the voltage change it saw.
+
+`radix transient --bias-dependent-capacitance` runs a file with the model on, which is how the
+table below was measured. On the ternary inverter over 120 ns at 1280 steps:
+
+| quantity | constant model | bias-dependent |
+|---|---|---|
+| gate bus settle (2 % band) | 67.4 ns | **43.6 ns** |
+| `out` settle | 49.5 ns | **38.4 ns** |
+| `out_low` peak | 5.0194 V | **5.0000 V** |
+
+The gate arrives 1.55× sooner, and the overshoot above the rail disappears: with the authored
+values held for the whole run, a saturated device keeps a drain-gate capacitance it should have
+lost, and that Miller feedback is what pushes the output past 5 V. A single-device stage shows the
+same effect more sharply — the gate load is `Cgs + (1+A)·Cgd`, so removing the drain coupling takes
+the time constant down by about 4.5 when both capacitors are 1 pF and the gain is one. That closed
+form, not a fitted number, is what the test asserts.
+
+The ratio is refined across three grids (240, 480 and 960 steps) and required to stay inside 10 % of
+its mean, so the figure is an effect of the model rather than of where samples landed. Arrival times
+remain quantised by the step, which is why the comparison is stated as a ratio between two runs on
+the same grid.
 
 Project format 15 stores the choice per device as `biasDependentCapacitance`, so a file can ask
 for it; the field is written only for a MOSFET, and a non-MOSFET that sets it is rejected on load
