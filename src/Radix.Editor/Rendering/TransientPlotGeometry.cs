@@ -11,17 +11,22 @@ public sealed class TransientPlotSeries
     public TransientPlotSeries(
         string nodeId,
         IReadOnlyList<TransientPlotPoint> points,
-        int colorIndex = 0)
+        int colorIndex = 0,
+        string? label = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
         ArgumentNullException.ThrowIfNull(points);
         ArgumentOutOfRangeException.ThrowIfNegative(colorIndex);
         NodeId = nodeId;
+        Label = string.IsNullOrWhiteSpace(label) ? nodeId : label;
         Points = points;
         ColorIndex = colorIndex;
     }
 
     public string NodeId { get; }
+
+    /// <summary>Display label for the legend; defaults to the node ID.</summary>
+    public string Label { get; }
 
     public IReadOnlyList<TransientPlotPoint> Points { get; }
 
@@ -168,7 +173,8 @@ public sealed class TransientPlot
                 valueMax = Math.Max(valueMax, point.Value);
             }
 
-            prepared.Add(new TransientPlotSeries(candidate.NodeId, points, candidate.ColorIndex));
+            prepared.Add(new TransientPlotSeries(
+                candidate.NodeId, points, candidate.ColorIndex, candidate.Label));
         }
 
         if (prepared.Count == 0 || !(timeEnd > timeStart))
@@ -193,7 +199,7 @@ public sealed class TransientPlot
         int stride = Math.Max(1, (int)Math.Ceiling(longest / (double)maximumPointsPerSeries));
         TransientPlotSeries[] decimated = prepared
             .Select(entry => new TransientPlotSeries(
-                entry.NodeId, Decimate(entry.Points, stride), entry.ColorIndex))
+                entry.NodeId, Decimate(entry.Points, stride), entry.ColorIndex, entry.Label))
             .ToArray();
 
         return new TransientPlot(

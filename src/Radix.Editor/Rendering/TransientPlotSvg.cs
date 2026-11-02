@@ -152,7 +152,7 @@ public static class TransientPlotSvg
                 "stroke-width=\"1.4\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
             svg.AppendLine(
                 $"  <text x=\"{N(LeftMargin + (index * 56))}\" y=\"11\" font-size=\"8.5\" " +
-                $"fill=\"{colour}\">{Escape(series.NodeId)}</text>");
+                $"fill=\"{colour}\">{Escape(series.Label)}</text>");
         }
 
         // Axis units come from the model - volts for a transient, dB for a response - and the

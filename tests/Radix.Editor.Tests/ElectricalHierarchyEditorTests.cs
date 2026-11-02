@@ -122,6 +122,23 @@ public sealed class ElectricalHierarchyEditorTests
         Assert.Equal("Summing resistor", childElement.Name);
         Assert.Equal("root", viewModel.ElectricalElementResults
             .Single(element => element.Id == "VIN").Scope);
+
+        Assert.True(viewModel.SolveElectricalTransient(), viewModel.ElectricalTransientSummary);
+        ElectricalTransientSeriesItem series = viewModel.ElectricalTransientSeries
+            .Single(item => item.NodeId == "X1/out_low");
+        Assert.Equal("X1", series.Scope);
+        Assert.Equal("Low-threshold inverter output", series.Name);
+        Assert.Contains("X1", series.DisplayName, StringComparison.Ordinal);
+        Assert.Equal("X1", viewModel.ElectricalTransientMetrics
+            .Single(item => item.NodeId == "X1/out_low").Scope);
+
+        viewModel.ElectricalAcSweepDriveText = "VIN";
+        viewModel.ElectricalAcSweepRangeText = "1e3:1e6:3";
+        Assert.True(viewModel.RunElectricalAcSweep(), viewModel.ElectricalAcSweepSummary);
+        ElectricalAcSweepRowItem acRow = viewModel.ElectricalAcSweepRows
+            .First(item => item.NodeId == "X1/out_low");
+        Assert.Equal("X1", acRow.Scope);
+        Assert.Contains("X1", acRow.DisplayName, StringComparison.Ordinal);
     }
 
     [Fact]

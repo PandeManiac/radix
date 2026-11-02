@@ -148,7 +148,7 @@ public sealed class TransientPlotView : Control
                 previous = current;
             }
 
-            FormattedText name = Text(series.NodeId, 8.5, brush);
+            FormattedText name = Text(series.Label, 8.5, brush);
             context.DrawText(name, new Point(LeftMargin + (index * 56), 2));
         }
 

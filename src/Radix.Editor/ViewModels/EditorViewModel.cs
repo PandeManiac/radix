@@ -7237,6 +7237,10 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>Formats an instance scope and authored node name for a plot legend.</summary>
+    private static string FormatElectricalHierarchyLabel((string Scope, string Name) label) =>
+        label.Scope == "root" ? label.Name : $"{label.Scope} · {label.Name}";
+
     /// <summary>
     /// Resolves the authored name and owning instance path of a possibly prefixed netlist node.
     /// The final segment is a node ID; every earlier segment names a direct subcircuit instance.
@@ -7432,19 +7436,29 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         ElectricalTransientMetrics.Clear();
-        if (result.Metrics is TransientMetrics metrics)
-        {
-            foreach (TransientNodeMetrics node in metrics.Nodes)
-            {
-                ElectricalTransientMetrics.Add(new ElectricalTransientMetricItem(node));
-            }
-        }
-
         string[] plottedNodes = result.Points
             .SelectMany(point => point.NodeVoltages.Keys)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
+        var transientNodeLabels = plottedNodes.ToDictionary(
+            node => node,
+            node => DescribeElectricalNode(node, circuit),
+            StringComparer.Ordinal);
+        if (result.Metrics is TransientMetrics metrics)
+        {
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                if (!transientNodeLabels.TryGetValue(node.NodeId, out var label))
+                {
+                    label = DescribeElectricalNode(node.NodeId, circuit);
+                }
+
+                ElectricalTransientMetrics.Add(new ElectricalTransientMetricItem(
+                    node, label.Scope, label.Name));
+            }
+        }
+
         _electricalTransientSeries = plottedNodes
             .Select((node, index) => new TransientPlotSeries(
                 node,
@@ -7453,15 +7467,19 @@ public sealed class EditorViewModel : ObservableObject
                         point.Time,
                         point.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0))
                     .ToArray(),
-                index))
+                index,
+                FormatElectricalHierarchyLabel(transientNodeLabels[node])))
             .ToArray();
         ElectricalTransientSeries.Clear();
         foreach (TransientPlotSeries series in _electricalTransientSeries)
         {
+            var label = transientNodeLabels[series.NodeId];
             ElectricalTransientSeries.Add(new ElectricalTransientSeriesItem(
                 series.NodeId,
                 series.ColorIndex,
-                _ => RebuildElectricalTransientPlot()));
+                _ => RebuildElectricalTransientPlot(),
+                label.Scope,
+                label.Name));
         }
 
         RebuildElectricalTransientPlot();
@@ -7940,6 +7958,10 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         IReadOnlyList<string> nodes = response.Nodes;
+        var acNodeLabels = nodes.ToDictionary(
+            node => node,
+            node => DescribeElectricalNode(node, circuit),
+            StringComparer.Ordinal);
         ElectricalAcSweepRows.Clear();
         foreach (AcPoint point in response.Points)
         {
@@ -7947,12 +7969,15 @@ public sealed class EditorViewModel : ObservableObject
             foreach (string node in nodes)
             {
                 double magnitude = point.NodeVoltages[node].Magnitude;
+                var label = acNodeLabels[node];
                 ElectricalAcSweepRows.Add(new ElectricalAcSweepRowItem(
                     point.FrequencyHertz,
                     node,
                     magnitude <= 0 ? null : 20 * Math.Log10(magnitude),
                     magnitude <= 0 ? null : AcResponse.PhaseDegrees(point.NodeVoltages[node]),
-                    first));
+                    first,
+                    label.Scope,
+                    label.Name));
                 first = false;
             }
         }
@@ -7960,7 +7985,7 @@ public sealed class EditorViewModel : ObservableObject
         // Keep the study, not the formatted table: the export must describe what the solver
         // produced, so it is built from the response and not from the display strings.
         _electricalAcSweepReport = AcReport.From(response, null, circuit.Id);
-        RebuildElectricalAcSweepPlot(response, nodes, from, to);
+        RebuildElectricalAcSweepPlot(response, nodes, from, to, acNodeLabels);
         RaisePropertyChanged(nameof(HasElectricalAcSweepResult));
 
         // Name the loudest responding node and where it starts rolling off: a response is judged
@@ -8300,7 +8325,8 @@ public sealed class EditorViewModel : ObservableObject
         AcResponse response,
         IReadOnlyList<string> nodes,
         double from,
-        double to)
+        double to,
+        IReadOnlyDictionary<string, (string Scope, string Name)> nodeLabels)
     {
         var gainSeries = new List<TransientPlotSeries>();
         var phaseSeries = new List<TransientPlotSeries>();
@@ -8326,8 +8352,9 @@ public sealed class EditorViewModel : ObservableObject
             // A node with no response anywhere would flatten the vertical range to its floor.
             if (gain.Count > 1)
             {
-                gainSeries.Add(new TransientPlotSeries(nodeId, gain, index));
-                phaseSeries.Add(new TransientPlotSeries(nodeId, phase, index));
+                string legend = FormatElectricalHierarchyLabel(nodeLabels[nodeId]);
+                gainSeries.Add(new TransientPlotSeries(nodeId, gain, index, legend));
+                phaseSeries.Add(new TransientPlotSeries(nodeId, phase, index, legend));
             }
         }
 

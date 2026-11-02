@@ -37,6 +37,9 @@ humans; update it at each milestone instead of relying on chat history.
 - The solved ELEMENTS table now resolves child component names and the same
   instance scope. A nested prefix such as `X1/RSUM1` is shown as `X1` plus the
   authored label `Summing resistor` instead of an opaque element ID.
+- Transient series checkboxes, transient node metrics, AC rows, and the transient/AC
+  plot legends use the same hierarchy labels, so prefixed child nodes are readable
+  in every analysis rather than only in the DC table.
 - Added a regression that loads `examples/electrical-ternary-hierarchy.radix`, solves
   `chain`, and checks that `X1/out_low` appears with scope `X1`, its authored name,
   and no duplicate `X1/out` row.

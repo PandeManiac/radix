@@ -32,10 +32,16 @@ public sealed class ElectricalCircuitListItem
 /// <summary>One node's peak and settling summary, shown beside the transient points.</summary>
 public sealed class ElectricalTransientMetricItem
 {
-    public ElectricalTransientMetricItem(TransientNodeMetrics metrics)
+    public ElectricalTransientMetricItem(
+        TransientNodeMetrics metrics,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentNullException.ThrowIfNull(metrics);
         NodeId = metrics.NodeId;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? NodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         ExtremesText = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
             $"min {metrics.MinimumVolts:G4} · max {metrics.MaximumVolts:G4} · final {metrics.FinalVolts:G4}");
@@ -50,6 +56,12 @@ public sealed class ElectricalTransientMetricItem
     }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     public string ExtremesText { get; }
 
@@ -70,16 +82,27 @@ public sealed class ElectricalTransientSeriesItem : ObservableObject
     public ElectricalTransientSeriesItem(
         string nodeId,
         int colorIndex,
-        Action<ElectricalTransientSeriesItem> changed)
+        Action<ElectricalTransientSeriesItem> changed,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
         ArgumentNullException.ThrowIfNull(changed);
         NodeId = nodeId;
         ColorIndex = colorIndex;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? nodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         _changed = changed;
     }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     public int ColorIndex { get; }
 
@@ -95,7 +118,7 @@ public sealed class ElectricalTransientSeriesItem : ObservableObject
         }
     }
 
-    public override string ToString() => NodeId;
+    public override string ToString() => DisplayName;
 }
 
 /// <summary>

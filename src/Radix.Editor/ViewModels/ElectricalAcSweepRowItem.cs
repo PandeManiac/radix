@@ -15,7 +15,9 @@ public sealed class ElectricalAcSweepRowItem
         string nodeId,
         double? gainDecibels,
         double? phaseDegrees,
-        bool showFrequency)
+        bool showFrequency,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
 
@@ -23,6 +25,9 @@ public sealed class ElectricalAcSweepRowItem
             ? hertz.ToString("G4", CultureInfo.InvariantCulture) + " Hz"
             : string.Empty;
         NodeId = nodeId;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? nodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         GainText = gainDecibels is double gain
             ? gain.ToString("G4", CultureInfo.InvariantCulture) + " dB"
             : "-";
@@ -34,6 +39,12 @@ public sealed class ElectricalAcSweepRowItem
     public string FrequencyText { get; }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     /// <summary>Gain in decibels, or <c>-</c> when the node has no measurable response.</summary>
     public string GainText { get; }

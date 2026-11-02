@@ -1263,7 +1263,7 @@
                           <DataTemplate x:DataType="vm:ElectricalAcSweepRowItem">
                             <Grid ColumnDefinitions="72,*,Auto,Auto" ColumnSpacing="8" Margin="0,1">
                               <TextBlock Text="{Binding FrequencyText}" FontFamily="monospace" FontSize="9.5" />
-                              <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontSize="9.5" />
+                              <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontSize="9.5" ToolTip.Tip="{Binding NodeId}" />
                               <TextBlock Grid.Column="2" Text="{Binding GainText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" HorizontalAlignment="Right" />
                               <TextBlock Grid.Column="3" Text="{Binding PhaseText}" FontFamily="monospace" FontSize="9.5" Classes="muted" HorizontalAlignment="Right" />
                             </Grid>
@@ -1425,7 +1425,7 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalTransientSeriesItem">
-                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" Content="{Binding NodeId}" FontSize="9" Margin="0,0,10,0" ToolTip.Tip="Show this node on the plot" />
+                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" Content="{Binding DisplayName}" FontSize="9" Margin="0,0,10,0" ToolTip.Tip="{Binding NodeId}" />
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
@@ -1451,8 +1451,8 @@
                       <ItemsControl ItemsSource="{Binding ElectricalTransientMetrics}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalTransientMetricItem">
-                            <Grid ColumnDefinitions="78,*,Auto" ColumnSpacing="6" Margin="0,1">
-                              <TextBlock Text="{Binding NodeId}" FontSize="9.5" FontWeight="SemiBold" />
+                            <Grid ColumnDefinitions="140,*,Auto" ColumnSpacing="6" Margin="0,1">
+                              <TextBlock Text="{Binding DisplayName}" FontSize="9.5" FontWeight="SemiBold" ToolTip.Tip="{Binding NodeId}" />
                               <TextBlock Grid.Column="1" Text="{Binding ExtremesText}" FontFamily="monospace" FontSize="9.5" TextWrapping="Wrap" ToolTip.Tip="{Binding PeakText}" />
                               <TextBlock Grid.Column="2" Text="{Binding SettleText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" />
                             </Grid>
