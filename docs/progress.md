@@ -1065,3 +1065,9 @@ summary and full local verification results; see the PR for the latest CI state.
      any later step that rounds to no time progress and return `NonConvergent` with
      a precise message. The three focused regressions and all 26 transient solver
      tests pass; broader verification remains pending.
+
+107. Verified the transient clock-resolution guard: Release solution build passed
+     with 0 warnings/errors, Core passed 649/649, and headless Editor passed 242/242
+     with `.local-native`. `radix transient examples/transient-rc.json --json`
+     completed all 61 points, ending at 0.003 s with a finite RC state and energy
+     ledger. The earlier failing fixed/adaptive representability tests now pass.
