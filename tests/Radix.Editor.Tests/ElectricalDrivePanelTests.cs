@@ -95,8 +95,10 @@ public sealed class ElectricalDrivePanelTests
         SetField(viewModel, "Transient steps", "1280");
 
         Assert.True(viewModel.RunElectricalDriveBindings());
+        // Two ticks, not the whole window: an audit compares the end of each input plateau, where a
+        // zero-delay table can be held against a circuit that takes time to settle.
         Assert.Contains(
-            "would have produced the same levels on 1 supplied pin(s) over 45 tick(s)",
+            "would have produced the same levels on 1 supplied pin(s) over 2 tick(s)",
             viewModel.ElectricalDriveSummary,
             StringComparison.Ordinal);
     }

@@ -75,8 +75,9 @@ public sealed class ExternalSupplyExampleTests
             audit.Passed,
             string.Join("; ", audit.Result.Failures.Select(failure => failure.Message)));
 
-        // The supplied pin is asked about across the whole window, exactly as a claim would be.
-        Assert.Equal(45, audit.CheckedTicks);
+        // One plateau of the driven input plus the final tick; transitions are skipped because the
+        // circuit is still settling there and a zero-delay table cannot describe that.
+        Assert.Equal(2, audit.CheckedTicks);
         Assert.Equal(1, audit.AuditedPins);
     }
 

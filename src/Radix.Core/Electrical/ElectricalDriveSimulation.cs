@@ -128,16 +128,48 @@ public static class ElectricalDriveSimulation
             ? 1
             : (long)Math.Ceiling(window / (double)MaximumChecksPerBinding);
 
+        // Which ticks an audit compares at: the last tick of each plateau of the pins that drive the
+        // definition. Comparing every tick would fail a zero-delay table while the circuit is still
+        // settling, which is a difference in delay and not in what the network computes at rest.
+        List<long>? settledTicks = null;
+        if (auditedPins is not null)
+        {
+            var ends = new SortedSet<long>();
+            foreach (ElectricalDriveBinding driven in circuit.DriveBindings.Where(binding =>
+                         !auditedPins.Contains(binding.PinId)))
+            {
+                foreach ((_, long at) in driven.Steps(run, sampler))
+                {
+                    if (at > 0)
+                    {
+                        ends.Add(at - 1);
+                    }
+                }
+            }
+
+            settledTicks = [.. ends];
+        }
+
         foreach (ElectricalDriveBinding binding in circuit.DriveBindings.Where(binding =>
                      binding.Checks || (auditedPins?.Contains(binding.PinId) ?? false)))
         {
             List<(ElectricalDriveStep Step, long At)> steps = [.. binding.Steps(run, sampler)];
-            for (long tick = 0; tick < endTick; tick += stride)
+            if (settledTicks is null)
             {
-                AddClaim(tick);
-            }
+                for (long tick = 0; tick < endTick; tick += stride)
+                {
+                    AddClaim(tick);
+                }
 
-            AddClaim(endTick);
+                AddClaim(endTick);
+            }
+            else
+            {
+                foreach (long tick in settledTicks.Append(endTick).Distinct())
+                {
+                    AddClaim(tick);
+                }
+            }
 
             void AddClaim(long tick)
             {
