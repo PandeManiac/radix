@@ -1,15 +1,21 @@
 {
   "format": "radix-project",
-  "version": 5,
+  "version": 10,
   "name": "Ternary 9 \u00D7 2 RAM demo",
   "root": "demo.t-memory",
   "settings": {
     "maxEvaluationsPerComponentPerTimestamp": 64,
+    "maxPendingEvents": 1000000,
     "maxRecordedNetChanges": 500000,
     "defaultAdvanceTicks": 10,
     "traceAllNets": true
   },
-  "view": {},
+  "view": {
+    "definition": "demo.t-memory",
+    "scale": 1.444736842105263,
+    "offsetX": 50,
+    "offsetY": 69.42105263157899
+  },
   "domains": [
     {
       "id": "binary",
