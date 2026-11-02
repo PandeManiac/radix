@@ -442,6 +442,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalBiasSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalBiasSweepCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied bias sweep as CSV");
+        }
+    }
+
+    private async void ElectricalBiasSweepSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalBiasSweepCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, csv, "csv", CsvFileType);
+        }
+    }
+
     private async void ElectricalAcSweepCopySvg_Click(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalAcSweepSvg(out string svg))

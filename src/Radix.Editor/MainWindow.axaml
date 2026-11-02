@@ -1210,6 +1210,29 @@
                     </StackPanel>
                   </Border>
 
+                  <TextBlock Text="BIAS SWEEP" Classes="section" />
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBox Text="{Binding ElectricalBiasSweepRangeText, Mode=TwoWay}" FontSize="9.5" Watermark="0:5:11" ToolTip.Tip="from:to:count in volts; each value holds the drive there and solves the circuit" />
+                    <Button Grid.Column="1" Content="Sweep bias" Command="{Binding RunElectricalBiasSweepCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Step the drive with the AC drive id and report every transistor's region and slope at each value" />
+                  </Grid>
+                  <TextBlock Text="{Binding ElectricalBiasSweepSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" Margin="0,0,0,4" />
+                  <Border
+                      IsVisible="{Binding HasElectricalBiasSweepResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,4">
+                    <StackPanel Spacing="3">
+                      <controls:TransientPlotView Plot="{Binding ElectricalBiasSweepPlot}" Height="130" Margin="0,2,0,4" IsVisible="{Binding HasElectricalBiasSweepPlot}" />
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button x:Name="ElectricalBiasSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalBiasSweepCopyCsv_Click" ToolTip.Tip="Copy transconductance against bias for every device as CSV" />
+                        <Button x:Name="ElectricalBiasSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalBiasSweepSaveCsv_Click" ToolTip.Tip="Save the bias sweep as CSV" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
                   <TextBlock Text="AC SWEEP" Classes="section" />
                   <Grid ColumnDefinitions="58,*,58,Auto" ColumnSpacing="6" Margin="0,0,0,4">
                     <TextBox x:Name="ElectricalAcSweepDriveBox" Text="{Binding ElectricalAcSweepDriveText, Mode=TwoWay}" Width="58" FontSize="9.5" Watermark="VIN" ToolTip.Tip="Id of the voltage source whose transfer function is measured" />

@@ -546,7 +546,13 @@ One operating point says where a device sits; a sweep says where it switches. `r
 `gds` at each value, so the ternary gate's two transitions appear as a sequence of regions rather
 than as one number taken at a bias somebody guessed. The sweep holds the source at each value in
 turn — a waveform would otherwise pin every point to the rest state — and it measures devices with
-the same helper the AC analysis uses, so the two cannot report different slopes for one bias. Those are the same numbers the DC sweep measures as a slope at
+the same helper the AC analysis uses, so the two cannot report different slopes for one bias.
+
+The editor's **BIAS SWEEP** section runs the same study on the selected circuit, using the AC
+drive id and a `from:to:count` range. It draws transconductance against bias with one series per
+transistor — a device that is cut off at 0 V and conducting at 2.5 V is a slope you can see rather
+than a region column you have to read — names the device that conducts hardest and the bias where
+it does, and copies the whole table as CSV with one row per device per bias. Those are the same numbers the DC sweep measures as a slope at
 the same bias: because the analysis is linearized at the operating point, the test asserts that the
 AC magnitude at 1 Hz agrees with the difference quotient within 15 %, so the frequency-domain
 assembly and the DC slope cross-check each other instead of each being trusted alone.

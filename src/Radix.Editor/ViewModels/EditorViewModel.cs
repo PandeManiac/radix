@@ -210,6 +210,12 @@ public sealed class EditorViewModel : ObservableObject
     private TransientPlot? _electricalAcSweepPhasePlot;
     private string? _electricalDeviceOperatingPoint;
     private string _electricalDeviceBiasText = string.Empty;
+    private const string DefaultElectricalBiasSweepSummary =
+        "Name a source and a range, then Sweep bias to measure where each device switches.";
+    private string _electricalBiasSweepRangeText = "0:5:11";
+    private string _electricalBiasSweepSummary = DefaultElectricalBiasSweepSummary;
+    private IReadOnlyList<MosfetBiasPoint>? _electricalBiasSweepPoints;
+    private TransientPlot? _electricalBiasSweepPlot;
     private string _electricalSweepSummary =
         "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
@@ -332,6 +338,7 @@ public sealed class EditorViewModel : ObservableObject
         RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
         RunElectricalDcSweepCommand = new RelayCommand(() => RunElectricalDcSweep());
         RunElectricalAcSweepCommand = new RelayCommand(() => RunElectricalAcSweep());
+        RunElectricalBiasSweepCommand = new RelayCommand(() => RunElectricalBiasSweep());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -626,6 +633,41 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Whether the phase has a curve to draw.</summary>
     public bool HasElectricalAcSweepPhasePlot => ElectricalAcSweepPhasePlot is { IsEmpty: false };
+
+    /// <summary>Bias values for the device sweep as typed: <c>from:to:count</c>.</summary>
+    public string ElectricalBiasSweepRangeText
+    {
+        get => _electricalBiasSweepRangeText;
+        set => SetField(ref _electricalBiasSweepRangeText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the bias sweep, or why it could not run.</summary>
+    public string ElectricalBiasSweepSummary
+    {
+        get => _electricalBiasSweepSummary;
+        private set => SetField(ref _electricalBiasSweepSummary, value);
+    }
+
+    /// <summary>
+    /// Transconductance against bias, one series per transistor. A region column says what a
+    /// device is at one bias; this curve says where it switches, which is the shape of the gate.
+    /// </summary>
+    public TransientPlot? ElectricalBiasSweepPlot
+    {
+        get => _electricalBiasSweepPlot;
+        private set
+        {
+            _electricalBiasSweepPlot = value;
+            RaisePropertyChanged(nameof(ElectricalBiasSweepPlot));
+            RaisePropertyChanged(nameof(HasElectricalBiasSweepPlot));
+        }
+    }
+
+    /// <summary>Whether the bias sweep has a curve to draw.</summary>
+    public bool HasElectricalBiasSweepPlot => ElectricalBiasSweepPlot is { IsEmpty: false };
+
+    /// <summary>Whether the bias sweep has a result to show.</summary>
+    public bool HasElectricalBiasSweepResult => _electricalBiasSweepPoints is { Count: > 0 };
 
     /// <summary>
     /// The selected transistor's region and small-signal slopes at the circuit's DC operating
@@ -1469,6 +1511,9 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Measures the small-signal response of the selected circuit at its operating point.</summary>
     public ICommand RunElectricalAcSweepCommand { get; }
+
+    /// <summary>Steps the drive and measures every transistor's region and slope at each value.</summary>
+    public ICommand RunElectricalBiasSweepCommand { get; }
 
     public bool IsEditingFormat => _editingFormatId is not null;
 
@@ -7450,6 +7495,247 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Steps the chosen voltage source across the range and measures every transistor at each
+    /// value, using the same <see cref="MosfetBiasSweep"/> the command line prints. The source is
+    /// held at each bias rather than left to its waveform, which would pin every point to the rest
+    /// state and report one operating point eleven times.
+    /// </summary>
+    public bool RunElectricalBiasSweep()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ClearElectricalBiasSweep("Select an authored circuit before sweeping.");
+            StatusText = "No electrical circuit selected.";
+            return false;
+        }
+
+        string drive = (ElectricalAcSweepDriveText ?? string.Empty).Trim();
+        if (drive.Length == 0)
+        {
+            ClearElectricalBiasSweep("Enter the id of a voltage source to step, for example VIN.");
+            StatusText = "No bias source given.";
+            return false;
+        }
+
+        ElectricalComponent? source = circuit.FindComponent(drive);
+        if (source is null || source.Kind != ElectricalComponentKind.VoltageSource)
+        {
+            ClearElectricalBiasSweep(source is null
+                ? $"Circuit '{circuit.Id}' has no component '{drive}'."
+                : $"'{drive}' is a {source.Kind}; a bias sweep steps a voltage source.");
+            StatusText = "Bias source is not a voltage source.";
+            return false;
+        }
+
+        if (!TryParseBiasRange(
+                ElectricalBiasSweepRangeText, out double from, out double to, out int count, out string error))
+        {
+            ClearElectricalBiasSweep(error);
+            StatusText = "Invalid bias range.";
+            return false;
+        }
+
+        TransientNetlist netlist;
+        try
+        {
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+            if (validation.HasErrors)
+            {
+                ClearElectricalBiasSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
+                    "Fix the validation messages above.");
+                StatusText = "Bias sweep blocked by structural errors.";
+                return false;
+            }
+
+            netlist = circuit.ToTransientNetlist();
+        }
+        catch (Exception exception) when (
+            exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
+        {
+            ClearElectricalBiasSweep("Cannot build the electrical netlist: " + exception.Message);
+            StatusText = "Electrical netlist construction failed.";
+            return false;
+        }
+
+        IReadOnlyList<MosfetBiasPoint> points;
+        try
+        {
+            points = MosfetBiasSweep.Run(netlist, drive, MosfetBiasSweep.Linear(from, to, count));
+        }
+        catch (Exception exception) when (exception is ArgumentException or DcSolveException)
+        {
+            ClearElectricalBiasSweep("Cannot sweep the bias: " + exception.Message);
+            StatusText = "Bias sweep failed.";
+            return false;
+        }
+
+        if (points.Count == 0 || points[0].Devices.Count == 0)
+        {
+            ClearElectricalBiasSweep($"Circuit '{circuit.Id}' has no MOSFETs to sweep.");
+            StatusText = "Bias sweep found no devices.";
+            return false;
+        }
+
+        _electricalBiasSweepPoints = points;
+        RebuildElectricalBiasSweepPlot(points);
+        RaisePropertyChanged(nameof(HasElectricalBiasSweepResult));
+
+        // Name the device that reaches the largest transconductance and the bias where it does: the
+        // peak is the bias at which that device conducts hardest, which is what the curve shows.
+        AcDeviceReport? peakDevice = null;
+        double peakBias = 0;
+        double peakGm = double.NegativeInfinity;
+        foreach (MosfetBiasPoint point in points)
+        {
+            foreach (AcDeviceReport device in point.Devices)
+            {
+                if (device.Transconductance > peakGm)
+                {
+                    peakGm = device.Transconductance;
+                    peakBias = point.BiasVolts;
+                    peakDevice = device;
+                }
+            }
+        }
+
+        string peakNote = peakDevice is null
+            ? "no device conducts in this range"
+            : $"{peakDevice.Id} peaks at {Number(peakBias)} V with {Number(peakGm)} S";
+        ElectricalBiasSweepSummary =
+            $"{circuit.Id}: stepped '{drive}' over {points.Count} values · " +
+            $"{points[0].Devices.Count} devices · {peakNote}.";
+        StatusText = $"Swept '{drive}' over {points.Count} bias values";
+        return true;
+
+        static string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G4", CultureInfo.InvariantCulture)
+                : "inf";
+    }
+
+    /// <summary>
+    /// The bias sweep as CSV, one row per device per bias, so a table copied from the panel
+    /// describes the same study the command line prints.
+    /// </summary>
+    public bool TryBuildElectricalBiasSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalBiasSweepPoints is not { Count: > 0 } points)
+        {
+            return false;
+        }
+
+        var builder = new System.Text.StringBuilder();
+        builder.Append("# format: radix-mosfet-bias-sweep\n");
+        builder.Append("# version: 1\n");
+        builder.Append("# device_count: ").Append(points[0].Devices.Count).Append('\n');
+        builder.Append("bias_v,device,region,vgs_v,vds_v,id_a,gm_s,gds_s\n");
+        foreach (MosfetBiasPoint point in points)
+        {
+            foreach (AcDeviceReport device in point.Devices)
+            {
+                builder.Append(Number(point.BiasVolts)).Append(',')
+                    .Append(device.Id).Append(',')
+                    .Append(device.Region).Append(',')
+                    .Append(Number(device.GateSourceVolts)).Append(',')
+                    .Append(Number(device.DrainSourceVolts)).Append(',')
+                    .Append(Number(device.CurrentAmperes)).Append(',')
+                    .Append(Number(device.Transconductance)).Append(',')
+                    .Append(Number(device.DrainConductance)).Append('\n');
+            }
+        }
+
+        csv = builder.ToString();
+        return true;
+
+        static string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G6", CultureInfo.InvariantCulture)
+                : "inf";
+    }
+
+    private void RebuildElectricalBiasSweepPlot(IReadOnlyList<MosfetBiasPoint> points)
+    {
+        IReadOnlyList<AcDeviceReport> devices = points[0].Devices;
+        var series = new List<TransientPlotSeries>();
+        for (int index = 0; index < devices.Count; index++)
+        {
+            string deviceId = devices[index].Id;
+            var samples = new List<TransientPlotPoint>(points.Count);
+            foreach (MosfetBiasPoint point in points)
+            {
+                AcDeviceReport? device = point.Devices
+                    .FirstOrDefault(candidate => string.Equals(candidate.Id, deviceId, StringComparison.Ordinal));
+                if (device is not null)
+                {
+                    samples.Add(new TransientPlotPoint(point.BiasVolts, device.Transconductance));
+                }
+            }
+
+            if (samples.Count > 1)
+            {
+                series.Add(new TransientPlotSeries(deviceId, samples, index));
+            }
+        }
+
+        ElectricalBiasSweepPlot = series.Count == 0
+            ? null
+            : TransientPlot.Create(
+                series,
+                TransientPlot.DefaultMaximumPointsPerSeries,
+                null,
+                null,
+                "V",
+                "S");
+    }
+
+    private void ClearElectricalBiasSweep(string summary)
+    {
+        _electricalBiasSweepPoints = null;
+        ElectricalBiasSweepPlot = null;
+        ElectricalBiasSweepSummary = summary;
+        RaisePropertyChanged(nameof(HasElectricalBiasSweepResult));
+    }
+
+    private static bool TryParseBiasRange(
+        string? text,
+        out double from,
+        out double to,
+        out int count,
+        out string error)
+    {
+        from = 0;
+        to = 0;
+        count = 0;
+        error = string.Empty;
+
+        string[] parts = (text ?? string.Empty).Split(':');
+        if (parts.Length != 3)
+        {
+            error = "Enter a bias range as from:to:count, for example 0:5:11.";
+            return false;
+        }
+
+        if (!TryParseElectricalNumber(parts[0], out from) ||
+            !TryParseElectricalNumber(parts[1], out to))
+        {
+            error = "Both ends of the bias range must be finite numbers of volts.";
+            return false;
+        }
+
+        if (!int.TryParse(parts[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out count) ||
+            count < 2 ||
+            count > MosfetBiasSweep.MaximumCount)
+        {
+            error = $"The bias count must be from 2 to {MosfetBiasSweep.MaximumCount}.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// The gain and phase curves as one standalone SVG: two stacked panels sharing a
     /// decade-labelled axis, so a response can be shared as a file rather than a screenshot.
     /// </summary>
@@ -8365,6 +8651,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         ClearElectricalDcSweep(DefaultElectricalDcSweepSummary);
         ClearElectricalAcSweep(DefaultElectricalAcSweepSummary);
+        ClearElectricalBiasSweep(DefaultElectricalBiasSweepSummary);
         ElectricalNodeResults.Clear();
         ElectricalElementResults.Clear();
         InvalidateElectricalDeviceOperatingPoint();
