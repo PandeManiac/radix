@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 22,
+  "version": 23,
   "name": "Buffered ternary inverter",
   "root": "main",
   "domains": [

@@ -1,6 +1,6 @@
 {
   "format": "radix-project",
-  "version": 22,
+  "version": 23,
   "name": "Two cascaded electrical ternary inverters",
   "description": "A reusable resistor-summed ternary inverter is authored once as the 'sti' circuit and instantiated twice by the 'chain' root. The output at 0 V, 2.5 V and 5 V is identity because each stage inverts the ternary levels. Every internal node is solved from MOSFETs and resistors; no behavioural logic lookup is involved.",
   "root": "main",

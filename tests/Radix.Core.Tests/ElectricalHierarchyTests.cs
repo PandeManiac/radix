@@ -202,7 +202,14 @@ public sealed class ElectricalHierarchyTests
         };
         parent.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
         parent.Nodes.Add(new ElectricalNode { Id = "out", Name = "Output" });
-        parent.Components.Add(Subcircuit("X1", child, outNode: "out", groundNode: "gnd"));
+        ElectricalComponent instance = Subcircuit(
+            "X1", child, outNode: "out", groundNode: "gnd");
+        instance.Overrides.Add(new ElectricalOverride
+        {
+            ComponentId = "R1",
+            Value = 2_000,
+        });
+        parent.Components.Add(instance);
 
         var options = new TransientOptions { StopTime = 1e-3, Steps = 50 };
         TransientResult result = parent
@@ -214,7 +221,8 @@ public sealed class ElectricalHierarchyTests
         double h = options.TimeStep;
         for (int step = 1; step <= options.Steps; step++)
         {
-            expected /= 1 + (h / 1e-3);
+            // The child authors 1 kOhm, but this instance overrides it to 2 kOhm.
+            expected /= 1 + (h / 2e-3);
             Assert.Equal(expected, result.Points[step].NodeVoltages["out"], 9);
         }
 

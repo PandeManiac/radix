@@ -1257,6 +1257,15 @@ circuit must expose its ground as a port, because a subcircuit has no implicit g
 References must resolve, cannot form a cycle, and are validated with stable `RAD-ELEC-*` messages
 (`RAD-ELEC-029` to `RAD-ELEC-036`) before a solve.
 
+Each instance can also override the primary value of a direct child component. The inspector's
+**Overrides** field accepts `component=value` pairs separated by semicolons, for example
+`R3=3k`, with the same SI suffixes as ordinary values. The target must be a direct child that is
+not itself a subcircuit, and a source with a waveform cannot be overridden because it has no
+single primary value. An empty field restores the child's authored values. Overrides are applied
+during recursive DC and transient expansion and affect only that instance; they are serialized in
+project format 23. Invalid targets and values are rejected with `RAD-ELEC-037` to
+`RAD-ELEC-044` rather than being half-applied.
+
 `examples/electrical-ternary-hierarchy.radix` authors the resistor-summed ternary inverter once as
 the `sti` circuit, with ports `in`, `out`, `vdd` and `gnd`, then instantiates it twice in the
 `chain` root. The first stage drives `mid`; the second drives `out`. The root supplies 5 V and the
@@ -1287,16 +1296,17 @@ select `chain` to see the two subcircuit instances, their terminal bindings, and
 operating point. The instance nodes are reported under their prefixed names, so the internal
 implementation of each stage remains inspectable rather than being replaced by a black box.
 
-Tests: `ElectricalHierarchyTests` covers flat-equivalent solves, two independent instances,
-nested expansion, the serialized round trip, the transient RC closed form, every validation
-failure above, and the shipped chain at all three levels. `ElectricalHierarchyEditorTests` covers
-authoring ports, choosing a referenced circuit, filling and rebinding terminals, interface
-synchronization, invalid port text, and a solved parent.
+Tests: `ElectricalHierarchyTests` covers flat-equivalent solves, two independent instances with
+different overrides, nested expansion, the serialized round trip, the transient RC closed form,
+every validation failure above, and the shipped chain at all three levels.
+`ElectricalHierarchyEditorTests` covers authoring ports, choosing a referenced circuit, filling
+and rebinding terminals, interface synchronization, invalid port and override text, and a solved
+parent whose override changes the divider from 2.5 V to 3.75 V.
 
 Limitations: ports are bidirectional node aliases with no analog direction; a referenced circuit
-must expose its ground; all instances share the referenced circuit's parameters, with no
-per-instance override; there is no graphical analog schematic canvas; and hierarchical reports
-identify internal nodes only by their prefixed names. These are deliberate boundaries of this
+must expose its ground; an override replaces only one direct child's primary value, so it cannot
+add, remove, or retarget components or change a MOSFET channel; there is no graphical analog
+schematic canvas; and hierarchical reports identify internal nodes only by their prefixed names. These are deliberate boundaries of this
 intermediate hierarchy, not silent approximations of a full analogue design system.
 
 ## Editor DC sweep

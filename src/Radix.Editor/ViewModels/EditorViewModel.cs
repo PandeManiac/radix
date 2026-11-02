@@ -6427,6 +6427,7 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         component.Kind = kind;
         component.CircuitId = string.Empty;
+        component.Overrides.Clear();
         if (ElectricalComponentMetadata.IsSubcircuit(kind))
         {
             // A subcircuit has no terminal shape until a referenced circuit is chosen, and its
@@ -6479,6 +6480,7 @@ public sealed class EditorViewModel : ObservableObject
             PushUndo();
             component.CircuitId = string.Empty;
             component.Terminals.Clear();
+            component.Overrides.Clear();
             AfterElectricalMutation($"Cleared the referenced circuit of '{component.Id}'");
             return true;
         }
@@ -6499,6 +6501,7 @@ public sealed class EditorViewModel : ObservableObject
         PushUndo();
         component.CircuitId = target.Id;
         component.Value = 0;
+        component.Overrides.Clear();
         Dictionary<string, string> bindings = component.Terminals
             .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
@@ -6522,6 +6525,110 @@ public sealed class EditorViewModel : ObservableObject
 
         AfterElectricalMutation(
             $"'{component.Id}' reuses circuit '{target.Id}' ({target.Ports.Count} port(s))");
+        return true;
+    }
+
+    private bool SetElectricalComponentOverrides(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalCircuit? parent = _project.FindElectricalCircuit(circuitId);
+        ElectricalComponent? component = parent?.FindComponent(componentId);
+        if (parent is null || component is null ||
+            !ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+        {
+            return false;
+        }
+
+        ElectricalCircuit? child = _project.FindElectricalCircuit(component.CircuitId);
+        var overrides = new List<ElectricalOverride>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string entry in value.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int equals = entry.IndexOf('=');
+            if (equals <= 0 || equals != entry.LastIndexOf('='))
+            {
+                StatusText = $"Override '{entry}' must be written as component=value.";
+                return false;
+            }
+
+            string targetId = entry[..equals].Trim();
+            string number = entry[(equals + 1)..].Trim();
+            if (!Radix.Core.Model.Identifiers.IsValid(targetId))
+            {
+                StatusText = $"Override target '{targetId}' is invalid. {Radix.Core.Model.Identifiers.Rule}";
+                return false;
+            }
+
+            if (!ids.Add(targetId))
+            {
+                StatusText = $"Override target '{targetId}' is repeated.";
+                return false;
+            }
+
+            if (child is null)
+            {
+                StatusText = $"Choose a referenced circuit for '{component.Id}' before setting overrides.";
+                return false;
+            }
+
+            ElectricalComponent? target = child.FindComponent(targetId);
+            if (target is null)
+            {
+                StatusText = $"Circuit '{child.Id}' has no component '{targetId}'.";
+                return false;
+            }
+
+            if (ElectricalComponentMetadata.IsSubcircuit(target.Kind))
+            {
+                StatusText = $"'{targetId}' is a subcircuit; override a component inside it instead.";
+                return false;
+            }
+
+            if (target.Waveform.Count > 0)
+            {
+                StatusText = $"'{targetId}' has a waveform, so it has no single primary value to override.";
+                return false;
+            }
+
+            if (!TryParseEngineeringValue(number, out double parsed) || !double.IsFinite(parsed))
+            {
+                StatusText = $"Override value '{number}' must be a finite number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+                return false;
+            }
+
+            if (ElectricalComponentMetadata.RequiresPositiveValue(target.Kind) && parsed <= 0)
+            {
+                StatusText = $"Override for {target.Kind} '{targetId}' must be strictly positive.";
+                return false;
+            }
+
+            overrides.Add(new ElectricalOverride
+            {
+                ComponentId = targetId,
+                Value = parsed,
+            });
+        }
+
+        bool unchanged = overrides.Count == component.Overrides.Count &&
+            overrides.Zip(component.Overrides).All(pair =>
+                string.Equals(pair.First.ComponentId, pair.Second.ComponentId, StringComparison.Ordinal) &&
+                Math.Abs(pair.First.Value - pair.Second.Value) <= double.Epsilon);
+        if (unchanged)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Overrides.Clear();
+        component.Overrides.AddRange(overrides);
+        AfterElectricalMutation(
+            overrides.Count == 0
+                ? $"Cleared '{component.Id}' overrides"
+                : $"Updated '{component.Id}' overrides ({overrides.Count})");
         return true;
     }
 
@@ -6934,6 +7041,11 @@ public sealed class EditorViewModel : ObservableObject
                         component.CircuitId,
                         hint: "ID of the authored circuit this instance reuses; its ports become this component's terminals",
                         apply: value => SetElectricalSubcircuitCircuit(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Overrides",
+                        FormatElectricalOverrides(component),
+                        hint: "Primary values for direct child components as id=value, semicolon separated (for example r2=3k); blank uses the authored values. Unknown, duplicate, nested-subcircuit, waveform-driven, and non-positive passive targets are rejected",
+                        apply: value => SetElectricalComponentOverrides(circuit.Id, component.Id, value)));
                 }
                 else
                 {
@@ -7010,6 +7122,12 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
     }
+
+    private static string FormatElectricalOverrides(ElectricalComponent component) =>
+        string.Join(
+            "; ",
+            component.Overrides.Select(entry =>
+                $"{entry.ComponentId}={FormatElectricalValue(entry.Value)}"));
 
     private static string FormatElectricalWaveform(ElectricalComponent component) =>
         string.Join(

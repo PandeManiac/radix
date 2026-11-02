@@ -9,12 +9,12 @@ humans; update it at each milestone instead of relying on chat history.
 - Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
 - Draft PR #7 is open against `main`: electrical hierarchy, reusable subcircuits,
   and the buffered ternary inverter.
-- Latest verified checkpoint before this change: `b51a0031f8cd0199831e0430af01b95ee81a7eab`
-  (deterministic LF endings for DC sweep CSV exports).
-- This checkpoint generalizes the continuation fallback from MOSFET-only netlists
-  to mixed diode/MOSFET netlists and exposes `DcSolution.UsedContinuation`.
+- Latest verified backend checkpoint: `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`
+  (per-instance subcircuit value overrides in the netlist and format 23).
+- The editor inspector and documentation for those overrides are the next
+  checkpoint on this branch; use `git log` for the current tip.
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 827/827, CLI tests 2/2, Editor tests 311/311. The buffered example solves both
+  tests 830/830, CLI tests 2/2, Editor tests 311/311. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
   diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
@@ -26,6 +26,30 @@ humans; update it at each milestone instead of relying on chat history.
 - Latest verified code commit: see `git log agent/radix-verification`; benchmark documentation has a fresh seven-sample run recorded below.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
+
+## Session 2026-11-02 (per-instance subcircuit overrides)
+
+- Added `ElectricalOverride` and `ElectricalComponent.Overrides`: a subcircuit
+  instance can replace a direct child's primary value (resistance, source
+  amplitude, capacitance, inductance, or MOSFET transconductance) by child ID.
+- Applied overrides in both recursive DC and transient expansion, so two instances
+  of one child can solve to different outputs without copying the child circuit.
+- Added validation `RAD-ELEC-037` to `RAD-ELEC-044`: overrides only on subcircuits,
+  valid and unique IDs, finite values, known direct targets, no nested-subcircuit
+  target, positive passive/MOSFET values, and no waveform-driven source target.
+- Persisted overrides in project format 23 (`overrides` on a component, omitted when
+  empty); updated the two shipped examples and the format/electrical/README docs.
+- Added the editor's **Overrides** field (`child=value; ...`), parsing and validating
+  before mutation, clearing stale overrides when the referenced circuit or kind
+  changes, and one undo entry per accepted edit.
+- Backend checkpoint `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`. Tests cover two
+  instances with different R3 values, transient R1 override timing, a v23 round trip,
+  all new rejection codes, and an editor solve changing 2.5 V to 3.75 V.
+- Verification: build clean (0 warnings/errors), Core 830/830, CLI 2/2, Editor 311/311;
+  focused hierarchy tests 16/16 and editor hierarchy tests 3/3.
+- Remaining limitations: an override replaces only the primary value; it cannot add,
+  remove, retarget components, or change a MOSFET channel. There is still no
+  graphical analog schematic canvas, and hierarchical reports use prefixed names.
 
 ## Session 2026-11-02 (buffered ternary inverter)
 

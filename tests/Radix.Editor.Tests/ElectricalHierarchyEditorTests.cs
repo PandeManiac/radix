@@ -67,12 +67,25 @@ public sealed class ElectricalHierarchyEditorTests
         viewModel.SetElectricalTerminalNode("r2", "in", "n1");
         viewModel.SetElectricalTerminalNode("r2", "out", "n2");
         viewModel.SetElectricalTerminalNode("r2", "gnd", "gnd");
+
+        EditableField overrides = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Overrides");
+        overrides.Value = "r2=3k";
+        Assert.True(viewModel.ApplyField(overrides));
+        Assert.Equal(3_000, Assert.Single(instance.Overrides).Value);
         Assert.Empty(viewModel.ElectricalDiagnostics);
 
         Assert.True(viewModel.SolveElectricalCircuit(), viewModel.ElectricalSolveSummary);
         ElectricalNodeResultItem output = viewModel.ElectricalNodeResults.Single(node => node.Id == "n2");
-        Assert.Equal(2.5, output.Volts!.Value, 12);
+        Assert.Equal(3.75, output.Volts!.Value, 12);
         Assert.Contains("Solved 'dc2'", viewModel.ElectricalSolveSummary, StringComparison.Ordinal);
+
+        EditableField refreshed = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Overrides");
+        refreshed.Value = "missing=3k";
+        Assert.False(viewModel.ApplyField(refreshed));
+        Assert.Contains("no component", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3_000, Assert.Single(instance.Overrides).Value);
     }
 
     [Fact]

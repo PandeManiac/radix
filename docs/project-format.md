@@ -1,4 +1,4 @@
-# RADIX project format, version 12
+# RADIX project format, version 23
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,7 +9,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 8,
+  "version": 23,
   "name": "Example",
   "description": "optional",
   "root": "main",
@@ -25,7 +25,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `12`. Versions 1–12 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `23`. Versions 1–23 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
@@ -444,6 +444,26 @@ has no implicit global ground. References must resolve (`RAD-ELEC-029`), cannot 
 missing terminal (`RAD-ELEC-032`). A `value` is omitted on a subcircuit; device fields such as
 `channel` also belong only to a mosfet.
 
+A subcircuit instance may replace the primary value of a direct child component with
+`overrides`. This is reuse with per-instance values: one referenced divider can drive two
+different loads without copying the child circuit.
+
+```json
+"overrides": [
+  { "component": "R3", "value": 3000 }
+]
+```
+
+Each `component` names a direct, non-subcircuit component of the referenced circuit. Its `value`
+replaces the child's primary parameter for this instance only: resistance in ohms, source
+amplitude in volts or amperes, capacitance in farads, inductance in henries, or MOSFET
+transconductance in A/V^2. `overrides` is omitted when empty and is rejected on a built-in kind
+(`RAD-ELEC-037`). Invalid or repeated target IDs (`RAD-ELEC-038`, `RAD-ELEC-039`), non-finite
+values (`RAD-ELEC-040`), unknown targets (`RAD-ELEC-041`), nested subcircuits
+(`RAD-ELEC-042`), non-positive passive or MOSFET values (`RAD-ELEC-043`), and sources with a
+waveform (`RAD-ELEC-044`) are rejected. Overrides replace only a value; they cannot add,
+remove, or retarget a component.
+
 An independent source may also carry a `waveform`: a piecewise-linear drive in
 its own unit, given as absolute-time breakpoints. The transient solver
 interpolates between breakpoints and clamps outside their range, so a missing
@@ -475,7 +495,7 @@ one circuit selects it automatically.
 
 ## Versioning and migration
 
-Versions 1 through 22 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`; version 12 adds an optional electrical `channelLengthModulation`; version 13 adds optional mosfet `gateSourceCapacitance` and `gateDrainCapacitance` in farads; version 14 adds `drainSourceCapacitance`. Later versions add the bias-dependent capacitance choice, circuit level thresholds, node-to-pin drive bindings, and per-transition delay tolerances. Version 22 adds electrical circuit `ports` and the `subcircuit` component kind. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 23 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`; version 12 adds an optional electrical `channelLengthModulation`; version 13 adds optional mosfet `gateSourceCapacitance` and `gateDrainCapacitance` in farads; version 14 adds `drainSourceCapacitance`. Later versions add the bias-dependent capacitance choice, circuit level thresholds, node-to-pin drive bindings, and per-transition delay tolerances. Version 22 adds electrical circuit `ports` and the `subcircuit` component kind. Version 23 adds optional per-instance subcircuit `overrides`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.
