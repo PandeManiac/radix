@@ -24,7 +24,9 @@ public static class ProjectSerializer
     /// numeric-format descriptors. Version 5 adds optional editor view metadata.
     /// Version 6 adds optional per-definition waveform pin selections inside that view.
     /// Version 7 adds the pending-event limit. Version 8 adds optional authored
-    /// electrical circuits. Older files load unchanged; every version up to
+    /// electrical circuits. Version 11 adds the authored MOSFET component kind with
+    /// its optional channel and threshold-voltage fields. Older files load unchanged;
+    /// every version up to
     /// <see cref="CurrentVersion"/> is accepted, and saving always writes the current
     /// version.
     /// </summary>
@@ -283,6 +285,33 @@ public static class ProjectSerializer
     {
         string id = dto.Id ?? throw new ProjectFormatException($"Electrical circuit '{circuitId}' has a component without 'id'.");
         ElectricalComponentKind kind = ParseElectricalKind(dto.Kind, circuitId, id);
+        bool isMosfet = ElectricalComponentMetadata.IsMosfet(kind);
+        if (!isMosfet && (dto.Channel is not null || dto.ThresholdVoltage is not null))
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel' or 'thresholdVoltage'; those belong to a mosfet.");
+        }
+
+        if (isMosfet && dto.ThresholdVoltage is null)
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a mosfet and needs 'thresholdVoltage'.");
+        }
+
+        DcMosfetChannel channel = DcMosfetChannel.NChannel;
+        if (isMosfet)
+        {
+            try
+            {
+                channel = ElectricalComponentMetadata.ParseChannel(dto.Channel);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' is invalid: {exception.Message}", exception);
+            }
+        }
+
         var component = new ElectricalComponent
         {
             Id = id,
@@ -290,6 +319,8 @@ public static class ProjectSerializer
             Kind = kind,
             Value = dto.Value ?? throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' is missing 'value'."),
             InitialValue = dto.InitialValue,
+            Channel = channel,
+            ThresholdVoltage = dto.ThresholdVoltage ?? 1,
         };
 
         foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
@@ -325,6 +356,7 @@ public static class ProjectSerializer
             "current-source" => ElectricalComponentKind.CurrentSource,
             "capacitor" => ElectricalComponentKind.Capacitor,
             "inductor" => ElectricalComponentKind.Inductor,
+            "mosfet" => ElectricalComponentKind.Mosfet,
             null => throw new ProjectFormatException($"Electrical component '{circuitId}.{componentId}' is missing 'kind'."),
             _ => throw new ProjectFormatException(
                 $"Electrical component '{circuitId}.{componentId}' has unknown kind '{value}'."),
@@ -674,6 +706,12 @@ public static class ProjectSerializer
             Kind = ElectricalComponentMetadata.KindName(component.Kind),
             Value = component.Value,
             InitialValue = component.InitialValue,
+            Channel = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? ElectricalComponentMetadata.ChannelName(component.Channel)
+                : null,
+            ThresholdVoltage = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.ThresholdVoltage
+                : null,
             Waveform = component.Waveform.Count == 0
                 ? null
                 : component.Waveform.Select(point => new ElectricalWaveformPointDto

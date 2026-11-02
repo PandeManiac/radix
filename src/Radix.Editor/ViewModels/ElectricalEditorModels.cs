@@ -215,6 +215,7 @@ public sealed class ElectricalComponentKindChoice
             ElectricalComponentKind.CurrentSource => "Current source",
             ElectricalComponentKind.Capacitor => "Capacitor",
             ElectricalComponentKind.Inductor => "Inductor",
+            ElectricalComponentKind.Mosfet => "MOSFET",
             _ => kind.ToString(),
         };
         Unit = ElectricalComponentMetadata.Unit(kind);
@@ -244,7 +245,9 @@ public sealed class ElectricalComponentListItem
         KindLabel = new ElectricalComponentKindChoice(component.Kind).Label;
         ValueText = FormatValue(component.Value);
         Unit = component.Unit;
-        Summary = $"{KindLabel} · {ValueText} {Unit}";
+        Summary = ElectricalComponentMetadata.IsMosfet(component.Kind)
+            ? $"{KindLabel} · {ElectricalComponentMetadata.ChannelName(component.Channel)}-channel · Vt {FormatValue(component.ThresholdVoltage)} V · {ValueText} {Unit}"
+            : $"{KindLabel} · {ValueText} {Unit}";
     }
 
     public string Id { get; }

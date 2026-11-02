@@ -60,6 +60,12 @@ internal sealed class ElectricalComponentDto
 
     public double? InitialValue { get; set; }
 
+    /// <summary>MOSFET channel polarity: "n" or "p". Stored only for a mosfet.</summary>
+    public string? Channel { get; set; }
+
+    /// <summary>MOSFET threshold voltage magnitude in volts. Stored only for a mosfet.</summary>
+    public double? ThresholdVoltage { get; set; }
+
     public List<ElectricalWaveformPointDto>? Waveform { get; set; }
 
     public List<ElectricalTerminalDto>? Terminals { get; set; }

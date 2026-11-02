@@ -1,4 +1,4 @@
-# RADIX project format, version 8
+# RADIX project format, version 11
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -25,7 +25,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `8`. Versions 1–8 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `11`. Versions 1–11 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
@@ -375,6 +375,7 @@ Component kinds and terminal contracts:
 | `current-source` | `a` `positive`, `b` `negative` | A |
 | `capacitor` | `a`/`b`, both `passive` | F |
 | `inductor` | `a`/`b`, both `passive` | H |
+| `mosfet` | `drain`/`gate`/`source`, all `passive` | A/V^2 |
 
 A capacitor or inductor may carry an optional `initialValue`: the initial
 capacitor voltage in volts, or the initial inductor current in amperes, with the
@@ -382,6 +383,15 @@ sign taken from terminal `a` to terminal `b`. Omitting it means the component
 starts at the DC operating point, which is also what `radix dc` reports. The
 field is rejected on any other kind (`RAD-ELEC-015`) and must be finite
 (`RAD-ELEC-016`).
+
+A `mosfet` requires `channel` (`"n"` or `"p"`) and `thresholdVoltage` in volts.
+Both fields are rejected on any other kind (`RAD-ELEC-021`, `RAD-ELEC-022`), and
+its `value` is the transconductance after SPICE `KP`, which must be positive
+(`RAD-ELEC-007`). The gate is an insulated control terminal rather than a branch
+end: the reported element current flows from `drain` to `source`, the reported
+element voltage is `V(drain) - V(source)`, and the self-loop rule applies only to
+that pair (`RAD-ELEC-013`), so a gate tied to its own drain (diode-connected) or
+to a node at the same potential as the source (`Vgs = 0`) is legal.
 
 An independent source may also carry a `waveform`: a piecewise-linear drive in
 its own unit, given as absolute-time breakpoints. The transient solver
@@ -414,7 +424,7 @@ one circuit selects it automatically.
 
 ## Versioning and migration
 
-Versions 1 through 10 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 11 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

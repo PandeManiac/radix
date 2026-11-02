@@ -53,7 +53,7 @@ public sealed class ElectricalCircuitTests
         CircuitProject loaded = ProjectSerializer.LoadFromString(json, validate: false);
         ElectricalCircuit circuit = Assert.Single(loaded.ElectricalCircuits);
 
-        Assert.Equal(10, loaded.FormatVersion);
+        Assert.Equal(Radix.Core.Model.CircuitProject.CurrentFormatVersion, loaded.FormatVersion);
         Assert.Equal("divider", circuit.Id);
         Assert.Equal(5, circuit.ToDcNetlist().Solve().NodeVoltages["out"]);
         Assert.Equal(ElectricalComponentKind.VoltageSource, loaded.ElectricalCircuits[0].Components[0].Kind);
@@ -269,7 +269,7 @@ public sealed class ElectricalCircuitTests
         CircuitProject loaded = ProjectSerializer.LoadFromString(json, validate: false);
         ElectricalCircuit reloaded = Assert.Single(loaded.ElectricalCircuits);
 
-        Assert.Equal(10, loaded.FormatVersion);
+        Assert.Equal(Radix.Core.Model.CircuitProject.CurrentFormatVersion, loaded.FormatVersion);
         Assert.Equal(ElectricalComponentKind.Capacitor, reloaded.FindComponent("C1")!.Kind);
         Assert.Equal(1e-6, reloaded.FindComponent("C1")!.Value);
         Assert.Equal(2.5, reloaded.FindComponent("C1")!.InitialValue);
@@ -373,7 +373,7 @@ public sealed class ElectricalCircuitTests
             validate: false);
 
         ElectricalComponent reloaded = Assert.Single(loaded.ElectricalCircuits).FindComponent("V1")!;
-        Assert.Equal(10, loaded.FormatVersion);
+        Assert.Equal(Radix.Core.Model.CircuitProject.CurrentFormatVersion, loaded.FormatVersion);
         Assert.Equal([0.0, 2e-3], reloaded.Waveform.Select(point => point.Time));
         Assert.Equal([0.0, 10.0], reloaded.Waveform.Select(point => point.Value));
         Assert.True(reloaded.Waveform.Count == 2);

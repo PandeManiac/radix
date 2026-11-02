@@ -556,6 +556,7 @@ public sealed class EditorViewModel : ObservableObject
         new(ElectricalComponentKind.CurrentSource),
         new(ElectricalComponentKind.Capacitor),
         new(ElectricalComponentKind.Inductor),
+        new(ElectricalComponentKind.Mosfet),
     ];
 
     public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
@@ -6056,15 +6057,25 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
-        Dictionary<string, string> nodeBindings = component.Terminals
+        ElectricalTerminal[] previousTerminals = component.Terminals.ToArray();
+        Dictionary<string, string> nodeBindings = previousTerminals
             .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
+        ElectricalComponentKind previousKind = component.Kind;
         PushUndo();
         component.Kind = kind;
+        // A resistance is not a transconductance: a fresh resistor switched to a MOSFET
+        // used to keep 1000 and become a nonsensical 1000 A/V^2 device. Every other kind
+        // keeps the number already visible in the value field, as it always has.
+        if (ElectricalComponentMetadata.IsMosfet(kind) && !ElectricalComponentMetadata.IsMosfet(previousKind))
+        {
+            component.Value = DefaultElectricalValue(kind);
+        }
+
         AddElectricalTerminals(
             component,
-            nodeBindings.GetValueOrDefault("a", string.Empty),
-            nodeBindings.GetValueOrDefault("b", string.Empty));
+            ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 0),
+            ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 1));
         AfterElectricalMutation($"'{component.Id}' is now a {new ElectricalComponentKindChoice(kind).Label.ToLowerInvariant()}");
     }
 
@@ -6326,6 +6337,20 @@ public sealed class EditorViewModel : ObservableObject
                         FormatElectricalWaveform(component),
                         hint: $"Comma-separated time={component.Unit} breakpoints in seconds; both fields accept SI suffixes p, n, u, m, k, M, and G; blank keeps the source constant, and a DC solve always uses the value",
                         apply: value => SetElectricalComponentWaveform(circuit.Id, component.Id, value)));
+                }
+
+                if (ElectricalComponentMetadata.IsMosfet(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Channel (n/p)",
+                        ElectricalComponentMetadata.ChannelName(component.Channel),
+                        hint: "n-channel or p-channel; the terminal bindings are kept",
+                        apply: value => SetElectricalComponentChannel(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Threshold voltage (V)",
+                        FormatElectricalValue(component.ThresholdVoltage),
+                        hint: "Threshold voltage magnitude in volts; a negative value is a depletion device; SI suffixes p, n, u, m, k, M, and G are supported",
+                        apply: value => SetElectricalComponentThresholdVoltage(circuit.Id, component.Id, value)));
                 }
             }
         }
@@ -7622,6 +7647,74 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    private bool SetElectricalComponentChannel(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        if (!TryParseMosfetChannel(value, out DcMosfetChannel channel))
+        {
+            StatusText = "MOSFET channel must be 'n' or 'p'.";
+            return false;
+        }
+
+        if (component.Channel == channel)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Channel = channel;
+        AfterElectricalMutation(
+            $"'{component.Id}' is now {ElectricalComponentMetadata.ChannelName(channel)}-channel");
+        return true;
+    }
+
+    private bool SetElectricalComponentThresholdVoltage(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(value, out double parsed))
+        {
+            StatusText = "Threshold voltage must be a finite number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+            return false;
+        }
+
+        if (Math.Abs(component.ThresholdVoltage - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.ThresholdVoltage = parsed;
+        AfterElectricalMutation(
+            $"Updated '{component.Id}' threshold to {FormatElectricalValue(parsed)} V");
+        return true;
+    }
+
+    private static bool TryParseMosfetChannel(string value, out DcMosfetChannel channel)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "n" or "n-channel" or "nchannel":
+                channel = DcMosfetChannel.NChannel;
+                return true;
+            case "p" or "p-channel" or "pchannel":
+                channel = DcMosfetChannel.PChannel;
+                return true;
+            default:
+                channel = DcMosfetChannel.NChannel;
+                return false;
+        }
+    }
+
     private bool SetElectricalComponentInitialValue(string circuitId, string componentId, string value)
     {
         ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
@@ -7791,7 +7884,7 @@ public sealed class EditorViewModel : ObservableObject
             Math.Abs(pair.First.Time - pair.Second.Time) <= double.Epsilon &&
             Math.Abs(pair.First.Value - pair.Second.Value) <= double.Epsilon);
 
-    private void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
+    private static void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
     {
         component.Terminals.Clear();
         foreach (ElectricalTerminalTemplate template in ElectricalComponentMetadata.Terminals(component.Kind))
@@ -7801,9 +7894,44 @@ public sealed class EditorViewModel : ObservableObject
                 Id = template.Id,
                 Name = template.Name,
                 Polarity = template.Polarity,
-                NodeId = string.Equals(template.Id, "a", StringComparison.Ordinal) ? nodeA : nodeB,
+                NodeId = DefaultElectricalTerminalNode(template.Id, nodeA, nodeB),
             });
         }
+    }
+
+    /// <summary>
+    /// Where a newly created terminal binds. A two-terminal part splits the reference and
+    /// free node by position; a MOSFET binds its drain to the free node and its gate and
+    /// source to the reference node, which is a valid off device the designer then rewires.
+    /// </summary>
+    private static string DefaultElectricalTerminalNode(string terminalId, string nodeA, string nodeB) =>
+        terminalId switch
+        {
+            "b" or "drain" => nodeB,
+            _ => nodeA,
+        };
+
+    /// <summary>
+    /// The node a terminal keeps when its component changes kind: the same terminal ID if
+    /// the new kind has one, otherwise the node that terminal position held before.
+    /// </summary>
+    private static string ResolveElectricalTerminalNode(
+        IReadOnlyDictionary<string, string> bindings,
+        IReadOnlyList<ElectricalTerminal> previous,
+        int position)
+    {
+        string preferredId = position == 0 ? "a" : "b";
+        if (bindings.TryGetValue(preferredId, out string? bound) && !string.IsNullOrWhiteSpace(bound))
+        {
+            return bound;
+        }
+
+        if (position < previous.Count && !string.IsNullOrWhiteSpace(previous[position].NodeId))
+        {
+            return previous[position].NodeId;
+        }
+
+        return previous.FirstOrDefault()?.NodeId ?? string.Empty;
     }
 
     private string UniqueElectricalCircuitId()
@@ -7839,6 +7967,7 @@ public sealed class EditorViewModel : ObservableObject
             ElectricalComponentKind.CurrentSource => "i",
             ElectricalComponentKind.Capacitor => "c",
             ElectricalComponentKind.Inductor => "l",
+            ElectricalComponentKind.Mosfet => "m",
             _ => "x",
         };
         for (int index = 1; ; index++)
@@ -7858,6 +7987,9 @@ public sealed class EditorViewModel : ObservableObject
             ElectricalComponentKind.VoltageSource => 5,
             ElectricalComponentKind.Capacitor => 1e-6,
             ElectricalComponentKind.Inductor => 1e-3,
+            // 1 mA/V^2 with a 1 V threshold is a usable teaching device: strong enough
+            // to switch a kilo-ohm load from a 5 V rail, weak enough to keep currents sane.
+            ElectricalComponentKind.Mosfet => 1e-3,
             _ => 0.001,
         };
 

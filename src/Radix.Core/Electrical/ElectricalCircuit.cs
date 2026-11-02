@@ -10,6 +10,9 @@ public enum ElectricalComponentKind
     CurrentSource,
     Capacitor,
     Inductor,
+
+    /// <summary>A three-terminal voltage-controlled square-law MOSFET.</summary>
+    Mosfet,
 }
 
 /// <summary>Polarity metadata for an authored electrical terminal.</summary>
@@ -41,14 +44,56 @@ public static class ElectricalComponentMetadata
         new("b", "Negative", ElectricalTerminalPolarity.Negative),
     ];
 
+    private static readonly ElectricalTerminalTemplate[] MosfetTerminals =
+    [
+        new("drain", "Drain", ElectricalTerminalPolarity.Passive),
+        new("gate", "Gate", ElectricalTerminalPolarity.Passive),
+        new("source", "Source", ElectricalTerminalPolarity.Passive),
+    ];
+
     public static IReadOnlyList<ElectricalTerminalTemplate> Terminals(ElectricalComponentKind kind) =>
-        HasPassiveTerminals(kind) ? ResistorTerminals : SourceTerminals;
+        kind switch
+        {
+            ElectricalComponentKind.Mosfet => MosfetTerminals,
+            _ when HasPassiveTerminals(kind) => ResistorTerminals,
+            _ => SourceTerminals,
+        };
 
     /// <summary>Whether the kind's terminals are interchangeable passive terminals.</summary>
     public static bool HasPassiveTerminals(ElectricalComponentKind kind) =>
         kind is ElectricalComponentKind.Resistor
             or ElectricalComponentKind.Capacitor
             or ElectricalComponentKind.Inductor;
+
+    /// <summary>Whether the kind is a three-terminal voltage-controlled MOSFET.</summary>
+    public static bool IsMosfet(ElectricalComponentKind kind) => kind is ElectricalComponentKind.Mosfet;
+
+    /// <summary>
+    /// Whether the kind's primary parameter must be strictly positive. A MOSFET's primary
+    /// parameter is its transconductance, which cannot be zero or negative.
+    /// </summary>
+    public static bool RequiresPositiveValue(ElectricalComponentKind kind) =>
+        HasPassiveTerminals(kind) || IsMosfet(kind);
+
+    /// <summary>The stable JSON name of a MOSFET channel.</summary>
+    public static string ChannelName(DcMosfetChannel channel) =>
+        channel switch
+        {
+            DcMosfetChannel.NChannel => "n",
+            DcMosfetChannel.PChannel => "p",
+            _ => throw new ArgumentOutOfRangeException(nameof(channel)),
+        };
+
+    public static DcMosfetChannel ParseChannel(string? value) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "n" or "n-channel" or "nchannel" => DcMosfetChannel.NChannel,
+            "p" or "p-channel" or "pchannel" => DcMosfetChannel.PChannel,
+            null or "" => throw new ArgumentException(
+                "A MOSFET needs a channel: 'n' or 'p'.", nameof(value)),
+            _ => throw new ArgumentException(
+                $"Unknown MOSFET channel '{value}'; expected 'n' or 'p'.", nameof(value)),
+        };
 
     /// <summary>Whether the kind stores state, so it can carry an initial value.</summary>
     public static bool HasState(ElectricalComponentKind kind) =>
@@ -66,6 +111,7 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.CurrentSource => "Current",
             ElectricalComponentKind.Capacitor => "Capacitance",
             ElectricalComponentKind.Inductor => "Inductance",
+            ElectricalComponentKind.Mosfet => "Transconductance",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -77,6 +123,7 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.CurrentSource => "A",
             ElectricalComponentKind.Capacitor => "F",
             ElectricalComponentKind.Inductor => "H",
+            ElectricalComponentKind.Mosfet => "A/V^2",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -89,6 +136,7 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.CurrentSource => "current-source",
             ElectricalComponentKind.Capacitor => "capacitor",
             ElectricalComponentKind.Inductor => "inductor",
+            ElectricalComponentKind.Mosfet => "mosfet",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 }
@@ -156,6 +204,20 @@ public sealed class ElectricalComponent
     public double? InitialValue { get; set; }
 
     /// <summary>
+    /// MOSFET channel polarity. Meaningful only when <see cref="Kind"/> is
+    /// <see cref="ElectricalComponentKind.Mosfet"/>; other kinds ignore it and the
+    /// serializer does not store it for them.
+    /// </summary>
+    public DcMosfetChannel Channel { get; set; } = DcMosfetChannel.NChannel;
+
+    /// <summary>
+    /// MOSFET threshold voltage magnitude in volts (negative for a depletion device).
+    /// Meaningful only for <see cref="ElectricalComponentKind.Mosfet"/>; other kinds
+    /// ignore it and the serializer does not store it for them.
+    /// </summary>
+    public double ThresholdVoltage { get; set; } = 1;
+
+    /// <summary>
     /// Optional piecewise-linear drive for an independent source, in the source's unit.
     /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
     /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
@@ -215,8 +277,7 @@ public sealed class ElectricalCircuit
         var netlist = new DcNetlist(GroundNodeId);
         foreach (ElectricalComponent component in Components)
         {
-            string nodeA = component.FindTerminal("a")!.NodeId;
-            string nodeB = component.FindTerminal("b")!.NodeId;
+            (string nodeA, string nodeB) = ChannelNodes(component);
             switch (component.Kind)
             {
                 case ElectricalComponentKind.Resistor:
@@ -234,6 +295,16 @@ public sealed class ElectricalCircuit
                 case ElectricalComponentKind.Inductor:
                     // An ideal inductor is a zero-volt short at DC.
                     netlist.AddVoltageSource(component.Id, nodeA, nodeB, 0);
+                    break;
+                case ElectricalComponentKind.Mosfet:
+                    netlist.AddMosfet(
+                        component.Id,
+                        nodeA,
+                        component.FindTerminal("gate")!.NodeId,
+                        nodeB,
+                        component.Channel,
+                        component.ThresholdVoltage,
+                        component.Value);
                     break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
@@ -264,8 +335,7 @@ public sealed class ElectricalCircuit
         var netlist = new TransientNetlist(GroundNodeId);
         foreach (ElectricalComponent component in Components)
         {
-            string nodeA = component.FindTerminal("a")!.NodeId;
-            string nodeB = component.FindTerminal("b")!.NodeId;
+            (string nodeA, string nodeB) = ChannelNodes(component);
             switch (component.Kind)
             {
                 case ElectricalComponentKind.Resistor:
@@ -295,6 +365,16 @@ public sealed class ElectricalCircuit
                     }
 
                     break;
+                case ElectricalComponentKind.Mosfet:
+                    netlist.AddMosfet(
+                        component.Id,
+                        nodeA,
+                        component.FindTerminal("gate")!.NodeId,
+                        nodeB,
+                        component.Channel,
+                        component.ThresholdVoltage,
+                        component.Value);
+                    break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
             }
@@ -302,6 +382,18 @@ public sealed class ElectricalCircuit
 
         return netlist;
     }
+
+    /// <summary>
+    /// The two nodes that carry the branch current, reported as node A and node B. A
+    /// two-terminal part uses its <c>a</c>/<c>b</c> terminals; a MOSFET uses its drain and
+    /// source, because its gate is an insulated control terminal rather than a branch end.
+    /// Validation has already proved those terminals exist, so a null here would be a
+    /// validator gap rather than a user error.
+    /// </summary>
+    private static (string NodeA, string NodeB) ChannelNodes(ElectricalComponent component) =>
+        ElectricalComponentMetadata.IsMosfet(component.Kind)
+            ? (component.FindTerminal("drain")!.NodeId, component.FindTerminal("source")!.NodeId)
+            : (component.FindTerminal("a")!.NodeId, component.FindTerminal("b")!.NodeId);
 
     private static void ApplyWaveform(TransientNetlist netlist, ElectricalComponent component)
     {
@@ -397,13 +489,32 @@ public static class ElectricalCircuitValidator
                     path: path);
             }
 
-            bool needsPositiveValue = ElectricalComponentMetadata.HasPassiveTerminals(component.Kind);
+            bool needsPositiveValue = ElectricalComponentMetadata.RequiresPositiveValue(component.Kind);
             if (!double.IsFinite(component.Value) || (needsPositiveValue && component.Value <= 0))
             {
                 diagnostics.Error(
                     "RAD-ELEC-007",
                     $"Component '{component.Id}' has an invalid {component.ParameterName.ToLowerInvariant()} value.",
                     path: path);
+            }
+
+            if (ElectricalComponentMetadata.IsMosfet(component.Kind))
+            {
+                if (!double.IsFinite(component.ThresholdVoltage))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-021",
+                        $"Component '{component.Id}' has a non-finite threshold voltage; a MOSFET threshold must be a finite number of volts.",
+                        path: path);
+                }
+
+                if (!Enum.IsDefined(component.Channel))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-022",
+                        $"Component '{component.Id}' has an invalid MOSFET channel '{component.Channel}'.",
+                        path: path);
+                }
             }
 
             if (component.InitialValue is double initialValue)
@@ -526,8 +637,14 @@ public static class ElectricalCircuitValidator
                 }
             }
 
-            ElectricalTerminal? terminalA = component.FindTerminal("a");
-            ElectricalTerminal? terminalB = component.FindTerminal("b");
+            // Only the channel pair must be distinct. A MOSFET may tie its gate to its
+            // drain (diode-connected) or to its source (Vgs = 0), which are both normal
+            // circuits, so the gate is deliberately not part of this check.
+            (string first, string second) = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? ("drain", "source")
+                : ("a", "b");
+            ElectricalTerminal? terminalA = component.FindTerminal(first);
+            ElectricalTerminal? terminalB = component.FindTerminal(second);
             if (terminalA is not null &&
                 terminalB is not null &&
                 !string.IsNullOrWhiteSpace(terminalA.NodeId) &&

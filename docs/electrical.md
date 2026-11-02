@@ -872,7 +872,8 @@ reports it as `energy` with `deliveredJoules`, `dissipatedJoules`,
 
 ## Authored electrical circuits
 
-Projects may contain one or more `electricalCircuits` (project format v8). Each
+Projects may contain one or more `electricalCircuits` (project format v11; older
+versions load unchanged). Each
 circuit owns its own nodes and components:
 
 ```csharp
@@ -1076,6 +1077,9 @@ Supported now:
 
 - authoring and editing circuits, nodes, components, values, polarity, and
   explicit terminal bindings in the editor's Electrical inspector;
+- authoring a three-terminal `mosfet` — channel, threshold voltage, and
+  transconductance — in that same inspector, with its gate bound to a node like
+  any other terminal, and solving it through the same `DcNetlist` bridge;
 - on-demand DC solve preview of node voltages and each element's terminal
   voltage, current, and absorbed power, with explicit structural/singularity
   failures;
