@@ -1523,9 +1523,22 @@ chose — and load refuses a binding to a node the circuit does not have, a miss
 that is not finite and positive. From a loaded file, `binding.Schedule(run, sampler)` needs no
 further arguments.
 
-Nothing runs a binding end to end from the CLI or editor yet: the file can say what it means, and
-the library can act on it, but there is still no button or subcommand that takes a saved binding
-and starts a simulation from it.
+`radix drive <project.radix>` runs a binding from the file: it solves the circuit over `--stop` and
+`--steps`, reads the bound node as levels, and prints the tick, time, voltage and level of every
+change. On the ternary inverter with `out` bound to `a` at one tick per nanosecond:
+
+```
+  node        pin   tick      time (s)     volts    level
+  out         a     0         0.000E+000         5  2
+  out         a     44        4.359E-008     3.317  1
+```
+
+The output crossing 3.333 V at 43.6 ns is the same settle the capacitance comparison measured, read
+as a digital change 44 ticks in. `--json` emits the same report for a script, and a circuit that
+declares no bindings is refused rather than silently doing nothing.
+
+The editor has no equivalent control yet, so a binding is authored in the file and run from the
+command line.
 
 Project format 15 stores the choice per device as `biasDependentCapacitance`, so a file can ask
 for it; the field is written only for a MOSFET, and a non-MOSFET that sets it is rejected on load

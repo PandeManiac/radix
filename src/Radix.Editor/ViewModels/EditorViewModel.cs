@@ -8425,17 +8425,7 @@ public sealed class EditorViewModel : ObservableObject
             return new SortedDictionary<string, int>(StringComparer.Ordinal);
         }
 
-        double rail = circuit.Components
-            .Where(component => component.Kind == ElectricalComponentKind.VoltageSource)
-            .Select(component => component.Value)
-            .DefaultIfEmpty(0)
-            .Max();
-        if (!double.IsFinite(rail) || rail <= 0)
-        {
-            return new SortedDictionary<string, int>(StringComparer.Ordinal);
-        }
-
-        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit, rail);
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit);
         if (sampler is null)
         {
             return new SortedDictionary<string, int>(StringComparer.Ordinal);

@@ -35,6 +35,17 @@ public sealed class ElectricalDriveBinding
         TransientResult result,
         ElectricalLevelSampler sampler) =>
         ElectricalDriveSchedule.Scheduled(result, NodeId, sampler, PinId, TicksPerSecond);
+
+    /// <summary>
+    /// The same changes with the voltage and time that produced each one, which is what a report
+    /// needs: a tick alone does not say why the value changed.
+    /// </summary>
+    public IReadOnlyList<(ElectricalDriveStep Step, long At)> Steps(
+        TransientResult result,
+        ElectricalLevelSampler sampler) =>
+        [.. ElectricalDriveSchedule
+            .Levels(result, NodeId, sampler)
+            .Select(step => (step, ElectricalDriveSchedule.TickFor(step.Time, TicksPerSecond)))];
 }
 
 /// <summary>
@@ -115,6 +126,28 @@ public static class ElectricalDriveSchedule
     }
 
     /// <summary>
+    /// The tick a solved time maps to. Kept in one place because the rounding rule decides whether two
+    /// closely spaced changes collapse, and a caller that rounded differently would disagree with
+    /// the schedule it is reading.
+    /// </summary>
+    public static long TickFor(double time, double ticksPerSecond)
+    {
+        if (!double.IsFinite(time))
+        {
+            throw new ArgumentOutOfRangeException(nameof(time), time, "Time must be finite.");
+        }
+
+        if (!double.IsFinite(ticksPerSecond) || ticksPerSecond <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ticksPerSecond), ticksPerSecond, "Ticks per second must be a positive number.");
+        }
+
+        double scaled = time * ticksPerSecond;
+        return (long)Math.Min(long.MaxValue / 2, Math.Max(0, Math.Round(scaled, MidpointRounding.ToEven)));
+    }
+
+    /// <summary>
     /// The same drives with the tick each applies at, so a caller can schedule them on a script
     /// step instead of applying them all at time zero.
     /// </summary>
@@ -135,9 +168,7 @@ public static class ElectricalDriveSchedule
         var byTick = new SortedDictionary<long, int>();
         foreach (ElectricalDriveStep step in Levels(result, nodeId, sampler))
         {
-            double scaled = step.Time * ticksPerSecond;
-            byTick[(long)Math.Min(long.MaxValue / 2, Math.Max(0, Math.Round(scaled, MidpointRounding.ToEven)))] =
-                step.Level;
+            byTick[TickFor(step.Time, ticksPerSecond)] = step.Level;
         }
 
         return [.. byTick.Select(pair =>

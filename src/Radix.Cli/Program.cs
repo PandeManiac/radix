@@ -42,6 +42,7 @@ internal static class Program
                 "dc" => DcCommand(args[1..]),
                 "ac" => AcCommand(args[1..]),
                 "transient" or "tran" => TransientCommand(args[1..]),
+                "drive" => DriveCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
                 "sweep" => SweepCommand(args[1..]),
@@ -109,6 +110,9 @@ internal static class Program
                   [--json]                   Emit one machine-readable JSON report
               dc <netlist.json|project.radix>
                                              Solve a DC linear electrical circuit
+              drive <project.radix>          Run a circuit's authored drive bindings and report
+                                             the levels they would write, with their ticks
+                  [--circuit <id>] [--stop <s>] [--steps <n>] [--json]
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>]
                                              Solve once per value of one element parameter
@@ -838,6 +842,114 @@ internal static class Program
             $"Worst gain deviation {FormatDcNumber(worst.GainDeviationDb)} dB on '{worst.Node}' " +
             $"at {FormatDcNumber(worst.WorstGainFrequencyHz)} Hz; tolerance " +
             $"{FormatDcNumber(toleranceDb)} dB, {exceeded} of {deviations.Count} node(s) outside it.");
+    }
+
+    /// <summary>
+    /// Runs every drive binding a circuit declares: solve the circuit, read the bound node as
+    /// levels, and report the drives the binding would apply. This is the electrical-to-digital
+    /// handoff executed from a file rather than from code that happens to know the node and rate.
+    /// </summary>
+    private static int DriveCommand(string[] args)
+    {
+        (var positional, var options) = Parse(
+            args,
+            ["circuit", "stop", "steps"],
+            ["json"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix drive <project.radix> [--circuit <id>] [--stop <s>] [--steps <n>] [--json]");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0]);
+        ElectricalCircuit circuit = SelectElectricalCircuit(project, GetOption(options, "circuit"));
+        if (circuit.DriveBindings.Count == 0)
+        {
+            Console.Error.WriteLine(
+                $"circuit '{circuit.Id}' declares no driveBindings; a binding needs a node, a pin and a tick rate.");
+            return 2;
+        }
+
+        double stop = 120e-9;
+        if (GetOption(options, "stop") is { } stopText &&
+            (!double.TryParse(stopText, NumberStyles.Float, CultureInfo.InvariantCulture, out stop) ||
+             !double.IsFinite(stop) ||
+             stop <= 0))
+        {
+            Console.Error.WriteLine("--stop must be a positive number of seconds.");
+            return 2;
+        }
+
+        int steps = 1280;
+        if (GetOption(options, "steps") is { } stepsText &&
+            (!int.TryParse(
+                 stepsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out steps) ||
+             steps is < 2 or > 20_000))
+        {
+            Console.Error.WriteLine("--steps must be a whole number from 2 to 20000.");
+            return 2;
+        }
+
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit);
+        if (sampler is null)
+        {
+            Console.Error.WriteLine(
+                $"circuit '{circuit.Id}' has no levelThresholds and no positive source to take a rail from, so a level cannot be read.");
+            return 2;
+        }
+
+        TransientResult run = circuit.ToTransientNetlist().Run(new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = stop,
+            Steps = steps,
+            MaximumStepCount = 100_000,
+        });
+
+        if (options.ContainsKey("json"))
+        {
+            Console.WriteLine(JsonSerializer.Serialize(
+                new
+                {
+                    circuit = circuit.Id,
+                    stopTime = stop,
+                    steps,
+                    thresholds = sampler.Thresholds,
+                    bindings = circuit.DriveBindings.Select(binding => new
+                    {
+                        node = binding.NodeId,
+                        pin = binding.PinId,
+                        ticksPerSecond = binding.TicksPerSecond,
+                        changes = binding.Steps(run, sampler).Select(entry => new
+                        {
+                            at = entry.At,
+                            time = entry.Step.Time,
+                            volts = entry.Step.Volts,
+                            level = entry.Step.Level,
+                        }),
+                    }),
+                },
+                ReportJsonOptions));
+            return 0;
+        }
+
+        Console.WriteLine(
+            $"drive: {circuit.Id} · {stop:G6} s · {steps} steps · levels above " +
+            string.Join("/", sampler.Thresholds.Select(threshold =>
+                threshold.ToString("G6", CultureInfo.InvariantCulture))) +
+            " V");
+        Console.WriteLine("  node        pin   tick      time (s)     volts    level");
+        foreach (ElectricalDriveBinding binding in circuit.DriveBindings)
+        {
+            foreach ((ElectricalDriveStep step, long at) in binding.Steps(run, sampler))
+            {
+                Console.WriteLine(
+                    $"  {binding.NodeId,-10}  {binding.PinId,-4}  {at,-8}  {step.Time:E3}  {step.Volts,8:G4}  {step.Level}");
+            }
+        }
+
+        return 0;
     }
 
     private static int TransientCommand(string[] args)

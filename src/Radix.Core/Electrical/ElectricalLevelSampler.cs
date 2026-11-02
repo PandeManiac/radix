@@ -61,6 +61,28 @@ public sealed class ElectricalLevelSampler
     /// has them, otherwise equal thirds of the supplied rail. Null when neither is available, so a
     /// caller reports no level instead of reading against a boundary it made up.
     /// </summary>
+    /// <summary>
+    /// The sampler for a circuit, taking its rail as the highest source value. One implementation
+    /// serves the editor and the command line so a level read one way cannot disagree with the same
+    /// level read the other way.
+    /// </summary>
+    public static ElectricalLevelSampler? ForCircuit(ElectricalCircuit circuit)
+    {
+        ArgumentNullException.ThrowIfNull(circuit);
+        double rail = 0;
+        foreach (ElectricalComponent component in circuit.Components)
+        {
+            if (component.Kind == ElectricalComponentKind.VoltageSource &&
+                double.IsFinite(component.Value) &&
+                component.Value > rail)
+            {
+                rail = component.Value;
+            }
+        }
+
+        return ForCircuit(circuit, rail);
+    }
+
     public static ElectricalLevelSampler? ForCircuit(ElectricalCircuit circuit, double rail)
     {
         ArgumentNullException.ThrowIfNull(circuit);

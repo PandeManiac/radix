@@ -103,6 +103,25 @@ public sealed class ElectricalDriveScheduleTests
     }
 
     [Fact]
+    public void TheCircuitSuppliesItsOwnRailAndTheTickRuleIsShared()
+    {
+        ElectricalCircuit circuit = Example();
+
+        // The command line and the editor both read levels through this overload, so the rail comes
+        // from the circuit rather than from a caller that might pick a different source.
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit);
+        Assert.NotNull(sampler);
+        Assert.Equal(1, sampler!.LevelFor(2.5));
+        Assert.Equal(2, sampler.LevelFor(5));
+
+        // Half rounds to even, in one place, so a report cannot disagree with the schedule it reads.
+        Assert.Equal(2, ElectricalDriveSchedule.TickFor(1.5e-9, 1e9));
+        Assert.Equal(2, ElectricalDriveSchedule.TickFor(2.5e-9, 1e9));
+        Assert.Equal(0, ElectricalDriveSchedule.TickFor(0.4e-9, 1e9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ElectricalDriveSchedule.TickFor(0, 0));
+    }
+
+    [Fact]
     public void ARateIsRequiredAndBadNodesAreRefused()
     {
         ElectricalLevelSampler sampler = ElectricalLevelSampler.TernaryFromRail(5);
