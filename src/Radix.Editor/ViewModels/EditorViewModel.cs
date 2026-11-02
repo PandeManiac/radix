@@ -9247,6 +9247,28 @@ public sealed class EditorViewModel : ObservableObject
                 $" It would have answered differently on {audit.AuditedPins} supplied pin(s): {audit.Result.Failures[0].Message}.",
         };
 
+        // The audit says the levels are right; the timing says when they arrive, which the panel could
+        // not see at all while it reported only claims and the supplied-pin audit.
+        ElectricalPropagationReport? timing = ElectricalDriveSimulation.Propagation(
+            _project,
+            circuit,
+            result,
+            sampler,
+            _electricalDriveDefinitionId.Length == 0 ? null : _electricalDriveDefinitionId);
+        if (timing is not null && timing.Steps.Count > 0)
+        {
+            string measured = string.Join(
+                ", ",
+                timing.Steps.Select(step => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{step.PreviousOutputLevel}->{step.OutputLevel} in {step.Ticks} tick(s) ({step.Seconds:E2} s)")));
+            string declared = timing.DeclaredTicks is int ticks
+                ? ticks.ToString(CultureInfo.InvariantCulture)
+                : "no";
+            verdict +=
+                $" Timing: {measured}; the definition declares {declared} tick(s).";
+        }
+
         ElectricalDriveSummary = verdict;
         return simulation.Passed && (audit?.Passed ?? true);
     }

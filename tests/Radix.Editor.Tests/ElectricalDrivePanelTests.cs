@@ -104,6 +104,22 @@ public sealed class ElectricalDrivePanelTests
     }
 
     [Fact]
+    public void TheSummaryReportsTheMeasuredDelay()
+    {
+        // The sweep drives the input and supplies the output, so it has both halves the timing needs.
+        EditorViewModel viewModel = Load("electrical-ternary-sweep.radix");
+        SetField(viewModel, "Transient stop (s)", "250e-9");
+        SetField(viewModel, "Transient steps", "2500");
+
+        Assert.True(viewModel.RunElectricalDriveBindings());
+
+        string summary = viewModel.ElectricalDriveSummary;
+        Assert.Contains("Timing: 2->1 in 23 tick(s)", summary, StringComparison.Ordinal);
+        Assert.Contains("1->0 in 44 tick(s)", summary, StringComparison.Ordinal);
+        Assert.Contains("declares 0 tick(s)", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ACircuitWithoutBindingsSaysSoInsteadOfReportingSuccess()
     {
         EditorViewModel viewModel = Load("transient-ternary-inverter.radix");
