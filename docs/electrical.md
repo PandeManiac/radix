@@ -1516,8 +1516,16 @@ it and lets the script runner's expectations check that the output followed: the
 then 1, and the gate turns those into 0 then 1. The runner applies the drives through the same
 compiler and engine the editor and CLI use, so this is the handoff executed, not a type match.
 
-Nothing exposes the schedule in the CLI or editor yet, so the handoff lives in the library and its
-tests rather than in a file a reader can run.
+A circuit can declare the claim itself with `driveBindings` (project format 17): a node, a digital
+pin, and the ticks per second that convert solved time into simulator ticks. The rate travels with
+the binding because it is part of the claim — without it the drives would land at times nobody
+chose — and load refuses a binding to a node the circuit does not have, a missing pin, or a rate
+that is not finite and positive. From a loaded file, `binding.Schedule(run, sampler)` needs no
+further arguments.
+
+Nothing runs a binding end to end from the CLI or editor yet: the file can say what it means, and
+the library can act on it, but there is still no button or subcommand that takes a saved binding
+and starts a simulation from it.
 
 Project format 15 stores the choice per device as `biasDependentCapacitance`, so a file can ask
 for it; the field is written only for a MOSFET, and a non-MOSFET that sets it is rejected on load
