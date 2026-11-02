@@ -1455,8 +1455,10 @@ charge moved is that value times the voltage change it saw. A gate driven throug
 saturated device settles in two thirds of the time, which is the closed form the test checks
 against 3/2.
 
-The authored project format does not yet expose the switch, so a file always runs the constant
-model; the option is a library setting until a device field carries it.
+Project format 15 stores the choice per device as `biasDependentCapacitance`, so a file can ask
+for it; the field is written only for a MOSFET, and a non-MOSFET that sets it is rejected on load
+with the same rule that guards the other device fields. Format 14 files have no such field and load
+with constant capacitance, which is what they were written with.
 
 ## Analytical validation
 

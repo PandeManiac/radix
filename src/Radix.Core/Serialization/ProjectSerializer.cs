@@ -291,10 +291,11 @@ public static class ProjectSerializer
             dto.ChannelLengthModulation is not null ||
             dto.GateSourceCapacitance is not null ||
             dto.GateDrainCapacitance is not null ||
-            dto.DrainSourceCapacitance is not null))
+            dto.DrainSourceCapacitance is not null ||
+            dto.BiasDependentCapacitance is not null))
         {
             throw new ProjectFormatException(
-                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage', 'channelLengthModulation', 'gateSourceCapacitance', 'gateDrainCapacitance' or 'drainSourceCapacitance'; those belong to a mosfet.");
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage', 'channelLengthModulation', 'gateSourceCapacitance', 'gateDrainCapacitance', 'drainSourceCapacitance' or 'biasDependentCapacitance'; those belong to a mosfet.");
         }
 
         if (isMosfet && dto.ThresholdVoltage is null)
@@ -330,6 +331,7 @@ public static class ProjectSerializer
             GateSourceCapacitance = dto.GateSourceCapacitance ?? 0,
             GateDrainCapacitance = dto.GateDrainCapacitance ?? 0,
             DrainSourceCapacitance = dto.DrainSourceCapacitance ?? 0,
+            BiasDependentCapacitance = dto.BiasDependentCapacitance ?? false,
         };
 
         foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
@@ -733,6 +735,10 @@ public static class ProjectSerializer
             DrainSourceCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
                 ? component.DrainSourceCapacitance
                 : null,
+            BiasDependentCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind) &&
+                component.BiasDependentCapacitance
+                    ? true
+                    : null,
             Waveform = component.Waveform.Count == 0
                 ? null
                 : component.Waveform.Select(point => new ElectricalWaveformPointDto

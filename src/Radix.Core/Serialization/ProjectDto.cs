@@ -87,6 +87,12 @@ internal sealed class ElectricalComponentDto
     /// </summary>
     public double? DrainSourceCapacitance { get; set; }
 
+    /// <summary>
+    /// Whether the device's gate capacitances follow the solved bias instead of holding their
+    /// authored values; omitted means constant. Stored only for a mosfet.
+    /// </summary>
+    public bool? BiasDependentCapacitance { get; set; }
+
     public List<ElectricalWaveformPointDto>? Waveform { get; set; }
 
     public List<ElectricalTerminalDto>? Terminals { get; set; }
