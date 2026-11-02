@@ -1252,3 +1252,9 @@ summary and full local verification results; see the PR for the latest CI state.
      the report because JSON has no infinity value. Focused execution and omitting
      the invalid ledger while preserving failure details and solved points remain
      pending.
+
+138. Omitted a non-finite energy ledger from a completed transient result after
+     classifying it as `NonFiniteResult`. The failure message and all finite solved
+     points remain available, while `TransientNetlistJson` can serialize the failed
+     report as valid JSON. The focused regression now checks the serialized failure
+     and absence of an energy object; broader verification remains pending.

@@ -922,6 +922,7 @@ public sealed class TransientNetlist
                 Failure = DcSolveFailure.NonFiniteResult,
                 Message = "Transient energy accounting produced a non-finite result; the total energy exceeds the numeric range.",
             };
+            energy = null;
         }
 
         return result with

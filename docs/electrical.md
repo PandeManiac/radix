@@ -317,7 +317,8 @@ the DC solver. A failure at the initial operating point returns no points. A
 partially solved run is never presented as a completed one. A completed run is
 also rejected with `NonFiniteResult` if its derived energy ledger overflows, even
 when each solved voltage, current, and element power is finite; the solved points
-remain available for inspection.
+remain available for inspection. The unrepresentable energy object is omitted
+from JSON output so the failure report remains valid JSON.
 
 ### Command line and JSON
 
