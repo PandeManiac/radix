@@ -8073,6 +8073,21 @@ public sealed class EditorViewModel : ObservableObject
             });
         }
 
+        // A circuit does not know the digital side, so a mistyped pin would otherwise survive until a
+        // simulation tried to apply it. Checking against the project's declarations turns that into
+        // a refusal while the author is still looking at the field.
+        string[] unknown = [.. bindings.Select(binding => binding.PinId)
+            .Distinct(StringComparer.Ordinal)
+            .Where(pin => !_project.Definitions.Any(definition =>
+                definition.Pins.Any(declaration =>
+                    string.Equals(declaration.Id, pin, StringComparison.Ordinal))))];
+        if (unknown.Length > 0)
+        {
+            StatusText =
+                $"No definition declares pin(s) {string.Join(", ", unknown)}, so a binding could not be applied.";
+            return false;
+        }
+
         bool unchanged = circuit.DriveBindings.Count == bindings.Count &&
             circuit.DriveBindings.Zip(bindings).All(pair =>
                 pair.First.NodeId == pair.Second.NodeId &&
