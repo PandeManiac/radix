@@ -1104,3 +1104,9 @@ summary and full local verification results; see the PR for the latest CI state.
      0 warnings/errors, Core passed 652/652, and headless Editor passed 242/242.
      The binary-counter CLI script passed all 3 steps (3,574 events). The halted
      external-drive regression and all four event-budget tests pass.
+
+114. WIP: added direct `SimulationOptions` constructor tests for negative or
+     zero-invalid runtime limits and the documented zero-disabled settings. The
+     engine currently accepts invalid direct options (settings loaded through
+     `FromSettings` are normalized), and the new validation test fails. Guard and
+     broader verification remain pending.
