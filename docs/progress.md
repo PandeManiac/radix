@@ -1199,3 +1199,10 @@ summary and full local verification results; see the PR for the latest CI state.
      of multiple finite branch powers when the short-interval energy remains
      representable. All eight `TransientEnergyTests` pass, including both large
      power regressions; broader verification remains pending.
+
+130. Verified per-element energy integration: Release solution build passed with
+     0 warnings/errors, Core passed 660/660, and headless Editor passed 242/242
+     with `.local-native`. The RC transient CLI completed 63 points with finite
+     node values and finite energy residual. `TransientEnergyTests` passed 8/8,
+     including the two independent-branch case whose instantaneous power sum
+     overflows while each branch's integrated energy remains representable.
