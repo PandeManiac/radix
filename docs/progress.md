@@ -1076,3 +1076,8 @@ summary and full local verification results; see the PR for the latest CI state.
      whose zero-bias forward or reverse-breakdown conductance overflows to
      infinity. Both parameter sets are currently accepted by `AddDiode` and fail
      the new expectations. Implementation and broader verification remain pending.
+
+109. Fixed diode slope validation: the netlist now rejects parameters when either
+     `Is / (N * Vt)` or the optional `IBV / (N * Vt)` is non-finite. The forward
+     and reverse regression cases and all 25 `DcDiodeSolverTests` pass; broader
+     verification remains pending.

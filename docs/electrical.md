@@ -117,7 +117,8 @@ saturation current in amperes, `N` the dimensionless emission coefficient, and
 corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep.
 The derived junction voltage `N * Vt` must also be representable as a finite
 positive double; the netlist rejects parameter pairs whose product overflows or
-underflows to zero.
+underflows to zero. It also rejects parameters whose zero-bias forward or
+reverse-breakdown conductance would overflow the numeric range.
 
 Optional reverse breakdown parameters `BV` (positive breakdown voltage in volts)
 and `IBV` (positive reverse current at `-BV` in amperes) add the exponential

@@ -498,6 +498,23 @@ public sealed class DcNetlist
 
         DcDiode.ValidateBreakdownParameters(breakdownVoltage, breakdownCurrent);
 
+        if (!double.IsFinite(saturationCurrent / junctionVoltage))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(saturationCurrent),
+                saturationCurrent,
+                "The zero-bias forward diode conductance must be finite.");
+        }
+
+        if (breakdownCurrent is double reverseCurrent &&
+            !double.IsFinite(reverseCurrent / junctionVoltage))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(breakdownCurrent),
+                reverseCurrent,
+                "The zero-bias reverse-breakdown conductance must be finite.");
+        }
+
         return Add(new DcDiode(
             id,
             nodeA,
