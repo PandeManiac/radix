@@ -1158,3 +1158,9 @@ summary and full local verification results; see the PR for the latest CI state.
      opposite signs, interpolation uses a convex weighted sum; ordinary ranges keep
      the original delta form. Both extreme-scale regressions pass (2/2); broader
      verification remains pending.
+
+123. Verified the extreme-scale waveform fix: Release solution build passed with
+     0 warnings/errors; Core passed 658/658; headless Editor passed 242/242 with
+     `.local-native`. `radix transient examples/transient-rc.json --json` completed
+     all 61 points with finite RC voltages and energy accounting. Both new
+     regressions (extreme signed times and opposite-extreme values) pass.
