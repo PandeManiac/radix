@@ -1283,3 +1283,9 @@ summary and full local verification results; see the PR for the latest CI state.
      `.local-native`. The new regression confirms a later step's current-source
      power failure and step index survive energy-ledger overflow, while solved
      points remain available and the JSON report remains valid.
+
+143. WIP: added a settling-metric regression for a finite signal spanning from
+     -1e308 V through 0 V to +1e308 V. The voltage range subtraction overflows to
+     infinity, making the existing tolerance infinite and incorrectly reporting
+     immediate settling. Focused execution and scale-safe relative comparisons
+     are pending.
