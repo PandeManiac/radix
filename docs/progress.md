@@ -9,10 +9,10 @@ humans; update it at each milestone instead of relying on chat history.
 - Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
 - Draft PR #7 is open against `main`: electrical hierarchy, reusable subcircuits,
   and the buffered ternary inverter.
-- Latest verified backend checkpoint: `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`
+- Latest verified checkpoint: `faa218605a519db1886a2e7c36555922bfb126bd`
+  (editor overrides, v23 examples, and format/electrical/README docs).
+- Backend checkpoint: `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`
   (per-instance subcircuit value overrides in the netlist and format 23).
-- The editor inspector and documentation for those overrides are the next
-  checkpoint on this branch; use `git log` for the current tip.
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
   tests 830/830, CLI tests 2/2, Editor tests 311/311. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
@@ -42,9 +42,10 @@ humans; update it at each milestone instead of relying on chat history.
 - Added the editor's **Overrides** field (`child=value; ...`), parsing and validating
   before mutation, clearing stale overrides when the referenced circuit or kind
   changes, and one undo entry per accepted edit.
-- Backend checkpoint `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`. Tests cover two
-  instances with different R3 values, transient R1 override timing, a v23 round trip,
-  all new rejection codes, and an editor solve changing 2.5 V to 3.75 V.
+- Backend checkpoint `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`; editor/docs
+  checkpoint `faa218605a519db1886a2e7c36555922bfb126bd`. Tests cover two instances
+  with different R3 values, transient R1 override timing, a v23 round trip, all new
+  rejection codes, and an editor solve changing 2.5 V to 3.75 V.
 - Verification: build clean (0 warnings/errors), Core 830/830, CLI 2/2, Editor 311/311;
   focused hierarchy tests 16/16 and editor hierarchy tests 3/3.
 - Remaining limitations: an override replaces only the primary value; it cannot add,
