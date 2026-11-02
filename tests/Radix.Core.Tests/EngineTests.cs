@@ -215,6 +215,29 @@ public sealed class EngineTests
     }
 
     [Fact]
+    public void ExternalDriveCannotMutateStateAfterEngineHalts()
+    {
+        SimulationEngine engine = Engine(
+            TestCircuits.LookupRoot(1, [1, 0]),
+            new SimulationOptions { MaxEventsProcessed = 1 });
+        int input = engine.FindPortIndex("a");
+        Assert.True(input >= 0);
+        engine.SetPortValue(input, 1);
+        engine.AdvanceTo(10);
+
+        Assert.True(engine.IsHalted);
+        long events = engine.EventsProcessed;
+        long transitions = engine.NetTransitions;
+        int valueBeforeDrive = engine.GetPortValue(input);
+
+        engine.SetPortValue(input, 0);
+
+        Assert.Equal(valueBeforeDrive, engine.GetPortValue(input));
+        Assert.Equal(events, engine.EventsProcessed);
+        Assert.Equal(transitions, engine.NetTransitions);
+    }
+
+    [Fact]
     public void TraceRecordsInitialNetValue()
     {
         CircuitProject project = TestCircuits.ConstantRoot(0);

@@ -1087,3 +1087,9 @@ summary and full local verification results; see the PR for the latest CI state.
      with `.local-native`. The Zener CLI still solves to -5.1082954 V with
      approximately -6.8917 mA diode current and a total power residual of
      3.75e-16 W. The overflowed forward and reverse-slope regressions pass.
+
+111. WIP: added a digital-engine regression showing that `SetPortValue` changes
+     an input net after the event budget halts the engine, even though subsequent
+     advances are ignored and the partial state is presented as halted. The test
+     reproduces a value change from 1 to 0 without processing another event;
+     implementation and broader verification remain pending.
