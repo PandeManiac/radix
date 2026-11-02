@@ -63,7 +63,7 @@ public sealed class ElectricalDcSweepTests
         Assert.Equal(
             ["1", "1", "1"],
             viewModel.ElectricalDcSweepRows.Select(row => row.GainText).ToArray());
-        Assert.Contains("max |gain| 1 V/V at n1", viewModel.ElectricalDcSweepSummary, StringComparison.Ordinal);
+        Assert.Contains("max |gain| 1 V/V at Node 1", viewModel.ElectricalDcSweepSummary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -200,7 +200,7 @@ public sealed class ElectricalDcSweepTests
         Assert.Contains("<svg", svg, StringComparison.Ordinal);
         Assert.Contains("DC sweep", svg, StringComparison.Ordinal);
         Assert.Contains("r1", svg, StringComparison.Ordinal);
-        Assert.Contains(">n1<", svg, StringComparison.Ordinal);
+        Assert.Contains(">Node 1<", svg, StringComparison.Ordinal);
         Assert.Contains("<polyline", svg, StringComparison.Ordinal);
     }
 }

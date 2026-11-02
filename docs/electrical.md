@@ -1299,7 +1299,9 @@ child node's authored name; a ported node appears once at the parent boundary be
 same electrical node. The ELEMENTS table applies the same instance scope and resolves each child
 component's authored name, so a row such as `X1/RSUM1` reads as `X1 · Summing resistor` rather
 than an opaque prefixed ID. The same scope and name resolution is used by transient node series,
-node metrics, AC rows, and the transient/AC plot legends. The internal implementation of each
+node metrics, AC rows, DC sweep rows and input windows, and the transient/AC/DC plot legends. The
+DC sweep also enumerates private child nodes, not just the selected circuit's authored nodes, so a
+child output can be measured as its parent parameter moves. The internal implementation of each
 stage therefore remains inspectable rather than being replaced by a black box.
 
 Tests: `ElectricalHierarchyTests` covers flat-equivalent solves, two independent instances with
@@ -1309,7 +1311,7 @@ every validation failure above, and the shipped chain at all three levels.
 and rebinding terminals, interface synchronization, invalid port and override text, a solved
 parent whose override changes the divider from 2.5 V to 3.75 V, the prefixed child-node and
 element rows exposed in the solved hierarchy table, and hierarchy labels in transient series,
-node metrics, and AC rows.
+node metrics, AC rows, DC sweep rows, and DC input windows.
 
 Limitations: ports are bidirectional node aliases with no analog direction; a referenced circuit
 must expose its ground; an override replaces only one direct child's primary value, so it cannot

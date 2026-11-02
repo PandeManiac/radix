@@ -1,6 +1,7 @@
 using Radix.Core.Electrical;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
+using Radix.Editor.Rendering;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -139,6 +140,22 @@ public sealed class ElectricalHierarchyEditorTests
             .First(item => item.NodeId == "X1/out_low");
         Assert.Equal("X1", acRow.Scope);
         Assert.Contains("X1", acRow.DisplayName, StringComparison.Ordinal);
+
+        viewModel.ElectricalDcSweepElementText = "VIN";
+        viewModel.ElectricalDcSweepValuesText = "0,2.5,5";
+        Assert.True(viewModel.RunElectricalDcSweep(), viewModel.ElectricalDcSweepSummary);
+        ElectricalDcSweepRowItem dcRow = viewModel.ElectricalDcSweepRows
+            .First(item => item.NodeId == "X1/out_low");
+        Assert.Equal("X1", dcRow.Scope);
+        Assert.Equal("Low-threshold inverter output", dcRow.Name);
+        ElectricalDcSweepWindowItem dcWindow = viewModel.ElectricalDcSweepWindows
+            .Single(item => item.NodeId == "X1/out_low");
+        Assert.Equal("X1", dcWindow.Scope);
+        TransientPlot dcPlot = Assert.IsType<TransientPlot>(viewModel.ElectricalDcSweepPlot);
+        Assert.Contains(
+            "X1",
+            dcPlot.Series.Single(item => item.NodeId == "X1/out_low").Label,
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -10,12 +10,19 @@ namespace Radix.Editor.ViewModels;
 /// </summary>
 public sealed class ElectricalDcSweepWindowItem
 {
-    public ElectricalDcSweepWindowItem(string nodeId, IReadOnlyList<DcInputWindow> windows)
+    public ElectricalDcSweepWindowItem(
+        string nodeId,
+        IReadOnlyList<DcInputWindow> windows,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
         ArgumentNullException.ThrowIfNull(windows);
 
         NodeId = nodeId;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? nodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         WindowsText = windows.Count == 0
             ? "no window: the curve amplifies across the whole sweep"
             : string.Join(
@@ -31,6 +38,12 @@ public sealed class ElectricalDcSweepWindowItem
     }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     /// <summary>The windows as <c>from → to</c> ranges, or a sentence when there are none.</summary>
     public string WindowsText { get; }

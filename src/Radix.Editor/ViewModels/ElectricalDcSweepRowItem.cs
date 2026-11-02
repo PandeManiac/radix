@@ -16,12 +16,17 @@ public sealed class ElectricalDcSweepRowItem
         string nodeId,
         double? volts,
         double? gain,
-        bool showValue)
+        bool showValue,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
 
         ValueText = showValue ? value.ToString("G4", CultureInfo.InvariantCulture) : string.Empty;
         NodeId = nodeId;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? nodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         VoltsText = volts is double solved
             ? solved.ToString("G6", CultureInfo.InvariantCulture) + " V"
             : "-";
@@ -36,6 +41,12 @@ public sealed class ElectricalDcSweepRowItem
     public string ValueText { get; }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     /// <summary>Solved node voltage, or <c>-</c> when this value could not solve.</summary>
     public string VoltsText { get; }

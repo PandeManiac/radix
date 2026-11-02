@@ -7671,15 +7671,46 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        // Measure each node's slope once, by the same difference quotient as `radix dc --gain`:
-        // the gain points are in sweep order, so a row's gain is the entry with the same index.
-        var slopes = new Dictionary<string, IReadOnlyList<DcSweepGainPoint>>(StringComparer.Ordinal);
+        // Measure every solved node's slope once, by the same difference quotient as
+        // `radix dc --gain`: the gain points are in sweep order, so a row's gain is the entry
+        // with the same index. Root-authored nodes come first, then private child nodes from
+        // recursive expansion; a ported node is already one of the root nodes and is not repeated.
+        var sweepNodes = new List<(string NodeId, string Scope, string Name)>();
+        var sweepNodeIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (ElectricalNode node in circuit.Nodes)
         {
-            if (!string.Equals(node.Id, netlist.GroundNodeId, StringComparison.Ordinal))
+            if (string.Equals(node.Id, netlist.GroundNodeId, StringComparison.Ordinal) ||
+                !sweepNodeIds.Add(node.Id))
             {
-                slopes[node.Id] = DcSweepGain.Along(rows, node.Id);
+                continue;
             }
+
+            sweepNodes.Add((
+                node.Id,
+                "root",
+                string.IsNullOrWhiteSpace(node.Name) ? node.Id : node.Name));
+        }
+
+        foreach (string nodeId in netlist.Nodes)
+        {
+            if (string.Equals(nodeId, netlist.GroundNodeId, StringComparison.Ordinal) ||
+                !sweepNodeIds.Add(nodeId))
+            {
+                continue;
+            }
+
+            (string scope, string name) = DescribeElectricalNode(nodeId, circuit);
+            sweepNodes.Add((nodeId, scope, name));
+        }
+
+        var sweepNodeLabels = sweepNodes.ToDictionary(
+            node => node.NodeId,
+            node => (node.Scope, node.Name),
+            StringComparer.Ordinal);
+        var slopes = new Dictionary<string, IReadOnlyList<DcSweepGainPoint>>(StringComparer.Ordinal);
+        foreach ((string nodeId, _, _) in sweepNodes)
+        {
+            slopes[nodeId] = DcSweepGain.Along(rows, nodeId);
         }
 
         ElectricalDcSweepRows.Clear();
@@ -7700,21 +7731,18 @@ public sealed class EditorViewModel : ObservableObject
             }
 
             bool first = true;
-            foreach (ElectricalNode node in circuit.Nodes)
+            foreach ((string nodeId, string scope, string name) in sweepNodes)
             {
-                // Ground is the reference by definition, so its 0 V row carries no information.
-                if (string.Equals(node.Id, netlist.GroundNodeId, StringComparison.Ordinal) ||
-                    !solution.NodeVoltages.TryGetValue(node.Id, out double volts))
+                if (!solution.NodeVoltages.TryGetValue(nodeId, out double volts))
                 {
                     continue;
                 }
 
-                double? gain = slopes.TryGetValue(node.Id, out IReadOnlyList<DcSweepGainPoint>? points) &&
-                    rowIndex < points.Count
-                        ? points[rowIndex].Gain
-                        : null;
-                ElectricalDcSweepRows.Add(
-                    new ElectricalDcSweepRowItem(row.Value, node.Id, volts, gain, first));
+                double? gain = rowIndex < slopes[nodeId].Count
+                    ? slopes[nodeId][rowIndex].Gain
+                    : null;
+                ElectricalDcSweepRows.Add(new ElectricalDcSweepRowItem(
+                    row.Value, nodeId, volts, gain, first, scope, name));
                 first = false;
             }
         }
@@ -7724,8 +7752,8 @@ public sealed class EditorViewModel : ObservableObject
         _electricalDcSweepResult = rows;
         _electricalDcSweepNetlist = netlist;
         _electricalDcSweepElementId = elementId;
-        RebuildElectricalDcSweepPlot(rows, netlist);
-        RebuildElectricalDcSweepWindows(circuit, slopes);
+        RebuildElectricalDcSweepPlot(rows, netlist, sweepNodeLabels);
+        RebuildElectricalDcSweepWindows(sweepNodes, slopes);
         RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
         // Name the steepest measured slope: a transfer curve is judged where it switches.
         (string NodeId, double Gain)? steepest = null;
@@ -7742,7 +7770,7 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         string gainNote = steepest is { } peak
-            ? $" · max |gain| {Math.Abs(peak.Gain).ToString("G4", CultureInfo.InvariantCulture)} V/V at {peak.NodeId}"
+            ? $" · max |gain| {Math.Abs(peak.Gain).ToString("G4", CultureInfo.InvariantCulture)} V/V at {FormatElectricalHierarchyLabel(sweepNodeLabels[peak.NodeId])}"
             : " · no defined slope yet";
         ElectricalDcSweepSummary = failed == 0
             ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalDcSweepRows.Count} rows{gainNote}."
@@ -7775,7 +7803,10 @@ public sealed class EditorViewModel : ObservableObject
     /// what failed. Palette slots come from the netlist's node order, so hiding nothing and
     /// editing nothing keeps a node's colour stable.
     /// </summary>
-    private void RebuildElectricalDcSweepPlot(IReadOnlyList<DcSweepRow> rows, DcNetlist netlist)
+    private void RebuildElectricalDcSweepPlot(
+        IReadOnlyList<DcSweepRow> rows,
+        DcNetlist netlist,
+        IReadOnlyDictionary<string, (string Scope, string Name)> nodeLabels)
     {
         IReadOnlyList<string> nodes = netlist.Nodes;
         var series = new List<TransientPlotSeries>();
@@ -7799,7 +7830,11 @@ public sealed class EditorViewModel : ObservableObject
 
             if (points.Count > 0)
             {
-                series.Add(new TransientPlotSeries(nodeId, points, index));
+                series.Add(new TransientPlotSeries(
+                    nodeId,
+                    points,
+                    index,
+                    FormatElectricalHierarchyLabel(nodeLabels[nodeId])));
             }
         }
 
@@ -7833,16 +7868,16 @@ public sealed class EditorViewModel : ObservableObject
     /// honest answer for a circuit that only attenuates.
     /// </summary>
     private void RebuildElectricalDcSweepWindows(
-        ElectricalCircuit circuit,
+        IReadOnlyList<(string NodeId, string Scope, string Name)> nodes,
         Dictionary<string, IReadOnlyList<DcSweepGainPoint>> slopes)
     {
         ElectricalDcSweepWindows.Clear();
-        foreach (ElectricalNode node in circuit.Nodes)
+        foreach ((string nodeId, string scope, string name) in nodes)
         {
-            if (slopes.TryGetValue(node.Id, out IReadOnlyList<DcSweepGainPoint>? points))
+            if (slopes.TryGetValue(nodeId, out IReadOnlyList<DcSweepGainPoint>? points))
             {
-                ElectricalDcSweepWindows.Add(
-                    new ElectricalDcSweepWindowItem(node.Id, DcSweepMargins.Windows(points)));
+                ElectricalDcSweepWindows.Add(new ElectricalDcSweepWindowItem(
+                    nodeId, DcSweepMargins.Windows(points), scope, name));
             }
         }
 

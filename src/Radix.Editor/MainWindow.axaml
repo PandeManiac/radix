@@ -1165,8 +1165,8 @@
                   <ItemsControl ItemsSource="{Binding ElectricalDcSweepWindows}" IsVisible="{Binding HasElectricalDcSweepWindows}" Margin="0,0,0,4">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:ElectricalDcSweepWindowItem">
-                        <Grid ColumnDefinitions="40,*,Auto" ColumnSpacing="6" Margin="0,1">
-                          <TextBlock Text="{Binding NodeId}" FontSize="9.5" FontWeight="SemiBold" />
+                        <Grid ColumnDefinitions="140,*,Auto" ColumnSpacing="6" Margin="0,1">
+                          <TextBlock Text="{Binding DisplayName}" FontSize="9.5" FontWeight="SemiBold" ToolTip.Tip="{Binding NodeId}" />
                           <TextBlock Grid.Column="1" Text="{Binding WindowsText}" FontFamily="monospace" FontSize="9" TextWrapping="Wrap" ToolTip.Tip="Input ranges where the curve does not amplify; the bands between them are forbidden zones" />
                           <TextBlock Grid.Column="2" Text="{Binding SummaryText}" Classes="muted" FontSize="8.5" VerticalAlignment="Center" />
                         </Grid>
@@ -1194,7 +1194,7 @@
                           <DataTemplate x:DataType="vm:ElectricalDcSweepRowItem">
                             <Grid ColumnDefinitions="62,*,Auto,Auto" ColumnSpacing="8" Margin="0,1">
                               <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" />
-                              <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontSize="9.5" />
+                              <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontSize="9.5" ToolTip.Tip="{Binding NodeId}" />
                               <TextBlock Grid.Column="2" Text="{Binding VoltsText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" HorizontalAlignment="Right" />
                               <TextBlock Grid.Column="3" Text="{Binding GainText}" FontFamily="monospace" FontSize="9.5" Classes="muted" HorizontalAlignment="Right" ToolTip.Tip="Measured dV(node)/d(swept); '-' means no slope is defined at this point" />
                             </Grid>
