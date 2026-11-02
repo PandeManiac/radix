@@ -1045,3 +1045,10 @@ summary and full local verification results; see the PR for the latest CI state.
      before an unusable junction model can enter MNA. Both overflow and underflow
      regression cases pass, as do all 23 diode solver tests; broader verification
      remains pending.
+
+104. Verified the derived diode-scale guard end to end: Release solution build
+     passed with 0 warnings/errors; Core passed 646/646; headless Editor passed
+     242/242 with `.local-native`; the Zener CLI still solves at -5.1082954 V
+     with balanced branch currents and the divider reports 5 V. The new regression
+     was previously demonstrated failing for both underflow and overflow, then
+     passed after the validation was added.
