@@ -1555,10 +1555,16 @@ The report says how much was compared rather than only whether everything passed
 `radix drive --simulate` prints `checked 45 claim tick(s) on 1 pin(s)`, and a run with no claim says
 so instead of implying the definition's answer was verified when it was only fed.
 
-What is still missing is the opposite direction. The kernel accepts drives on input pins only, so a
-script cannot *supply* an output: the circuit can be cross-examined against a definition, but it
-cannot yet answer for one. Making a solved node supply a pin's value is a kernel facility that does
-not exist, and pretending otherwise with a claim would make the check look stronger than it is. A test feeds an
+What is still missing is the opposite direction, and it is blocked in the kernel rather than in the
+CLI: `SimulationEngine.SetPortValue` refuses an output with "Port 'y' is an output and cannot be
+driven externally", and the script runner rejects a drive on an output before it reaches the engine.
+That rule is deliberate — it keeps a definition's output a function of its inputs — so widening it
+is a modelling decision, not a bug fix: either a new kind of external source that a definition's
+output net may read, or an output pin whose value is declared to come from outside.
+
+A test pins the invariant with that exact message, so opening the direction has to be a knowing
+change. Until then the circuit can be cross-examined against a definition but cannot answer for
+one, and the report says which of the two it did. A test feeds an
 inverting definition a claim that its output equals the level and requires that to fail — otherwise
 a claim that was silently ignored would look exactly like a claim that holds.
 
