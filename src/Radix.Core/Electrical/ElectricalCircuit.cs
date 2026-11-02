@@ -13,6 +13,13 @@ public enum ElectricalComponentKind
 
     /// <summary>A three-terminal voltage-controlled square-law MOSFET.</summary>
     Mosfet,
+
+    /// <summary>
+    /// An instance of another authored circuit, expanded into this circuit's netlist. Its terminals
+    /// are the referenced circuit's ports, so the internal schematic is reused rather than replaced
+    /// by a behavioural model.
+    /// </summary>
+    Subcircuit,
 }
 
 /// <summary>Polarity metadata for an authored electrical terminal.</summary>
@@ -51,10 +58,16 @@ public static class ElectricalComponentMetadata
         new("source", "Source", ElectricalTerminalPolarity.Passive),
     ];
 
+    /// <summary>
+    /// The static terminal shape of a built-in kind. A subcircuit has no fixed shape: its terminals
+    /// are the referenced circuit's ports, so this returns an empty list and the hierarchy validator
+    /// resolves them against the project.
+    /// </summary>
     public static IReadOnlyList<ElectricalTerminalTemplate> Terminals(ElectricalComponentKind kind) =>
         kind switch
         {
             ElectricalComponentKind.Mosfet => MosfetTerminals,
+            ElectricalComponentKind.Subcircuit => [],
             _ when HasPassiveTerminals(kind) => ResistorTerminals,
             _ => SourceTerminals,
         };
@@ -67,6 +80,9 @@ public static class ElectricalComponentMetadata
 
     /// <summary>Whether the kind is a three-terminal voltage-controlled MOSFET.</summary>
     public static bool IsMosfet(ElectricalComponentKind kind) => kind is ElectricalComponentKind.Mosfet;
+
+    /// <summary>Whether the kind is an instance of another authored circuit.</summary>
+    public static bool IsSubcircuit(ElectricalComponentKind kind) => kind is ElectricalComponentKind.Subcircuit;
 
     /// <summary>
     /// Whether the kind's primary parameter must be strictly positive. A MOSFET's primary
@@ -112,8 +128,31 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.Capacitor => "Capacitance",
             ElectricalComponentKind.Inductor => "Inductance",
             ElectricalComponentKind.Mosfet => "Transconductance",
+            ElectricalComponentKind.Subcircuit => "Circuit",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
+
+    /// <summary>
+    /// The terminal shape a subcircuit instance must have, resolved from the referenced circuit's
+    /// ports. A missing reference or a port with an invalid ID yields no template, which validation
+    /// reports separately instead of inventing a terminal.
+    /// </summary>
+    public static IReadOnlyList<ElectricalTerminalTemplate> SubcircuitTerminals(
+        ElectricalCircuit? referencedCircuit)
+    {
+        if (referencedCircuit is null)
+        {
+            return [];
+        }
+
+        return referencedCircuit.Ports
+            .Where(port => Identifiers.IsValid(port.Id))
+            .Select(port => new ElectricalTerminalTemplate(
+                port.Id,
+                string.IsNullOrWhiteSpace(port.Name) ? port.Id : port.Name,
+                ElectricalTerminalPolarity.Passive))
+            .ToArray();
+    }
 
     public static string Unit(ElectricalComponentKind kind) =>
         kind switch
@@ -124,6 +163,7 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.Capacitor => "F",
             ElectricalComponentKind.Inductor => "H",
             ElectricalComponentKind.Mosfet => "A/V^2",
+            ElectricalComponentKind.Subcircuit => string.Empty,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -137,6 +177,7 @@ public static class ElectricalComponentMetadata
             ElectricalComponentKind.Capacitor => "capacitor",
             ElectricalComponentKind.Inductor => "inductor",
             ElectricalComponentKind.Mosfet => "mosfet",
+            ElectricalComponentKind.Subcircuit => "subcircuit",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 }
@@ -149,6 +190,23 @@ public sealed class ElectricalNode
     public string Name { get; set; } = string.Empty;
 
     public override string ToString() => Id;
+}
+
+/// <summary>
+/// A named interface node of a reusable authored circuit. A port is not a component and carries no
+/// current of its own: a subcircuit instance binds one terminal per port to a node in its parent, and
+/// the referenced circuit's internal node is then the same electrical node as that parent node.
+/// </summary>
+public sealed class ElectricalPort
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The node inside the owning circuit that this port exposes.</summary>
+    public string NodeId { get; set; } = string.Empty;
+
+    public override string ToString() => $"{Id}->{NodeId}";
 }
 
 /// <summary>
@@ -256,6 +314,14 @@ public sealed class ElectricalComponent
     public bool BiasDependentCapacitance { get; set; }
 
     /// <summary>
+    /// The referenced authored circuit when <see cref="Kind"/> is
+    /// <see cref="ElectricalComponentKind.Subcircuit"/>; empty for every built-in kind. The
+    /// component's terminals are the referenced circuit's ports, and each instance is expanded into
+    /// the parent netlist under a prefix derived from this component's ID.
+    /// </summary>
+    public string CircuitId { get; set; } = string.Empty;
+
+    /// <summary>
     /// Optional piecewise-linear drive for an independent source, in the source's unit.
     /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
     /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
@@ -327,6 +393,13 @@ public sealed class ElectricalCircuit
     /// </summary>
     public List<ElectricalDriveBinding> DriveBindings { get; } = [];
 
+    /// <summary>
+    /// Named interface nodes exposed to a parent circuit that instantiates this one. A circuit may
+    /// have no ports when it is only solved directly; a circuit used as a subcircuit must expose at
+    /// least one, and must expose its ground node.
+    /// </summary>
+    public List<ElectricalPort> Ports { get; } = [];
+
     public ElectricalNode? FindNode(string nodeId) =>
         Nodes.FirstOrDefault(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal));
 
@@ -334,162 +407,49 @@ public sealed class ElectricalCircuit
         Components.FirstOrDefault(component =>
             string.Equals(component.Id, componentId, StringComparison.Ordinal));
 
-    /// <summary>Validates and bridges this authored circuit to the independent solver.</summary>
-    public DcNetlist ToDcNetlist()
+    /// <summary>
+    /// Validates and bridges this authored circuit to the independent solver. A circuit containing
+    /// subcircuits needs <paramref name="resolve"/> so the referenced circuits can be validated and
+    /// expanded; a flat circuit needs no project context and may omit it.
+    /// </summary>
+    public DcNetlist ToDcNetlist(Func<string, ElectricalCircuit?>? resolve = null)
     {
-        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(this);
+        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(this, resolve);
         if (diagnostics.HasErrors)
         {
             throw new ElectricalCircuitValidationException(diagnostics);
         }
 
-        var netlist = new DcNetlist(GroundNodeId);
-        foreach (ElectricalComponent component in Components)
-        {
-            (string nodeA, string nodeB) = ChannelNodes(component);
-            switch (component.Kind)
-            {
-                case ElectricalComponentKind.Resistor:
-                    netlist.AddResistor(component.Id, nodeA, nodeB, component.Value);
-                    break;
-                case ElectricalComponentKind.VoltageSource:
-                    netlist.AddVoltageSource(component.Id, nodeA, nodeB, component.Value);
-                    break;
-                case ElectricalComponentKind.CurrentSource:
-                    netlist.AddCurrentSource(component.Id, nodeA, nodeB, component.Value);
-                    break;
-                case ElectricalComponentKind.Capacitor:
-                    // A capacitor is an open circuit at DC, so it contributes no DC element.
-                    break;
-                case ElectricalComponentKind.Inductor:
-                    // An ideal inductor is a zero-volt short at DC.
-                    netlist.AddVoltageSource(component.Id, nodeA, nodeB, 0);
-                    break;
-                case ElectricalComponentKind.Mosfet:
-                    // A DC operating point carries no charge, so gate capacitance is omitted here
-                    // rather than silently changed; ToTransientNetlist stamps it.
-                    netlist.AddMosfet(
-                        component.Id,
-                        nodeA,
-                        component.FindTerminal("gate")!.NodeId,
-                        nodeB,
-                        component.Channel,
-                        component.ThresholdVoltage,
-                        component.Value,
-                        component.ChannelLengthModulation);
-                    break;
-                default:
-                    throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
-            }
-        }
-
-        return netlist;
+        return ElectricalCircuitNetlist.BuildDc(this, resolve);
     }
 
-    /// <summary>Whether any component stores energy, so a transient run can do more than a DC solve.</summary>
+    /// <summary>
+    /// Whether any component stores energy, so a transient run can do more than a DC solve. A
+    /// subcircuit is counted conservatively: its internals are not followed without a project
+    /// resolver, and offering a transient run that turns out to be purely resistive is harmless.
+    /// </summary>
     public bool HasReactiveComponents =>
-        Components.Any(component => ElectricalComponentMetadata.HasState(component.Kind));
+        Components.Any(component =>
+            ElectricalComponentMetadata.HasState(component.Kind) ||
+            ElectricalComponentMetadata.IsSubcircuit(component.Kind));
 
     /// <summary>
     /// Validates and bridges this authored circuit to the transient solver. Capacitors
     /// and inductors become the solver's reactive elements, their optional initial
     /// values become the solver's initial state, all other kinds map one to one, and a
-    /// source's optional piecewise-linear waveform drives it in time.
+    /// source's optional piecewise-linear waveform drives it in time. Subcircuits are
+    /// expanded recursively into the same netlist, with their internal node and element
+    /// IDs prefixed by the instance path.
     /// </summary>
-    public TransientNetlist ToTransientNetlist()
+    public TransientNetlist ToTransientNetlist(Func<string, ElectricalCircuit?>? resolve = null)
     {
-        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(this);
+        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(this, resolve);
         if (diagnostics.HasErrors)
         {
             throw new ElectricalCircuitValidationException(diagnostics);
         }
 
-        var netlist = new TransientNetlist(GroundNodeId);
-        foreach (ElectricalComponent component in Components)
-        {
-            (string nodeA, string nodeB) = ChannelNodes(component);
-            switch (component.Kind)
-            {
-                case ElectricalComponentKind.Resistor:
-                    netlist.AddResistor(component.Id, nodeA, nodeB, component.Value);
-                    break;
-                case ElectricalComponentKind.VoltageSource:
-                    netlist.AddVoltageSource(component.Id, nodeA, nodeB, component.Value);
-                    ApplyWaveform(netlist, component);
-                    break;
-                case ElectricalComponentKind.CurrentSource:
-                    netlist.AddCurrentSource(component.Id, nodeA, nodeB, component.Value);
-                    ApplyWaveform(netlist, component);
-                    break;
-                case ElectricalComponentKind.Capacitor:
-                    netlist.AddCapacitor(component.Id, nodeA, nodeB, component.Value);
-                    if (component.InitialValue is double volts)
-                    {
-                        netlist.SetCapacitorInitialVoltage(component.Id, volts);
-                    }
-
-                    break;
-                case ElectricalComponentKind.Inductor:
-                    netlist.AddInductor(component.Id, nodeA, nodeB, component.Value);
-                    if (component.InitialValue is double amperes)
-                    {
-                        netlist.SetInductorInitialCurrent(component.Id, amperes);
-                    }
-
-                    break;
-                case ElectricalComponentKind.Mosfet:
-                    netlist.AddMosfet(
-                        component.Id,
-                        nodeA,
-                        component.FindTerminal("gate")!.NodeId,
-                        nodeB,
-                        component.Channel,
-                        component.ThresholdVoltage,
-                        component.Value,
-                        component.ChannelLengthModulation,
-                        component.GateSourceCapacitance,
-                        component.GateDrainCapacitance,
-                        component.DrainSourceCapacitance);
-
-                    // The solver re-evaluates device capacitances per netlist, so one device asking
-                    // for the bias-dependent model makes the run use it. Asking on a device with no
-                    // capacitance changes nothing, because there is no element to re-evaluate.
-                    if (component.BiasDependentCapacitance)
-                    {
-                        netlist.UseBiasDependentCapacitance();
-                    }
-
-                    break;
-                default:
-                    throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
-            }
-        }
-
-        return netlist;
-    }
-
-    /// <summary>
-    /// The two nodes that carry the branch current, reported as node A and node B. A
-    /// two-terminal part uses its <c>a</c>/<c>b</c> terminals; a MOSFET uses its drain and
-    /// source, because its gate is an insulated control terminal rather than a branch end.
-    /// Validation has already proved those terminals exist, so a null here would be a
-    /// validator gap rather than a user error.
-    /// </summary>
-    private static (string NodeA, string NodeB) ChannelNodes(ElectricalComponent component) =>
-        ElectricalComponentMetadata.IsMosfet(component.Kind)
-            ? (component.FindTerminal("drain")!.NodeId, component.FindTerminal("source")!.NodeId)
-            : (component.FindTerminal("a")!.NodeId, component.FindTerminal("b")!.NodeId);
-
-    private static void ApplyWaveform(TransientNetlist netlist, ElectricalComponent component)
-    {
-        if (component.Waveform.Count == 0)
-        {
-            return;
-        }
-
-        netlist.SetWaveform(
-            component.Id,
-            component.Waveform.Select(point => new TransientWaveformPoint(point.Time, point.Value)));
+        return ElectricalCircuitNetlist.BuildTransient(this, resolve);
     }
 
     public override string ToString() => Id;
@@ -514,9 +474,42 @@ public sealed class ElectricalCircuitValidationException : Exception
 /// </summary>
 public static class ElectricalCircuitValidator
 {
-    public static DiagnosticBag Validate(ElectricalCircuit circuit)
+    public static DiagnosticBag Validate(ElectricalCircuit circuit) => Validate(circuit, null);
+
+    /// <summary>
+    /// Validates one circuit and, when it contains subcircuits, the referenced hierarchy. A flat
+    /// circuit needs no resolver, so existing callers remain valid; a subcircuit without one is an
+    /// error rather than being silently treated as an empty component.
+    /// </summary>
+    public static DiagnosticBag Validate(
+        ElectricalCircuit circuit,
+        Func<string, ElectricalCircuit?>? resolve)
     {
         ArgumentNullException.ThrowIfNull(circuit);
+        DiagnosticBag diagnostics = ValidateOwn(circuit);
+        if (!circuit.Components.Any(component =>
+            ElectricalComponentMetadata.IsSubcircuit(component.Kind)))
+        {
+            return diagnostics;
+        }
+
+        if (resolve is null)
+        {
+            diagnostics.Error(
+                "RAD-ELEC-029",
+                $"Electrical circuit '{circuit.Id}' contains a subcircuit, which can only be resolved with the project's circuits.",
+                path: ElectricalPath(circuit, null));
+            return diagnostics;
+        }
+
+        var validated = new HashSet<string>(StringComparer.Ordinal) { circuit.Id };
+        var stack = new HashSet<string>(StringComparer.Ordinal) { circuit.Id };
+        ValidateHierarchy(circuit, resolve, diagnostics, validated, stack);
+        return diagnostics;
+    }
+
+    private static DiagnosticBag ValidateOwn(ElectricalCircuit circuit)
+    {
         var diagnostics = new DiagnosticBag();
 
         if (!Identifiers.IsValid(circuit.Id))
@@ -543,6 +536,41 @@ public static class ElectricalCircuitValidator
                     "RAD-ELEC-003",
                     $"Duplicate electrical node ID '{node.Id}'.",
                     path: ElectricalPath(circuit, null, node.Id));
+            }
+        }
+
+        var portIds = new HashSet<string>(StringComparer.Ordinal);
+        var portNodes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ElectricalPort port in circuit.Ports)
+        {
+            if (!Identifiers.IsValid(port.Id))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-025",
+                    $"Electrical port has an invalid ID. {Identifiers.Rule}",
+                    path: ElectricalPath(circuit, null));
+            }
+            else if (!portIds.Add(port.Id))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-026",
+                    $"Electrical circuit '{circuit.Id}' repeats port ID '{port.Id}'.",
+                    path: ElectricalPath(circuit, null));
+            }
+
+            if (!nodeIds.Contains(port.NodeId))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-027",
+                    $"Electrical port '{port.Id}' on circuit '{circuit.Id}' refers to unknown node '{port.NodeId}'.",
+                    path: ElectricalPath(circuit, null));
+            }
+            else if (!portNodes.Add(port.NodeId))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-028",
+                    $"Electrical circuit '{circuit.Id}' exposes node '{port.NodeId}' through more than one port; each port must name a distinct node.",
+                    path: ElectricalPath(circuit, null));
             }
         }
 
@@ -574,13 +602,33 @@ public static class ElectricalCircuitValidator
                     path: path);
             }
 
-            bool needsPositiveValue = ElectricalComponentMetadata.RequiresPositiveValue(component.Kind);
-            if (!double.IsFinite(component.Value) || (needsPositiveValue && component.Value <= 0))
+            if (ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+            {
+                if (!Identifiers.IsValid(component.CircuitId))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-029",
+                        $"Component '{component.Id}' is a subcircuit and needs a valid referenced circuit ID.",
+                        path: path);
+                }
+            }
+            else if (component.CircuitId.Length > 0)
             {
                 diagnostics.Error(
-                    "RAD-ELEC-007",
-                    $"Component '{component.Id}' has an invalid {component.ParameterName.ToLowerInvariant()} value.",
+                    "RAD-ELEC-035",
+                    $"Component '{component.Id}' is a {component.Kind} and must not name a referenced circuit.",
                     path: path);
+            }
+            else
+            {
+                bool needsPositiveValue = ElectricalComponentMetadata.RequiresPositiveValue(component.Kind);
+                if (!double.IsFinite(component.Value) || (needsPositiveValue && component.Value <= 0))
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-007",
+                        $"Component '{component.Id}' has an invalid {component.ParameterName.ToLowerInvariant()} value.",
+                        path: path);
+                }
             }
 
             if (ElectricalComponentMetadata.IsMosfet(component.Kind))
@@ -688,81 +736,121 @@ public static class ElectricalCircuitValidator
                 }
             }
 
-            IReadOnlyList<ElectricalTerminalTemplate> templates =
-                ElectricalComponentMetadata.Terminals(component.Kind);
-            foreach (ElectricalTerminalTemplate template in templates)
+            if (ElectricalComponentMetadata.IsSubcircuit(component.Kind))
             {
-                ElectricalTerminal[] matches = component.Terminals
-                    .Where(terminal => string.Equals(terminal.Id, template.Id, StringComparison.Ordinal))
-                    .ToArray();
-                if (matches.Length == 0)
+                // A subcircuit's terminal shape is the referenced circuit's ports, which needs the
+                // project. Validate the bindings that can be checked locally; hierarchy validation
+                // checks the exact port coverage, and a missing target is reported there too.
+                var terminalIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (ElectricalTerminal terminal in component.Terminals)
                 {
-                    diagnostics.Error(
-                        "RAD-ELEC-008",
-                        $"Component '{component.Id}' is missing terminal '{template.Id}' ({template.Name}).",
-                        path: path);
-                    continue;
-                }
+                    if (!terminalIds.Add(terminal.Id))
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-036",
+                            $"Component '{component.Id}' repeats terminal '{terminal.Id}'.",
+                            path: path);
+                    }
 
-                if (matches.Length > 1)
-                {
-                    diagnostics.Error(
-                        "RAD-ELEC-009",
-                        $"Component '{component.Id}' repeats terminal '{template.Id}'.",
-                        path: path);
-                    continue;
-                }
+                    if (!nodeIds.Contains(terminal.NodeId))
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-011",
+                            $"Terminal '{component.Id}.{terminal.Id}' refers to unknown node '{terminal.NodeId}'.",
+                            path: path);
+                    }
+                    else if (string.Equals(terminal.NodeId, circuit.GroundNodeId, StringComparison.Ordinal))
+                    {
+                        groundedTerminals++;
+                    }
 
-                ElectricalTerminal terminal = matches[0];
-                if (terminal.Polarity != template.Polarity)
-                {
-                    diagnostics.Error(
-                        "RAD-ELEC-010",
-                        $"Terminal '{component.Id}.{terminal.Id}' has polarity '{terminal.Polarity}', expected '{template.Polarity}'.",
-                        path: path);
-                }
-
-                if (!nodeIds.Contains(terminal.NodeId))
-                {
-                    diagnostics.Error(
-                        "RAD-ELEC-011",
-                        $"Terminal '{component.Id}.{terminal.Id}' refers to unknown node '{terminal.NodeId}'.",
-                        path: path);
-                }
-                else if (string.Equals(terminal.NodeId, circuit.GroundNodeId, StringComparison.Ordinal))
-                {
-                    groundedTerminals++;
+                    if (terminal.Polarity != ElectricalTerminalPolarity.Passive)
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-034",
+                            $"Terminal '{component.Id}.{terminal.Id}' is a subcircuit port and must be passive.",
+                            path: path);
+                    }
                 }
             }
-
-            foreach (ElectricalTerminal terminal in component.Terminals)
+            else
             {
-                if (templates.All(template => !string.Equals(template.Id, terminal.Id, StringComparison.Ordinal)))
+                IReadOnlyList<ElectricalTerminalTemplate> templates =
+                    ElectricalComponentMetadata.Terminals(component.Kind);
+                foreach (ElectricalTerminalTemplate template in templates)
+                {
+                    ElectricalTerminal[] matches = component.Terminals
+                        .Where(terminal => string.Equals(terminal.Id, template.Id, StringComparison.Ordinal))
+                        .ToArray();
+                    if (matches.Length == 0)
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-008",
+                            $"Component '{component.Id}' is missing terminal '{template.Id}' ({template.Name}).",
+                            path: path);
+                        continue;
+                    }
+
+                    if (matches.Length > 1)
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-009",
+                            $"Component '{component.Id}' repeats terminal '{template.Id}'.",
+                            path: path);
+                        continue;
+                    }
+
+                    ElectricalTerminal terminal = matches[0];
+                    if (terminal.Polarity != template.Polarity)
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-010",
+                            $"Terminal '{component.Id}.{terminal.Id}' has polarity '{terminal.Polarity}', expected '{template.Polarity}'.",
+                            path: path);
+                    }
+
+                    if (!nodeIds.Contains(terminal.NodeId))
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-011",
+                            $"Terminal '{component.Id}.{terminal.Id}' refers to unknown node '{terminal.NodeId}'.",
+                            path: path);
+                    }
+                    else if (string.Equals(terminal.NodeId, circuit.GroundNodeId, StringComparison.Ordinal))
+                    {
+                        groundedTerminals++;
+                    }
+                }
+
+                foreach (ElectricalTerminal terminal in component.Terminals)
+                {
+                    if (templates.All(template => !string.Equals(template.Id, terminal.Id, StringComparison.Ordinal)))
+                    {
+                        diagnostics.Error(
+                            "RAD-ELEC-012",
+                            $"Component '{component.Id}' has unexpected terminal '{terminal.Id}'.",
+                            path: path);
+                    }
+                }
+
+                // Only the channel pair must be distinct. A MOSFET may tie its gate to its
+                // drain (diode-connected) or to its source (Vgs = 0), which are both normal
+                // circuits, so the gate is deliberately not part of this check.
+                (string first, string second) = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                    ? ("drain", "source")
+                    : ("a", "b");
+                ElectricalTerminal? terminalA = component.FindTerminal(first);
+                ElectricalTerminal? terminalB = component.FindTerminal(second);
+                if (terminalA is not null &&
+                    terminalB is not null &&
+                    !string.IsNullOrWhiteSpace(terminalA.NodeId) &&
+                    string.Equals(terminalA.NodeId, terminalB.NodeId, StringComparison.Ordinal))
                 {
                     diagnostics.Error(
-                        "RAD-ELEC-012",
-                        $"Component '{component.Id}' has unexpected terminal '{terminal.Id}'.",
+                        "RAD-ELEC-013",
+                        $"Component '{component.Id}' connects both terminals to node '{terminalA.NodeId}'.",
                         path: path);
                 }
-            }
-
-            // Only the channel pair must be distinct. A MOSFET may tie its gate to its
-            // drain (diode-connected) or to its source (Vgs = 0), which are both normal
-            // circuits, so the gate is deliberately not part of this check.
-            (string first, string second) = ElectricalComponentMetadata.IsMosfet(component.Kind)
-                ? ("drain", "source")
-                : ("a", "b");
-            ElectricalTerminal? terminalA = component.FindTerminal(first);
-            ElectricalTerminal? terminalB = component.FindTerminal(second);
-            if (terminalA is not null &&
-                terminalB is not null &&
-                !string.IsNullOrWhiteSpace(terminalA.NodeId) &&
-                string.Equals(terminalA.NodeId, terminalB.NodeId, StringComparison.Ordinal))
-            {
-                diagnostics.Error(
-                    "RAD-ELEC-013",
-                    $"Component '{component.Id}' connects both terminals to node '{terminalA.NodeId}'.",
-                    path: path);
             }
         }
 
@@ -775,6 +863,139 @@ public static class ElectricalCircuitValidator
         }
 
         return diagnostics;
+    }
+
+    /// <summary>
+    /// Walks the references below an already validated circuit. Each reachable circuit is validated
+    /// once, each reference is checked against the referenced ports, and a reference that closes a
+    /// cycle is reported instead of recursing forever.
+    /// </summary>
+    private static void ValidateHierarchy(
+        ElectricalCircuit circuit,
+        Func<string, ElectricalCircuit?> resolve,
+        DiagnosticBag diagnostics,
+        HashSet<string> validated,
+        HashSet<string> stack)
+    {
+        foreach (ElectricalComponent component in circuit.Components)
+        {
+            if (!ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+            {
+                continue;
+            }
+
+            string path = ElectricalPath(circuit, component.Id);
+            if (!Identifiers.IsValid(component.CircuitId))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-029",
+                    $"Subcircuit '{component.Id}' needs a referenced circuit ID.",
+                    path: path);
+                continue;
+            }
+
+            ElectricalCircuit? child = resolve(component.CircuitId);
+            if (child is null)
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-029",
+                    $"Subcircuit '{component.Id}' refers to circuit '{component.CircuitId}', which is not in this project.",
+                    path: path);
+                continue;
+            }
+
+            if (stack.Contains(child.Id))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-033",
+                    $"Subcircuit '{component.Id}' in '{circuit.Id}' closes a reference cycle through '{child.Id}'.",
+                    path: path);
+                continue;
+            }
+
+            ValidateSubcircuitTerminals(circuit, component, child, diagnostics, path);
+
+            if (!validated.Add(child.Id))
+            {
+                continue;
+            }
+
+            diagnostics.AddRange(ValidateOwn(child));
+            stack.Add(child.Id);
+            ValidateHierarchy(child, resolve, diagnostics, validated, stack);
+            stack.Remove(child.Id);
+        }
+    }
+
+    private static void ValidateSubcircuitTerminals(
+        ElectricalCircuit parent,
+        ElectricalComponent component,
+        ElectricalCircuit child,
+        DiagnosticBag diagnostics,
+        string path)
+    {
+        if (child.Ports.Count == 0)
+        {
+            diagnostics.Error(
+                "RAD-ELEC-030",
+                $"Subcircuit '{component.Id}' refers to circuit '{child.Id}', which exposes no ports. Add a port for every node the parent must connect.",
+                path: path);
+            return;
+        }
+
+        if (!child.Ports.Any(port =>
+            string.Equals(port.NodeId, child.GroundNodeId, StringComparison.Ordinal)))
+        {
+            diagnostics.Error(
+                "RAD-ELEC-031",
+                $"Subcircuit '{component.Id}' refers to circuit '{child.Id}', whose ground '{child.GroundNodeId}' is not exposed as a port. A subcircuit has no implicit ground connection.",
+                path: path);
+        }
+
+        var portIds = child.Ports
+            .Where(port => Identifiers.IsValid(port.Id))
+            .Select(port => port.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ElectricalTerminal terminal in component.Terminals)
+        {
+            if (!seen.Add(terminal.Id))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-036",
+                    $"Component '{component.Id}' repeats terminal '{terminal.Id}'.",
+                    path: path);
+                continue;
+            }
+
+            if (!portIds.Contains(terminal.Id))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-032",
+                    $"Subcircuit '{component.Id}' has unexpected terminal '{terminal.Id}'; circuit '{child.Id}' exposes {string.Join(", ", portIds)}.",
+                    path: path);
+                continue;
+            }
+
+            if (parent.FindNode(terminal.NodeId) is null)
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-034",
+                    $"Subcircuit terminal '{component.Id}.{terminal.Id}' refers to unknown parent node '{terminal.NodeId}'.",
+                    path: path);
+            }
+        }
+
+        foreach (string portId in portIds)
+        {
+            if (!seen.Contains(portId))
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-032",
+                    $"Subcircuit '{component.Id}' is missing terminal '{portId}', one of circuit '{child.Id}'\'s ports.",
+                    path: path);
+            }
+        }
     }
 
     private static string ElectricalPath(

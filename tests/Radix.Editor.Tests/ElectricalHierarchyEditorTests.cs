@@ -1,0 +1,147 @@
+using Radix.Core.Electrical;
+using Radix.Core.Model;
+using Radix.Editor.ViewModels;
+using Radix.StdLib;
+using Xunit;
+
+namespace Radix.Editor.Tests;
+
+public sealed class ElectricalHierarchyEditorTests
+{
+    [Fact]
+    public void PortsAndASubcircuitInstanceCanBeAuthoredThroughThePanel()
+    {
+        EditorViewModel viewModel = CreateEditor();
+
+        // Child circuit: n2 -- r1 -- n3 -- r2 -- ground, exposing n2, n3 and ground.
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalNode();
+        viewModel.AddElectricalNode();
+        viewModel.AddElectricalComponent();
+        viewModel.SetElectricalTerminalNode("r1", "a", "n2");
+        viewModel.SetElectricalTerminalNode("r1", "b", "n3");
+        viewModel.AddElectricalComponent();
+        viewModel.SetElectricalTerminalNode("r2", "a", "n3");
+        viewModel.SetElectricalTerminalNode("r2", "b", "gnd");
+
+        EditableField ports = viewModel.ElectricalCircuitFields.Single(field => field.Label == "Ports");
+        ports.Value = "in:n2; out:n3; gnd:gnd";
+        Assert.True(viewModel.ApplyField(ports));
+        Assert.Equal(3, viewModel.SelectedElectricalCircuitModel!.Ports.Count);
+        Assert.Contains(
+            "3 ports",
+            viewModel.ElectricalCircuits.Single(item => item.Id == "dc1").Summary,
+            StringComparison.Ordinal);
+
+        // Parent circuit: a 5 V source drives the child's input; the output reads the divider.
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalNode();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.VoltageSource);
+        Assert.Equal(ElectricalComponentKind.VoltageSource, viewModel.SelectedElectricalCircuitModel!
+            .FindComponent("r1")!.Kind);
+        viewModel.SetElectricalTerminalNode("r1", "a", "n1");
+        viewModel.SetElectricalTerminalNode("r1", "b", "gnd");
+        EditableField voltage = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Value (V)");
+        voltage.Value = "5";
+        Assert.True(viewModel.ApplyField(voltage));
+
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Subcircuit);
+        ElectricalComponent instance = viewModel.SelectedElectricalCircuitModel!.FindComponent("r2")!;
+        Assert.Equal(ElectricalComponentKind.Subcircuit, instance.Kind);
+        Assert.Empty(instance.Terminals);
+
+        EditableField circuit = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Circuit");
+        circuit.Value = "dc1";
+        Assert.True(viewModel.ApplyField(circuit));
+        Assert.Equal("dc1", instance.CircuitId);
+        Assert.Equal(
+            ["in", "out", "gnd"],
+            instance.Terminals.Select(terminal => terminal.Id));
+
+        viewModel.SetElectricalTerminalNode("r2", "in", "n1");
+        viewModel.SetElectricalTerminalNode("r2", "out", "n2");
+        viewModel.SetElectricalTerminalNode("r2", "gnd", "gnd");
+        Assert.Empty(viewModel.ElectricalDiagnostics);
+
+        Assert.True(viewModel.SolveElectricalCircuit(), viewModel.ElectricalSolveSummary);
+        ElectricalNodeResultItem output = viewModel.ElectricalNodeResults.Single(node => node.Id == "n2");
+        Assert.Equal(2.5, output.Volts!.Value, 12);
+        Assert.Contains("Solved 'dc2'", viewModel.ElectricalSolveSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EditingAChildInterfaceKeepsParentTerminalsInStep()
+    {
+        EditorViewModel viewModel = CreateEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalNode();
+        viewModel.AddElectricalComponent();
+        viewModel.SetElectricalTerminalNode("r1", "a", "n2");
+        viewModel.SetElectricalTerminalNode("r1", "b", "gnd");
+        EditableField ports = viewModel.ElectricalCircuitFields.Single(field => field.Label == "Ports");
+        ports.Value = "out:n2; gnd:gnd";
+        Assert.True(viewModel.ApplyField(ports));
+
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Subcircuit);
+        EditableField circuit = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Circuit");
+        circuit.Value = "dc1";
+        Assert.True(viewModel.ApplyField(circuit));
+        Assert.Equal(2, viewModel.SelectedElectricalCircuitModel!.FindComponent("r1")!.Terminals.Count);
+
+        viewModel.SelectedElectricalCircuit = viewModel.ElectricalCircuits
+            .Single(item => item.Id == "dc1");
+        viewModel.AddElectricalNode();
+        ports = viewModel.ElectricalCircuitFields.Single(field => field.Label == "Ports");
+        ports.Value = "out:n2; tap:n3; gnd:gnd";
+        Assert.True(viewModel.ApplyField(ports));
+
+        viewModel.SelectedElectricalCircuit = viewModel.ElectricalCircuits
+            .Single(item => item.Id == "dc2");
+        ElectricalComponent instance = viewModel.SelectedElectricalCircuitModel!.FindComponent("r1")!;
+        Assert.Equal(
+            ["out", "tap", "gnd"],
+            instance.Terminals.Select(terminal => terminal.Id));
+        Assert.Equal("gnd", instance.FindTerminal("tap")!.NodeId);
+    }
+
+    [Fact]
+    public void InvalidPortTextIsRejectedWithoutChangingTheInterface()
+    {
+        EditorViewModel viewModel = CreateEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalNode();
+        EditableField ports = viewModel.ElectricalCircuitFields.Single(field => field.Label == "Ports");
+        ports.Value = "out:n2; gnd:gnd";
+        Assert.True(viewModel.ApplyField(ports));
+
+        ports.Value = "out:n2; out:gnd";
+        Assert.False(viewModel.ApplyField(ports));
+        Assert.Contains("repeated", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, viewModel.SelectedElectricalCircuitModel!.Ports.Count);
+
+        ports.Value = "out:missing; gnd:gnd";
+        Assert.False(viewModel.ApplyField(ports));
+        Assert.Contains("unknown node", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, viewModel.SelectedElectricalCircuitModel.Ports.Count);
+    }
+
+    private static EditorViewModel CreateEditor()
+    {
+        var project = CircuitProject.CreateEmpty("Electrical hierarchy editor test");
+        var root = new CircuitDefinition { Id = "main", Name = "Main" };
+        project.Definitions.Add(root);
+        project.RootDefinitionId = root.Id;
+        StandardLibrary.Install(project);
+        return new EditorViewModel(project);
+    }
+}

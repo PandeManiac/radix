@@ -140,7 +140,7 @@ public static class ElectricalRuleChecker
             DcNetlist netlist;
             try
             {
-                netlist = circuit.ToDcNetlist();
+                netlist = circuit.ToDcNetlist(project.FindElectricalCircuit);
             }
             catch (ElectricalCircuitValidationException)
             {

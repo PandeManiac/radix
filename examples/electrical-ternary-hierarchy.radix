@@ -1,0 +1,184 @@
+{
+  "format": "radix-project",
+  "version": 22,
+  "name": "Two cascaded electrical ternary inverters",
+  "description": "A reusable resistor-summed ternary inverter is authored once as the 'sti' circuit and instantiated twice by the 'chain' root. The output at 0 V, 2.5 V and 5 V is identity because each stage inverts the ternary levels. Every internal node is solved from MOSFETs and resistors; no behavioural logic lookup is involved.",
+  "root": "main",
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": ["0", "1"],
+      "drivers": { "kind": "single" }
+    }
+  ],
+  "definitions": [
+    {
+      "id": "main",
+      "name": "Main",
+      "pins": [],
+      "instances": [],
+      "nets": [],
+      "ports": []
+    }
+  ],
+  "electricalCircuits": [
+    {
+      "id": "sti",
+      "name": "Standard ternary inverter (reusable)",
+      "description": "Two CMOS inverters with opposite strength ratios summing through 100 kOhm resistors. The interface exposes input, output, 5 V rail and ground; the parent supplies the rail and drive.",
+      "ground": "gnd",
+      "nodes": [
+        { "id": "gnd", "name": "Ground" },
+        { "id": "vdd", "name": "5 V rail" },
+        { "id": "in", "name": "Input" },
+        { "id": "out_low", "name": "Low-threshold inverter output" },
+        { "id": "out_high", "name": "High-threshold inverter output" },
+        { "id": "out", "name": "Summed output" }
+      ],
+      "ports": [
+        { "id": "in", "name": "Input", "node": "in" },
+        { "id": "out", "name": "Output", "node": "out" },
+        { "id": "vdd", "name": "5 V rail", "node": "vdd" },
+        { "id": "gnd", "name": "Ground", "node": "gnd" }
+      ],
+      "components": [
+        {
+          "id": "MPL",
+          "name": "Weak p-channel pull-up",
+          "kind": "mosfet",
+          "value": 1e-05,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_low" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "vdd" }
+          ]
+        },
+        {
+          "id": "MNL",
+          "name": "Strong n-channel pull-down",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_low" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "MPH",
+          "name": "Strong p-channel pull-up",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_high" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "vdd" }
+          ]
+        },
+        {
+          "id": "MNH",
+          "name": "Weak n-channel pull-down",
+          "kind": "mosfet",
+          "value": 1e-05,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_high" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "RSUM1",
+          "name": "Summing resistor",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "out_low" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+          ]
+        },
+        {
+          "id": "RSUM2",
+          "name": "Summing resistor",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "out_high" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chain",
+      "name": "Two-stage ternary chain",
+      "description": "The root circuit supplies 5 V and the input, then instantiates 'sti' twice. The middle node is the first stage's output and the second stage's input.",
+      "ground": "gnd",
+      "nodes": [
+        { "id": "gnd", "name": "Ground" },
+        { "id": "vdd", "name": "5 V rail" },
+        { "id": "in", "name": "Input" },
+        { "id": "mid", "name": "First stage output" },
+        { "id": "out", "name": "Second stage output" }
+      ],
+      "components": [
+        {
+          "id": "VDD",
+          "name": "5 V rail",
+          "kind": "voltage-source",
+          "value": 5,
+          "terminals": [
+            { "id": "a", "name": "Positive", "polarity": "positive", "node": "vdd" },
+            { "id": "b", "name": "Negative", "polarity": "negative", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "VIN",
+          "name": "Input drive",
+          "kind": "voltage-source",
+          "value": 0,
+          "terminals": [
+            { "id": "a", "name": "Positive", "polarity": "positive", "node": "in" },
+            { "id": "b", "name": "Negative", "polarity": "negative", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "X1",
+          "name": "First ternary inverter",
+          "kind": "subcircuit",
+          "circuit": "sti",
+          "terminals": [
+            { "id": "in", "name": "Input", "polarity": "passive", "node": "in" },
+            { "id": "out", "name": "Output", "polarity": "passive", "node": "mid" },
+            { "id": "vdd", "name": "5 V rail", "polarity": "passive", "node": "vdd" },
+            { "id": "gnd", "name": "Ground", "polarity": "passive", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "X2",
+          "name": "Second ternary inverter",
+          "kind": "subcircuit",
+          "circuit": "sti",
+          "terminals": [
+            { "id": "in", "name": "Input", "polarity": "passive", "node": "mid" },
+            { "id": "out", "name": "Output", "polarity": "passive", "node": "out" },
+            { "id": "vdd", "name": "5 V rail", "polarity": "passive", "node": "vdd" },
+            { "id": "gnd", "name": "Ground", "polarity": "passive", "node": "gnd" }
+          ]
+        }
+      ]
+    }
+  ]
+}

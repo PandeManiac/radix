@@ -11,9 +11,13 @@ public sealed class ElectricalCircuitListItem
         ArgumentNullException.ThrowIfNull(circuit);
         Id = circuit.Id;
         Name = circuit.Name;
-        Summary = string.Create(
-            System.Globalization.CultureInfo.InvariantCulture,
-            $"{circuit.Nodes.Count} nodes · {circuit.Components.Count} components");
+        Summary = circuit.Ports.Count == 0
+            ? string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{circuit.Nodes.Count} nodes · {circuit.Components.Count} components")
+            : string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{circuit.Nodes.Count} nodes · {circuit.Components.Count} components · {circuit.Ports.Count} ports");
     }
 
     public string Id { get; }
@@ -216,6 +220,7 @@ public sealed class ElectricalComponentKindChoice
             ElectricalComponentKind.Capacitor => "Capacitor",
             ElectricalComponentKind.Inductor => "Inductor",
             ElectricalComponentKind.Mosfet => "MOSFET",
+            ElectricalComponentKind.Subcircuit => "Subcircuit",
             _ => kind.ToString(),
         };
         Unit = ElectricalComponentMetadata.Unit(kind);
@@ -245,14 +250,17 @@ public sealed class ElectricalComponentListItem
         KindLabel = new ElectricalComponentKindChoice(component.Kind).Label;
         ValueText = FormatValue(component.Value);
         Unit = component.Unit;
-        Summary = ElectricalComponentMetadata.IsMosfet(component.Kind)
-            ? $"{KindLabel} · {ElectricalComponentMetadata.ChannelName(component.Channel)}-channel · " +
-              $"Vt {FormatValue(component.ThresholdVoltage)} V" +
-              (component.ChannelLengthModulation == 0
-                  ? string.Empty
-                  : $" · lambda {FormatValue(component.ChannelLengthModulation)} 1/V") +
-              $" · {ValueText} {Unit}"
-            : $"{KindLabel} · {ValueText} {Unit}";
+        Summary = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
+            ? $"{KindLabel} · {(component.CircuitId.Length == 0 ? "no circuit" : component.CircuitId)} · " +
+              $"{component.Terminals.Count} terminal(s)"
+            : ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? $"{KindLabel} · {ElectricalComponentMetadata.ChannelName(component.Channel)}-channel · " +
+                  $"Vt {FormatValue(component.ThresholdVoltage)} V" +
+                  (component.ChannelLengthModulation == 0
+                      ? string.Empty
+                      : $" · lambda {FormatValue(component.ChannelLengthModulation)} 1/V") +
+                  $" · {ValueText} {Unit}"
+                : $"{KindLabel} · {ValueText} {Unit}";
     }
 
     public string Id { get; }

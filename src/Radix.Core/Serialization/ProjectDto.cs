@@ -71,7 +71,19 @@ internal sealed class ElectricalCircuitDto
 
     public List<ElectricalNodeDto>? Nodes { get; set; }
 
+    /// <summary>Named interface nodes exposed to a parent circuit; omitted when none are exposed.</summary>
+    public List<ElectricalPortDto>? Ports { get; set; }
+
     public List<ElectricalComponentDto>? Components { get; set; }
+}
+
+internal sealed class ElectricalPortDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Node { get; set; }
 }
 
 internal sealed class ElectricalDelayToleranceDto
@@ -102,6 +114,9 @@ internal sealed class ElectricalComponentDto
     public string? Name { get; set; }
 
     public string? Kind { get; set; }
+
+    /// <summary>Referenced circuit for a subcircuit kind; omitted for every built-in kind.</summary>
+    public string? Circuit { get; set; }
 
     public double? Value { get; set; }
 

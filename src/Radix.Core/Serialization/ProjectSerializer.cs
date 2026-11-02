@@ -25,7 +25,8 @@ public static class ProjectSerializer
     /// Version 6 adds optional per-definition waveform pin selections inside that view.
     /// Version 7 adds the pending-event limit. Version 8 adds optional authored
     /// electrical circuits. Version 11 adds the authored MOSFET component kind with
-    /// its optional channel and threshold-voltage fields. Older files load unchanged;
+    /// its optional channel and threshold-voltage fields. Version 22 adds electrical
+    /// circuit ports and the subcircuit component kind. Older files load unchanged;
     /// every version up to
     /// <see cref="CurrentVersion"/> is accepted, and saving always writes the current
     /// version.
@@ -333,6 +334,26 @@ public static class ProjectSerializer
             });
         }
 
+        foreach (ElectricalPortDto portDto in dto.Ports ?? [])
+        {
+            string portId = portDto.Id ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' has a port without 'id'.");
+            string nodeId = portDto.Node ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' port '{portId}' is missing 'node'.");
+            if (!circuit.Nodes.Any(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal)))
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' port '{portId}' refers to unknown node '{nodeId}'.");
+            }
+
+            circuit.Ports.Add(new ElectricalPort
+            {
+                Id = portId,
+                Name = string.IsNullOrWhiteSpace(portDto.Name) ? portId : portDto.Name,
+                NodeId = nodeId,
+            });
+        }
+
         foreach (ElectricalComponentDto componentDto in dto.Components ?? [])
         {
             circuit.Components.Add(MapElectricalComponent(componentDto, id));
@@ -346,6 +367,7 @@ public static class ProjectSerializer
         string id = dto.Id ?? throw new ProjectFormatException($"Electrical circuit '{circuitId}' has a component without 'id'.");
         ElectricalComponentKind kind = ParseElectricalKind(dto.Kind, circuitId, id);
         bool isMosfet = ElectricalComponentMetadata.IsMosfet(kind);
+        bool isSubcircuit = ElectricalComponentMetadata.IsSubcircuit(kind);
         if (!isMosfet && (dto.Channel is not null ||
             dto.ThresholdVoltage is not null ||
             dto.ChannelLengthModulation is not null ||
@@ -362,6 +384,18 @@ public static class ProjectSerializer
         {
             throw new ProjectFormatException(
                 $"Electrical component '{circuitId}.{id}' is a mosfet and needs 'thresholdVoltage'.");
+        }
+
+        if (isSubcircuit && string.IsNullOrWhiteSpace(dto.Circuit))
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a subcircuit and needs 'circuit'.");
+        }
+
+        if (!isSubcircuit && dto.Circuit is not null)
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'circuit'; that belongs to a subcircuit.");
         }
 
         DcMosfetChannel channel = DcMosfetChannel.NChannel;
@@ -383,7 +417,10 @@ public static class ProjectSerializer
             Id = id,
             Name = string.IsNullOrWhiteSpace(dto.Name) ? id : dto.Name,
             Kind = kind,
-            Value = dto.Value ?? throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' is missing 'value'."),
+            Value = dto.Value ?? (isSubcircuit
+                ? 0
+                : throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' is missing 'value'.")),
+            CircuitId = isSubcircuit ? dto.Circuit! : string.Empty,
             InitialValue = dto.InitialValue,
             Channel = channel,
             ThresholdVoltage = dto.ThresholdVoltage ?? 1,
@@ -428,6 +465,7 @@ public static class ProjectSerializer
             "capacitor" => ElectricalComponentKind.Capacitor,
             "inductor" => ElectricalComponentKind.Inductor,
             "mosfet" => ElectricalComponentKind.Mosfet,
+            "subcircuit" => ElectricalComponentKind.Subcircuit,
             null => throw new ProjectFormatException($"Electrical component '{circuitId}.{componentId}' is missing 'kind'."),
             _ => throw new ProjectFormatException(
                 $"Electrical component '{circuitId}.{componentId}' has unknown kind '{value}'."),
@@ -791,12 +829,25 @@ public static class ProjectSerializer
             Id = node.Id,
             Name = node.Name,
         }).ToList(),
+        Ports = circuit.Ports.Count == 0
+            ? null
+            : circuit.Ports.Select(port => new ElectricalPortDto
+            {
+                Id = port.Id,
+                Name = port.Name,
+                Node = port.NodeId,
+            }).ToList(),
         Components = circuit.Components.Select(component => new ElectricalComponentDto
         {
             Id = component.Id,
             Name = component.Name,
             Kind = ElectricalComponentMetadata.KindName(component.Kind),
-            Value = component.Value,
+            Circuit = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
+                ? component.CircuitId
+                : null,
+            Value = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
+                ? null
+                : component.Value,
             InitialValue = component.InitialValue,
             Channel = ElectricalComponentMetadata.IsMosfet(component.Kind)
                 ? ElectricalComponentMetadata.ChannelName(component.Channel)

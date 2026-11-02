@@ -754,7 +754,7 @@ public sealed class EditorViewModel : ObservableObject
 
         try
         {
-            TransientNetlist netlist = circuit.ToTransientNetlist();
+            TransientNetlist netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
             if ((ElectricalDeviceBiasText ?? string.Empty).Trim() is { Length: > 0 } biasText)
             {
                 if (!TryApplyElectricalAcBias(netlist, biasText, out TransientNetlist biased, out string biasError))
@@ -891,6 +891,7 @@ public sealed class EditorViewModel : ObservableObject
         new(ElectricalComponentKind.Capacitor),
         new(ElectricalComponentKind.Inductor),
         new(ElectricalComponentKind.Mosfet),
+        new(ElectricalComponentKind.Subcircuit),
     ];
 
     public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
@@ -6383,7 +6384,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTerminal? terminal = component.FindTerminal(terminalId);
         if (terminal is null)
         {
-            ElectricalTerminalTemplate found = ElectricalComponentMetadata.Terminals(component.Kind)
+            ElectricalTerminalTemplate found = ElectricalTerminalTemplates(component)
                 .FirstOrDefault(candidate => string.Equals(candidate.Id, terminalId, StringComparison.Ordinal));
             if (string.IsNullOrEmpty(found.Id))
             {
@@ -6425,19 +6426,238 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalComponentKind previousKind = component.Kind;
         PushUndo();
         component.Kind = kind;
-        // A resistance is not a transconductance: a fresh resistor switched to a MOSFET
-        // used to keep 1000 and become a nonsensical 1000 A/V^2 device. Every other kind
-        // keeps the number already visible in the value field, as it always has.
-        if (ElectricalComponentMetadata.IsMosfet(kind) && !ElectricalComponentMetadata.IsMosfet(previousKind))
+        component.CircuitId = string.Empty;
+        if (ElectricalComponentMetadata.IsSubcircuit(kind))
         {
-            component.Value = DefaultElectricalValue(kind);
+            // A subcircuit has no terminal shape until a referenced circuit is chosen, and its
+            // numeric value is not a physical parameter. Start empty rather than inventing an
+            // unbound port; choosing the circuit fills the terminals in one more undo step.
+            component.Value = 0;
+            component.Terminals.Clear();
+        }
+        else
+        {
+            // A resistance is not a transconductance: a fresh resistor switched to a MOSFET
+            // used to keep 1000 and become a nonsensical 1000 A/V^2 device. Every other kind
+            // keeps the number already visible in the value field, as it always has.
+            if (ElectricalComponentMetadata.IsMosfet(kind) &&
+                !ElectricalComponentMetadata.IsMosfet(previousKind))
+            {
+                component.Value = DefaultElectricalValue(kind);
+            }
+
+            AddElectricalTerminals(
+                component,
+                ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 0),
+                ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 1));
         }
 
-        AddElectricalTerminals(
-            component,
-            ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 0),
-            ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 1));
         AfterElectricalMutation($"'{component.Id}' is now a {new ElectricalComponentKindChoice(kind).Label.ToLowerInvariant()}");
+    }
+
+    private bool SetElectricalSubcircuitCircuit(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalCircuit? parent = _project.FindElectricalCircuit(circuitId);
+        ElectricalComponent? component = parent?.FindComponent(componentId);
+        if (parent is null || component is null ||
+            !ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+        {
+            return false;
+        }
+
+        string targetId = value.Trim();
+        if (string.Equals(component.CircuitId, targetId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (targetId.Length == 0)
+        {
+            PushUndo();
+            component.CircuitId = string.Empty;
+            component.Terminals.Clear();
+            AfterElectricalMutation($"Cleared the referenced circuit of '{component.Id}'");
+            return true;
+        }
+
+        ElectricalCircuit? target = _project.FindElectricalCircuit(targetId);
+        if (target is null)
+        {
+            StatusText = $"No electrical circuit '{targetId}'. Available: {string.Join(", ", _project.ElectricalCircuits.Select(circuit => circuit.Id))}.";
+            return false;
+        }
+
+        if (ReferenceEquals(target, parent))
+        {
+            StatusText = "A circuit cannot instantiate itself; choose another circuit.";
+            return false;
+        }
+
+        PushUndo();
+        component.CircuitId = target.Id;
+        component.Value = 0;
+        Dictionary<string, string> bindings = component.Terminals
+            .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
+        component.Terminals.Clear();
+        foreach (ElectricalPort port in target.Ports)
+        {
+            string node = bindings.GetValueOrDefault(port.Id) ?? string.Empty;
+            if (parent.FindNode(node) is null)
+            {
+                node = parent.GroundNodeId;
+            }
+
+            component.Terminals.Add(new ElectricalTerminal
+            {
+                Id = port.Id,
+                Name = string.IsNullOrWhiteSpace(port.Name) ? port.Id : port.Name,
+                Polarity = ElectricalTerminalPolarity.Passive,
+                NodeId = node,
+            });
+        }
+
+        AfterElectricalMutation(
+            $"'{component.Id}' reuses circuit '{target.Id}' ({target.Ports.Count} port(s))");
+        return true;
+    }
+
+    private static string FormatElectricalPorts(ElectricalCircuit circuit) =>
+        string.Join(
+            "; ",
+            circuit.Ports.Select(port => $"{port.Id}:{port.NodeId}"));
+
+    private bool SetElectricalCircuitPorts(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            return false;
+        }
+
+        var ports = new List<ElectricalPort>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var nodes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string entry in value.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int colon = entry.IndexOf(':');
+            if (colon <= 0 || colon != entry.LastIndexOf(':'))
+            {
+                StatusText = $"Port '{entry}' must be written as id:node.";
+                return false;
+            }
+
+            string id = entry[..colon].Trim();
+            string node = entry[(colon + 1)..].Trim();
+            if (!Radix.Core.Model.Identifiers.IsValid(id))
+            {
+                StatusText = $"Port ID '{id}' is invalid. {Radix.Core.Model.Identifiers.Rule}";
+                return false;
+            }
+
+            if (!ids.Add(id))
+            {
+                StatusText = $"Port ID '{id}' is repeated.";
+                return false;
+            }
+
+            if (circuit.FindNode(node) is null)
+            {
+                StatusText = $"Port '{id}' refers to unknown node '{node}'.";
+                return false;
+            }
+
+            if (!nodes.Add(node))
+            {
+                StatusText = $"Node '{node}' is exposed by more than one port.";
+                return false;
+            }
+
+            ElectricalPort? existing = circuit.Ports.FirstOrDefault(port =>
+                string.Equals(port.Id, id, StringComparison.Ordinal));
+            ports.Add(new ElectricalPort
+            {
+                Id = id,
+                Name = existing is null || string.IsNullOrWhiteSpace(existing.Name) ? id : existing.Name,
+                NodeId = node,
+            });
+        }
+
+        bool unchanged = ports.Count == circuit.Ports.Count &&
+            ports.Zip(circuit.Ports).All(pair =>
+                string.Equals(pair.First.Id, pair.Second.Id, StringComparison.Ordinal) &&
+                string.Equals(pair.First.NodeId, pair.Second.NodeId, StringComparison.Ordinal));
+        if (unchanged)
+        {
+            return false;
+        }
+
+        PushUndo();
+        circuit.Ports.Clear();
+        circuit.Ports.AddRange(ports);
+        SyncSubcircuitInstances(circuit);
+        AfterElectricalMutation(
+            $"Updated '{circuit.Id}' ports ({circuit.Ports.Count})");
+        return true;
+    }
+
+    /// <summary>
+    /// Keeps parent instances in step when a referenced circuit's interface changes. Existing
+    /// bindings survive by terminal ID; a new port starts on the parent's ground node, and a
+    /// removed port loses its terminal. Validation still reports a stale instance if the user
+    /// never opens the project again.
+    /// </summary>
+    private void SyncSubcircuitInstances(ElectricalCircuit child)
+    {
+        foreach (ElectricalCircuit parent in _project.ElectricalCircuits)
+        {
+            foreach (ElectricalComponent component in parent.Components)
+            {
+                if (!ElectricalComponentMetadata.IsSubcircuit(component.Kind) ||
+                    !string.Equals(component.CircuitId, child.Id, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                Dictionary<string, string> bindings = component.Terminals
+                    .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
+                    .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
+                component.Terminals.Clear();
+                foreach (ElectricalPort port in child.Ports)
+                {
+                    string node = bindings.GetValueOrDefault(port.Id) ?? string.Empty;
+                    if (parent.FindNode(node) is null)
+                    {
+                        node = parent.GroundNodeId;
+                    }
+
+                    component.Terminals.Add(new ElectricalTerminal
+                    {
+                        Id = port.Id,
+                        Name = string.IsNullOrWhiteSpace(port.Name) ? port.Id : port.Name,
+                        Polarity = ElectricalTerminalPolarity.Passive,
+                        NodeId = node,
+                    });
+                }
+            }
+        }
+    }
+
+    private IReadOnlyList<ElectricalTerminalTemplate> ElectricalTerminalTemplates(
+        ElectricalComponent component)
+    {
+        if (!ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+        {
+            return ElectricalComponentMetadata.Terminals(component.Kind);
+        }
+
+        return ElectricalComponentMetadata.SubcircuitTerminals(
+            _project.FindElectricalCircuit(component.CircuitId));
     }
 
     private ElectricalCircuitListItem? FindElectricalCircuitItem(string? id) =>
@@ -6592,7 +6812,7 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         IReadOnlyList<ElectricalNodeChoice> choices = ElectricalGroundChoices.ToList();
-        IReadOnlyList<ElectricalTerminalTemplate> templates = ElectricalComponentMetadata.Terminals(component.Kind);
+        IReadOnlyList<ElectricalTerminalTemplate> templates = ElectricalTerminalTemplates(component);
         foreach (ElectricalTerminalTemplate template in templates)
         {
             ElectricalTerminal terminal = component.FindTerminal(template.Id) ?? new ElectricalTerminal
@@ -6624,6 +6844,11 @@ public sealed class EditorViewModel : ObservableObject
             circuit.Description ?? string.Empty,
             hint: "Optional context for this DC circuit",
             apply: value => SetElectricalCircuitDescription(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Ports",
+            FormatElectricalPorts(circuit),
+            hint: "Interface as id:node, semicolon separated (for example in:in; out:out; vdd:vdd; gnd:gnd). A subcircuit has one terminal per port, and a referenced circuit must expose its ground",
+            apply: value => SetElectricalCircuitPorts(circuit.Id, value)));
         ElectricalCircuitFields.Add(new EditableField(
             "Transient stop (s)",
             _electricalTransientStopText,
@@ -6702,11 +6927,22 @@ public sealed class EditorViewModel : ObservableObject
                     component.Name,
                     hint: "Display label only",
                     apply: value => RenameElectricalComponent(circuit.Id, component.Id, value)));
-                ElectricalComponentFields.Add(new EditableField(
-                    $"Value ({component.Unit})",
-                    FormatElectricalValue(component.Value),
-                    hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; SI suffixes p, n, u, m, k, M, and G are supported",
-                    apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
+                if (ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Circuit",
+                        component.CircuitId,
+                        hint: "ID of the authored circuit this instance reuses; its ports become this component's terminals",
+                        apply: value => SetElectricalSubcircuitCircuit(circuit.Id, component.Id, value)));
+                }
+                else
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        $"Value ({component.Unit})",
+                        FormatElectricalValue(component.Value),
+                        hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; SI suffixes p, n, u, m, k, M, and G are supported",
+                        apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
+                }
                 if (ElectricalComponentMetadata.HasState(component.Kind))
                 {
                     ElectricalComponentFields.Add(new EditableField(
@@ -6797,7 +7033,7 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+        DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
         if (validation.HasErrors)
         {
             ShowElectricalSolveError(
@@ -6809,7 +7045,7 @@ public sealed class EditorViewModel : ObservableObject
         DcNetlist netlist;
         try
         {
-            netlist = circuit.ToDcNetlist();
+            netlist = circuit.ToDcNetlist(_project.FindElectricalCircuit);
         }
         catch (ElectricalCircuitValidationException exception)
         {
@@ -6911,7 +7147,7 @@ public sealed class EditorViewModel : ObservableObject
         TransientNetlist netlist;
         try
         {
-            netlist = circuit.ToTransientNetlist();
+            netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
         }
         catch (ElectricalCircuitValidationException exception)
         {
@@ -7173,7 +7409,7 @@ public sealed class EditorViewModel : ObservableObject
         DcNetlist netlist;
         try
         {
-            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
             if (validation.HasErrors)
             {
                 ClearElectricalDcSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
@@ -7182,7 +7418,7 @@ public sealed class EditorViewModel : ObservableObject
                 return false;
             }
 
-            netlist = circuit.ToDcNetlist();
+            netlist = circuit.ToDcNetlist(_project.FindElectricalCircuit);
         }
         catch (Exception exception) when (
             exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
@@ -7446,7 +7682,7 @@ public sealed class EditorViewModel : ObservableObject
         TransientNetlist netlist;
         try
         {
-            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
             if (validation.HasErrors)
             {
                 ClearElectricalAcSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
@@ -7455,7 +7691,7 @@ public sealed class EditorViewModel : ObservableObject
                 return false;
             }
 
-            netlist = circuit.ToTransientNetlist();
+            netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
         }
         catch (Exception exception) when (
             exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
@@ -7628,7 +7864,7 @@ public sealed class EditorViewModel : ObservableObject
         TransientNetlist netlist;
         try
         {
-            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
             if (validation.HasErrors)
             {
                 ClearElectricalBiasSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
@@ -7637,7 +7873,7 @@ public sealed class EditorViewModel : ObservableObject
                 return false;
             }
 
-            netlist = circuit.ToTransientNetlist();
+            netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
         }
         catch (Exception exception) when (
             exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
@@ -9037,7 +9273,7 @@ public sealed class EditorViewModel : ObservableObject
                 component.BiasDependentCapacitance = false;
             }
 
-            TransientResult constant = circuit.ToTransientNetlist().Run(options);
+            TransientResult constant = circuit.ToTransientNetlist(_project.FindElectricalCircuit).Run(options);
 
             foreach (ElectricalComponent component in circuit.Components
                          .Where(component => component.Kind == ElectricalComponentKind.Mosfet))
@@ -9045,7 +9281,7 @@ public sealed class EditorViewModel : ObservableObject
                 component.BiasDependentCapacitance = true;
             }
 
-            TransientResult biasDependent = circuit.ToTransientNetlist().Run(options);
+            TransientResult biasDependent = circuit.ToTransientNetlist(_project.FindElectricalCircuit).Run(options);
             ShowCapacitanceComparison(constant, biasDependent);
             return true;
         }
@@ -9303,7 +9539,7 @@ public sealed class EditorViewModel : ObservableObject
         TransientResult result;
         try
         {
-            result = circuit.ToTransientNetlist().Run(new TransientOptions
+            result = circuit.ToTransientNetlist(_project.FindElectricalCircuit).Run(new TransientOptions
             {
                 StartTime = 0,
                 StopTime = stop,
@@ -9560,7 +9796,7 @@ public sealed class EditorViewModel : ObservableObject
 
     private void RefreshElectricalDiagnostics(ElectricalCircuit circuit)
     {
-        DiagnosticBag report = ElectricalCircuitValidator.Validate(circuit);
+        DiagnosticBag report = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
         ElectricalDiagnostics.Clear();
         foreach (Diagnostic diagnostic in report)
         {
@@ -10011,10 +10247,10 @@ public sealed class EditorViewModel : ObservableObject
             Math.Abs(pair.First.Time - pair.Second.Time) <= double.Epsilon &&
             Math.Abs(pair.First.Value - pair.Second.Value) <= double.Epsilon);
 
-    private static void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
+    private void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
     {
         component.Terminals.Clear();
-        foreach (ElectricalTerminalTemplate template in ElectricalComponentMetadata.Terminals(component.Kind))
+        foreach (ElectricalTerminalTemplate template in ElectricalTerminalTemplates(component))
         {
             component.Terminals.Add(new ElectricalTerminal
             {

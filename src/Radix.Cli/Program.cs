@@ -350,7 +350,7 @@ internal static class Program
                 CircuitProject project = ProjectSerializer.Load(source, validate: false);
                 ElectricalCircuit circuit = SelectElectricalCircuit(project, requestedCircuit);
                 circuitId = circuit.Id;
-                netlist = circuit.ToDcNetlist();
+                netlist = circuit.ToDcNetlist(project.FindElectricalCircuit);
             }
             else
             {
@@ -529,7 +529,7 @@ internal static class Program
                 CircuitProject project = ProjectSerializer.Load(source, validate: false);
                 ElectricalCircuit circuit = SelectElectricalCircuit(project, GetOption(options, "circuit"));
                 circuitId = circuit.Id;
-                netlist = circuit.ToTransientNetlist();
+                netlist = circuit.ToTransientNetlist(project.FindElectricalCircuit);
             }
             else
             {
@@ -903,7 +903,7 @@ internal static class Program
             return 2;
         }
 
-        TransientResult run = circuit.ToTransientNetlist().Run(new TransientOptions
+        TransientResult run = circuit.ToTransientNetlist(project.FindElectricalCircuit).Run(new TransientOptions
         {
             StartTime = 0,
             StopTime = stop,
@@ -1183,7 +1183,8 @@ internal static class Program
                 ElectricalCircuit circuit = SelectElectricalCircuit(
                     project, GetOption(options, "circuit"));
                 circuitId = circuit.Id;
-                document = new TransientDocument(circuit.ToTransientNetlist(), null);
+                document = new TransientDocument(
+                    circuit.ToTransientNetlist(project.FindElectricalCircuit), null);
             }
             else
             {

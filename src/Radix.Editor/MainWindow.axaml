@@ -920,7 +920,7 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
               <StackPanel Margin="10,6,14,10">
                 <TextBlock Text="AUTHORED DC CIRCUITS" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
-                <TextBlock Text="Independent electrical assets. Terminals bind explicitly to named nodes; this never changes digital nets or signal values." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,8" />
+                <TextBlock Text="Independent electrical assets. Terminals bind explicitly to named nodes; this never changes digital nets or signal values. Expose internal nodes as ports, then place a Subcircuit component in another circuit to reuse the whole schematic with one terminal per port." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,8" />
 
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
                   <Button Content="New circuit" Command="{Binding AddElectricalCircuitCommand}" HorizontalAlignment="Left" ToolTip.Tip="Add an empty authored DC circuit with ground and one node" />
