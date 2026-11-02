@@ -74,9 +74,9 @@ public sealed record DcCurrentSource(string Id, string NodeA, string NodeB, doub
 /// </summary>
 /// <remarks>
 /// <see cref="DefaultThermalVoltage"/> is <c>kT/q</c> at 300.15 K (25.852 mV).
-/// The exponential argument is capped at 80 so arithmetic stays finite; that cap
-/// is reached around 2 V per junction for <c>N = 1</c>, far beyond a realistic
-/// forward drop without series resistance, and the model must not be used there.
+/// Exponential arguments above 80 use a linear tangent continuation to avoid
+/// overflow and keep conductance consistent with current. Values far above that
+/// numerical threshold are not a physical high-current model.
 /// </remarks>
 public sealed record DcDiode(
     string Id,
@@ -227,7 +227,9 @@ public sealed record DcDiode(
     }
 
     private static double LimitedExponentialDerivative(double argument) =>
-        argument <= MaximumExponentialArgument
+        double.IsNaN(argument)
+            ? double.NaN
+            : argument <= MaximumExponentialArgument
             ? Math.Exp(argument)
             : MaximumExponentialValue;
 }

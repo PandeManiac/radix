@@ -240,6 +240,11 @@ public sealed class DcDiodeSolverTests
         AssertContinuationDerivative(
             breakdown,
             -breakdown.BreakdownVoltage!.Value - (82 * breakdown.JunctionVoltage));
+
+        Assert.True(double.IsNaN(forward.JunctionCurrent(double.NaN)));
+        Assert.True(double.IsNaN(forward.JunctionConductance(double.NaN)));
+        Assert.True(double.IsNaN(breakdown.JunctionCurrent(double.NaN)));
+        Assert.True(double.IsNaN(breakdown.JunctionConductance(double.NaN)));
     }
 
     private static void AssertContinuationDerivative(DcDiode diode, double volts)
