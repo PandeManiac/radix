@@ -327,7 +327,9 @@ public static class TransientNetlistJson
                         "channel",
                         "thresholdVoltage",
                         "transconductance",
-                        "channelLengthModulation");
+                        "channelLengthModulation",
+                        "cgs",
+                        "cgd");
                     netlist.AddMosfet(
                         id,
                         RequireNode(element.Drain, id, "drain"),
@@ -336,7 +338,9 @@ public static class TransientNetlistJson
                         ParseChannel(element.Channel, id),
                         RequireValue(element.ThresholdVoltage, id, "thresholdVoltage"),
                         RequireValue(element.Transconductance, id, "transconductance"),
-                        element.ChannelLengthModulation ?? 0);
+                        element.ChannelLengthModulation ?? 0,
+                        element.Cgs ?? 0,
+                        element.Cgd ?? 0);
                     break;
                 case "capacitor":
                     RejectUnused(element, id, type, "farads", "initialVolts");
@@ -609,7 +613,9 @@ public static class TransientNetlistJson
         string? Channel,
         double? ThresholdVoltage,
         double? Transconductance,
-        double? ChannelLengthModulation);
+        double? ChannelLengthModulation,
+        double? Cgs,
+        double? Cgd);
 
     private sealed record WaveformPointDto(double? Time, double? Value);
 

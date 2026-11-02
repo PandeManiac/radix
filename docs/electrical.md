@@ -295,8 +295,8 @@ operating point, which the tests assert. `radix dc` and the JSON report list a M
 
 It is a **compact teaching model, not a production SPICE transistor**. In particular:
 
-- no gate, junction or overlap capacitance, so it is charge-free and adds no dynamics;
-  a switching transient is limited only by the surrounding circuit and the step size;
+- no junction, overlap or body capacitance, so without the optional gate capacitance below
+  the device is charge-free and adds no dynamics;
 - no subthreshold conduction, so current is exactly zero below the threshold apart from
   `GMIN`;
 - no mobility degradation, velocity saturation, high-injection, drain-induced barrier
@@ -461,10 +461,23 @@ capacitance doubles the measured constant, which the tests assert, so the delay 
 network rather than to the integrator. The run's energy ledger closes to 4 × 10⁻⁴ of the energy
 delivered, so the switching energy is accounted for instead of assumed.
 
-The transistor is still ideal: the capacitance is an explicit load on the summing node, not gate
-charge, so the delay is the interconnect's and the devices themselves switch instantaneously.
-What the run does establish is that the middle level is reachable in a finite time by a real
-network, which is a property no static table can show.
+The transistor is still ideal in this example: the capacitance is an explicit load on the summing
+node, not gate charge, so the delay is the interconnect's and the devices themselves switch
+instantaneously. What the run does establish is that the middle level is reachable in a finite time
+by a real network, which is a property no static table can show.
+
+**Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,
+or `cgs`/`cgd` in a transient JSON netlist, both defaulting to zero so an existing netlist keeps its
+behaviour. Given, they are stamped between gate and source and between gate and drain on every step,
+so the gate must be charged through whatever drives it before the channel can follow. They are
+internal capacitors rather than authored elements: they carry state, energy and companion stamps
+like any other capacitor, but never appear in `Capacitors`, element tables or reports.
+
+The closed form is checkable. A 10 kΩ resistor driving a gate with 1 pF of gate-source capacitance
+gives `RC = 10 ns`; the measured half-rise converts back to that constant, and adding 1 pF of
+gate-drain capacitance against a fixed drain doubles it, because both plates then see an AC ground.
+Both are tests, so a capacitance that never reached the solver would fail as an instant rise instead
+of hiding inside a plausible-looking curve.
 
 **Input windows.** `--margins <node>` turns the measured gain into the windows a level can
 occupy, by finding where `|dV(node)/d(swept)|` crosses one and reporting the ranges between those

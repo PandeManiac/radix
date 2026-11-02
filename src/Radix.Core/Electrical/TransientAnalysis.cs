@@ -499,7 +499,13 @@ public sealed class TransientNetlist
     /// <summary>The non-reactive elements, in insertion order.</summary>
     public IReadOnlyList<DcElement> Elements => _elements;
 
-    public IReadOnlyList<TransientCapacitor> Capacitors => _capacitors;
+    /// <summary>
+    /// The capacitors that were added to the circuit. A MOSFET's own gate capacitance lives in the
+    /// same state list so it integrates with everything else, but it is a device detail rather than
+    /// an authored element, so it is not reported here and does not appear in element tables.
+    /// </summary>
+    public IReadOnlyList<TransientCapacitor> Capacitors =>
+        _capacitors.Where(capacitor => !IsInternal(capacitor.Id)).ToArray();
 
     public IReadOnlyList<TransientInductor> Inductors => _inductors;
 
@@ -557,7 +563,14 @@ public sealed class TransientNetlist
 
         foreach (TransientCapacitor capacitor in _capacitors)
         {
-            copy.AddCapacitor(capacitor.Id, capacitor.NodeA, capacitor.NodeB, capacitor.Farads);
+            if (IsInternal(capacitor.Id))
+            {
+                copy.AddInternalCapacitor(capacitor.Id, capacitor.NodeA, capacitor.NodeB, capacitor.Farads);
+            }
+            else
+            {
+                copy.AddCapacitor(capacitor.Id, capacitor.NodeA, capacitor.NodeB, capacitor.Farads);
+            }
         }
 
         foreach (TransientInductor inductor in _inductors)
@@ -749,9 +762,14 @@ public sealed class TransientNetlist
 
     /// <summary>
     /// Adds a three-terminal MOSFET with the same parameters as
-    /// <see cref="DcNetlist.AddMosfet"/>. Like the diode it is time-invariant here:
-    /// there is no gate or junction capacitance, so a switching transition is limited
-    /// only by the surrounding circuit and the integration step.
+    /// <see cref="DcNetlist.AddMosfet"/>.
+    /// <para>
+    /// Gate capacitances are optional and default to zero, which keeps a DC-tuned netlist
+    /// time-invariant. When they are given they are stamped between gate and source and between
+    /// gate and drain for every step, so the gate has to be charged through the circuit before the
+    /// channel can follow: the resulting transition times then come from the device instead of
+    /// only from an explicit load capacitor. There is still no junction or body capacitance.
+    /// </para>
     /// </summary>
     public TransientNetlist AddMosfet(
         string id,
@@ -761,7 +779,9 @@ public sealed class TransientNetlist
         DcMosfetChannel channel,
         double thresholdVoltage,
         double transconductance,
-        double channelLengthModulation = 0)
+        double channelLengthModulation = 0,
+        double gateSourceFarads = 0,
+        double gateDrainFarads = 0)
     {
         ValidateElement(id, drain, source);
         if (string.IsNullOrWhiteSpace(gate))
@@ -797,7 +817,23 @@ public sealed class TransientNetlist
                 "Channel-length modulation must be finite and non-negative.");
         }
 
-        return AddStatic(new DcMosfet(
+        if (!double.IsFinite(gateSourceFarads) || gateSourceFarads < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(gateSourceFarads),
+                gateSourceFarads,
+                "Gate-source capacitance must be finite and non-negative.");
+        }
+
+        if (!double.IsFinite(gateDrainFarads) || gateDrainFarads < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(gateDrainFarads),
+                gateDrainFarads,
+                "Gate-drain capacitance must be finite and non-negative.");
+        }
+
+        AddStatic(new DcMosfet(
             id,
             drain,
             gate,
@@ -806,6 +842,20 @@ public sealed class TransientNetlist
             thresholdVoltage,
             transconductance,
             channelLengthModulation));
+
+        // A capacitance between two names for the same node has no voltage across it and can
+        // contribute nothing, and stamping it would add a resistor from a node to itself.
+        if (gateSourceFarads > 0 && !string.Equals(gate, source, StringComparison.Ordinal))
+        {
+            AddInternalCapacitor(CompanionId(id, "cgs"), gate, source, gateSourceFarads);
+        }
+
+        if (gateDrainFarads > 0 && !string.Equals(gate, drain, StringComparison.Ordinal))
+        {
+            AddInternalCapacitor(CompanionId(id, "cgd"), gate, drain, gateDrainFarads);
+        }
+
+        return this;
     }
 
     public TransientNetlist AddCapacitor(string id, string nodeA, string nodeB, double farads)
@@ -1782,7 +1832,9 @@ public sealed class TransientNetlist
         double stored = 0;
         foreach (TransientCapacitor capacitor in _capacitors)
         {
-            double volts = point.ElementVoltages[capacitor.Id];
+            // Taken from the node voltages rather than the element table so internal parasitics,
+            // which are deliberately absent from that table, are still counted.
+            double volts = VoltageAcross(point.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
             stored += 0.5 * capacitor.Farads * volts * volts;
         }
 
@@ -1980,6 +2032,11 @@ public sealed class TransientNetlist
         for (int index = 0; index < _capacitors.Count; index++)
         {
             TransientCapacitor capacitor = _capacitors[index];
+            if (IsInternal(capacitor.Id))
+            {
+                continue;
+            }
+
             Record(
                 capacitor.Id,
                 VoltageAcross(nodeVoltages, capacitor.NodeA, capacitor.NodeB),
@@ -2011,6 +2068,25 @@ public sealed class TransientNetlist
 
     private static string CompanionId(string id, string suffix) =>
         $"{CompanionPrefix}{id}/{suffix}";
+
+    /// <summary>A device parasitic: solved in state, but not an authored element.</summary>
+    private static bool IsInternal(string id) =>
+        id.StartsWith(CompanionPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Adds a device parasitic capacitor. It carries state, is stamped with the other capacitors
+    /// and counts towards stored energy, but its reserved id keeps it out of <see cref="Capacitors"/>,
+    /// so element tables and reports describe the circuit that was authored. The prefix that makes
+    /// that possible is also what <see cref="ValidateElement"/> refuses, so this path skips it.
+    /// </summary>
+    private TransientNetlist AddInternalCapacitor(string id, string nodeA, string nodeB, double farads)
+    {
+        _ids.Add(id);
+        _nodes.Add(nodeA);
+        _nodes.Add(nodeB);
+        _capacitors.Add(new TransientCapacitor(id, nodeA, nodeB, farads));
+        return this;
+    }
 
     private static double VoltageAcross(
         IReadOnlyDictionary<string, double> nodeVoltages,
