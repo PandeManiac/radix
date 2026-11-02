@@ -1164,3 +1164,5 @@ summary and full local verification results; see the PR for the latest CI state.
      `.local-native`. `radix transient examples/transient-rc.json --json` completed
      all 61 points with finite RC voltages and energy accounting. Both new
      regressions (extreme signed times and opposite-extreme values) pass.
+
+124. GitHub Actions passed all four reported checks on `d8d055d0a89e7c66d70b16de5e60839cbf7885ec`: Ubuntu and Windows for both push and pull-request workflows. Local Release build, Core 658/658, headless Editor 242/242, and the 61-point transient CLI check were also green at that tip.
