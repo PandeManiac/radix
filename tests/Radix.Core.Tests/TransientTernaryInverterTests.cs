@@ -176,6 +176,21 @@ public sealed class TransientTernaryInverterTests
     }
 
     [Fact]
+    public void ALargeCompanionConductanceIsNotMistakenForSingularity()
+    {
+        // 2 pF on a 0.25 ns step makes each companion model an 8 S conductance, roughly 1e13 times
+        // the model's picoamp leakage. That ratio comes from the grid, so refusing to solve is not
+        // an acceptable answer: the circuit is the same one that solves at every other step.
+        TransientResult result = Run(2e-12, 900e-9);
+
+        Assert.InRange(SettlingTime(result, "out"), 40e-9, 80e-9);
+        Assert.Equal(
+            (result.Points[^1].NodeVoltages["out_low"] + result.Points[^1].NodeVoltages["out_high"]) / 2,
+            result.Points[^1].NodeVoltages["out"],
+            6);
+    }
+
+    [Fact]
     public void DoublingTheGateCapacitanceDoublesTheChargeTime()
     {
         // The bus is a first-order RC: 10 kOhm into the devices' gate-source capacitance, so

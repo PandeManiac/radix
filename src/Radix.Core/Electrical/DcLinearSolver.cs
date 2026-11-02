@@ -1706,6 +1706,24 @@ public sealed class DcNetlist
         // row. The floor is far above double precision (2.2e-16) but far below any
         // physically meaningful conductance ratio.
         const double relativePivotFloor = 1e-12;
+
+        (double Value, int Column) RowPeak(int row, int from)
+        {
+            double peak = 0;
+            int at = from;
+            for (int index = from; index < size; index++)
+            {
+                double magnitude = Math.Abs(matrix[row, index]);
+                if (magnitude > peak)
+                {
+                    peak = magnitude;
+                    at = index;
+                }
+            }
+
+            return (peak, at);
+        }
+
         for (int column = 0; column < size; column++)
         {
             int pivotRow = -1;
@@ -1725,12 +1743,23 @@ public sealed class DcNetlist
                 }
             }
 
-            if (pivotRow < 0 ||
-                Math.Abs(matrix[pivotRow, column]) <= rowScale[pivotRow] * relativePivotFloor)
+            // The pivot is judged against the row as elimination has left it, not against the
+            // magnitude it started with. Elimination removes the large entries a row shared with
+            // earlier columns, so a row that began at 1e12 can legitimately end with a pivot of 1;
+            // comparing that 1 with the original 1e12 would report a singular system for a matrix
+            // that is merely wider in scale than the floor assumes. `rowScale` still drives pivoting,
+            // because that choice should favour the row that was largest to begin with.
+            double pivotMagnitude = pivotRow < 0 ? 0 : Math.Abs(matrix[pivotRow, column]);
+            double rowMagnitude = pivotRow < 0 ? 0 : RowPeak(pivotRow, column).Value;
+            if (pivotRow < 0 || pivotMagnitude <= rowMagnitude * relativePivotFloor)
             {
                 throw new DcSolveException(
                     DcSolveFailure.SingularMatrix,
-                    "The DC linear system is singular: check for an open current-source path, an undriven node, or a redundant loop of ideal voltage sources.");
+                    pivotRow < 0
+                        ? "The DC linear system is singular: check for an open current-source path, an undriven node, or a redundant loop of ideal voltage sources."
+                        : string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"The DC linear system is singular at column {column}: the pivot {pivotMagnitude:G6} in row {pivotRow} is negligible beside the largest remaining entry in that row, {rowMagnitude:G6}. Check for an open current-source path, an undriven node, or a redundant loop of ideal voltage sources."));
             }
 
             if (pivotRow != column)
