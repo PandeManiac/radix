@@ -130,6 +130,43 @@ public sealed class TransientEnergyTests
     }
 
     [Fact]
+    public void PartialFailureOmitsUnrepresentableEnergyWithoutReplacingTheStepFailure()
+    {
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddCapacitor("C1", "out1", "gnd", 1e308)
+            .AddCapacitor("C2", "out2", "gnd", 1e308)
+            .SetCapacitorInitialVoltage("C1", 1.4)
+            .SetCapacitorInitialVoltage("C2", 1.4)
+            .AddCurrentSource("I1", "load", "gnd", 0)
+            .SetWaveform("I1", [
+                new TransientWaveformPoint(0, 0),
+                new TransientWaveformPoint(5, 0),
+                new TransientWaveformPoint(10, 1e308),
+            ])
+            .AddResistor("R1", "load", "gnd", 1);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 10,
+            Steps = 2,
+        });
+
+        Assert.False(result.Completed);
+        Assert.Equal(DcSolveFailure.NonFiniteResult, result.Failure);
+        Assert.Contains("I1", result.Message!, StringComparison.Ordinal);
+        Assert.NotNull(result.FailedStep);
+        Assert.True(result.Points.Count >= 2);
+        Assert.Null(result.Energy);
+
+        using JsonDocument report = JsonDocument.Parse(
+            TransientNetlistJson.ToReportJson("test", netlist, result));
+        Assert.False(report.RootElement.GetProperty("completed").GetBoolean());
+        Assert.Equal("non-finite-result", report.RootElement.GetProperty("failure").GetString());
+        Assert.Contains("I1", report.RootElement.GetProperty("message").GetString());
+        Assert.False(report.RootElement.TryGetProperty("energy", out _));
+    }
+
+    [Fact]
     public void LosslessTankConservesEnergyUnderTheTrapezoidalRule()
     {
         double initial = 0.5 * 1e-6 * 25;

@@ -1265,3 +1265,9 @@ summary and full local verification results; see the PR for the latest CI state.
      finite solved points are retained, the result is classified as
      `NonFiniteResult`, and the report remains valid JSON with no unrepresentable
      energy object.
+
+140. WIP: added a partial-run regression with two finite operating points whose
+     stored energies overflow in aggregate, followed by a later current-source
+     power failure. The existing step failure must remain primary, but the current
+     code retains its non-finite energy ledger and JSON serialization throws.
+     Focused execution and generalized invalid-ledger omission are pending.
