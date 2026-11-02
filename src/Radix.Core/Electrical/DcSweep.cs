@@ -130,7 +130,8 @@ public static class DcSweepReport
     /// <summary>
     /// A wide CSV table: a <c>value</c> column, one column per node, and a <c>failure</c>
     /// column. A failed row leaves its node cells empty so the failure is visible rather
-    /// than reported as zero volts.
+    /// than reported as zero volts. Rows end in <c>\n</c> on every platform, so a sweep
+    /// exported on Windows and one exported on Linux are byte-identical.
     /// </summary>
     public static string ToCsv(DcNetlist netlist, IReadOnlyList<DcSweepRow> rows)
     {
@@ -145,7 +146,7 @@ public static class DcSweepReport
             text.Append(',').Append(Quote(node));
         }
 
-        text.Append(",failure").AppendLine();
+        text.Append(",failure").Append('\n');
         foreach (DcSweepRow row in rows)
         {
             text.Append(row.Value.ToString("R", CultureInfo.InvariantCulture));
@@ -164,7 +165,7 @@ public static class DcSweepReport
                 text.Append(DcNetlistJsonFailureName(row.Failure));
             }
 
-            text.AppendLine();
+            text.Append('\n');
         }
 
         return text.ToString();

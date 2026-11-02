@@ -142,6 +142,8 @@ public sealed class DcSweepTests
         Assert.Equal(firstCsv, secondCsv);
         Assert.StartsWith("value,gnd,in,out,vdd,failure", firstCsv, StringComparison.Ordinal);
         Assert.Equal(12, firstCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+        // The export is a cross-platform artifact: Windows must not add carriage returns.
+        Assert.DoesNotContain("\r", firstCsv, StringComparison.Ordinal);
 
         string text = DcSweepReport.ToText(netlist, "VIN", rows);
         Assert.Contains("VIN sweep: 11 values, 4 nodes", text, StringComparison.Ordinal);
