@@ -922,5 +922,5 @@ summary and full local verification results; see the PR for the latest CI state.
     -12 V over 1 us through a 1 kΩ resistor into a 10 uF capacitor and the reverse-
     breakdown diode. The test checks the capacitor starts near zero at the ramp
     boundary, observes discharge, then verifies the final voltage and branch-current
-    balance are in the Zener clamp region. Focused test passes 1/1; full suite
-    verification is pending.
+    balance are in the Zener clamp region. Focused test passes 1/1; the full Core
+    suite passes 639/639.
