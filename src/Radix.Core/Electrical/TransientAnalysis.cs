@@ -1569,10 +1569,22 @@ public sealed class TransientNetlist
                 continue;
             }
 
-            (double previousDelivered, double previousDissipated) = PowerFlow(points[index - 1]);
-            (double currentDelivered, double currentDissipated) = PowerFlow(points[index]);
-            delivered += span * Average(previousDelivered, currentDelivered);
-            dissipated += span * Average(previousDissipated, currentDissipated);
+            TransientPoint previous = points[index - 1];
+            TransientPoint current = points[index];
+            foreach (DcElement element in _elements)
+            {
+                double previousPower = previous.ElementPowers[element.Id];
+                double currentPower = current.ElementPowers[element.Id];
+                double elementEnergy = span * Average(previousPower, currentPower);
+                if (element is DcResistor or DcDiode)
+                {
+                    dissipated += elementEnergy;
+                }
+                else
+                {
+                    delivered -= elementEnergy;
+                }
+            }
         }
 
         double lastStored = StoredEnergy(points[^1]);
@@ -1659,27 +1671,6 @@ public sealed class TransientNetlist
         }
 
         return new TransientMetrics(settlingBand, metrics);
-    }
-
-    /// <summary>Delivered source power and dissipated resistor/diode power at one point.</summary>
-    private (double Delivered, double Dissipated) PowerFlow(TransientPoint point)
-    {
-        double delivered = 0;
-        double dissipated = 0;
-        foreach (DcElement element in _elements)
-        {
-            double power = point.ElementPowers[element.Id];
-            if (element is DcResistor or DcDiode)
-            {
-                dissipated += power;
-            }
-            else
-            {
-                delivered -= power;
-            }
-        }
-
-        return (delivered, dissipated);
     }
 
     /// <summary>Stored reactive energy <c>v²C/2 + i²L/2</c> at one point.</summary>

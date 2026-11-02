@@ -1192,3 +1192,10 @@ summary and full local verification results; see the PR for the latest CI state.
      or dissipated energy is a representable 2e305 J, but `PowerFlow` sums branch
      powers before integration and overflows. Focused test execution and the
      per-element integration fix are pending.
+
+129. Fixed transient energy aggregation overflow: each element's power is now
+     trapezoid-integrated over the interval before its energy is added to the
+     delivered or dissipated total. This avoids overflowing the instantaneous sum
+     of multiple finite branch powers when the short-interval energy remains
+     representable. All eight `TransientEnergyTests` pass, including both large
+     power regressions; broader verification remains pending.
