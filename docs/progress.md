@@ -1,12 +1,19 @@
 # RADIX continuation record
 
-Last updated: 2026-10-30. This file is the durable handoff note for agents and
+Last updated: 2026-11-02. This file is the durable handoff note for agents and
 humans; update it at each milestone instead of relying on chat history.
 
 ## Where the project stands
 
 - Remote: `origin` = https://github.com/PandeManiac/radix (write access verified).
-- Working branch for this session: `agent/radix-verification`, pushed to origin.
+- Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
+- Latest verified branch commit: `ee5e4e383f6f6412f89207f8cc58151fedb0ba07`.
+- Draft PR #6 is open against `main`: per-equation nonlinear DC convergence scaling.
+- Latest local verification: Release solution build clean (0 warnings/errors), Core
+  tests 632/632, and the DC divider CLI example reports the expected 5 V midpoint.
+  GitHub CI passed on Ubuntu and Windows for the latest commit.
+- This VM's full local solution test run still has 25 Editor tests unable to start
+  Skia because `libfontconfig.so.1` is missing; Core tests are unaffected.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
@@ -794,3 +801,30 @@ example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,
 AC/small-signal analysis, gmin continuation, and plotting more than one run or
 exporting a plotted image.
+
+## Session 2026-11-02 (agent/radix-20261102-electrical-audit)
+
+Recovered the branch from GitHub before further implementation. Local and remote
+branch heads matched at `ee5e4e383f6f6412f89207f8cc58151fedb0ba07`; the working tree
+was clean. PR #6 is open as a draft. Other existing worktrees include DC source
+sweeps (`agent/radix-dc-numerics`) and electrical ERC (`agent/radix-erc`), so this
+branch avoids duplicating those changes.
+
+75. Fixed nonlinear DC residual normalization. Each KCL row now uses its own sum of
+    incident current magnitudes, and each ideal voltage-source row uses that source's
+    own voltage scale. Previously, a disconnected `1e12 A` branch shifted a
+    reverse-biased diode divider from its analytical 4 V operating point to about
+    3.12 V; the new regression requires the operating point to remain at 4 V.
+76. Added a small-source representability regression. A 1 uV ideal-source difference
+    at a 1e12 V common mode is below double precision's voltage spacing and must fail
+    as `NonConvergent`, rather than being silently accepted under the unrelated large
+    source's voltage tolerance. Documented the per-equation scaling in
+    `docs/electrical.md`.
+
+Verification: Release solution build clean (0 warnings/0 errors); Core tests 632/632;
+the `radix dc` divider JSON example reports the expected 5 V; Ubuntu and Windows CI
+passed on commit `ee5e4e383f6f6412f89207f8cc58151fedb0ba07`. The local Editor suite's
+25 native Skia startup failures are environmental (`libfontconfig.so.1` absent), not
+code failures; 199 Editor tests did pass in that run. The current next task is an
+isolated engineering-suffix parser for authored electrical component values, with
+headless view-model tests and no change to the serialized numeric representation.
