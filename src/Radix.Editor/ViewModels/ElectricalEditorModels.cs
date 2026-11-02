@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Radix.Core;
 using Radix.Core.Electrical;
 
@@ -484,14 +485,17 @@ public sealed class ElectricalElementResultItem
 /// <summary>A current validation message for the selected authored circuit.</summary>
 public sealed class ElectricalDiagnosticItem
 {
-    public ElectricalDiagnosticItem(Diagnostic diagnostic)
+    public ElectricalDiagnosticItem(Diagnostic diagnostic, ICommand locateCommand)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
+        ArgumentNullException.ThrowIfNull(locateCommand);
         Code = diagnostic.Code;
         Message = diagnostic.Message;
         Severity = diagnostic.Severity;
         Location = diagnostic.Location;
         Display = diagnostic.ToString();
+        LocateCommand = locateCommand;
+        CanLocate = ElectricalDiagnosticPath.TryParse(diagnostic.Path, out _);
     }
 
     public string Code { get; }
@@ -507,4 +511,8 @@ public sealed class ElectricalDiagnosticItem
     public bool IsError => Severity == DiagnosticSeverity.Error;
 
     public bool IsWarning => Severity == DiagnosticSeverity.Warning;
+
+    public ICommand LocateCommand { get; }
+
+    public bool CanLocate { get; }
 }

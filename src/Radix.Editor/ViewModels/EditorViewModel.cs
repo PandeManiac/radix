@@ -10170,7 +10170,9 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalDiagnostics.Clear();
         foreach (Diagnostic diagnostic in report)
         {
-            ElectricalDiagnostics.Add(new ElectricalDiagnosticItem(diagnostic));
+            ElectricalDiagnostics.Add(new ElectricalDiagnosticItem(
+                diagnostic,
+                new RelayCommand(() => NavigateToDiagnostic(diagnostic))));
         }
 
         ElectricalValidationSummary = report.Count == 0

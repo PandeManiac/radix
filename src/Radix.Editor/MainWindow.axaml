@@ -1480,7 +1480,10 @@
                   <ItemsControl ItemsSource="{Binding ElectricalDiagnostics}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:ElectricalDiagnosticItem">
-                        <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" FontSize="9.5" TextWrapping="Wrap" Margin="2,1" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                          <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" FontSize="9.5" TextWrapping="Wrap" Margin="2,1" />
+                          <Button Grid.Column="1" Classes="tool" Content="Locate" Command="{Binding LocateCommand}" IsVisible="{Binding CanLocate}" Padding="5,1" VerticalAlignment="Top" ToolTip.Tip="Select the reported electrical component or node" />
+                        </Grid>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>

@@ -1646,7 +1646,16 @@ public sealed class EditorViewModelTests
         Assert.Null(viewModel.SelectedElectricalComponentId);
         Assert.Null(viewModel.SelectedElectricalNodeId);
         Assert.Contains("Located electrical circuit 'dc1'", viewModel.StatusText, StringComparison.Ordinal);
-        Assert.Equal(3, panelRequests);
+
+        ElectricalDiagnosticItem panelComponent = Assert.Single(
+            viewModel.ElectricalDiagnostics,
+            diagnostic => diagnostic.Code == "RAD-ELEC-011");
+        Assert.True(panelComponent.CanLocate);
+        panelComponent.LocateCommand.Execute(null);
+        Assert.Equal("r1", viewModel.SelectedElectricalComponentId);
+        Assert.Null(viewModel.SelectedElectricalNodeId);
+        Assert.Contains("Located electrical component 'r1'", viewModel.StatusText, StringComparison.Ordinal);
+        Assert.Equal(4, panelRequests);
     }
 
     [Fact]

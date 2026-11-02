@@ -102,6 +102,15 @@ humans; update it at each milestone instead of relying on chat history.
 - Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
   Editor 313/313.
 
+## Session 2026-11-02 (electrical panel validation locate)
+
+- The Electrical panel's VALIDATION list now gives each located diagnostic a Locate
+  button. It selects the reported component or node directly, using the same path
+  parser and navigation used by the Diagnostics tab.
+- Extended the existing headless navigation regression to cover the panel action.
+- Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
+  Editor 313/313; focused navigation/rendering checks 6/6.
+
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 
 - The Electrical tab's solved NODES table now includes unported internal nodes from
