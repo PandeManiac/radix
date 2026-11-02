@@ -915,13 +915,17 @@ public sealed class TransientNetlist
             ? RunAdaptive(options, state, points)
             : RunFixed(options, state, points);
         TransientEnergyBalance? energy = MeasureEnergy(result.Points);
-        if (result.Completed && energy is not null && !IsFinite(energy))
+        if (energy is not null && !IsFinite(energy))
         {
-            result = result with
+            if (result.Completed)
             {
-                Failure = DcSolveFailure.NonFiniteResult,
-                Message = "Transient energy accounting produced a non-finite result; the total energy exceeds the numeric range.",
-            };
+                result = result with
+                {
+                    Failure = DcSolveFailure.NonFiniteResult,
+                    Message = "Transient energy accounting produced a non-finite result; the total energy exceeds the numeric range.",
+                };
+            }
+
             energy = null;
         }
 

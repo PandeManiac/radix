@@ -1271,3 +1271,9 @@ summary and full local verification results; see the PR for the latest CI state.
      power failure. The existing step failure must remain primary, but the current
      code retains its non-finite energy ledger and JSON serialization throws.
      Focused execution and generalized invalid-ledger omission are pending.
+
+141. Drop a non-finite energy ledger for any transient result. A completed run is
+     classified as `NonFiniteResult`; a run that already failed a step keeps that
+     original failure, message, and failed-step index. Both paths retain solved
+     points and serialize as valid JSON without an invalid energy object. All ten
+     `TransientEnergyTests` pass; broader verification remains pending.
