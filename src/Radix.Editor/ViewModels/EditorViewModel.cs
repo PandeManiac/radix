@@ -7755,13 +7755,13 @@ public sealed class EditorViewModel : ObservableObject
         {
             multiplier = trimmed[^1] switch
             {
-                'p' or 'P' => 1e-12,
-                'n' or 'N' => 1e-9,
-                'u' or 'U' or 'µ' or 'μ' => 1e-6,
+                'p' => 1e-12,
+                'n' => 1e-9,
+                'u' or 'µ' or 'μ' => 1e-6,
                 'm' => 1e-3,
-                'k' or 'K' => 1e3,
+                'k' => 1e3,
                 'M' => 1e6,
-                'g' or 'G' => 1e9,
+                'G' => 1e9,
                 _ => 0,
             };
             number = trimmed[..^1];

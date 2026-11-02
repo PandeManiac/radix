@@ -650,8 +650,9 @@ name, and unit for each kind:
 In the editor, component values, capacitor/inductor initial conditions, source
 waveform times and values, transient stop/probe times, and transient sweep values
 accept invariant-culture numbers with an optional SI magnitude suffix: `p`, `n`,
-`u`/`µ`, `m`, `k`, `M`, or `G` (and `meg` for mega). Suffix case is significant
-for `m` (milli) and `M` (mega). For example, `4.7k` on a resistor stores 4,700
+`u`/`µ`, `m`, `k`, `M`, or `G` (and `meg` for mega). SI symbols are case-sensitive:
+use lowercase `p`, `n`, `u`, `m`, and `k`, and uppercase `M` and `G`; `meg` is a
+case-insensitive spelling alias. For example, `4.7k` on a resistor stores 4,700
 ohms, `2.2u` on a capacitor stores 2.2 microfarads, and `1m` in a waveform time
 means 1 millisecond. Project files continue to store finite numeric values in the
 component's declared unit and seconds; suffix text is only an editor input format.

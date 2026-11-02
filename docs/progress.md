@@ -879,3 +879,12 @@ GitHub CI passed on Ubuntu and Windows for code commit
 Verification: focused `ElectricalEditorTests` passed 43/43; Release solution build
 completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
 237/237. GitHub CI is pending for this validation change.
+
+81. Corrected SI prefix case handling in the Electrical editor parser. Only the
+    documented symbols now scale: lowercase `p`, `n`, `u`, `m`, `k`; uppercase
+    `M`, `G`; and `meg` as a case-insensitive compatibility alias. Previously
+    undocumented uppercase/lowercase lookalikes such as `P` and `g` were accepted
+    with the wrong physical scale. Added rejection cases and documented exact case.
+
+Verification: focused `ElectricalEditorTests` passed 48/48. Full build/suites and
+GitHub CI are pending for the prefix-case correction.

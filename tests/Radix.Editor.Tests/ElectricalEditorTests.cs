@@ -698,6 +698,11 @@ public sealed class ElectricalEditorTests
     [Theory]
     [InlineData("2.2x")]
     [InlineData("1e308G")]
+    [InlineData("1P")]
+    [InlineData("1g")]
+    [InlineData("1K")]
+    [InlineData("1N")]
+    [InlineData("1U")]
     public void InvalidOrOverflowingEngineeringValuesAreRejected(string text)
     {
         EditorViewModel viewModel = CreateEmptyEditor();
