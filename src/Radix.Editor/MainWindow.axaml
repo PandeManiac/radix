@@ -682,7 +682,7 @@
               <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                 <StackPanel>
                   <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
-                  <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition and selects the reported instance or net." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
+                  <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition, or the authored electrical circuit, component, or node, and selects the reported target." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
                 </StackPanel>
                 <Button
                   Grid.Column="1"
@@ -794,7 +794,7 @@
                         <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" Classes.warning="{Binding IsWarning}" FontSize="10.5" TextWrapping="Wrap" Margin="2,2" />
                         <TextBlock Text="{Binding Details}" IsVisible="{Binding HasDetails}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="2,0,2,2" />
                       </StackPanel>
-                      <Button Grid.Column="1" Classes="tool" Content="Locate" Command="{Binding LocateCommand}" IsVisible="{Binding CanLocate}" Padding="5,1" VerticalAlignment="Top" ToolTip.Tip="Open the owning definition and select the instance or net named by this message" />
+                      <Button Grid.Column="1" Classes="tool" Content="Locate" Command="{Binding LocateCommand}" IsVisible="{Binding CanLocate}" Padding="5,1" VerticalAlignment="Top" ToolTip.Tip="Open the owning definition or electrical asset and select the target named by this message" />
                     </Grid>
                   </DataTemplate>
                 </ListBox.ItemTemplate>

@@ -368,6 +368,9 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>Raised with world bounds that should be centered after navigation.</summary>
     public event Action<Rect>? FocusRequested;
 
+    /// <summary>Raised after a diagnostic selects an authored electrical target.</summary>
+    public event Action? ElectricalPanelRequested;
+
     /// <summary>
     /// Raised when a recent-project entry is chosen. The window handles it so the
     /// same unsaved-changes prompt as the Open button is used.
@@ -2263,6 +2266,12 @@ public sealed class EditorViewModel : ObservableObject
     public bool NavigateToDiagnostic(Diagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
+        if (diagnostic.DefinitionId is null &&
+            ElectricalDiagnosticPath.TryParse(diagnostic.Path, out ElectricalDiagnosticTarget electrical))
+        {
+            return NavigateToElectricalDiagnostic(diagnostic, electrical);
+        }
+
         if (diagnostic.DefinitionId is string definitionId)
         {
             if (_project.FindDefinition(definitionId) is null)
@@ -2319,6 +2328,77 @@ public sealed class EditorViewModel : ObservableObject
 
         StatusText = $"{diagnostic.Code} has no circuit location.";
         return false;
+    }
+
+    private bool NavigateToElectricalDiagnostic(
+        Diagnostic diagnostic,
+        ElectricalDiagnosticTarget target)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(target.CircuitId);
+        if (circuit is null)
+        {
+            StatusText = $"Electrical circuit '{target.CircuitId}' from {diagnostic.Code} no longer exists.";
+            return false;
+        }
+
+        ElectricalCircuitListItem? item = FindElectricalCircuitItem(circuit.Id);
+        if (item is null)
+        {
+            RefreshElectricalPanel();
+            item = FindElectricalCircuitItem(circuit.Id);
+        }
+
+        if (item is null)
+        {
+            StatusText = $"Electrical circuit '{circuit.Id}' is not available in the panel.";
+            return false;
+        }
+
+        SelectedElectricalCircuit = item;
+
+        if (target.ComponentId is string componentId)
+        {
+            ElectricalComponent? component = circuit.FindComponent(componentId);
+            if (component is null)
+            {
+                StatusText = $"Opened electrical circuit '{circuit.Id}' for {diagnostic.Code}; component '{componentId}' is gone.";
+                ElectricalPanelRequested?.Invoke();
+                return true;
+            }
+
+            SelectedElectricalNode = null;
+            SelectedElectricalComponent = ElectricalComponents.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, component.Id, StringComparison.Ordinal));
+            StatusText = $"Located electrical component '{component.Id}' ({diagnostic.Code})";
+            ElectricalPanelRequested?.Invoke();
+            return true;
+        }
+
+        if (target.NodeId is string nodeId)
+        {
+            ElectricalNode? node = circuit.FindNode(nodeId);
+            if (node is null)
+            {
+                StatusText = $"Opened electrical circuit '{circuit.Id}' for {diagnostic.Code}; node '{nodeId}' is gone.";
+                ElectricalPanelRequested?.Invoke();
+                return true;
+            }
+
+            SelectedElectricalComponent = null;
+            SelectedElectricalNode = ElectricalNodes.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, node.Id, StringComparison.Ordinal));
+            StatusText = $"Located electrical node '{node.Id}' ({diagnostic.Code})";
+            ElectricalPanelRequested?.Invoke();
+            return true;
+        }
+
+        // The diagnostic names only the circuit. Clear a previous component or node so
+        // the panel does not look as if the circuit-level message selected that target.
+        SelectedElectricalComponent = null;
+        SelectedElectricalNode = null;
+        StatusText = $"Located electrical circuit '{circuit.Id}' ({diagnostic.Code})";
+        ElectricalPanelRequested?.Invoke();
+        return true;
     }
 
     private void FocusBounds(Rect? bounds)

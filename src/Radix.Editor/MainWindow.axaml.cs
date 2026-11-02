@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         {
             _watchedViewModel.RecentProjectOpenRequested -= ViewModel_RecentProjectOpenRequested;
             _watchedViewModel.SearchOpened -= ViewModel_SearchOpened;
+            _watchedViewModel.ElectricalPanelRequested -= ViewModel_ElectricalPanelRequested;
         }
 
         _watchedViewModel = ViewModel;
@@ -53,8 +54,11 @@ public partial class MainWindow : Window
         {
             _watchedViewModel.RecentProjectOpenRequested += ViewModel_RecentProjectOpenRequested;
             _watchedViewModel.SearchOpened += ViewModel_SearchOpened;
+            _watchedViewModel.ElectricalPanelRequested += ViewModel_ElectricalPanelRequested;
         }
     }
+
+    private void ViewModel_ElectricalPanelRequested() => ElectricalTab.IsSelected = true;
 
     private void ViewModel_RecentProjectOpenRequested(string path) => _ = OpenRecentProjectAsync(path);
 

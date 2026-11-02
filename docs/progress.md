@@ -20,7 +20,7 @@ humans; update it at each milestone instead of relying on chat history.
 - Project-electrical-validation checkpoint: `55d63769b5bbd48e4c2a4bd0225feb638e1d5fad`
   (structural errors in `radix validate` and editor diagnostics).
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 834/834, CLI tests 3/3, Editor tests 312/312. The buffered example solves both
+  tests 834/834, CLI tests 3/3, Editor tests 313/313. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
   diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
@@ -72,6 +72,19 @@ humans; update it at each milestone instead of relying on chat history.
   validation.
 - Verification: Release build clean (0 warnings/errors); Core 834/834, CLI 3/3,
   Editor 312/312.
+
+## Session 2026-11-02 (electrical diagnostic navigation)
+
+- Electrical structural diagnostics now carry locatable `electrical/...` paths into
+  the Diagnostics tab. Locate selects the owning authored circuit, component, or
+  node, opens the Electrical inspector tab, and reports the selected target in the
+  status line. Missing targets still open their owning circuit and explain that the
+  specific target is gone, matching digital diagnostic navigation.
+- Added a parser for the three emitted path shapes and a headless regression that
+  navigates all three, including clearing a previous component or node selection
+  when a circuit-level diagnostic is located.
+- Verification: Release build clean (0 warnings/errors); Core 834/834, CLI 3/3,
+  Editor 313/313; focused diagnostic navigation/rendering tests 3/3.
 
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 

@@ -1,6 +1,7 @@
 using Avalonia;
 using Radix.Core;
 using Radix.Core.Analysis;
+using Radix.Core.Electrical;
 using Radix.Core.Interpretation;
 using Radix.Core.Model;
 using Radix.Core.Serialization;
@@ -1563,6 +1564,89 @@ public sealed class EditorViewModelTests
         Assert.False(viewModel.NavigateToDiagnostic(
             new Diagnostic("RAD903", DiagnosticSeverity.Error, "missing definition", "no.such.definition")));
         Assert.Contains("no longer exists", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ElectricalDiagnosticsNavigateToCircuitComponentAndNode()
+    {
+        var project = CircuitProject.CreateEmpty("Electrical diagnostics");
+        var root = new CircuitDefinition { Id = "main", Name = "Main" };
+        project.Definitions.Add(root);
+        project.RootDefinitionId = root.Id;
+        StandardLibrary.Install(project);
+
+        var broken = new ElectricalCircuit
+        {
+            Id = "dc1",
+            Name = "Broken divider",
+            GroundNodeId = "missing_ground",
+        };
+        broken.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
+        broken.Nodes.Add(new ElectricalNode { Id = "bad id", Name = "Bad node" });
+        var resistor = new ElectricalComponent
+        {
+            Id = "r1",
+            Name = "R1",
+            Kind = ElectricalComponentKind.Resistor,
+            Value = 1_000,
+        };
+        resistor.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "a",
+            Name = "A",
+            Polarity = ElectricalTerminalPolarity.Passive,
+            NodeId = "missing",
+        });
+        resistor.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "b",
+            Name = "B",
+            Polarity = ElectricalTerminalPolarity.Passive,
+            NodeId = "gnd",
+        });
+        broken.Components.Add(resistor);
+        project.ElectricalCircuits.Add(broken);
+
+        var spare = new ElectricalCircuit { Id = "dc2", Name = "Spare", GroundNodeId = "gnd" };
+        spare.Nodes.Add(new ElectricalNode { Id = "gnd", Name = "Ground" });
+        project.ElectricalCircuits.Add(spare);
+
+        var viewModel = new EditorViewModel(project);
+        int panelRequests = 0;
+        viewModel.ElectricalPanelRequested += () => panelRequests++;
+        viewModel.SelectedElectricalCircuit = viewModel.ElectricalCircuits.Single(item => item.Id == "dc2");
+
+        DiagnosticItem componentItem = Assert.Single(
+            viewModel.Diagnostics,
+            diagnostic => diagnostic.Code == "RAD-ELEC-011");
+        DiagnosticItem nodeItem = Assert.Single(
+            viewModel.Diagnostics,
+            diagnostic => diagnostic.Code == "RAD-ELEC-002");
+        DiagnosticItem circuitItem = Assert.Single(
+            viewModel.Diagnostics,
+            diagnostic => diagnostic.Code == "RAD-ELEC-004");
+        Assert.True(componentItem.CanLocate);
+        Assert.True(nodeItem.CanLocate);
+        Assert.True(circuitItem.CanLocate);
+
+        componentItem.LocateCommand.Execute(null);
+        Assert.Equal("dc1", viewModel.SelectedElectricalCircuitId);
+        Assert.Equal("r1", viewModel.SelectedElectricalComponentId);
+        Assert.Null(viewModel.SelectedElectricalNodeId);
+        Assert.Contains("Located electrical component 'r1'", viewModel.StatusText, StringComparison.Ordinal);
+
+        nodeItem.LocateCommand.Execute(null);
+        Assert.Equal("dc1", viewModel.SelectedElectricalCircuitId);
+        Assert.Equal("bad id", viewModel.SelectedElectricalNodeId);
+        Assert.Null(viewModel.SelectedElectricalComponentId);
+        Assert.Contains("Located electrical node 'bad id'", viewModel.StatusText, StringComparison.Ordinal);
+
+        circuitItem.LocateCommand.Execute(null);
+        Assert.Equal("dc1", viewModel.SelectedElectricalCircuitId);
+        Assert.Null(viewModel.SelectedElectricalComponentId);
+        Assert.Null(viewModel.SelectedElectricalNodeId);
+        Assert.Contains("Located electrical circuit 'dc1'", viewModel.StatusText, StringComparison.Ordinal);
+        Assert.Equal(3, panelRequests);
     }
 
     [Fact]
