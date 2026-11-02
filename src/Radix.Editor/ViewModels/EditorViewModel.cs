@@ -9069,6 +9069,63 @@ public sealed class EditorViewModel : ObservableObject
     /// of the project, because which definition a reader wants to exercise is a question about the
     /// session, not about the circuit - the bindings themselves are the circuit's claim.
     /// </summary>
+    /// <summary>
+    /// Marks output pins as supplied from outside. Only an output can be supplied - an input is
+    /// already written from outside, so the flag would say nothing there and would blur the one
+    /// distinction that makes the exception legible in the file.
+    /// </summary>
+    private bool SetExternallySuppliedPins(string definitionId, string value)
+    {
+        CircuitDefinition? definition = _project.FindDefinition(definitionId);
+        if (definition is null)
+        {
+            return false;
+        }
+
+        var requested = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string token in value.Split(
+                     [',', ';', ' '],
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            requested.Add(token);
+        }
+
+        foreach (string pinId in requested)
+        {
+            PinDeclaration? pin = definition.FindPin(pinId);
+            if (pin is null)
+            {
+                StatusText = $"Definition '{definitionId}' has no pin '{pinId}'.";
+                return false;
+            }
+
+            if (pin.Direction != PinDirection.Output)
+            {
+                StatusText =
+                    $"Pin '{pinId}' is an input, which is already supplied from outside; only an output can be declared.";
+                return false;
+            }
+        }
+
+        bool changed = definition.Pins.Any(pin => pin.ExternalSupply != requested.Contains(pin.Id));
+        if (!changed)
+        {
+            return true;
+        }
+
+        PushUndo();
+        foreach (PinDeclaration pin in definition.Pins)
+        {
+            pin.ExternalSupply = pin.Direction == PinDirection.Output && requested.Contains(pin.Id);
+        }
+
+        AfterMutation(structural: true, invalidateSimulation: false);
+        StatusText = requested.Count == 0
+            ? $"No pin in '{definitionId}' is supplied from outside."
+            : $"'{definitionId}' takes {requested.Count} pin(s) from outside.";
+        return true;
+    }
+
     private bool SetElectricalDriveDefinition(string value)
     {
         string id = value.Trim();
@@ -10038,6 +10095,15 @@ public sealed class EditorViewModel : ObservableObject
             Fields.Add(new EditableField("Instances", Definition.Instances.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
             Fields.Add(new EditableField("Nets", Definition.Nets.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
             Fields.Add(new EditableField("Pins", Definition.Pins.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Externally supplied pins",
+                string.Join(
+                    ", ",
+                    Definition.Pins
+                        .Where(pin => pin.ExternalSupply)
+                        .Select(pin => pin.Id)),
+                hint: "output pins whose value the outside world writes, comma separated; every other output stays the model's to decide",
+                apply: value => SetExternallySuppliedPins(definitionId, value)));
             Fields.Add(new EditableField(
                 "Root",
                 _project.RootDefinitionId == definitionId ? "yes" : "no",
