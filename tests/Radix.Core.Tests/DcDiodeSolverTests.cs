@@ -199,6 +199,26 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void DiodeRejectsUnrepresentableForwardSmallSignalConductance()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new DcNetlist("gnd").AddDiode(
+                "D1", "a", "gnd", saturationCurrent: 1,
+                thermalVoltage: 1e-320));
+    }
+
+    [Fact]
+    public void DiodeRejectsUnrepresentableBreakdownSmallSignalConductance()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new DcNetlist("gnd").AddDiode(
+                "D1", "a", "gnd", saturationCurrent: 1e-12,
+                thermalVoltage: 1e-320,
+                breakdownVoltage: 5,
+                breakdownCurrent: 1));
+    }
+
+    [Fact]
     public void ReverseBreakdownWithSeriesResistanceMatchesIndependentScalarBisection()
     {
         const double supply = -12;

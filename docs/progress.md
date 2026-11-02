@@ -1071,3 +1071,8 @@ summary and full local verification results; see the PR for the latest CI state.
      with `.local-native`. `radix transient examples/transient-rc.json --json`
      completed all 61 points, ending at 0.003 s with a finite RC state and energy
      ledger. The earlier failing fixed/adaptive representability tests now pass.
+
+108. WIP: added two diode validation regressions for finite positive parameters
+     whose zero-bias forward or reverse-breakdown conductance overflows to
+     infinity. Both parameter sets are currently accepted by `AddDiode` and fail
+     the new expectations. Implementation and broader verification remain pending.
