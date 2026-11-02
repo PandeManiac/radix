@@ -114,8 +114,32 @@ public sealed class TransientWaveform
 
         TransientWaveformPoint left = _points[low];
         TransientWaveformPoint right = _points[high];
-        return left.Value +
-            ((right.Value - left.Value) * ((time - left.Time) / (right.Time - left.Time)));
+        double interval = right.Time - left.Time;
+        double elapsed = time - left.Time;
+        double fraction;
+        if (double.IsFinite(interval) && double.IsFinite(elapsed))
+        {
+            fraction = elapsed / interval;
+        }
+        else
+        {
+            // Opposite-sign finite timestamps can have an infinite difference even
+            // though their normalized position is representable.
+            double timeScale = Math.Max(Math.Abs(left.Time), Math.Abs(right.Time));
+            fraction = ((time / timeScale) - (left.Time / timeScale)) /
+                ((right.Time / timeScale) - (left.Time / timeScale));
+        }
+
+        fraction = Math.Clamp(fraction, 0, 1);
+        double valueDelta = right.Value - left.Value;
+        if (double.IsFinite(valueDelta))
+        {
+            return left.Value + (valueDelta * fraction);
+        }
+
+        // The endpoints have opposite signs, so a convex weighted sum stays finite
+        // even when subtracting them would overflow.
+        return (left.Value * (1 - fraction)) + (right.Value * fraction);
     }
 }
 
@@ -226,6 +250,16 @@ public sealed record TransientOptions
                 "The requested time range and step count do not produce a finite positive time step.");
         }
 
+        double span = StopTime - StartTime;
+        double firstFixedStep = Math.Min(TimeStep, span);
+        if (StartTime + firstFixedStep <= StartTime)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(Steps),
+                Steps,
+                "The requested time step is too small to advance the start time at double precision.");
+        }
+
         if (AdaptiveTolerance is not double tolerance)
         {
             return;
@@ -270,6 +304,14 @@ public sealed record TransientOptions
                 nameof(InitialTimeStep),
                 InitialTimeStep,
                 "The initial adaptive step must be finite and greater than zero.");
+        }
+
+        if (StartTime + Math.Min(initial, span) <= StartTime)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(InitialTimeStep),
+                initial,
+                "The initial adaptive time step is too small to advance the start time at double precision.");
         }
 
         if (!double.IsFinite(MinimumTimeStep) || MinimumTimeStep < 0)
@@ -492,7 +534,9 @@ public sealed class TransientNetlist
                         diode.SaturationCurrent,
                         diode.EmissionCoefficient,
                         diode.ThermalVoltage,
-                        diode.SeriesResistance);
+                        diode.SeriesResistance,
+                        diode.BreakdownVoltage,
+                        diode.BreakdownCurrent);
                     break;
                 default:
                     throw new InvalidOperationException(
@@ -640,7 +684,9 @@ public sealed class TransientNetlist
         double saturationCurrent,
         double emissionCoefficient = 1.0,
         double thermalVoltage = DcDiode.DefaultThermalVoltage,
-        double seriesResistance = 0)
+        double seriesResistance = 0,
+        double? breakdownVoltage = null,
+        double? breakdownCurrent = null)
     {
         ValidateElement(id, nodeA, nodeB);
         if (!double.IsFinite(saturationCurrent) || saturationCurrent <= 0)
@@ -675,6 +721,8 @@ public sealed class TransientNetlist
                 "Series resistance must be finite and non-negative.");
         }
 
+        DcDiode.ValidateBreakdownParameters(breakdownVoltage, breakdownCurrent);
+
         return AddStatic(new DcDiode(
             id,
             nodeA,
@@ -682,7 +730,9 @@ public sealed class TransientNetlist
             saturationCurrent,
             emissionCoefficient,
             thermalVoltage,
-            seriesResistance));
+            seriesResistance,
+            breakdownVoltage,
+            breakdownCurrent));
     }
 
     public TransientNetlist AddCapacitor(string id, string nodeA, string nodeB, double farads)
@@ -864,9 +914,24 @@ public sealed class TransientNetlist
         TransientResult result = options.IsAdaptive
             ? RunAdaptive(options, state, points)
             : RunFixed(options, state, points);
+        TransientEnergyBalance? energy = MeasureEnergy(result.Points);
+        if (energy is not null && !IsFinite(energy))
+        {
+            if (result.Completed)
+            {
+                result = result with
+                {
+                    Failure = DcSolveFailure.NonFiniteResult,
+                    Message = "Transient energy accounting produced a non-finite result; the total energy exceeds the numeric range.",
+                };
+            }
+
+            energy = null;
+        }
+
         return result with
         {
-            Energy = MeasureEnergy(result.Points),
+            Energy = energy,
             Metrics = MeasureMetrics(options, result.Points),
             Notes = notes,
             NetlistFingerprint = Fingerprint(),
@@ -979,6 +1044,16 @@ public sealed class TransientNetlist
             }
 
             double next = step >= remaining ? options.StopTime : time + step;
+            if (next <= time)
+            {
+                return new TransientResult(
+                    options,
+                    points,
+                    DcSolveFailure.NonConvergent,
+                    $"Fixed-step integration cannot advance time from {time:G17} s by {step:G6} s at double precision.",
+                    points.Count - 1);
+            }
+
             bool trapezoidal = options.Method == TransientMethod.Trapezoidal && points.Count > 1;
             if (!TryAdvance(
                     next,
@@ -1052,6 +1127,17 @@ public sealed class TransientNetlist
             if (remaining - trial <= rounding)
             {
                 trial = remaining;
+            }
+
+            double nextTime = trial >= remaining ? options.StopTime : time + trial;
+            if (nextTime <= time)
+            {
+                return new TransientResult(
+                    options,
+                    points,
+                    DcSolveFailure.NonConvergent,
+                    $"Adaptive integration cannot advance time from {time:G17} s by {trial:G6} s at double precision; allow a larger minimum step or use a smaller absolute time origin.",
+                    points.Count - 1);
             }
 
             bool trapezoidal = options.Method == TransientMethod.Trapezoidal && !firstStep;
@@ -1498,10 +1584,22 @@ public sealed class TransientNetlist
                 continue;
             }
 
-            (double previousDelivered, double previousDissipated) = PowerFlow(points[index - 1]);
-            (double currentDelivered, double currentDissipated) = PowerFlow(points[index]);
-            delivered += span * (previousDelivered + currentDelivered) / 2;
-            dissipated += span * (previousDissipated + currentDissipated) / 2;
+            TransientPoint previous = points[index - 1];
+            TransientPoint current = points[index];
+            foreach (DcElement element in _elements)
+            {
+                double previousPower = previous.ElementPowers[element.Id];
+                double currentPower = current.ElementPowers[element.Id];
+                double elementEnergy = span * Average(previousPower, currentPower);
+                if (element is DcResistor or DcDiode)
+                {
+                    dissipated += elementEnergy;
+                }
+                else
+                {
+                    delivered -= elementEnergy;
+                }
+            }
         }
 
         double lastStored = StoredEnergy(points[^1]);
@@ -1513,6 +1611,21 @@ public sealed class TransientNetlist
             lastStored,
             delivered - dissipated - stored);
     }
+
+    private static double Average(double left, double right)
+    {
+        double sum = left + right;
+        return double.IsFinite(sum)
+            ? sum / 2
+            : (left / 2) + (right / 2);
+    }
+
+    private static bool IsFinite(TransientEnergyBalance energy) =>
+        double.IsFinite(energy.DeliveredJoules) &&
+        double.IsFinite(energy.DissipatedJoules) &&
+        double.IsFinite(energy.StoredChangeJoules) &&
+        double.IsFinite(energy.FinalStoredJoules) &&
+        double.IsFinite(energy.ResidualJoules);
 
     /// <summary>
     /// Builds the per-node summary. Minima and maxima come from the same reported points
@@ -1552,15 +1665,22 @@ public sealed class TransientNetlist
             }
 
             double final = NodeVoltage(points[^1].NodeVoltages, node);
-            double tolerance = settlingBand * Math.Max(Math.Abs(final), maximum - minimum);
+            double scale = Math.Max(Math.Abs(final), Math.Max(Math.Abs(minimum), Math.Abs(maximum)));
+            double normalizedFinal = scale > 0 ? final / scale : 0;
+            double normalizedSwing = scale > 0 ? (maximum / scale) - (minimum / scale) : 0;
+            double normalizedTolerance = settlingBand * Math.Max(
+                Math.Abs(normalizedFinal), normalizedSwing);
+            double NormalizedDifference(double volts) => scale > 0
+                ? Math.Abs((volts / scale) - normalizedFinal)
+                : 0;
             double? settling = 0;
-            if (tolerance > 0)
+            if (normalizedTolerance > 0)
             {
                 double lastOutside = 0;
                 bool outside = false;
                 foreach (TransientPoint point in points)
                 {
-                    if (Math.Abs(NodeVoltage(point.NodeVoltages, node) - final) > tolerance)
+                    if (NormalizedDifference(NodeVoltage(point.NodeVoltages, node)) > normalizedTolerance)
                     {
                         lastOutside = point.Time;
                         outside = true;
@@ -1569,7 +1689,8 @@ public sealed class TransientNetlist
 
                 if (outside)
                 {
-                    settling = Math.Abs(NodeVoltage(points[^1].NodeVoltages, node) - final) > tolerance
+                    settling = NormalizedDifference(NodeVoltage(points[^1].NodeVoltages, node)) >
+                        normalizedTolerance
                         ? null
                         : lastOutside;
                 }
@@ -1580,27 +1701,6 @@ public sealed class TransientNetlist
         }
 
         return new TransientMetrics(settlingBand, metrics);
-    }
-
-    /// <summary>Delivered source power and dissipated resistor/diode power at one point.</summary>
-    private (double Delivered, double Dissipated) PowerFlow(TransientPoint point)
-    {
-        double delivered = 0;
-        double dissipated = 0;
-        foreach (DcElement element in _elements)
-        {
-            double power = point.ElementPowers[element.Id];
-            if (element is DcResistor or DcDiode)
-            {
-                dissipated += power;
-            }
-            else
-            {
-                delivered -= power;
-            }
-        }
-
-        return (delivered, dissipated);
     }
 
     /// <summary>Stored reactive energy <c>v²C/2 + i²L/2</c> at one point.</summary>
@@ -1652,7 +1752,9 @@ public sealed class TransientNetlist
                     text.Append("|d|").Append(Number(diode.SaturationCurrent))
                         .Append('|').Append(Number(diode.EmissionCoefficient))
                         .Append('|').Append(Number(diode.ThermalVoltage))
-                        .Append('|').Append(Number(diode.SeriesResistance));
+                        .Append('|').Append(Number(diode.SeriesResistance))
+                        .Append('|').Append(diode.BreakdownVoltage is double bv ? Number(bv) : "-")
+                        .Append('|').Append(diode.BreakdownCurrent is double bi ? Number(bi) : "-");
                     break;
                 default:
                     text.Append("|?|").Append(Number(element.Value));
@@ -1867,7 +1969,9 @@ public sealed class TransientNetlist
                     diode.SaturationCurrent,
                     diode.EmissionCoefficient,
                     diode.ThermalVoltage,
-                    diode.SeriesResistance);
+                    diode.SeriesResistance,
+                    diode.BreakdownVoltage,
+                    diode.BreakdownCurrent);
                 break;
             default:
                 throw new InvalidOperationException(

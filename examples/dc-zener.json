@@ -1,0 +1,18 @@
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": -12 },
+    { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "z", "ohms": 1000 },
+    {
+      "id": "DZ1",
+      "type": "diode",
+      "nodeA": "z",
+      "nodeB": "gnd",
+      "saturationCurrent": 1e-12,
+      "breakdownVoltage": 5.1,
+      "breakdownCurrent": 0.005
+    }
+  ]
+}

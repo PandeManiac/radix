@@ -39,6 +39,42 @@ public sealed class SimulationOptions
     /// <summary>Whether net transitions are recorded for waveforms and audits.</summary>
     public bool RecordTrace { get; init; } = true;
 
+    /// <summary>Rejects runtime limits outside their documented ranges.</summary>
+    public void Validate()
+    {
+        if (MaxEvaluationsPerComponentPerTimestamp < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxEvaluationsPerComponentPerTimestamp),
+                MaxEvaluationsPerComponentPerTimestamp,
+                "The per-component evaluation limit must be at least one.");
+        }
+
+        if (MaxPendingEvents < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxPendingEvents), MaxPendingEvents, "The pending-event limit cannot be negative.");
+        }
+
+        if (MaxEventsProcessed < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxEventsProcessed), MaxEventsProcessed, "The processed-event budget cannot be negative.");
+        }
+
+        if (MaxRuntimeDiagnostics < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxRuntimeDiagnostics), MaxRuntimeDiagnostics, "The runtime-diagnostic limit cannot be negative.");
+        }
+
+        if (MaxRecordedChanges < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxRecordedChanges), MaxRecordedChanges, "The trace capacity cannot be negative.");
+        }
+    }
+
     public static SimulationOptions FromSettings(ProjectSettings settings)
         => FromSettings(settings, maxEventsProcessed: 0);
 

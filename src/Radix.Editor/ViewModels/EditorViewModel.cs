@@ -6254,7 +6254,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalCircuitFields.Add(new EditableField(
             "Transient stop (s)",
             _electricalTransientStopText,
-            hint: "End of a transient run in seconds; a view setting, not saved with the project",
+            hint: "End of a transient run in seconds (SI suffixes p, n, u, m, k, M, G supported); a view setting, not saved with the project",
             apply: SetElectricalTransientStop));
         ElectricalCircuitFields.Add(new EditableField(
             "Transient steps",
@@ -6304,7 +6304,7 @@ public sealed class EditorViewModel : ObservableObject
                 ElectricalComponentFields.Add(new EditableField(
                     $"Value ({component.Unit})",
                     FormatElectricalValue(component.Value),
-                    hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; validation is shown below",
+                    hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; SI suffixes p, n, u, m, k, M, and G are supported",
                     apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
                 if (ElectricalComponentMetadata.HasState(component.Kind))
                 {
@@ -6315,7 +6315,7 @@ public sealed class EditorViewModel : ObservableObject
                         component.InitialValue is double initial
                             ? FormatElectricalValue(initial)
                             : string.Empty,
-                        hint: "Blank uses the DC operating point; applied only by a transient run",
+                        hint: "Blank uses the DC operating point; finite values accept SI suffixes p, n, u, m, k, M, and G; applied only by a transient run",
                         apply: value => SetElectricalComponentInitialValue(circuit.Id, component.Id, value)));
                 }
 
@@ -6324,7 +6324,7 @@ public sealed class EditorViewModel : ObservableObject
                     ElectricalComponentFields.Add(new EditableField(
                         "Waveform",
                         FormatElectricalWaveform(component),
-                        hint: $"Comma-separated time={component.Unit} breakpoints in seconds; blank keeps the source constant, and a DC solve always uses the value",
+                        hint: $"Comma-separated time={component.Unit} breakpoints in seconds; both fields accept SI suffixes p, n, u, m, k, M, and G; blank keeps the source constant, and a DC solve always uses the value",
                         apply: value => SetElectricalComponentWaveform(circuit.Id, component.Id, value)));
                 }
             }
@@ -6435,7 +6435,7 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        if (!TryParseElectricalNumber(_electricalTransientStopText, out double stop) || stop <= 0)
+        if (!TryParseEngineeringValue(_electricalTransientStopText, out double stop) || stop <= 0)
         {
             ShowElectricalTransientError(
                 "Transient stop time must be a positive number of seconds.",
@@ -6868,9 +6868,9 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Parses the panel's sweep values: <c>800,1000,1200</c> or <c>800:1200:5</c>. The spelling is
-    /// kept here so a typo produces a sentence instead of a stack trace, and the same shapes work
-    /// as on the command line.
+    /// Parses panel sweep values with optional SI suffixes: <c>800,1k,1.2k</c> or
+    /// <c>800:1.2k:5</c>. The spelling is kept here so a typo produces a sentence instead of a
+    /// stack trace, and the same shapes work as on the command line.
     /// </summary>
     private static bool TryParseSweepValues(string? text, out double[] values, out string error)
     {
@@ -6879,20 +6879,24 @@ public sealed class EditorViewModel : ObservableObject
         string trimmed = (text ?? string.Empty).Trim();
         if (trimmed.Length == 0)
         {
-            error = "Enter values as 800,1000,1200 or as from:to:count, for example 800:1200:5.";
+            error = "Enter values as 800,1k,1.2k or as from:to:count, for example 800:1.2k:5.";
             return false;
         }
 
         string[] parts = trimmed.Split(
-            ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            ',', StringSplitOptions.TrimEntries);
         if (parts.Length > 1)
         {
             var parsed = new double[parts.Length];
             for (int index = 0; index < parts.Length; index++)
             {
-                if (!double.TryParse(
-                        parts[index], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[index]) ||
-                    !double.IsFinite(parsed[index]))
+                if (parts[index].Length == 0)
+                {
+                    error = "Sweep values contain an empty entry; remove the extra or trailing comma.";
+                    return false;
+                }
+
+                if (!TryParseEngineeringValue(parts[index], out parsed[index]))
                 {
                     error = $"'{parts[index]}' is not a finite number.";
                     return false;
@@ -6905,8 +6909,8 @@ public sealed class EditorViewModel : ObservableObject
 
         string[] range = trimmed.Split(':', StringSplitOptions.TrimEntries);
         if (range.Length == 3 &&
-            double.TryParse(range[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) &&
-            double.TryParse(range[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) &&
+            TryParseEngineeringValue(range[0], out double from) &&
+            TryParseEngineeringValue(range[1], out double to) &&
             int.TryParse(range[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
         {
             try
@@ -6921,7 +6925,7 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
 
-        error = "Use a comma list of at least two values, or from:to:count (for example 800:1200:5).";
+        error = "Use a comma list of at least two values, or from:to:count (for example 800:1.2k:5). SI suffixes are supported.";
         return false;
     }
 
@@ -7028,7 +7032,7 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        if (!TryParseElectricalNumber(_electricalTransientProbeInput, out double time) ||
+        if (!TryParseEngineeringValue(_electricalTransientProbeInput, out double time) ||
             !double.IsFinite(time))
         {
             StatusText = "Probe time must be a number of seconds.";
@@ -7164,7 +7168,7 @@ public sealed class EditorViewModel : ObservableObject
 
     private bool SetElectricalTransientStop(string value)
     {
-        if (!TryParseElectricalNumber(value, out double stop) || stop <= 0)
+        if (!TryParseEngineeringValue(value, out double stop) || stop <= 0)
         {
             StatusText = "Transient stop time must be a positive number of seconds.";
             return false;
@@ -7601,10 +7605,9 @@ public sealed class EditorViewModel : ObservableObject
     {
         ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
         if (component is null ||
-            !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ||
-            !double.IsFinite(parsed))
+            !TryParseEngineeringValue(value, out double parsed))
         {
-            StatusText = "Component value must be a finite number.";
+            StatusText = "Component value must be a finite number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
             return false;
         }
 
@@ -7640,10 +7643,9 @@ public sealed class EditorViewModel : ObservableObject
             return true;
         }
 
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ||
-            !double.IsFinite(parsed))
+        if (!TryParseEngineeringValue(value, out double parsed))
         {
-            StatusText = "Initial value must be a finite number, or blank for the DC operating point.";
+            StatusText = "Initial value must be finite, optionally followed by an SI suffix, or blank for the DC operating point.";
             return false;
         }
 
@@ -7683,13 +7685,19 @@ public sealed class EditorViewModel : ObservableObject
         var points = new List<ElectricalWaveformPoint>();
         foreach (string entry in value.Split(
             [',', ';'],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            StringSplitOptions.TrimEntries))
         {
+            if (entry.Length == 0)
+            {
+                StatusText = "Waveform contains an empty entry; remove the extra or trailing separator.";
+                return false;
+            }
+
             int separator = entry.IndexOf('=', StringComparison.Ordinal);
             if (separator <= 0 ||
                 separator == entry.Length - 1 ||
-                !TryParseElectricalNumber(entry[..separator], out double time) ||
-                !TryParseElectricalNumber(entry[(separator + 1)..], out double pointValue))
+                !TryParseEngineeringValue(entry[..separator], out double time) ||
+                !TryParseEngineeringValue(entry[(separator + 1)..], out double pointValue))
             {
                 StatusText = $"Waveform entry '{entry}' is not a finite time=value pair.";
                 return false;
@@ -7727,6 +7735,53 @@ public sealed class EditorViewModel : ObservableObject
     private static bool TryParseElectricalNumber(string text, out double value) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
         double.IsFinite(value);
+
+    private static bool TryParseEngineeringValue(string text, out double value)
+    {
+        string trimmed = text.Trim();
+        if (TryParseElectricalNumber(trimmed, out value))
+        {
+            return true;
+        }
+
+        double multiplier;
+        string number;
+        if (trimmed.EndsWith("meg", StringComparison.OrdinalIgnoreCase))
+        {
+            multiplier = 1e6;
+            number = trimmed[..^3];
+        }
+        else if (trimmed.Length > 1)
+        {
+            multiplier = trimmed[^1] switch
+            {
+                'p' => 1e-12,
+                'n' => 1e-9,
+                'u' or 'µ' or 'μ' => 1e-6,
+                'm' => 1e-3,
+                'k' => 1e3,
+                'M' => 1e6,
+                'G' => 1e9,
+                _ => 0,
+            };
+            number = trimmed[..^1];
+        }
+        else
+        {
+            value = 0;
+            return false;
+        }
+
+        if (multiplier == 0 ||
+            !double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double magnitude))
+        {
+            value = 0;
+            return false;
+        }
+
+        value = magnitude * multiplier;
+        return double.IsFinite(value);
+    }
 
     private static bool SameElectricalWaveform(
         IReadOnlyList<ElectricalWaveformPoint> current,

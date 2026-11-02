@@ -45,6 +45,19 @@ public sealed class DcLinearSolverTests
     }
 
     [Fact]
+    public void NonFiniteElementPowerFailsTheOperatingPoint()
+    {
+        var netlist = new DcNetlist("gnd")
+            .AddVoltageSource("V1", "out", "gnd", 1e200)
+            .AddResistor("R1", "out", "gnd", 1);
+
+        DcSolveException exception = Assert.Throws<DcSolveException>(netlist.Solve);
+
+        Assert.Equal(DcSolveFailure.NonFiniteResult, exception.Failure);
+        Assert.Contains("power", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void CurrentSourceInjectionIntoResistorProducesExpectedVoltage()
     {
         var netlist = new DcNetlist("gnd")

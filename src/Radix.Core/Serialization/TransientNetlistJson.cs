@@ -302,7 +302,9 @@ public static class TransientNetlistJson
                         "saturationCurrent",
                         "emissionCoefficient",
                         "thermalVoltage",
-                        "seriesResistance");
+                        "seriesResistance",
+                        "breakdownVoltage",
+                        "breakdownCurrent");
                     netlist.AddDiode(
                         id,
                         nodeA,
@@ -310,7 +312,9 @@ public static class TransientNetlistJson
                         RequireValue(element.SaturationCurrent, id, "saturationCurrent"),
                         element.EmissionCoefficient ?? 1.0,
                         element.ThermalVoltage ?? DcDiode.DefaultThermalVoltage,
-                        element.SeriesResistance ?? 0);
+                        element.SeriesResistance ?? 0,
+                        element.BreakdownVoltage,
+                        element.BreakdownCurrent);
                     break;
                 case "capacitor":
                     RejectUnused(element, id, type, "farads", "initialVolts");
@@ -418,6 +422,16 @@ public static class TransientNetlistJson
             present.Add("seriesResistance");
         }
 
+        if (element.BreakdownVoltage is not null)
+        {
+            present.Add("breakdownVoltage");
+        }
+
+        if (element.BreakdownCurrent is not null)
+        {
+            present.Add("breakdownCurrent");
+        }
+
         if (element.Farads is not null)
         {
             present.Add("farads");
@@ -514,6 +528,8 @@ public static class TransientNetlistJson
         double? EmissionCoefficient,
         double? ThermalVoltage,
         double? SeriesResistance,
+        double? BreakdownVoltage,
+        double? BreakdownCurrent,
         double? Farads,
         double? Henries,
         double? InitialVolts,

@@ -73,6 +73,83 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void TransientInitialConditionsAndWaveformsAcceptEngineeringSuffixesAndSerializeAsNumbers()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Capacitor);
+        ElectricalComponent capacitor = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+
+        EditableField initial = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        initial.Value = "2.5m";
+        Assert.True(viewModel.ApplyField(initial));
+        Assert.Equal(0.0025, capacitor.InitialValue);
+
+        viewModel.AddElectricalComponent();
+        ElectricalComponent source = viewModel.SelectedElectricalCircuitModel!.Components
+            .Single(component => component.Id != capacitor.Id);
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.VoltageSource);
+        EditableField waveform = viewModel.ElectricalComponentFields.Single(field => field.Label == "Waveform");
+        waveform.Value = "0=0, 250u=2.5, 1m=5";
+        Assert.True(viewModel.ApplyField(waveform));
+        Assert.Equal([0d, 250e-6, 1e-3], source.Waveform.Select(point => point.Time));
+        Assert.Equal([0d, 2.5, 5d], source.Waveform.Select(point => point.Value));
+
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            Assert.True(viewModel.SaveProject(path));
+            using JsonDocument project = JsonDocument.Parse(File.ReadAllText(path));
+            JsonElement components = project.RootElement.GetProperty("electricalCircuits")[0]
+                .GetProperty("components");
+            JsonElement savedCapacitor = components.EnumerateArray()
+                .Single(component => component.GetProperty("id").GetString() == capacitor.Id);
+            Assert.Equal(JsonValueKind.Number, savedCapacitor.GetProperty("initialValue").ValueKind);
+            Assert.Equal(0.0025, savedCapacitor.GetProperty("initialValue").GetDouble());
+            JsonElement savedSource = components.EnumerateArray()
+                .Single(component => component.GetProperty("id").GetString() == source.Id);
+            JsonElement points = savedSource.GetProperty("waveform");
+            Assert.Equal(JsonValueKind.Number, points[1].GetProperty("time").ValueKind);
+            Assert.Equal(250e-6, points[1].GetProperty("time").GetDouble());
+            Assert.Equal(2.5, points[1].GetProperty("value").GetDouble());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData("2.5x")]
+    [InlineData("1e308G")]
+    public void InvalidEngineeringSuffixesAreRejectedForInitialConditionsAndWaveforms(string text)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Capacitor);
+        ElectricalComponent capacitor = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        EditableField initial = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        initial.Value = text;
+        Assert.False(viewModel.ApplyField(initial));
+        Assert.Null(capacitor.InitialValue);
+
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.VoltageSource);
+        ElectricalComponent source = Assert.Single(viewModel.SelectedElectricalCircuitModel.Components);
+        EditableField waveform = viewModel.ElectricalComponentFields.Single(field => field.Label == "Waveform");
+        waveform.Value = $"0=0, {text}=5";
+        Assert.False(viewModel.ApplyField(waveform));
+        Assert.Empty(source.Waveform);
+    }
+
+    [Fact]
     public void EditingAValuePreservesAnAuthoredWaveform()
     {
         EditorViewModel viewModel = CreateEmptyEditor();
@@ -138,7 +215,7 @@ public sealed class ElectricalEditorTests
 
         EditableField stop = viewModel.ElectricalCircuitFields
             .Single(field => field.Label == "Transient stop (s)");
-        stop.Value = "0.01";
+        stop.Value = "10m";
         Assert.True(viewModel.ApplyField(stop));
         Assert.False(viewModel.HasElectricalTransientResult);
         Assert.False(viewModel.TryBuildElectricalTransientJson(out _));
@@ -443,7 +520,7 @@ public sealed class ElectricalEditorTests
         capacitor.InitialValue = 0;
         circuit.Components.Add(capacitor);
 
-        viewModel.ElectricalTransientProbeInput = "0.0012345";
+        viewModel.ElectricalTransientProbeInput = "1.2345m";
         Assert.False(viewModel.ProbeElectricalTransient());
         Assert.Contains("Run a transient", viewModel.StatusText);
 
@@ -526,6 +603,19 @@ public sealed class ElectricalEditorTests
         Assert.False(viewModel.ApplyField(garbled));
         Assert.Equal(2, source.Waveform.Count);
 
+        EditableField emptyEntry = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        emptyEntry.Value = "0=0,, 0.002=5";
+        Assert.False(viewModel.ApplyField(emptyEntry));
+        Assert.Contains("empty entry", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, source.Waveform.Count);
+
+        EditableField trailingEntry = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        trailingEntry.Value = "0=0, 0.002=5,";
+        Assert.False(viewModel.ApplyField(trailingEntry));
+        Assert.Equal(2, source.Waveform.Count);
+
         EditableField cleared = viewModel.ElectricalComponentFields
             .Single(field => field.Label == "Waveform");
         cleared.Value = string.Empty;
@@ -579,6 +669,54 @@ public sealed class ElectricalEditorTests
         Assert.Equal("gnd", component.FindTerminal("a")!.NodeId);
         Assert.Equal("n1", component.FindTerminal("b")!.NodeId);
         Assert.Equal(2, viewModel.ElectricalTerminals.Count);
+    }
+
+    [Theory]
+    [InlineData("2.2k", 2_200)]
+    [InlineData("4.7M", 4_700_000)]
+    [InlineData("3.3meg", 3_300_000)]
+    [InlineData("3m", 3e-3)]
+    [InlineData("1u", 1e-6)]
+    [InlineData("1µ", 1e-6)]
+    [InlineData("1n", 1e-9)]
+    [InlineData("1G", 1e9)]
+    public void ComponentValuesAcceptInvariantSiEngineeringSuffixes(string text, double expected)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        ElectricalComponent component = viewModel.SelectedElectricalCircuitModel!.Components.Single();
+        EditableField value = viewModel.ElectricalComponentFields.Single(field =>
+            field.Label.StartsWith("Value", StringComparison.Ordinal));
+
+        value.Value = text;
+        Assert.True(viewModel.ApplyField(value));
+        Assert.InRange(component.Value, expected * (1 - 1e-12), expected * (1 + 1e-12));
+        Assert.Contains("SI suffixes", value.Hint, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("2.2x")]
+    [InlineData("1e308G")]
+    [InlineData("1P")]
+    [InlineData("1g")]
+    [InlineData("1K")]
+    [InlineData("1N")]
+    [InlineData("1U")]
+    public void InvalidOrOverflowingEngineeringValuesAreRejected(string text)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        ElectricalComponent component = viewModel.SelectedElectricalCircuitModel!.Components.Single();
+        EditableField value = viewModel.ElectricalComponentFields.Single(field =>
+            field.Label.StartsWith("Value", StringComparison.Ordinal));
+
+        value.Value = text;
+
+        Assert.False(viewModel.ApplyField(value));
+        Assert.Equal(1_000, component.Value);
+        Assert.Contains("SI suffix", viewModel.StatusText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -830,7 +968,7 @@ public sealed class ElectricalEditorTests
         Assert.True(viewModel.SolveElectricalTransient());
 
         viewModel.ElectricalSweepElementText = "R1";
-        viewModel.ElectricalSweepValuesText = "500,1000,2000";
+        viewModel.ElectricalSweepValuesText = "500,1k,2k";
 
         Assert.True(viewModel.RunElectricalSweep());
         Assert.True(viewModel.HasElectricalSweepResult);
@@ -842,6 +980,13 @@ public sealed class ElectricalEditorTests
         // The value is printed once per block, not on every node row.
         Assert.Equal("500", viewModel.ElectricalSweepRows[0].ValueText);
         Assert.Equal(string.Empty, viewModel.ElectricalSweepRows[1].ValueText);
+        Assert.Equal("1000", viewModel.ElectricalSweepRows[2].ValueText);
+
+        viewModel.ElectricalSweepValuesText = "1k:2k:3";
+        Assert.True(viewModel.RunElectricalSweep());
+        Assert.Equal("1000", viewModel.ElectricalSweepRows[0].ValueText);
+        Assert.Equal("1500", viewModel.ElectricalSweepRows[2].ValueText);
+        Assert.Equal("2000", viewModel.ElectricalSweepRows[4].ValueText);
     }
 
     [Fact]
@@ -870,11 +1015,19 @@ public sealed class ElectricalEditorTests
         viewModel.ElectricalSweepElementText = "R1";
         viewModel.ElectricalSweepValuesText = "500";
         Assert.False(viewModel.RunElectricalSweep());
-        Assert.Contains("800:1200:5", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+        Assert.Contains("800:1.2k:5", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
 
         viewModel.ElectricalSweepValuesText = "500,abc";
         Assert.False(viewModel.RunElectricalSweep());
         Assert.Contains("abc", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+
+        viewModel.ElectricalSweepValuesText = "500,,1000";
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("empty entry", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+
+        viewModel.ElectricalSweepValuesText = "500,1000,";
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("empty entry", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
     }
 
     [Fact]

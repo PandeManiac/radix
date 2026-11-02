@@ -45,6 +45,128 @@ public sealed class TransientEnergyTests
     }
 
     [Fact]
+    public void EnergyLedgerAveragesLargeFinitePowersWithoutOverflow()
+    {
+        // The source and resistor each carry 1e308 W, but across a 1 ms interval
+        // the delivered and dissipated energies are both a representable 1e305 J.
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 1e154)
+            .AddResistor("R1", "in", "gnd", 1);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 1e-3,
+            Steps = 1,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        TransientEnergyBalance energy = Assert.IsType<TransientEnergyBalance>(result.Energy);
+        Assert.True(double.IsFinite(energy.DeliveredJoules));
+        Assert.True(double.IsFinite(energy.DissipatedJoules));
+        AssertClose(1e305, energy.DeliveredJoules, 1e-12);
+        AssertClose(1e305, energy.DissipatedJoules, 1e-12);
+        Assert.Equal(0, energy.StoredChangeJoules);
+        Assert.Equal(0, energy.ResidualJoules);
+    }
+
+    [Fact]
+    public void EnergyLedgerIntegratesFiniteBranchesBeforeTheirPowerSumOverflows()
+    {
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "n1", "gnd", 1e154)
+            .AddResistor("R1", "n1", "gnd", 1)
+            .AddVoltageSource("V2", "n2", "gnd", 1e154)
+            .AddResistor("R2", "n2", "gnd", 1);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 1e-3,
+            Steps = 1,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        TransientEnergyBalance energy = Assert.IsType<TransientEnergyBalance>(result.Energy);
+        Assert.True(double.IsFinite(energy.DeliveredJoules));
+        Assert.True(double.IsFinite(energy.DissipatedJoules));
+        AssertClose(2e305, energy.DeliveredJoules, 1e-12);
+        AssertClose(2e305, energy.DissipatedJoules, 1e-12);
+        Assert.Equal(0, energy.StoredChangeJoules);
+        Assert.Equal(0, energy.ResidualJoules);
+    }
+
+    [Fact]
+    public void UnrepresentableStoredEnergyFailsTheTransientReport()
+    {
+        // Each capacitor stores about 9.8e307 J, but the combined stored energy
+        // exceeds double.MaxValue. The transient points are finite; the derived
+        // energy report must not claim a successful analysis with an infinite total.
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddCapacitor("C1", "out1", "gnd", 1e308)
+            .AddCapacitor("C2", "out2", "gnd", 1e308)
+            .SetCapacitorInitialVoltage("C1", 1.4)
+            .SetCapacitorInitialVoltage("C2", 1.4);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 10,
+            Steps = 1,
+        });
+
+        Assert.False(result.Completed);
+        Assert.Equal(DcSolveFailure.NonFiniteResult, result.Failure);
+        Assert.Contains("energy", result.Message!, StringComparison.OrdinalIgnoreCase);
+        Assert.All(result.Points, point =>
+        {
+            Assert.All(point.NodeVoltages.Values, value => Assert.True(double.IsFinite(value)));
+            Assert.All(point.ElementPowers.Values, value => Assert.True(double.IsFinite(value)));
+        });
+
+        using JsonDocument report = JsonDocument.Parse(
+            TransientNetlistJson.ToReportJson("test", netlist, result));
+        Assert.Null(result.Energy);
+        Assert.False(report.RootElement.GetProperty("completed").GetBoolean());
+        Assert.Equal("non-finite-result", report.RootElement.GetProperty("failure").GetString());
+        Assert.False(report.RootElement.TryGetProperty("energy", out _));
+    }
+
+    [Fact]
+    public void PartialFailureOmitsUnrepresentableEnergyWithoutReplacingTheStepFailure()
+    {
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddCapacitor("C1", "out1", "gnd", 1e308)
+            .AddCapacitor("C2", "out2", "gnd", 1e308)
+            .SetCapacitorInitialVoltage("C1", 1.4)
+            .SetCapacitorInitialVoltage("C2", 1.4)
+            .AddCurrentSource("I1", "load", "gnd", 0)
+            .SetWaveform("I1", [
+                new TransientWaveformPoint(0, 0),
+                new TransientWaveformPoint(5, 0),
+                new TransientWaveformPoint(10, 1e308),
+            ])
+            .AddResistor("R1", "load", "gnd", 1);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 10,
+            Steps = 2,
+        });
+
+        Assert.False(result.Completed);
+        Assert.Equal(DcSolveFailure.NonFiniteResult, result.Failure);
+        Assert.Contains("I1", result.Message!, StringComparison.Ordinal);
+        Assert.NotNull(result.FailedStep);
+        Assert.True(result.Points.Count >= 2);
+        Assert.Null(result.Energy);
+
+        using JsonDocument report = JsonDocument.Parse(
+            TransientNetlistJson.ToReportJson("test", netlist, result));
+        Assert.False(report.RootElement.GetProperty("completed").GetBoolean());
+        Assert.Equal("non-finite-result", report.RootElement.GetProperty("failure").GetString());
+        Assert.Contains("I1", report.RootElement.GetProperty("message").GetString());
+        Assert.False(report.RootElement.TryGetProperty("energy", out _));
+    }
+
+    [Fact]
     public void LosslessTankConservesEnergyUnderTheTrapezoidalRule()
     {
         double initial = 0.5 * 1e-6 * 25;

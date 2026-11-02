@@ -68,6 +68,7 @@ public sealed class SimulationEngine
     {
         _circuit = circuit ?? throw new ArgumentNullException(nameof(circuit));
         _options = options ?? new SimulationOptions();
+        _options.Validate();
         _pinValues = new int[circuit.Pins.Count];
         _netValues = new int[circuit.Nets.Count];
         _pendingEvaluation = new bool[circuit.Components.Count];
@@ -165,7 +166,7 @@ public sealed class SimulationEngine
         }
     }
 
-    /// <summary>Processes exactly one scheduled event. Returns false when nothing remains.</summary>
+    /// <summary>Processes exactly one scheduled event. Returns false when no event is processed.</summary>
     public bool Step()
     {
         if (_halted || !_queue.TryPeek(out _))
@@ -173,8 +174,7 @@ public sealed class SimulationEngine
             return false;
         }
 
-        ProcessNextEvent();
-        return true;
+        return ProcessNextEvent();
     }
 
     /// <summary>Processes every event at the earliest pending timestamp.</summary>
@@ -190,7 +190,11 @@ public sealed class SimulationEngine
         int processed = 0;
         while (!_halted && _queue.TryPeek(out SimEvent next) && next.Time == timestamp)
         {
-            ProcessNextEvent();
+            if (!ProcessNextEvent())
+            {
+                break;
+            }
+
             processed++;
         }
 
@@ -269,14 +273,14 @@ public sealed class SimulationEngine
         }
     }
 
-    private void ProcessNextEvent()
+    private bool ProcessNextEvent()
     {
         if (_options.MaxEventsProcessed > 0 && EventsProcessed >= _options.MaxEventsProcessed)
         {
             Halt(
                 EventBudgetCode,
                 $"The event budget of {_options.MaxEventsProcessed} was exhausted after {EventsProcessed} events at time {_now}; increase the budget or set it to 0 to disable it.");
-            return;
+            return false;
         }
 
         SimEvent ev = _queue.Pop();
@@ -300,7 +304,7 @@ public sealed class SimulationEngine
             case SimEventKind.WakeComponent:
                 if (!_pendingEvaluation[ev.Target])
                 {
-                    return;
+                    return true;
                 }
 
                 _pendingEvaluation[ev.Target] = false;
@@ -309,7 +313,7 @@ public sealed class SimulationEngine
                     Halt(
                         NonConvergenceCode,
                         $"Component '{component!.InstanceId}' evaluated more than {_options.MaxEvaluationsPerComponentPerTimestamp} times at time {_now}; zero-delay feedback did not converge.");
-                    return;
+                    return true;
                 }
 
                 ComponentEvaluations++;
@@ -333,6 +337,8 @@ public sealed class SimulationEngine
             // misreported as zero-delay feedback that never converged.
             _evaluationTimestamp = -1;
         }
+
+        return true;
     }
 
     private void CommitOutput(int pinIndex, int value)
@@ -534,7 +540,8 @@ public sealed class SimulationEngine
     /// <summary>
     /// Drives a net from outside the circuit (switches, test harnesses, interactive
     /// input). One external value is allowed per net; -1 clears it. The net re-resolves
-    /// immediately and downstream components are scheduled at the current time.
+    /// immediately and downstream components are scheduled at the current time. Drives
+    /// are ignored after the engine halts, preserving its inspectable partial state.
     /// </summary>
     public void SetExternalInput(int netIndex, int value)
     {
@@ -544,17 +551,22 @@ public sealed class SimulationEngine
         }
 
         CompiledNet net = _circuit.Nets[netIndex];
+        if (value != SignalValue.UndrivenIndex && !net.Domain.IsValidValue(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), $"Value {value} is outside domain '{net.Domain.Id}'.");
+        }
+
+        if (_halted)
+        {
+            return;
+        }
+
         if (value == SignalValue.UndrivenIndex)
         {
             _externalValues.Remove(netIndex);
         }
         else
         {
-            if (!net.Domain.IsValidValue(value))
-            {
-                throw new ArgumentOutOfRangeException(nameof(value), $"Value {value} is outside domain '{net.Domain.Id}'.");
-            }
-
             _externalValues[netIndex] = value;
         }
 

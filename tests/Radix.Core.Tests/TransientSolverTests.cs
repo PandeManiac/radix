@@ -48,6 +48,64 @@ public sealed class TransientSolverTests
         }
     }
 
+    [Fact]
+    public void ZenerClampTransientSettlesAtTheReverseBreakdownOperatingPoint()
+    {
+        const double breakdownVoltage = 5.1;
+        const double breakdownCurrent = 5e-3;
+        var options = new TransientOptions { StopTime = 0.05, Steps = 2_500 };
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "in", "gnd", 0)
+            .SetWaveform("V1", [
+                new TransientWaveformPoint(0, 0),
+                new TransientWaveformPoint(1e-6, -12),
+            ])
+            .AddResistor("R1", "in", "z", 1_000)
+            .AddCapacitor("C1", "z", "gnd", 10e-6)
+            .SetCapacitorInitialVoltage("C1", 0)
+            .AddDiode(
+                "DZ1",
+                "z",
+                "gnd",
+                1e-12,
+                breakdownVoltage: breakdownVoltage,
+                breakdownCurrent: breakdownCurrent);
+
+        TransientResult result = netlist.Run(options);
+
+        Assert.True(result.Completed, result.Message);
+        TransientPoint afterRamp = Assert.Single(result.Points, point => point.Time == 1e-6);
+        AssertClose(0, afterRamp.NodeVoltages["z"], 1.5e-3);
+        Assert.Contains(result.Points, point => point.NodeVoltages["z"] < -1);
+        Assert.InRange(result.FinalPoint!.NodeVoltages["z"], -5.2, -5.1);
+        Assert.True(result.FinalPoint.ElementCurrents["DZ1"] < -breakdownCurrent);
+        AssertClose(
+            result.FinalPoint.ElementCurrents["R1"],
+            result.FinalPoint.ElementCurrents["DZ1"],
+            1e-8);
+
+        TransientResult adaptive = netlist.Run(options with
+        {
+            Steps = 250,
+            AdaptiveTolerance = 1e-5,
+            AdaptiveAbsoluteTolerance = 1e-8,
+        });
+
+        Assert.True(adaptive.Completed, adaptive.Message);
+        Assert.Equal(options.StopTime, adaptive.FinalPoint!.Time);
+        Assert.InRange(adaptive.FinalPoint.NodeVoltages["z"], -5.2, -5.1);
+        AssertClose(result.FinalPoint.NodeVoltages["z"], adaptive.FinalPoint.NodeVoltages["z"], 0.02);
+        AssertClose(
+            adaptive.FinalPoint.ElementCurrents["R1"],
+            adaptive.FinalPoint.ElementCurrents["DZ1"],
+            1e-8);
+        Assert.NotNull(result.Energy);
+        Assert.NotNull(adaptive.Energy);
+        Assert.True(
+            adaptive.Energy.RelativeResidual < result.Energy.RelativeResidual,
+            $"adaptive energy residual {adaptive.Energy.RelativeResidual:G6} was not below fixed-step residual {result.Energy.RelativeResidual:G6}.");
+    }
+
     [Theory]
     [InlineData(TransientMethod.BackwardEuler, 2.0)]
     [InlineData(TransientMethod.Trapezoidal, 4.0)]
@@ -618,6 +676,37 @@ public sealed class TransientSolverTests
                 InitialTimeStep = 0.1,
                 MaximumTimeStep = 0.01,
             }.Validate());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RejectsTimeStepsThatCannotAdvanceRepresentableClock(bool adaptive)
+    {
+        var options = new TransientOptions
+        {
+            StartTime = 1e16,
+            StopTime = 1e16 + 2,
+            Steps = 100,
+            AdaptiveTolerance = adaptive ? 1e-6 : null,
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
+    }
+
+    [Fact]
+    public void RejectsUnrepresentableExplicitAdaptiveInitialStep()
+    {
+        var options = new TransientOptions
+        {
+            StartTime = 1e16,
+            StopTime = 1e16 + 2,
+            Steps = 1,
+            AdaptiveTolerance = 1e-6,
+            InitialTimeStep = 0.02,
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
     }
 
     private static double AdaptiveRcError(double tolerance, out int points)

@@ -67,6 +67,19 @@ public sealed class TransientFingerprintTests
     }
 
     [Fact]
+    public void DiodeBreakdownParametersArePartOfTheFingerprint()
+    {
+        TransientNetlist baseline = Rc(1_000).AddDiode("D1", "out", "gnd", 1e-12);
+        TransientNetlist breakdown = Rc(1_000).AddDiode(
+            "D1", "out", "gnd", 1e-12, breakdownVoltage: 5.1, breakdownCurrent: 5e-3);
+        TransientNetlist differentCurrent = Rc(1_000).AddDiode(
+            "D1", "out", "gnd", 1e-12, breakdownVoltage: 5.1, breakdownCurrent: 10e-3);
+
+        Assert.NotEqual(baseline.Fingerprint(), breakdown.Fingerprint());
+        Assert.NotEqual(breakdown.Fingerprint(), differentCurrent.Fingerprint());
+    }
+
+    [Fact]
     public void AResultCarriesTheFingerprintAndItReachesTheStamp()
     {
         TransientNetlist netlist = Rc(1_000);

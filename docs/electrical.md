@@ -69,7 +69,10 @@ answer. The residual is a backward-error measure; it does not bound forward
 error, so a severely ill-conditioned but solvable circuit can still lose digits.
 For a netlist containing diodes, `RelativeResidual` instead reports the largest
 nonlinear KCL/source residual as a fraction of its acceptance bound, so a value at
-or below 1 means Newton converged.
+or below 1 means Newton converged. Each node's KCL residual is scaled by the
+currents incident on that node, and each ideal-source equation by that source's own
+voltage. An unrelated high-current or high-voltage branch therefore cannot mask a
+poorly converged operating point elsewhere in the circuit.
 The randomized ladder tests state their accuracy expectations explicitly for
 that reason.
 
@@ -101,7 +104,7 @@ not a sparse or large-scale production simulator.
 
 ## Nonlinear diode model
 
-The netlist also supports a two-terminal Shockley diode:
+The netlist supports a two-terminal Shockley diode:
 
 ```
 I(V) = Is * (exp(V / (N * Vt)) - 1)
@@ -112,30 +115,59 @@ anode to cathode and the reported voltage is `V(anode) - V(cathode)`. `Is` is th
 saturation current in amperes, `N` the dimensionless emission coefficient, and
 `Vt` the thermal voltage in volts. The default thermal voltage is 25.852 mV,
 corresponding to 300.15 K; it is a fixed parameter, not a temperature sweep.
+The derived junction voltage `N * Vt` must also be representable as a finite
+positive double; the netlist rejects parameter pairs whose product overflows or
+underflows to zero. It also rejects parameters whose zero-bias forward or
+reverse-breakdown conductance would overflow the numeric range.
+
+Optional reverse breakdown parameters `BV` (positive breakdown voltage in volts)
+and `IBV` (positive reverse current at `-BV` in amperes) add the exponential
+breakdown branch:
+
+```
+I(V) = Is * (exp(V / (N * Vt)) - 1) - IBV * exp((-V - BV) / (N * Vt))
+```
+
+Both parameters must be supplied together; omitting them preserves the original
+Shockley-only model. At `V = -BV`, reverse current is approximately `-IBV`. This
+smooth knee is a compact model, not a manufacturer-specific avalanche curve.
+
+The forward Shockley current evaluates `exp(x) - 1` with a cancellation-safe
+small-argument expansion and a stable identity near zero, preserving low-current
+behavior. For numerical safety, exponential arguments above 80 use the linear tangent
+continuation of `exp(x)` at 80 for both forward conduction and reverse breakdown.
+The continuation keeps the reported conductance equal to the derivative of the
+current law and avoids exponential overflow. Results far beyond this numerical
+knee are solver continuation values, not a physical high-injection or avalanche
+prediction.
 
 An optional series resistance `Rs` adds the terminal relation
 `Vterminal = Vjunction + Rs * I`. The junction voltage is recovered from the
-terminal voltage by a monotonic scalar bisection, and the circuit-level Newton
-iteration linearizes the combined terminal conductance
+terminal voltage by a monotonic scalar bisection that continues until the floating-
+point bracket can no longer be narrowed. The circuit-level Newton iteration
+linearizes the combined terminal conductance
 `Gj / (1 + Rs * Gj)`. `Rs = 0` (the default) is the ideal junction. The model is
-isothermal and has no reverse breakdown, junction capacitance, or high-injection
-effects.
+isothermal and has no junction capacitance, self-heating, or high-injection
+effects. Reverse breakdown is included only when `BV` and `IBV` are supplied.
 
-Diodes are solved with a damped Newton iteration. Each iteration linearizes every
-junction around its current voltage, solves the same scaled-pivot MNA system used
-for linear circuits, and applies standard pn-junction limiting when a forward step
-exceeds two junction voltages. A result is accepted only when the junction
-voltages stop moving and the nonlinear KCL/source residual is within a relative
-`1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. The absolute
-floors matter at picoamp reverse currents, where subtracting nearly equal node
-voltages limits how small a KCL residual is representable. Failure to converge within 100 iterations raises `NonConvergent` rather
-than returning a partial operating point. The linear fast path is unchanged when
+Diodes are solved with Newton iteration and pn-junction step limiting. Each iteration
+linearizes every junction around its current voltage, solves the same scaled-pivot
+MNA system used for linear circuits, and applies standard pn-junction limiting when
+a forward step exceeds two junction voltages. A result is accepted only when the
+junction voltages stop moving and the nonlinear KCL/source residual is within a relative
+`1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. Voltage
+updates are scaled only by node and junction voltages; source branch currents do not
+set a voltage tolerance. The absolute floors matter at picoamp reverse currents,
+where subtracting nearly equal node voltages limits how small a KCL residual is
+representable. Failure to converge
+within 100 iterations raises `NonConvergent` rather than returning a partial
+operating point. The linear fast path is unchanged when
 a netlist has no diodes.
 
-The exponential argument is capped at 80 (about 2 V per junction at `N = 1`).
-That keeps the arithmetic finite but means the ideal model must not be used at
-large forward bias without series resistance; it is a modelling limit, not a
-convergence tolerance.
+Exponential arguments above 80 (about 2 V per junction at `N = 1`) use the linear
+tangent continuation described above. This keeps the arithmetic finite, but it is
+a numerical continuation rather than a physical high-current model or a convergence
+tolerance.
 
 Standalone netlists can express a diode:
 
@@ -148,18 +180,21 @@ Standalone netlists can express a diode:
     { "id": "V1", "type": "voltage-source", "nodeA": "in", "nodeB": "gnd", "volts": 5 },
     { "id": "R1", "type": "resistor", "nodeA": "in", "nodeB": "out", "ohms": 1000 },
     { "id": "D1", "type": "diode", "nodeA": "out", "nodeB": "gnd",
-      "saturationCurrent": 1e-12, "emissionCoefficient": 1, "thermalVoltage": 0.025852 }
+      "saturationCurrent": 1e-12, "emissionCoefficient": 1, "thermalVoltage": 0.025852,
+      "breakdownVoltage": 5.1, "breakdownCurrent": 0.005 }
   ]
 }
 ```
 
 `emissionCoefficient`, `thermalVoltage`, and `seriesResistance` are optional and
-default to `1`, `0.025852` V, and `0` Ω. The report adds all three model
-parameters to diode element objects. Authored `electricalCircuits` in project files do not expose
-diodes yet; that needs a second component parameter in the project format.
+default to `1`, `0.025852` V, and `0` Ω. `breakdownVoltage` and `breakdownCurrent`
+are an optional pair; the report includes all supplied diode model parameters.
+Authored `electricalCircuits` in project files do not expose diodes yet; that needs
+a second component parameter in the project format.
 
 ```bash
 radix dc examples/dc-diode.json
+radix dc examples/dc-zener.json
 ```
 
 ## Transient analysis
@@ -213,7 +248,10 @@ between 1 and 1,000,000, and the last point lands exactly on `stop`. The run is
 deterministic: identical netlists produce identical samples. Choosing `h`
 against the smallest time constant or period that matters is then the user's
 responsibility; roughly twenty steps per time constant is a reasonable starting
-point.
+point. A step must also advance the absolute time at double precision; a start
+time so large that the requested step rounds away is rejected, and any later
+step that cannot advance time ends with a numerical failure instead of spinning
+through the step budget.
 
 Setting `AdaptiveTolerance` (CLI `--tol`) switches to step-doubling control. At
 each point the solver takes one step of size `h` and two of size `h/2` from the
@@ -276,7 +314,12 @@ finite ramp is preferred when the charging current itself matters.
 A run keeps every operating point that solved before a later step failed, and
 reports the failing step index with the same `DcSolveFailure` classification as
 the DC solver. A failure at the initial operating point returns no points. A
-partially solved run is never presented as a completed one.
+partially solved run is never presented as a completed one. A completed run is
+also rejected with `NonFiniteResult` if its derived energy ledger overflows, even
+when each solved voltage, current, and element power is finite. For any run with
+an unrepresentable energy ledger, solved points and any earlier step failure are
+preserved, while the energy object is omitted from JSON so the failure report
+remains valid JSON.
 
 ### Command line and JSON
 
@@ -314,7 +357,7 @@ adaptive control, `tolerance`, `absoluteTolerance`, `initialStep`, `minStep`,
 | `resistor` | `ohms` | |
 | `voltage-source` | `volts` | `waveform` |
 | `current-source` | `amperes` | `waveform` |
-| `diode` | `saturationCurrent` | `emissionCoefficient`, `thermalVoltage`, `seriesResistance` |
+| `diode` | `saturationCurrent` | `emissionCoefficient`, `thermalVoltage`, `seriesResistance`, `breakdownVoltage`, `breakdownCurrent` |
 | `capacitor` | `farads` | `initialVolts` |
 | `inductor` | `henries` | `initialAmperes` |
 
@@ -354,7 +397,9 @@ silently turn a settling report into a trivial one. The band is a fraction of th
 node's own numbers, so it means the same thing for a 5 V step and a millivolt
 ripple, and a null settling time is the honest report of a node that was still
 moving at the last solved point, which is what an oscillation or a diverging run
-looks like.
+looks like. The band comparison is normalized by the largest voltage magnitude,
+so a finite swing from a large negative to a large positive value does not overflow
+its range or appear settled immediately.
 
 The metrics describe the reported points rather than a second solve, so they cannot
 disagree with the values the caller already has, and the panel lists them directly
@@ -515,7 +560,9 @@ The energy residual and the metrics describe one run; neither says whether halvi
 step would still change the answer. `radix transient --refine` answers that by solving
 the same circuit at the requested step count and at each doubled count (three levels by
 default), comparing every finer run against the coarser one sampled at the finer run's
-times, with the coarse trace interpolated between its own points.
+times, with the coarse trace interpolated between its own points. When subtracting
+opposite-sign extreme endpoints would overflow, interpolation uses a weighted sum
+of the endpoints instead.
 
 The comparison is reported per level, with the order implied by the ratio of successive
 deviations: `p = log2(d_prev / d_now)`. A first-order scheme at `h/τ = 0.125` measures
@@ -643,6 +690,16 @@ name, and unit for each kind:
 | `current-source` | `a` positive, `b` negative | current | A |
 | `capacitor` | `a`/`b`, passive | capacitance | F |
 | `inductor` | `a`/`b`, passive | inductance | H |
+
+In the editor, component values, capacitor/inductor initial conditions, source
+waveform times and values, transient stop/probe times, and transient sweep values
+accept invariant-culture numbers with an optional SI magnitude suffix: `p`, `n`,
+`u`/`µ`, `m`, `k`, `M`, or `G` (and `meg` for mega). SI symbols are case-sensitive:
+use lowercase `p`, `n`, `u`, `m`, and `k`, and uppercase `M` and `G`; `meg` is a
+case-insensitive spelling alias. For example, `4.7k` on a resistor stores 4,700
+ohms, `2.2u` on a capacitor stores 2.2 microfarads, and `1m` in a waveform time
+means 1 millisecond. Project files continue to store finite numeric values in the
+component's declared unit and seconds; suffix text is only an editor input format.
 
 Terminals are explicit bindings to circuit node IDs. The validator checks
 missing, duplicate, unknown, misplaced, and self-looped terminals; invalid

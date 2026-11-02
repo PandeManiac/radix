@@ -169,6 +169,34 @@ public sealed class TransientMetricsTests
     }
 
     [Fact]
+    public void SettlingTimeUsesScaledSwingWhenFiniteExtremesHaveUnrepresentableRange()
+    {
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddCurrentSource("I1", "gnd", "out", 1)
+            .SetWaveform("I1", [
+                new TransientWaveformPoint(0, -1),
+                new TransientWaveformPoint(0.5, 0),
+                new TransientWaveformPoint(1, 1),
+            ])
+            .AddResistor("R1", "out", "gnd", 1e308);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 1,
+            Steps = 2,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        TransientNodeMetrics output = Assert.Single(
+            Assert.IsType<TransientMetrics>(result.Metrics).Nodes,
+            node => node.NodeId == "out");
+        Assert.True(double.IsFinite(output.MinimumVolts));
+        Assert.True(double.IsFinite(output.MaximumVolts));
+        Assert.True(double.IsPositiveInfinity(output.MaximumVolts - output.MinimumVolts));
+        Assert.Equal(0.5, output.SettlingTimeSeconds);
+    }
+
+    [Fact]
     public void InvalidSettlingBandsAreRejected()
     {
         TransientNetlist netlist = new TransientNetlist("gnd")

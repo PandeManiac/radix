@@ -69,14 +69,14 @@ public sealed record DcCurrentSource(string Id, string NodeA, string NodeB, doub
 /// <summary>
 /// A two-terminal Shockley diode: <c>I = Is * (exp(V / (N * Vt)) - 1)</c>, with
 /// current flowing from <see cref="DcElement.NodeA"/> (anode) to
-/// <see cref="DcElement.NodeB"/> (cathode). Reverse breakdown, junction
-/// capacitance, series resistance, and self-heating are not modelled.
+/// <see cref="DcElement.NodeB"/> (cathode). Optional reverse breakdown uses an
+/// exponential knee. Junction capacitance and self-heating are not modelled.
 /// </summary>
 /// <remarks>
 /// <see cref="DefaultThermalVoltage"/> is <c>kT/q</c> at 300.15 K (25.852 mV).
-/// The exponential argument is capped at 80 so arithmetic stays finite; that cap
-/// is reached around 2 V per junction for <c>N = 1</c>, far beyond a realistic
-/// forward drop without series resistance, and the model must not be used there.
+/// Exponential arguments above 80 use a linear tangent continuation to avoid
+/// overflow and keep conductance consistent with current. Values far above that
+/// numerical threshold are not a physical high-current model.
 /// </remarks>
 public sealed record DcDiode(
     string Id,
@@ -85,12 +85,15 @@ public sealed record DcDiode(
     double SaturationCurrent,
     double EmissionCoefficient,
     double ThermalVoltage,
-    double SeriesResistance = 0)
+    double SeriesResistance = 0,
+    double? BreakdownVoltage = null,
+    double? BreakdownCurrent = null)
     : DcElement(Id, NodeA, NodeB)
 {
     public const double DefaultThermalVoltage = 0.025852;
 
     private const double MaximumExponentialArgument = 80;
+    private static readonly double MaximumExponentialValue = Math.Exp(MaximumExponentialArgument);
 
     public override DcElementKind Kind => DcElementKind.Diode;
 
@@ -106,12 +109,52 @@ public sealed record DcDiode(
     /// The junction current at a junction voltage, before series resistance: the
     /// Shockley law <c>Is * (exp(V / (N * Vt)) - 1)</c>.
     /// </summary>
-    public double JunctionCurrent(double volts) =>
-        SaturationCurrent * (Math.Exp(ExponentialArgument(volts)) - 1);
+    public double JunctionCurrent(double volts)
+    {
+        double current = SaturationCurrent * LimitedExponentialMinusOne(ExponentialArgument(volts));
+        if (BreakdownVoltage is double breakdownVoltage && BreakdownCurrent is double breakdownCurrent)
+        {
+            double argument = (-volts - breakdownVoltage) / JunctionVoltage;
+            current -= breakdownCurrent * LimitedExponential(argument);
+        }
+
+        return current;
+    }
 
     /// <summary>The junction small-signal conductance <c>dI/dV</c>.</summary>
-    public double JunctionConductance(double volts) =>
-        (SaturationCurrent / JunctionVoltage) * Math.Exp(ExponentialArgument(volts));
+    public double JunctionConductance(double volts)
+    {
+        double conductance = (SaturationCurrent / JunctionVoltage) * LimitedExponentialDerivative(ExponentialArgument(volts));
+        if (BreakdownVoltage is double breakdownVoltage && BreakdownCurrent is double breakdownCurrent)
+        {
+            double argument = (-volts - breakdownVoltage) / JunctionVoltage;
+            conductance += (breakdownCurrent / JunctionVoltage) * LimitedExponentialDerivative(argument);
+        }
+
+        return conductance;
+    }
+
+    internal static void ValidateBreakdownParameters(double? voltage, double? current)
+    {
+        if (voltage.HasValue != current.HasValue)
+        {
+            throw new ArgumentException(
+                "Breakdown voltage and breakdown current must be specified together.",
+                voltage.HasValue ? nameof(current) : nameof(voltage));
+        }
+
+        if (voltage is double breakdownVoltage && (!double.IsFinite(breakdownVoltage) || breakdownVoltage <= 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(voltage), voltage, "Breakdown voltage must be finite and greater than zero.");
+        }
+
+        if (current is double breakdownCurrent && (!double.IsFinite(breakdownCurrent) || breakdownCurrent <= 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(current), current, "Breakdown current must be finite and greater than zero.");
+        }
+    }
 
     /// <summary>The terminal current after accounting for series resistance.</summary>
     public double CurrentAt(double terminalVolts) =>
@@ -140,42 +183,134 @@ public sealed record DcDiode(
 
         double low = Math.Min(terminalVolts, 0) - 1;
         double high = Math.Max(terminalVolts, 0) + 1;
-        for (int index = 0; index < 80 && JunctionResidual(low, terminalVolts) > 0; index++)
+        double lowResidual = JunctionResidual(low, terminalVolts);
+        double highResidual = JunctionResidual(high, terminalVolts);
+        for (int index = 0; index < 2_048 && lowResidual > 0; index++)
         {
-            low -= Math.Max(1, Math.Abs(low));
+            double next = low - Math.Max(1, Math.Abs(low));
+            if (!double.IsFinite(next) || next >= low)
+            {
+                next = -double.MaxValue;
+            }
+
+            if (next == low)
+            {
+                break;
+            }
+
+            low = next;
+            lowResidual = JunctionResidual(low, terminalVolts);
         }
 
-        for (int index = 0; index < 80 && JunctionResidual(high, terminalVolts) < 0; index++)
+        for (int index = 0; index < 2_048 && highResidual < 0; index++)
         {
-            high += Math.Max(1, Math.Abs(high));
+            double next = high + Math.Max(1, Math.Abs(high));
+            if (!double.IsFinite(next) || next <= high)
+            {
+                next = double.MaxValue;
+            }
+
+            if (next == high)
+            {
+                break;
+            }
+
+            high = next;
+            highResidual = JunctionResidual(high, terminalVolts);
         }
 
-        if (JunctionResidual(low, terminalVolts) > 0 || JunctionResidual(high, terminalVolts) < 0)
+        if (double.IsNaN(lowResidual) || double.IsNaN(highResidual) ||
+            lowResidual > 0 || highResidual < 0)
         {
-            return terminalVolts;
+            throw new InvalidOperationException(
+                "Could not bracket a finite diode junction voltage for the requested terminal voltage.");
         }
 
-        for (int index = 0; index < 120; index++)
+        for (int index = 0; index < 2_200; index++)
         {
-            double mid = (low + high) / 2;
-            if (JunctionResidual(mid, terminalVolts) > 0)
+            double span = high - low;
+            double mid = double.IsFinite(span)
+                ? low + (span / 2)
+                : (low / 2) + (high / 2);
+            if (mid == low || mid == high)
+            {
+                return Math.Abs(lowResidual) <= Math.Abs(highResidual) ? low : high;
+            }
+
+            double midResidual = JunctionResidual(mid, terminalVolts);
+            if (double.IsNaN(midResidual))
+            {
+                throw new InvalidOperationException(
+                    "Diode junction evaluation produced an indeterminate residual.");
+            }
+
+            if (midResidual == 0)
+            {
+                return mid;
+            }
+
+            if (midResidual > 0)
             {
                 high = mid;
+                highResidual = midResidual;
             }
             else
             {
                 low = mid;
+                lowResidual = midResidual;
             }
         }
 
-        return (low + high) / 2;
+        throw new InvalidOperationException(
+            "Diode junction bisection exceeded its bounded iteration limit.");
     }
 
     private double JunctionResidual(double junctionVolts, double terminalVolts) =>
         junctionVolts + (SeriesResistance * JunctionCurrent(junctionVolts)) - terminalVolts;
 
-    private double ExponentialArgument(double volts) =>
-        Math.Min(volts / JunctionVoltage, MaximumExponentialArgument);
+    private double ExponentialArgument(double volts) => volts / JunctionVoltage;
+
+    private static double LimitedExponentialMinusOne(double argument)
+    {
+        if (argument > MaximumExponentialArgument)
+        {
+            return (MaximumExponentialValue * (1 + (argument - MaximumExponentialArgument))) - 1;
+        }
+
+        if (argument < -40)
+        {
+            return -1;
+        }
+
+        if (Math.Abs(argument) < 1e-5)
+        {
+            // The polynomial preserves tiny values (including subnormals) that
+            // would be lost by subtracting 1 from exp(x).
+            double correction = 1.0 / 120;
+            correction = (1.0 / 24) + (argument * correction);
+            correction = (1.0 / 6) + (argument * correction);
+            correction = 0.5 + (argument * correction);
+            return argument * (1 + (argument * correction));
+        }
+
+        // This product is stable near zero, unlike exp(x) - 1, and remains finite
+        // throughout the uncontinued range [-40, 80].
+        return 2 * Math.Sinh(argument / 2) * Math.Exp(argument / 2);
+    }
+
+    private static double LimitedExponential(double argument)
+    {
+        return argument <= MaximumExponentialArgument
+            ? Math.Exp(argument)
+            : MaximumExponentialValue * (1 + (argument - MaximumExponentialArgument));
+    }
+
+    private static double LimitedExponentialDerivative(double argument) =>
+        double.IsNaN(argument)
+            ? double.NaN
+            : argument <= MaximumExponentialArgument
+            ? Math.Exp(argument)
+            : MaximumExponentialValue;
 }
 
 public enum DcSolveFailure
@@ -305,7 +440,8 @@ public sealed class DcNetlist
     /// <summary>
     /// Adds a Shockley diode. <paramref name="saturationCurrent"/> is in amperes,
     /// <paramref name="emissionCoefficient"/> is dimensionless, and
-    /// <paramref name="thermalVoltage"/> is in volts.
+    /// <paramref name="thermalVoltage"/> is in volts. Specify both optional
+    /// breakdown parameters to model reverse breakdown.
     /// </summary>
     public DcNetlist AddDiode(
         string id,
@@ -314,7 +450,9 @@ public sealed class DcNetlist
         double saturationCurrent,
         double emissionCoefficient = 1.0,
         double thermalVoltage = DcDiode.DefaultThermalVoltage,
-        double seriesResistance = 0)
+        double seriesResistance = 0,
+        double? breakdownVoltage = null,
+        double? breakdownCurrent = null)
     {
         ValidateElement(id, nodeA, nodeB);
         if (!double.IsFinite(saturationCurrent) || saturationCurrent <= 0)
@@ -341,12 +479,40 @@ public sealed class DcNetlist
                 "Thermal voltage must be finite and greater than zero.");
         }
 
+        double junctionVoltage = emissionCoefficient * thermalVoltage;
+        if (!double.IsFinite(junctionVoltage) || junctionVoltage <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(emissionCoefficient),
+                emissionCoefficient,
+                "The product of emission coefficient and thermal voltage must be finite and greater than zero.");
+        }
+
         if (!double.IsFinite(seriesResistance) || seriesResistance < 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(seriesResistance),
                 seriesResistance,
                 "Series resistance must be finite and non-negative.");
+        }
+
+        DcDiode.ValidateBreakdownParameters(breakdownVoltage, breakdownCurrent);
+
+        if (!double.IsFinite(saturationCurrent / junctionVoltage))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(saturationCurrent),
+                saturationCurrent,
+                "The zero-bias forward diode conductance must be finite.");
+        }
+
+        if (breakdownCurrent is double reverseCurrent &&
+            !double.IsFinite(reverseCurrent / junctionVoltage))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(breakdownCurrent),
+                reverseCurrent,
+                "The zero-bias reverse-breakdown conductance must be finite.");
         }
 
         return Add(new DcDiode(
@@ -356,7 +522,9 @@ public sealed class DcNetlist
             saturationCurrent,
             emissionCoefficient,
             thermalVoltage,
-            seriesResistance));
+            seriesResistance,
+            breakdownVoltage,
+            breakdownCurrent));
     }
 
     /// <summary>
@@ -500,12 +668,17 @@ public sealed class DcNetlist
 
             (solution, _) = SolveLinearSystem(matrix, rhs);
 
-            double maxChange = 0;
-            double maxValue = 0;
-            for (int index = 0; index < size; index++)
+            // Only node voltages share the voltage units used by the nonlinear
+            // convergence tolerance. The remaining MNA unknowns are source branch
+            // currents in amperes and must not scale a voltage update threshold.
+            double maxVoltageChange = 0;
+            double maxVoltage = 0;
+            for (int index = 0; index < nodeIds.Length; index++)
             {
-                maxChange = Math.Max(maxChange, Math.Abs(solution[index] - previous[index]));
-                maxValue = Math.Max(maxValue, Math.Abs(solution[index]));
+                maxVoltageChange = Math.Max(
+                    maxVoltageChange,
+                    Math.Abs(solution[index] - previous[index]));
+                maxVoltage = Math.Max(maxVoltage, Math.Abs(solution[index]));
             }
 
             double maxLimitError = 0;
@@ -522,14 +695,16 @@ public sealed class DcNetlist
                     diodeJunctionVoltages[index],
                     diodes[index]);
                 maxLimitError = Math.Max(maxLimitError, Math.Abs(rawJunction - limited));
-                maxChange = Math.Max(maxChange, Math.Abs(limited - diodeJunctionVoltages[index]));
-                maxValue = Math.Max(maxValue, Math.Abs(limited));
+                maxVoltageChange = Math.Max(
+                    maxVoltageChange,
+                    Math.Abs(limited - diodeJunctionVoltages[index]));
+                maxVoltage = Math.Max(maxVoltage, Math.Abs(limited));
                 nextDiodeVoltages[index] = limited;
             }
 
             residual = NonlinearResidual(nodeIndex, voltageSources, voltageSourceRows, solution);
-            double tolerance = voltageTolerance * Math.Max(1, maxValue);
-            if (maxChange <= tolerance &&
+            double tolerance = voltageTolerance * Math.Max(1, maxVoltage);
+            if (maxVoltageChange <= tolerance &&
                 maxLimitError <= tolerance &&
                 residual <= 1)
             {
@@ -590,6 +765,16 @@ public sealed class DcNetlist
     /// </summary>
     private static double LimitJunction(double vnew, double vold, DcDiode diode)
     {
+        if (diode.BreakdownVoltage is double breakdownVoltage &&
+            vold > -breakdownVoltage &&
+            vnew < -breakdownVoltage)
+        {
+            // Start a large reverse step at the breakdown knee. Without this
+            // continuation point, the exponential breakdown conductance can be
+            // evaluated at its numerical cap before Newton reaches the knee.
+            return -breakdownVoltage;
+        }
+
         double junctionVoltage = diode.JunctionVoltage;
         double critical = junctionVoltage / (Math.Sqrt(2) * diode.SaturationCurrent);
         if (critical <= 1)
@@ -628,8 +813,7 @@ public sealed class DcNetlist
         double[] solution)
     {
         var residual = new double[solution.Length];
-        double currentScale = 1e-12;
-        double voltageScale = 1;
+        var currentScales = new double[nodeIndex.Count];
 
         foreach (DcElement element in _elements)
         {
@@ -639,26 +823,24 @@ public sealed class DcNetlist
                 case DcResistor resistor:
                 {
                     double current = voltage / resistor.Ohms;
-                    AddNodeCurrent(residual, nodeIndex, element.NodeA, element.NodeB, current);
-                    currentScale = Math.Max(currentScale, Math.Abs(current));
+                    AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
                     break;
                 }
 
                 case DcCurrentSource currentSource:
-                    AddNodeCurrent(
+                    AddNodeCurrentAndScale(
                         residual,
                         nodeIndex,
+                        currentScales,
                         element.NodeA,
                         element.NodeB,
                         currentSource.Amperes);
-                    currentScale = Math.Max(currentScale, Math.Abs(currentSource.Amperes));
                     break;
 
                 case DcDiode diode:
                 {
                     double current = diode.CurrentAt(voltage);
-                    AddNodeCurrent(residual, nodeIndex, element.NodeA, element.NodeB, current);
-                    currentScale = Math.Max(currentScale, Math.Abs(current));
+                    AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
                     break;
                 }
 
@@ -666,15 +848,14 @@ public sealed class DcNetlist
                 {
                     int row = voltageSourceRows[source.Id];
                     double branchCurrent = solution[row];
-                    AddNodeCurrent(
+                    AddNodeCurrentAndScale(
                         residual,
                         nodeIndex,
+                        currentScales,
                         element.NodeA,
                         element.NodeB,
                         branchCurrent);
                     residual[row] = voltage - source.Volts;
-                    currentScale = Math.Max(currentScale, Math.Abs(branchCurrent));
-                    voltageScale = Math.Max(voltageScale, Math.Max(Math.Abs(voltage), Math.Abs(source.Volts)));
                     break;
                 }
             }
@@ -686,20 +867,49 @@ public sealed class DcNetlist
         const double absoluteVoltageFloor = 1e-12;
 
         double worst = 0;
-        double allowedCurrent = (currentTolerance * currentScale) + absoluteCurrentFloor;
         for (int index = 0; index < nodeIndex.Count; index++)
         {
+            double allowedCurrent = (currentTolerance * currentScales[index]) + absoluteCurrentFloor;
             worst = Math.Max(worst, Math.Abs(residual[index]) / allowedCurrent);
         }
 
-        double allowedVoltage = (voltageTolerance * voltageScale) + absoluteVoltageFloor;
         foreach (DcVoltageSource source in voltageSources)
         {
             int row = voltageSourceRows[source.Id];
+            double voltageScale = Math.Max(1, Math.Max(
+                Math.Abs(source.Volts),
+                Math.Abs(VoltageAcross(solution, nodeIndex, source.NodeA, source.NodeB))));
+            double allowedVoltage = (voltageTolerance * voltageScale) + absoluteVoltageFloor;
             worst = Math.Max(worst, Math.Abs(residual[row]) / allowedVoltage);
         }
 
         return worst;
+    }
+
+    private static void AddNodeCurrentAndScale(
+        double[] residual,
+        Dictionary<string, int> nodeIndex,
+        double[] currentScales,
+        string nodeA,
+        string nodeB,
+        double current)
+    {
+        AddNodeCurrent(residual, nodeIndex, nodeA, nodeB, current);
+        double magnitude = Math.Abs(current);
+        int indexA = IndexOf(nodeIndex, nodeA);
+        int indexB = IndexOf(nodeIndex, nodeB);
+        if (indexA >= 0)
+        {
+            currentScales[indexA] = AddMagnitude(currentScales[indexA], magnitude);
+        }
+
+        if (indexB >= 0)
+        {
+            currentScales[indexB] = AddMagnitude(currentScales[indexB], magnitude);
+        }
+
+        static double AddMagnitude(double scale, double term) =>
+            term > double.MaxValue - scale ? double.MaxValue : scale + term;
     }
 
     private static void AddNodeCurrent(
@@ -769,9 +979,17 @@ public sealed class DcNetlist
                     $"Solving element '{element.Id}' produced a non-finite voltage or current.");
             }
 
+            double power = voltage * current;
+            if (!double.IsFinite(power))
+            {
+                throw new DcSolveException(
+                    DcSolveFailure.NonFiniteResult,
+                    $"Solving element '{element.Id}' produced a non-finite power.");
+            }
+
             elementVoltages[element.Id] = voltage;
             currents[element.Id] = current;
-            powers[element.Id] = voltage * current;
+            powers[element.Id] = power;
         }
 
         return new DcSolution(voltages, currents, elementVoltages, powers)

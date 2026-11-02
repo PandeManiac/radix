@@ -1,12 +1,22 @@
 # RADIX continuation record
 
-Last updated: 2026-10-30. This file is the durable handoff note for agents and
+Last updated: 2026-11-02. This file is the durable handoff note for agents and
 humans; update it at each milestone instead of relying on chat history.
 
 ## Where the project stands
 
 - Remote: `origin` = https://github.com/PandeManiac/radix (write access verified).
-- Working branch for this session: `agent/radix-verification`, pushed to origin.
+- Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
+- Latest verified feature commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
+- Draft PR #6 is open against `main`: nonlinear DC convergence scaling and
+  engineering-suffix entry for authored electrical values.
+- Latest local verification: Release solution build clean (0 warnings/errors), Core
+  tests 632/632, Editor tests 234/234, and the DC divider CLI example reports the
+  expected 5 V midpoint. GitHub CI passed on Ubuntu and Windows for feature commit
+  `649444659bfd6d0d351217fa5aff3af4566c36a6`; the branch tip adds only this note.
+- Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
+  but the tests pass when Ubuntu native packages are extracted under ignored
+  `.local-native` and `LD_LIBRARY_PATH`/`FONTCONFIG_FILE` are set.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
@@ -320,14 +330,12 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. For stronger hierarchy scalability data, compare the seven-sample run on a
-   quieter host, or install/use `dotnet-trace` to capture a bounded CPU profile;
-   this VM has no profiler tool installed and the repeated runs remain noisy.
-2. Continue the roadmap: large-definition scalability, richer hierarchy/library
-   workflows, and the electrical-solver integration boundary. Authored circuits,
-   explicit terminals, and a read-only DC solve preview are now available in the
-   workbench; the next electrical step is a sparse/transient solver or richer
-   result visualization, not an implicit interpretation of digital values.
+1. After CI completes for the engineering-suffix change, continue the electrical
+   authoring flow by accepting SI suffixes in unit-bearing initial-state and source
+   waveform fields, with tests for time/value units and unchanged serialized numbers.
+2. For stronger hierarchy scalability data, compare the seven-sample run on a
+   quieter host, or use `dotnet-trace` for a bounded CPU profile; the shared-VM
+   benchmark ranges are exploratory.
 
 ## Session 2026-10-31 (agent/radix-dc-numerics)
 
@@ -794,3 +802,530 @@ example rings and settles to 10 V, the pulse example charges then decays).
 Not modelled: junction capacitance, transformers, dependent sources, switches,
 AC/small-signal analysis, gmin continuation, and plotting more than one run or
 exporting a plotted image.
+
+## Session 2026-11-02 (agent/radix-20261102-electrical-audit)
+
+Recovered the branch from GitHub before further implementation. Local and remote
+branch heads matched at `ee5e4e383f6f6412f89207f8cc58151fedb0ba07`; the working tree
+was clean. PR #6 is open as a draft. Other existing worktrees include DC source
+sweeps (`agent/radix-dc-numerics`) and electrical ERC (`agent/radix-erc`), so this
+branch avoids duplicating those changes.
+
+75. Fixed nonlinear DC residual normalization. Each KCL row now uses its own sum of
+    incident current magnitudes, and each ideal voltage-source row uses that source's
+    own voltage scale. Previously, a disconnected `1e12 A` branch shifted a
+    reverse-biased diode divider from its analytical 4 V operating point to about
+    3.12 V; the new regression requires the operating point to remain at 4 V.
+76. Added a small-source representability regression. A 1 uV ideal-source difference
+    at a 1e12 V common mode is below double precision's voltage spacing and must fail
+    as `NonConvergent`, rather than being silently accepted under the unrelated large
+    source's voltage tolerance. Documented the per-equation scaling in
+    `docs/electrical.md`.
+
+Verification: Release solution build clean (0 warnings/0 errors); Core tests 632/632;
+the `radix dc` divider JSON example reports the expected 5 V; Ubuntu and Windows CI
+passed on commit `ee5e4e383f6f6412f89207f8cc58151fedb0ba07`. The local Editor suite's
+25 native Skia startup failures are environmental (`libfontconfig.so.1` absent), not
+code failures; 199 Editor tests did pass in that run.
+
+77. Added invariant-culture SI suffix parsing to the Electrical inspector's component
+    value field: `p`, `n`, `u`/`µ`, `m`, `k`, `M`, `G`, and `meg`. `m` and `M` retain
+    their standard milli/mega distinction; results must remain finite. Unknown and
+    overflowing values leave the component unchanged. The editor stores the scaled
+    numeric value in the existing project format; no unit strings or schema changes
+    were introduced. Added headless tests for eight valid suffix forms and rejection
+    of an unknown suffix and overflow; documented the syntax in `docs/electrical.md`.
+
+Verification for this feature commit: Release solution build clean (0 warnings/0
+errors); focused Electrical editor tests 40/40; full Editor tests 234/234 and Core
+tests 632/632 passed after extracting the existing Ubuntu native test libraries into
+the ignored `.local-native` directory. Ubuntu and Windows CI both passed. Feature
+commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
+
+78. Extended the SI parser to capacitor/inductor initial voltage/current and both
+    time and value fields in independent-source waveform breakpoints. Existing
+    numeric `.radix` representation is preserved: the headless test saves a
+    capacitor's suffixed initial voltage and a three-point waveform, then verifies
+    that values and times are JSON numbers with the scaled SI magnitudes. Invalid
+    and overflowing suffixes leave initial state and waveform unchanged. Hints now
+    describe the accepted units and suffixes.
+
+Verification: focused `ElectricalEditorTests` passed 43/43; Release solution build
+completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
+237/237. GitHub CI passed on Ubuntu and Windows for branch tip
+`bd0d130f3a9f0df45208175bf4181b70e2dab876`.
+
+79. Completed the Electrical inspector's SI entry across the transient controls:
+    stop/probe times and comma-list or range sweep values now accept the same finite
+    suffix syntax as component values, initial state, and source waveforms. The
+    view-model inputs remain text and project serialization remains numeric. Updated
+    control hints and `docs/electrical.md`; headless tests exercise `10m`, `1.2345m`,
+    `500,1k,2k`, and `1k:2k:3` in the existing run/probe/sweep flows.
+
+Verification: focused `ElectricalEditorTests` passed 43/43; Release solution build
+completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
+237/237. `radix dc examples/dc-divider.radix --json` solved at the expected 5 V
+midpoint, and `radix transient examples/transient-rc.radix --json` completed.
+GitHub CI passed on Ubuntu and Windows for code commit
+`d4aef6d1526a55f4871e7f19177ff41c33ad1688` and documentation-only tip
+`859b42646b1fe7e6b3182105f43866bfb19cadf5`.
+
+80. Tightened Electrical inspector parsing so consecutive or trailing separators
+    in source waveform and sweep-value lists are errors instead of being silently
+    removed. The error identifies the empty entry, and editor mutations are
+    rejected without changing the existing waveform or running a partial sweep.
+    Headless regressions cover doubled and trailing commas in both input paths.
+
+Verification: focused `ElectricalEditorTests` passed 43/43; Release solution build
+completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
+237/237. GitHub CI is pending for this validation change.
+
+81. Corrected SI prefix case handling in the Electrical editor parser. Only the
+    documented symbols now scale: lowercase `p`, `n`, `u`, `m`, `k`; uppercase
+    `M`, `G`; and `meg` as a case-insensitive compatibility alias. Previously
+    undocumented uppercase/lowercase lookalikes such as `P` and `g` were accepted
+    with the wrong physical scale. Added rejection cases and documented exact case.
+
+Verification: focused `ElectricalEditorTests` passed 48/48; Release solution build
+completed with 0 warnings/errors; full suites passed, Core 632/632 and Editor
+242/242. GitHub CI is pending for the prefix-case correction.
+
+82. Added an optional reverse-breakdown branch to the Shockley diode for DC and
+    transient JSON netlists. `breakdownVoltage` and `breakdownCurrent` must be a
+    finite positive pair; the documented exponential branch keeps the diode's
+    current sign convention and terminal power accounting. Transient copies and
+    fingerprints include both parameters, and DC reports serialize them. Added an
+    independent scalar bisection oracle, conductance finite-difference check, KCL/
+    power checks, invalid-pair cases, transient JSON coverage, and
+    `examples/dc-zener.json`.
+
+Verification: focused diode/transient serialization/fingerprint tests passed
+46/46; Release solution build passed with 0 warnings/errors; Core passed 637/637;
+headless Editor passed 242/242 using the documented Linux native-library setup.
+`radix dc examples/dc-zener.json --json` solved to -5.108295403806094 V and
+reported equal resistor/diode branch currents (-6.8917 mA) with element powers
+summing to zero within the solver's numerical tolerance. The published code
+checkpoint is `19073dd5df9e847880cfb0ee8c11cab9642bea6c`; GitHub CI was still
+running when checked. Draft PR #6 has since been updated with this milestone's
+summary and full local verification results; see the PR for the latest CI state.
+
+83. Extended the independent reverse-breakdown regression to include nonzero diode
+    series resistance. The oracle bisects the internal junction equation using the
+    combined external and junction resistance, then independently reconstructs the
+    terminal voltage. The test also checks the nested junction solve, terminal
+    conductance against finite differences, KCL, power conservation, and the solver
+    residual. Focused `DcDiodeSolverTests` pass 16/16; after this addition the
+    full Core suite passes 638/638. This test-only follow-up is checkpointed on the
+    same feature branch.
+
+84. Added a transient clamp regression: a piecewise-linear source ramps from 0 V to
+    -12 V over 1 us through a 1 kΩ resistor into a 10 uF capacitor and the reverse-
+    breakdown diode. The test checks the capacitor starts near zero at the ramp
+    boundary, observes discharge, then verifies the final voltage and branch-current
+    balance are in the Zener clamp region. Focused test passes 1/1; the full Core
+    suite passes 639/639.
+
+85. Reverified the current branch after the transient regression: Release solution
+    build completed with 0 warnings/errors, Core tests passed 639/639, and headless
+    Editor tests passed 242/242 with the Linux native-library setup. GitHub CI for
+    `580006aeb7e05e49f25e3f6e86068800489c4089` was still running when checked.
+
+86. Added an 80-case seeded DC reverse-breakdown differential campaign. Each case
+    varies BV, IBV, external resistance, diode series resistance, and negative supply
+    over bounded linear/logarithmic ranges. An independent scalar bisection solves
+    the combined resistor/junction equation; the test compares terminal voltage and
+    diode current and checks power balance plus the solver residual. Failures include
+    the fixed seed and case parameters. Focused campaign passes 1/1; after adding
+    it, the full Core suite passes 640/640.
+
+87. Corrected diode exponential overflow limiting. The current law previously hard-
+    clamped `exp(x)` above x=80 while the Jacobian continued to report the nonzero
+    exponential slope, so Newton's current and conductance disagreed. Forward and
+    reverse-breakdown branches now use a linear tangent continuation above the
+    threshold, with the matching constant derivative. Documented the continuation's
+    numerical purpose and physical limitation. A finite-difference regression checks
+    both branches at and above the threshold; focused diode and Zener transient tests
+    pass 19/19. Broader results are recorded in item 88.
+
+88. Verified the exponential-continuation fix end to end: Release solution build
+    completed with 0 warnings/errors; Core passed 641/641; headless Editor passed
+    242/242 with the documented Linux native-library setup. The DC Zener CLI example
+    still solves to -5.108295403806094 V with balanced branch current and power.
+
+89. Corrected the public diode model's XML documentation to describe the tangent
+    continuation accurately and made its derivative propagate NaN inputs instead of
+    returning the finite cap slope. Extended the conductance regression to assert
+    NaN propagation for both Shockley and breakdown branches. The focused test passes.
+
+90. Reverified the updated diode edge handling: Release solution build completed
+    with 0 warnings/errors, Core passed 641/641, and headless Editor passed 242/242
+    with the documented Linux native-library setup.
+
+91. Extended the RC/Zener transient regression to run both fixed-step and adaptive
+    step-doubling analyses across the source breakpoint. Both analyses must complete,
+    finish at the clamp operating point, and agree within 20 mV with balanced final
+    branch currents; the adaptive energy-ledger relative residual must also be lower
+    than the fixed-step run. Focused adaptive clamp test passes 1/1; Release build passed
+    with 0 warnings/errors, Core passed 641/641, and headless Editor passed 242/242.
+
+92. Reran the full Core suite after adding the energy-ledger comparison; all 641
+    tests passed. No production code changed in this test-only follow-up.
+
+93. Corrected `docs/electrical.md` to match the implemented diode solver: it uses
+    pn-junction step limiting, and the exponential overflow guard is a linear tangent
+    continuation with matching conductance above the threshold. Clarified that this
+    is a numerical continuation rather than a physical high-current prediction, and
+    reflowed the solver description for readability. Documentation-only; no tests run.
+
+94. Fixed the nonlinear DC stopping test so its voltage-update tolerance is scaled
+    only by node and diode-junction voltages. MNA source branch currents are in
+    amperes and no longer inflate that voltage tolerance. A regression adds a
+    disconnected 1e12 A ideal-source branch beside an ultra-low-current diode; the
+    old solver stopped at 0.974 V instead of the independent scalar reference
+    0.573 V. The regression demonstrated the bug before the fix.
+
+
+95. Verified the dimensional stopping-criterion correction: the focused electrical
+    numerical tests pass 44/44; the Release solution build passes with 0 warnings and
+    errors; Core passes 642/642; and headless Editor passes 242/242 using the
+    pre-extracted `.local-native` libraries. The native package download helper could
+    not resolve packages from this VM's apt sources, but the existing extracted files
+    were sufficient for the full Editor run.
+
+96. WIP: added a regression for the diode's series-resistance junction solve at
+    extreme but finite scales (1e100 V terminal, 1e308 ohm series resistance). The
+    existing fixed 120-step bisection returned about 3.76e63 V instead of the
+    small-signal reference near 2.59e-199 V, violating the terminal relation. The
+    test currently fails and is published before changing the solver.
+
+
+97. Replaced the fixed 120-step junction bisection with bounded bracket expansion
+    and bisection through representable floating-point values. The old fallback that
+    returned terminal voltage when bracketing failed is now an explicit numerical
+    failure, so it cannot silently produce a fabricated operating point. The new
+    1e100 V / 1e308 ohm regression passes alongside all 20 `DcDiodeSolverTests`;
+    broader verification remains pending.
+
+98. Verified the scale-safe diode junction solve end to end: focused diode/transient
+    tests passed 70/70; Release solution build passed with 0 warnings/errors; Core
+    passed 643/643; headless Editor passed 242/242. The DC Zener CLI remains at
+    -5.1082954 V with balanced branch currents and power, and the resistor divider
+    still reports its expected 5 V midpoint. GitHub CI for this checkpoint is pending.
+
+99. WIP: added a seeded 96-case series-resistance equation sweep. It exposed a
+    second numerical issue at small forward voltage: direct `exp(x) - 1` cancellation
+    rounds diode current to zero. Case 4 had 0.00010045 V terminal voltage,
+    2.0e22 ohm series resistance, and 7.2e-9 A saturation current; reconstructed
+    terminal voltage was effectively zero. The regression currently fails and is
+    published before changing the Shockley current evaluation.
+
+
+100. Fixed low-voltage Shockley cancellation discovered by the seeded series-resistance
+     equation sweep. The forward branch now uses a small-argument polynomial and a
+     stable hyperbolic/exponential identity rather than subtracting one from `exp(x)`;
+     the tangent continuation above exponent 80 is unchanged. The seeded 96-case
+     terminal-equation sweep and all 20 diode solver tests pass. Broader verification
+     remains pending.
+
+101. Verified cancellation-safe Shockley evaluation and the seeded series equation
+     sweep: focused diode/DC/transient tests passed 73/73; Release build passed with
+     0 warnings/errors; Core passed 644/644; headless Editor passed 242/242 using
+     the existing `.local-native` extraction. The Zener CLI still reports -5.1083 V
+     with near-zero total element power, and the divider reports 5 V. GitHub CI for
+     the latest code checkpoint is pending.
+
+102. WIP: added a regression showing that individually finite positive diode
+     emission coefficient and thermal voltage can multiply to zero or infinity.
+     `DcNetlist.AddDiode` currently accepts both, leaving an unusable junction
+     voltage in the Shockley model. Focused test fails in both cases as expected;
+     implementation and broader verification remain pending.
+
+103. Fixed the derived diode-scale validation exposed in item 102. `AddDiode` now
+     rejects emission/thermal parameter pairs whose product is non-finite or zero,
+     before an unusable junction model can enter MNA. Both overflow and underflow
+     regression cases pass, as do all 23 diode solver tests; broader verification
+     remains pending.
+
+104. Verified the derived diode-scale guard end to end: Release solution build
+     passed with 0 warnings/errors; Core passed 646/646; headless Editor passed
+     242/242 with `.local-native`; the Zener CLI still solves at -5.1082954 V
+     with balanced branch currents and the divider reports 5 V. The new regression
+     was previously demonstrated failing for both underflow and overflow, then
+     passed after the validation was added.
+
+105. WIP: added a fixed/adaptive transient-options regression for time steps too
+     small to advance a large absolute start time in double precision (start
+     1e16 s, 2 s span, 100 steps). Both cases currently pass validation even though
+     repeated time addition leaves the simulation clock unchanged. Implementation
+     and broader verification remain pending.
+
+106. Fixed transient time-grid representability. Validation now rejects fixed and
+     adaptive starting steps that cannot advance the absolute clock; an explicitly
+     configured adaptive initial step is checked too. Both integration loops detect
+     any later step that rounds to no time progress and return `NonConvergent` with
+     a precise message. The three focused regressions and all 26 transient solver
+     tests pass; broader verification remains pending.
+
+107. Verified the transient clock-resolution guard: Release solution build passed
+     with 0 warnings/errors, Core passed 649/649, and headless Editor passed 242/242
+     with `.local-native`. `radix transient examples/transient-rc.json --json`
+     completed all 61 points, ending at 0.003 s with a finite RC state and energy
+     ledger. The earlier failing fixed/adaptive representability tests now pass.
+
+108. WIP: added two diode validation regressions for finite positive parameters
+     whose zero-bias forward or reverse-breakdown conductance overflows to
+     infinity. Both parameter sets are currently accepted by `AddDiode` and fail
+     the new expectations. Implementation and broader verification remain pending.
+
+109. Fixed diode slope validation: the netlist now rejects parameters when either
+     `Is / (N * Vt)` or the optional `IBV / (N * Vt)` is non-finite. The forward
+     and reverse regression cases and all 25 `DcDiodeSolverTests` pass; broader
+     verification remains pending.
+
+110. Verified diode slope validation: Release solution build passed with 0
+     warnings/errors, Core passed 651/651, and headless Editor passed 242/242
+     with `.local-native`. The Zener CLI still solves to -5.1082954 V with
+     approximately -6.8917 mA diode current and a total power residual of
+     3.75e-16 W. The overflowed forward and reverse-slope regressions pass.
+
+111. WIP: added a digital-engine regression showing that `SetPortValue` changes
+     an input net after the event budget halts the engine, even though subsequent
+     advances are ignored and the partial state is presented as halted. The test
+     reproduces a value change from 1 to 0 without processing another event;
+     implementation and broader verification remain pending.
+
+112. Fixed external drive behavior after halt. `SetExternalInput` and therefore
+     `SetPortValue` now retain normal net/value validation but ignore valid drives
+     once halted, preserving the frozen partial simulation until `Reset`. The
+     regression and all four event-budget tests pass; broader verification remains
+     pending.
+
+113. Verified frozen halted-state behavior end to end: Release build passed with
+     0 warnings/errors, Core passed 652/652, and headless Editor passed 242/242.
+     The binary-counter CLI script passed all 3 steps (3,574 events). The halted
+     external-drive regression and all four event-budget tests pass.
+
+114. WIP: added direct `SimulationOptions` constructor tests for negative or
+     zero-invalid runtime limits and the documented zero-disabled settings. The
+     engine currently accepts invalid direct options (settings loaded through
+     `FromSettings` are normalized), and the new validation test fails. Guard and
+     broader verification remain pending.
+
+115. Added `SimulationOptions.Validate` and call it before engine initialization.
+     The component settle limit must be at least one; optional event, diagnostic,
+     and trace caps may be zero to disable them but cannot be negative. Settings
+     normalization remains unchanged. Both direct-construction validation tests
+     pass, including the zero-disabled cases; broader verification remains pending.
+
+116. Verified runtime-option validation: Release solution build passed with 0
+     warnings/errors, Core passed 654/654, and headless Editor passed 242/242 with
+     `.local-native`. Both option tests pass: invalid direct limits are rejected,
+     and zero correctly disables the optional runtime caps.
+
+117. WIP: added event-budget regressions for `Step` and `StepTimestamp`. If the
+     configured budget is reached before a pending event, `Step()` currently
+     returns `true` despite processing nothing, and `StepTimestamp()` includes
+     the unprocessed attempt in its count. Focused `EventBudgetTests` reproduce
+     both failures (2 failed, 4 passed). Implementation and broader verification
+     remain pending.
+
+118. Fixed event-budget stepping semantics. `ProcessNextEvent` now reports whether
+     it consumed an event; `Step()` returns that result, and `StepTimestamp()` only
+     counts consumed events. Consumed stale wake events still count as processed.
+     All six focused `EventBudgetTests` pass, including both regressions; broader
+     verification remains pending.
+
+119. Verified budget-limited stepping end to end: Release solution build passed
+     with 0 warnings/errors, Core passed 656/656, and headless Editor passed
+     242/242 with `.local-native`. The new `Step` and `StepTimestamp` budget
+     regressions and all prior event-budget coverage pass.
+
+120. GitHub Actions verified both Ubuntu and Windows checks successfully for
+     `8a995ca78ce7a9ca9fb050ca20f6811c47d61c55` (two completed runs per platform,
+     all successful). Updated the `Step` API comment to describe its false result
+     in terms of whether an event was processed, including budget-limited halt.
+
+121. WIP: added two transient-waveform interpolation regressions. With finite
+     opposite-sign endpoints near `double.MaxValue`, the current `right - left`
+     interpolation delta overflows even when the interpolated voltage should be
+     finite. Opposite-extreme signed timestamps also produce an infinite interval
+     and lose the expected midpoint. Focused test execution and implementation are
+     pending.
+
+122. Fixed transient waveform interpolation overflow. For an overflowing timestamp
+     interval, interpolation now computes the normalized fraction after scaling
+     both endpoints and the query time. If an overflowing value delta spans
+     opposite signs, interpolation uses a convex weighted sum; ordinary ranges keep
+     the original delta form. Both extreme-scale regressions pass (2/2); broader
+     verification remains pending.
+
+123. Verified the extreme-scale waveform fix: Release solution build passed with
+     0 warnings/errors; Core passed 658/658; headless Editor passed 242/242 with
+     `.local-native`. `radix transient examples/transient-rc.json --json` completed
+     all 61 points with finite RC voltages and energy accounting. Both new
+     regressions (extreme signed times and opposite-extreme values) pass.
+
+124. GitHub Actions passed all four reported checks on `d8d055d0a89e7c66d70b16de5e60839cbf7885ec`: Ubuntu and Windows for both push and pull-request workflows. Local Release build, Core 658/658, headless Editor 242/242, and the 61-point transient CLI check were also green at that tip.
+
+125. WIP: added a transient-energy regression with a 1e154 V ideal source and a
+     1 ohm load over 1 ms. Source and load powers are each finite at 1e308 W, so
+     expected delivered and dissipated energies are each representable as 1e305 J.
+     The energy ledger currently adds adjacent powers before dividing by two, which
+     can overflow despite the finite average and final energy. Focused test and fix
+     are pending.
+
+126. Fixed trapezoidal energy-average overflow. The ledger now divides each finite
+     sampled power by two before adding only if their direct sum overflowed; ordinary
+     finite sums still use sum-then-halving to preserve small-value precision.
+     All seven `TransientEnergyTests` pass, including the 1e308 W / 1e305 J analytic
+     regression. Broader verification remains pending.
+
+127. Verified transient energy averaging: Release solution build passed with 0
+     warnings/errors, Core passed 659/659, and headless Editor passed 242/242 with
+     `.local-native`. The RC transient CLI report completed with 63 finite points
+     and finite energy residual; this count includes 61 uniform grid points plus
+     two off-grid waveform breakpoints. Correction: notes 123 and 124 incorrectly
+     stated that the same example emitted 61 points.
+
+128. WIP: added a second transient-energy regression with two independent 1e154 V,
+     1 ohm branches over 1 ms. Each element power is finite and the total delivered
+     or dissipated energy is a representable 2e305 J, but `PowerFlow` sums branch
+     powers before integration and overflows. Focused test execution and the
+     per-element integration fix are pending.
+
+129. Fixed transient energy aggregation overflow: each element's power is now
+     trapezoid-integrated over the interval before its energy is added to the
+     delivered or dissipated total. This avoids overflowing the instantaneous sum
+     of multiple finite branch powers when the short-interval energy remains
+     representable. All eight `TransientEnergyTests` pass, including both large
+     power regressions; broader verification remains pending.
+
+130. Verified per-element energy integration: Release solution build passed with
+     0 warnings/errors, Core passed 660/660, and headless Editor passed 242/242
+     with `.local-native`. The RC transient CLI completed 63 points with finite
+     node values and finite energy residual. `TransientEnergyTests` passed 8/8,
+     including the two independent-branch case whose instantaneous power sum
+     overflows while each branch's integrated energy remains representable.
+
+131. WIP: added a DC solver regression for a finite 1e200 V source and 1 ohm
+     resistor. The resulting node voltage and branch current are finite, but their
+     product overflows; `BuildSolution` currently returns the operating point with
+     infinite element power. The expected behavior is a deterministic
+     `NonFiniteResult` failure. Focused test execution and the guard are pending.
+
+132. Guarded DC solution construction against non-finite element power. The
+     solver now rejects an element when finite terminal voltage and current multiply
+     to infinity, returning `DcSolveFailure.NonFiniteResult` with the element ID.
+     The new overflow regression and the DC linear plus transient-energy focused
+     suites pass (23/23); broader verification remains pending.
+
+133. Verified the finite-power guard end to end: Release solution build passed
+     with 0 warnings/errors, Core passed 661/661, and headless Editor passed
+     242/242 with `.local-native`. The Zener CLI solves at -5.108295403806094 V;
+     the divider CLI returns the expected 5 V midpoint. The new non-finite-power
+     regression and all prior Core coverage pass.
+
+134. WIP: the first suspected stored-energy intermediate-underflow case was
+     invalid because capacitor values must have a finite reciprocal; the new
+     focused run confirmed that guard. Replaced it with a valid case containing
+     two capacitors that each store about 9.8e307 J. Their combined transient
+     energy is unrepresentable although all solved node values and element powers
+     are finite. The current expected-failure regression and explicit ledger
+     validation are pending.
+
+135. Made completed transient runs fail with `DcSolveFailure.NonFiniteResult`
+     when their derived energy ledger contains a non-finite delivered, dissipated,
+     stored, final, or residual value. The regression verifies finite reported
+     node voltages and element powers while rejecting the overflowing stored-energy
+     total. All nine focused `TransientEnergyTests` pass; broader verification is
+     pending.
+
+136. Verified transient energy reporting end to end: Release solution build passed
+     with 0 warnings/errors, Core passed 662/662, and headless Editor passed
+     242/242 with `.local-native`. The transient RC CLI report completed 63 points
+     with a finite energy ledger; the DC divider CLI report returned its expected
+     5 V midpoint. The energy-overflow regression and all prior Core coverage pass.
+
+137. WIP: extended the stored-energy-overflow regression through report JSON.
+     The result now intentionally exposes `NonFiniteResult`, but retaining an
+     infinite energy ledger causes `TransientNetlistJson.ToReportJson` to reject
+     the report because JSON has no infinity value. Focused execution and omitting
+     the invalid ledger while preserving failure details and solved points remain
+     pending.
+
+138. Omitted a non-finite energy ledger from a completed transient result after
+     classifying it as `NonFiniteResult`. The failure message and all finite solved
+     points remain available, while `TransientNetlistJson` can serialize the failed
+     report as valid JSON. The focused regression now checks the serialized failure
+     and absence of an energy object; broader verification remains pending.
+
+139. Verified the transient-ledger failure and JSON behavior end to end: Release
+     solution build passed with 0 warnings/errors, Core passed 662/662, and
+     headless Editor passed 242/242 with `.local-native`. The focused test confirms
+     finite solved points are retained, the result is classified as
+     `NonFiniteResult`, and the report remains valid JSON with no unrepresentable
+     energy object.
+
+140. WIP: added a partial-run regression with two finite operating points whose
+     stored energies overflow in aggregate, followed by a later current-source
+     power failure. The existing step failure must remain primary, but the current
+     code retains its non-finite energy ledger and JSON serialization throws.
+     Focused execution and generalized invalid-ledger omission are pending.
+
+141. Drop a non-finite energy ledger for any transient result. A completed run is
+     classified as `NonFiniteResult`; a run that already failed a step keeps that
+     original failure, message, and failed-step index. Both paths retain solved
+     points and serialize as valid JSON without an invalid energy object. All ten
+     `TransientEnergyTests` pass; broader verification remains pending.
+
+142. Verified partial-run ledger handling: Release solution build passed with 0
+     warnings/errors, Core passed 663/663, and headless Editor passed 242/242 with
+     `.local-native`. The new regression confirms a later step's current-source
+     power failure and step index survive energy-ledger overflow, while solved
+     points remain available and the JSON report remains valid.
+
+143. WIP: added a settling-metric regression for a finite signal spanning from
+     -1e308 V through 0 V to +1e308 V. The voltage range subtraction overflows to
+     infinity, making the existing tolerance infinite and incorrectly reporting
+     immediate settling. Focused execution and scale-safe relative comparisons
+     are pending.
+
+144. Normalize final-value and swing differences by the largest observed voltage
+     magnitude before applying the settling band. The range and band comparison
+     now remain finite for opposite-sign extremes. The new 1e308 V sweep regression
+     reports the expected 0.5 s settling time, and all eight focused
+     `TransientMetricsTests` pass; broader verification remains pending.
+
+145. Verified scale-safe settling metrics: Release solution build passed with 0
+     warnings/errors, Core passed 664/664, and headless Editor passed 242/242 with
+     `.local-native`. The extreme swing regression reports 0.5 s rather than
+     immediate settling, and `radix transient examples/transient-rc.json --json`
+     still completes with 63 points and the expected finite settling metric.
+
+146. WIP: added a refinement regression for a linear current-source waveform that
+     drives a 1e308 ohm load from -1e308 V to +1e308 V. The one-step coarse trace
+     interpolator overflows its opposite-sign endpoint delta, and the study reports
+     an infinite deviation instead of zero. Focused execution and stable convex
+     interpolation are pending.
+
+147. Made transient refinement interpolate opposite-sign extreme node values with
+     a weighted endpoint sum if their direct delta overflows. The complete focused
+     `TransientRefinementTests` suite passes 11/11; the linear extreme-scale trace
+     now reports zero deviation at the refined samples. Broader verification is
+     pending.
+
+148. Verified scale-safe refinement interpolation: Release solution build passed
+     with 0 warnings/errors, Core passed 665/665, and headless Editor passed
+     242/242 with `.local-native`. The extreme-range regression passes alongside
+     the full refinement suite; PR #6 needs its description refreshed.
+
+149. WIP: refinement's observed convergence order now subtracts the logarithms of
+     successive deviations instead of taking their ratio first. Added a focused
+     regression for finite deviations whose ratio exceeds `double.MaxValue`; all
+     12 `TransientRefinementTests` pass. Full solution and Editor verification is
+     pending.
+
+150. Verified overflow-safe refinement order calculation: Release solution build
+     passed with 0 warnings/errors, Core passed 666/666, and headless Editor passed
+     242/242 with `.local-native`. The regression confirms a finite order for a
+     deviation ratio near 1e328; the checkpoint is pushed and PR/CI update pending.
