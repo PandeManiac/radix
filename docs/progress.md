@@ -1301,3 +1301,9 @@ summary and full local verification results; see the PR for the latest CI state.
      `.local-native`. The extreme swing regression reports 0.5 s rather than
      immediate settling, and `radix transient examples/transient-rc.json --json`
      still completes with 63 points and the expected finite settling metric.
+
+146. WIP: added a refinement regression for a linear current-source waveform that
+     drives a 1e308 ohm load from -1e308 V to +1e308 V. The one-step coarse trace
+     interpolator overflows its opposite-sign endpoint delta, and the study reports
+     an infinite deviation instead of zero. Focused execution and stable convex
+     interpolation are pending.

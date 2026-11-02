@@ -164,6 +164,29 @@ public sealed class TransientRefinementTests
         Assert.Contains(study.Nodes, node => node.NodeId == "out" && node.ReferenceVolts > 0);
     }
 
+    [Fact]
+    public void OppositeExtremeLinearTraceRefinesWithoutOverflowingCoarseInterpolation()
+    {
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddCurrentSource("I1", "gnd", "out", -1)
+            .SetWaveform("I1", [
+                new TransientWaveformPoint(0, -1),
+                new TransientWaveformPoint(1, 1),
+            ])
+            .AddResistor("R1", "out", "gnd", 1e308);
+
+        TransientRefinement study = TransientRefinement.Analyze(
+            netlist,
+            new TransientOptions { StopTime = 1, Steps = 1 },
+            levels: 2);
+
+        Assert.True(study.Completed);
+        Assert.All(study.Levels, level =>
+            Assert.True(double.IsFinite(level.MaximumDeviationVolts)));
+        Assert.Equal(0, study.Levels[^1].MaximumDeviationVolts);
+        Assert.Equal(0, study.EstimatedRelativeError);
+    }
+
     private static TransientOptions Options(int steps, TransientMethod method) => new()
     {
         StopTime = 5 * Tau,
