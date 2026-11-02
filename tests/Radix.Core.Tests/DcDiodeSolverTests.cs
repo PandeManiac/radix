@@ -62,6 +62,24 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void SeriesResistorJunctionSolveConvergesAcrossExtremeVoltageScales()
+    {
+        const double terminalVoltage = 1e100;
+        const double seriesResistance = 1e308;
+        const double saturationCurrent = 1e-12;
+        DcDiode diode = Assert.IsType<DcDiode>(new DcNetlist("gnd")
+            .AddDiode("D1", "a", "gnd", saturationCurrent, seriesResistance: seriesResistance)
+            .Elements[0]);
+
+        double actual = diode.JunctionVoltageFor(terminalVoltage);
+        double smallSignalReference = terminalVoltage * diode.JunctionVoltage /
+            (seriesResistance * saturationCurrent);
+
+        AssertClose(smallSignalReference, actual, 1e-6);
+        AssertClose((terminalVoltage - actual) / seriesResistance, diode.CurrentAt(terminalVoltage), 1e-6);
+    }
+
+    [Fact]
     public void ReverseBiasedDiodePassesOnlySaturationCurrent()
     {
         var netlist = new DcNetlist("gnd")

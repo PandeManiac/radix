@@ -991,3 +991,9 @@ summary and full local verification results; see the PR for the latest CI state.
     pre-extracted `.local-native` libraries. The native package download helper could
     not resolve packages from this VM's apt sources, but the existing extracted files
     were sufficient for the full Editor run.
+
+96. WIP: added a regression for the diode's series-resistance junction solve at
+    extreme but finite scales (1e100 V terminal, 1e308 ohm series resistance). The
+    existing fixed 120-step bisection returned about 3.76e63 V instead of the
+    small-signal reference near 2.59e-199 V, violating the terminal relation. The
+    test currently fails and is published before changing the solver.
