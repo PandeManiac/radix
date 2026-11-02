@@ -6884,12 +6884,18 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         string[] parts = trimmed.Split(
-            ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            ',', StringSplitOptions.TrimEntries);
         if (parts.Length > 1)
         {
             var parsed = new double[parts.Length];
             for (int index = 0; index < parts.Length; index++)
             {
+                if (parts[index].Length == 0)
+                {
+                    error = "Sweep values contain an empty entry; remove the extra or trailing comma.";
+                    return false;
+                }
+
                 if (!TryParseEngineeringValue(parts[index], out parsed[index]))
                 {
                     error = $"'{parts[index]}' is not a finite number.";
@@ -7679,8 +7685,14 @@ public sealed class EditorViewModel : ObservableObject
         var points = new List<ElectricalWaveformPoint>();
         foreach (string entry in value.Split(
             [',', ';'],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            StringSplitOptions.TrimEntries))
         {
+            if (entry.Length == 0)
+            {
+                StatusText = "Waveform contains an empty entry; remove the extra or trailing separator.";
+                return false;
+            }
+
             int separator = entry.IndexOf('=', StringComparison.Ordinal);
             if (separator <= 0 ||
                 separator == entry.Length - 1 ||

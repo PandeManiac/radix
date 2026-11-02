@@ -603,6 +603,19 @@ public sealed class ElectricalEditorTests
         Assert.False(viewModel.ApplyField(garbled));
         Assert.Equal(2, source.Waveform.Count);
 
+        EditableField emptyEntry = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        emptyEntry.Value = "0=0,, 0.002=5";
+        Assert.False(viewModel.ApplyField(emptyEntry));
+        Assert.Contains("empty entry", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, source.Waveform.Count);
+
+        EditableField trailingEntry = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Waveform");
+        trailingEntry.Value = "0=0, 0.002=5,";
+        Assert.False(viewModel.ApplyField(trailingEntry));
+        Assert.Equal(2, source.Waveform.Count);
+
         EditableField cleared = viewModel.ElectricalComponentFields
             .Single(field => field.Label == "Waveform");
         cleared.Value = string.Empty;
@@ -1002,6 +1015,14 @@ public sealed class ElectricalEditorTests
         viewModel.ElectricalSweepValuesText = "500,abc";
         Assert.False(viewModel.RunElectricalSweep());
         Assert.Contains("abc", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+
+        viewModel.ElectricalSweepValuesText = "500,,1000";
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("empty entry", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
+
+        viewModel.ElectricalSweepValuesText = "500,1000,";
+        Assert.False(viewModel.RunElectricalSweep());
+        Assert.Contains("empty entry", viewModel.ElectricalSweepSummary, StringComparison.Ordinal);
     }
 
     [Fact]

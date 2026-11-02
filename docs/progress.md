@@ -869,3 +869,12 @@ midpoint, and `radix transient examples/transient-rc.radix --json` completed.
 GitHub CI passed on Ubuntu and Windows for code commit
 `d4aef6d1526a55f4871e7f19177ff41c33ad1688` and documentation-only tip
 `859b42646b1fe7e6b3182105f43866bfb19cadf5`.
+
+80. Tightened Electrical inspector parsing so consecutive or trailing separators
+    in source waveform and sweep-value lists are errors instead of being silently
+    removed. The error identifies the empty entry, and editor mutations are
+    rejected without changing the existing waveform or running a partial sweep.
+    Headless regressions cover doubled and trailing commas in both input paths.
+
+Verification: focused `ElectricalEditorTests` passed 43/43. Full build/suites and
+GitHub CI are pending for this validation change.
