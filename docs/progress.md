@@ -1081,3 +1081,9 @@ summary and full local verification results; see the PR for the latest CI state.
      `Is / (N * Vt)` or the optional `IBV / (N * Vt)` is non-finite. The forward
      and reverse regression cases and all 25 `DcDiodeSolverTests` pass; broader
      verification remains pending.
+
+110. Verified diode slope validation: Release solution build passed with 0
+     warnings/errors, Core passed 651/651, and headless Editor passed 242/242
+     with `.local-native`. The Zener CLI still solves to -5.1082954 V with
+     approximately -6.8917 mA diode current and a total power residual of
+     3.75e-16 W. The overflowed forward and reverse-slope regressions pass.
