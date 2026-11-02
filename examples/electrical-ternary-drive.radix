@@ -2,7 +2,7 @@
   "format": "radix-project",
   "version": 17,
   "name": "Electrical ternary drive",
-  "root": "demo.drive",
+  "root": "demo.follow",
   "settings": {
     "maxEvaluationsPerComponentPerTimestamp": 64,
     "maxPendingEvents": 1000000,
@@ -87,8 +87,8 @@
   ],
   "definitions": [
     {
-      "id": "demo.drive",
-      "name": "Driven ternary inverter",
+      "id": "demo.follow",
+      "name": "Follows the solved circuit",
       "pins": [
         {
           "id": "a",
@@ -110,9 +110,9 @@
             "kind": "lookup",
             "inputCount": 1,
             "table": [
-              2,
+              0,
               1,
-              0
+              2
             ],
             "delay": 0
           },
@@ -165,6 +165,12 @@
           "node": "out",
           "pin": "a",
           "ticksPerSecond": 1000000000
+        },
+        {
+          "node": "out",
+          "pin": "y",
+          "ticksPerSecond": 1000000000,
+          "checks": true
         }
       ],
       "nodes": [

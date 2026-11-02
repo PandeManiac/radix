@@ -11,9 +11,9 @@ namespace Radix.Core.Electrical;
 /// a script, and the script goes through the same runner the editor, the CLI and the tests use.
 /// </summary>
 /// <remarks>
-/// The script carries drives only. Expectations belong to whoever knows what the digital side should
-/// answer, so a caller that wants them checks the resulting trace or adds expectations itself; this
-/// type's job is to get a solved voltage onto a pin without a second description of the binding.
+/// Drives become <c>set</c> steps and claims about an output become <c>expect</c> steps at the same
+/// ticks, so a definition has to agree with the network in the same moment it is fed. A claim that
+/// fails is reported by the runner as an ordinary expectation mismatch.
 /// </remarks>
 public static class ElectricalDriveSimulation
 {
@@ -27,22 +27,47 @@ public static class ElectricalDriveSimulation
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(sampler);
 
-        var text = new StringBuilder();
-        text.Append("{\"format\":\"radix-test\",\"version\":1,\"name\":\"electrical drive\",\"steps\":[");
-        bool first = true;
+        // One step per tick, carrying every drive and every claim that lands there: a binding that
+        // checks an output and a binding that drives an input at the same tick describe one moment.
+        var ticks = new SortedDictionary<long, (List<string> Drives, List<string> Checks)>();
         foreach (ElectricalDriveBinding binding in circuit.DriveBindings)
         {
             foreach ((ElectricalDriveStep step, long at) in binding.Steps(run, sampler))
             {
-                if (!first)
+                if (!ticks.TryGetValue(at, out var entry))
                 {
-                    text.Append(',');
+                    entry = ([], []);
+                    ticks[at] = entry;
                 }
 
-                first = false;
-                text.Append(CultureInfo.InvariantCulture,
-                    $"{{ \"at\": {at}, \"set\": {{ \"{binding.PinId}\": {step.Level} }} }}");
+                (binding.Checks ? entry.Checks : entry.Drives).Add(
+                    $"\"{binding.PinId}\": {step.Level}");
             }
+        }
+
+        var text = new StringBuilder();
+        text.Append("{\"format\":\"radix-test\",\"version\":1,\"name\":\"electrical drive\",\"steps\":[");
+        bool first = true;
+        foreach ((long at, (List<string> drives, List<string> checks)) in ticks)
+        {
+            if (!first)
+            {
+                text.Append(',');
+            }
+
+            first = false;
+            text.Append(CultureInfo.InvariantCulture, $"{{ \"at\": {at}");
+            if (drives.Count > 0)
+            {
+                text.Append(", \"set\": { ").Append(string.Join(", ", drives)).Append(" }");
+            }
+
+            if (checks.Count > 0)
+            {
+                text.Append(", \"expect\": { ").Append(string.Join(", ", checks)).Append(" }");
+            }
+
+            text.Append(" }");
         }
 
         text.Append("]}");

@@ -30,6 +30,13 @@ public sealed class ElectricalDriveBinding
     /// <summary>Simulator ticks per solved second.</summary>
     public double TicksPerSecond { get; set; } = 1e9;
 
+    /// <summary>
+    /// Whether this binding states what a pin should read rather than what it should be driven to.
+    /// An output cannot be driven, so a claim about one can only be checked: the digital side is
+    /// asked to agree with the solved network, and a disagreement fails the simulation.
+    /// </summary>
+    public bool Checks { get; set; }
+
     /// <summary>The drives this binding produces for a run, one per level change.</summary>
     public IReadOnlyList<(long At, ScriptDrive Drive)> Schedule(
         TransientResult result,

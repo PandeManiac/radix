@@ -31,9 +31,18 @@ public sealed class ElectricalDriveExampleTests
         CircuitProject project = Load();
         ElectricalCircuit circuit = Assert.Single(project.ElectricalCircuits);
 
-        ElectricalDriveBinding binding = Assert.Single(circuit.DriveBindings);
-        Assert.Equal("out", binding.NodeId);
-        Assert.Equal("a", binding.PinId);
+        Assert.Equal(2, circuit.DriveBindings.Count);
+        ElectricalDriveBinding drive = circuit.DriveBindings[0];
+        Assert.Equal("out", drive.NodeId);
+        Assert.Equal("a", drive.PinId);
+        Assert.False(drive.Checks);
+
+        // The second binding states what the definition's output must read, so the run checks the
+        // digital side against the solved network instead of only feeding it.
+        ElectricalDriveBinding claim = circuit.DriveBindings[1];
+        Assert.Equal("out", claim.NodeId);
+        Assert.Equal("y", claim.PinId);
+        Assert.True(claim.Checks);
 
         TransientResult run = circuit.ToTransientNetlist().Run(
             new TransientOptions { StartTime = 0, StopTime = 120e-9, Steps = 1280 });
@@ -55,7 +64,7 @@ public sealed class ElectricalDriveExampleTests
         Assert.True(
             result.Passed,
             string.Join(Environment.NewLine, result.Failures.Select(failure => failure.Message)));
-        Assert.Equal("demo.drive", result.DefinitionId);
+        Assert.Equal("demo.follow", result.DefinitionId);
         Assert.Equal(2, result.StepsExecuted);
         Assert.Equal(44, result.FinalTime);
     }

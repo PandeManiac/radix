@@ -304,6 +304,7 @@ public static class ProjectSerializer
                 NodeId = nodeId,
                 PinId = pinId,
                 TicksPerSecond = rate,
+                Checks = bindingDto.Checks ?? false,
             });
         }
 
@@ -756,6 +757,7 @@ public static class ProjectSerializer
                 Node = binding.NodeId,
                 Pin = binding.PinId,
                 TicksPerSecond = binding.TicksPerSecond,
+                Checks = binding.Checks ? true : null,
             })],
         Nodes = circuit.Nodes.Select(node => new ElectricalNodeDto
         {

@@ -83,6 +83,39 @@ public sealed class ElectricalDriveSimulationTests
     }
 
     [Fact]
+    public void AClaimTheDefinitionDisagreesWithFails()
+    {
+        ElectricalCircuit circuit = BoundCircuit();
+        circuit.DriveBindings.Clear();
+        circuit.DriveBindings.Add(new ElectricalDriveBinding
+        {
+            NodeId = "out",
+            PinId = "a",
+            TicksPerSecond = 1e9,
+        });
+        circuit.DriveBindings.Add(new ElectricalDriveBinding
+        {
+            NodeId = "out",
+            PinId = "y",
+            TicksPerSecond = 1e9,
+            Checks = true,
+        });
+
+        TransientResult run = Run(circuit);
+        ElectricalLevelSampler sampler = Assert.IsType<ElectricalLevelSampler>(
+            ElectricalLevelSampler.ForCircuit(circuit));
+
+        // The definition inverts a, so claiming y equals the level must fail. Without this, a claim
+        // that is silently ignored would look exactly like a claim that holds.
+        SimulationScriptResult result = ElectricalDriveSimulation.Run(
+            TernaryInverter(), circuit, run, sampler, "invert");
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Failures, failure =>
+            failure.Message.Contains("pin 'y'", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ADefinitionWithoutThePinFailsWithTheRunnersMessage()
     {
         ElectricalCircuit circuit = BoundCircuit();

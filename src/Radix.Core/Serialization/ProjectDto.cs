@@ -34,6 +34,9 @@ internal sealed class ElectricalDriveBindingDto
     public string? Pin { get; set; }
 
     public double? TicksPerSecond { get; set; }
+
+    /// <summary>True when the binding states what the pin should read; omitted means it drives it.</summary>
+    public bool? Checks { get; set; }
 }
 
 internal sealed class ElectricalCircuitDto
