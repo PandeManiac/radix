@@ -417,6 +417,30 @@ The full curve, rather than the three sampled points, is what the design is judg
   capacitance, and a fixed `lambda`. It demonstrates that an intermediate logic level can be
   produced by a solved electrical network; it is not a manufacturable ternary gate.
 
+**Gain.** `radix dc --sweep … --gain <node>` differentiates the measured curve and reports
+`d(node)/d(swept)`, so the shoulder sharpness a gate is judged on is a number rather than an
+impression:
+
+```bash
+radix dc examples/dc-cmos-inverter.json --sweep VIN=2.3:2.7:5 --gain out
+```
+
+```text
+d(out)/dVIN: 5 points, 5 with a defined slope, max |gain| 15.9101 V/V at VIN=2.5
+         VIN        out'
+         2.3     -2.4696
+         2.4    -9.18984
+         2.5    -15.9101
+         2.6    -9.18984
+         2.7     -2.4696
+```
+
+A finer grid measures a larger peak because the transition is steeper than a coarse grid can
+resolve: this is the slope of the reported points, not a second solve, so it cannot disagree
+with the table above it. Being a difference quotient, it needs two solved points — a
+single-point sweep, a value that failed to solve, or repeated swept values report no slope
+instead of a fabricated zero.
+
 The same topology ships as an authored project asset,
 `examples/dc-ternary-inverter.radix` (format v12), so the design opens in the Electrical
 inspector instead of living only in a netlist file. Authored MOSFETs carry a

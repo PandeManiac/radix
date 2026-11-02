@@ -111,6 +111,7 @@ internal static class Program
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>]
                                              Solve once per value of one element parameter
+                  [--gain <node>]            Add d(node)/d(swept) to the sweep table
                   [--csv]                    Emit the sweep as a wide CSV table
                   [--json]                   Emit one machine-readable DC report
               transient <netlist.json|project.radix>
@@ -265,7 +266,7 @@ internal static class Program
 
     private static int DcCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["circuit", "sweep"], ["json", "csv"]);
+        (var positional, var options) = Parse(args, ["circuit", "sweep", "gain"], ["json", "csv"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
@@ -276,6 +277,21 @@ internal static class Program
         bool json = options.ContainsKey("json");
         bool csv = options.ContainsKey("csv");
         string? sweepSpec = GetOption(options, "sweep");
+        string? gainNode = GetOption(options, "gain");
+        if (gainNode is not null)
+        {
+            if (sweepSpec is null)
+            {
+                Console.Error.WriteLine("--gain needs --sweep: it differentiates a swept transfer curve.");
+                return 2;
+            }
+
+            if (csv)
+            {
+                Console.Error.WriteLine("--gain prints its own table; use it without --csv.");
+                return 2;
+            }
+        }
         string? requestedCircuit = GetOption(options, "circuit");
         string source = positional[0];
         string? circuitId = null;
@@ -326,12 +342,27 @@ internal static class Program
                 return 2;
             }
 
+            if (gainNode is not null && !netlist.Nodes.Contains(gainNode, StringComparer.Ordinal))
+            {
+                Console.Error.WriteLine(
+                    $"--gain node '{gainNode}' is not in this netlist; available: {string.Join(", ", netlist.Nodes)}.");
+                return 2;
+            }
+
             try
             {
                 IReadOnlyList<DcSweepRow> rows = DcSweep.Run(netlist, sweptElement, sweptValues);
                 Console.Write(csv
                     ? DcSweepReport.ToCsv(netlist, rows)
                     : DcSweepReport.ToText(netlist, sweptElement, rows));
+                if (gainNode is not null)
+                {
+                    Console.Write(DcSweepReport.ToGainText(
+                        sweptElement,
+                        gainNode,
+                        DcSweepGain.Along(rows, gainNode)));
+                }
+
                 return rows.All(row => row.Solved) ? 0 : 1;
             }
             catch (ArgumentException exception)

@@ -170,6 +170,57 @@ public static class DcSweepReport
         return text.ToString();
     }
 
+    /// <summary>
+    /// A two-column table of the local gain along a solved sweep. It is a separate projection
+    /// because a gain belongs to one node rather than to the swept element, and because a value
+    /// that could not solve has no slope to report.
+    /// </summary>
+    public static string ToGainText(
+        string elementId,
+        string nodeId,
+        IReadOnlyList<DcSweepGainPoint> points)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(elementId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        ArgumentNullException.ThrowIfNull(points);
+
+        var text = new StringBuilder();
+        int defined = points.Count(point => point.Gain is not null);
+        DcSweepGainPoint? peak = points
+            .Where(point => point.Gain is not null)
+            .OrderByDescending(point => Math.Abs(point.Gain!.Value))
+            .FirstOrDefault();
+
+        text.Append("d(").Append(nodeId).Append(")/d").Append(elementId).Append(": ")
+            .Append(points.Count.ToString(CultureInfo.InvariantCulture))
+            .Append(points.Count == 1 ? " point, " : " points, ")
+            .Append(defined.ToString(CultureInfo.InvariantCulture))
+            .Append(" with a defined slope");
+        if (peak is not null)
+        {
+            text.Append(", max |gain| ")
+                .Append(Format(Math.Abs(peak.Gain!.Value), 0).TrimStart())
+                .Append(" V/V at ")
+                .Append(elementId)
+                .Append('=')
+                .Append(Format(peak.Value, 0).TrimStart());
+        }
+
+        text.AppendLine();
+        text.Append(string.Create(CultureInfo.InvariantCulture, $"{elementId,12}{nodeId + "'",12}"));
+        text.AppendLine();
+        foreach (DcSweepGainPoint point in points)
+        {
+            text.Append(Format(point.Value, 12));
+            text.Append(point.Gain is double gain
+                ? Format(gain, 12)
+                : "          - ".PadLeft(12));
+            text.AppendLine();
+        }
+
+        return text.ToString();
+    }
+
     private static string Format(double value, int width) =>
         value.ToString("G6", CultureInfo.InvariantCulture).PadLeft(width);
 
