@@ -1544,6 +1544,14 @@ drives only — expectations belong to whoever knows what the digital side shoul
 definition without the bound pin fails with the runner's own message, `unknown interface pin 'a'
 (available: d, q)`, rather than reporting a pass that proved nothing.
 
+`examples/electrical-ternary-drive.radix` puts the two sides in one file: the transient inverter, a
+digital definition `demo.drive` with an input `a` and output `y`, and a binding from the circuit's
+`out` node to that input at one tick per nanosecond. Running
+`radix drive examples/electrical-ternary-drive.radix --simulate --stop 1.2e-7 --steps 1280` solves
+the network, reads level 2 then level 1, and applies both to the definition, ending at tick 44. A
+test loads the same file and holds the run to that result, so the example cannot drift away from
+the path it demonstrates.
+
 The editor has no equivalent control yet, so a binding is authored in the file and run from the
 command line.
 
