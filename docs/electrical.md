@@ -443,28 +443,31 @@ single-point sweep, a value that failed to solve, or repeated swept values repor
 instead of a fabricated zero.
 
 **Switching.** `examples/transient-ternary-inverter.radix` drives the same inverter from 0 V to
-2.5 V through a 1 ns ramp and puts 2 pF on the summing node, so the middle level becomes a state
-the network has to reach rather than a value the solver assigns:
+2.5 V through a 1 ns ramp, with 1 pF of gate capacitance behind a 10 kΩ gate resistor and 2 pF on
+the summing node. Two time constants are therefore in the path, and both are closed forms:
 
 ```bash
 radix transient examples/transient-ternary-inverter.radix --stop 600e-9 --steps 600
 ```
 
-| `t` | 0 | 108 ns | 208 ns | 600 ns |
+| `t` | 0 | 26 ns | 28 ns | 600 ns |
 | --- | --- | --- | --- | --- |
-| `out` | 5 | 3.5465 | 2.8891 | 2.50804 |
+| `g` | 0 | 1.0 | 1.25 | 2.5 |
+| `out` | 5 | 5 | 4.99 | 2.5086 |
 
-The output leaves the rail at the step and settles exponentially on 2.508 V — the static middle
-level, approached from above — with a measured time constant of 99.7 ns against the closed form
-`(R/2) C = 50 kΩ × 2 pF = 100 ns`, and a 399 ns settling time in a 2 % band. Doubling the load
-capacitance doubles the measured constant, which the tests assert, so the delay belongs to the
-network rather than to the integrator. The run's energy ledger closes to 4 × 10⁻⁴ of the energy
-delivered, so the switching energy is accounted for instead of assumed.
+The gate bus must be charged before anything can happen: 10 kΩ into the four 0.25 pF gates is
+1 pF, so the bus reaches the 1 V threshold at 26 ns and half of the drive at 28 ns, and the output
+only begins to fall there. The summing node then decays with its own constant, measured between the
+50 % and 90 % crossings so the gate delay cancels out: about 100 ns, against the closed form
+`(R/2) C = 50 kΩ × 2 pF`. The 2 % band is reached at 406 ns, the gates having settled at 61 ns.
 
-The transistor is still ideal in this example: the capacitance is an explicit load on the summing
-node, not gate charge, so the delay is the interconnect's and the devices themselves switch
-instantaneously. What the run does establish is that the middle level is reachable in a finite time
-by a real network, which is a property no static table can show.
+Six hundred nanoseconds is inside the band but not converged: the output is still 8 mV above its
+destination there. A 3 µs run arrives at **2.5000 V**, which is exactly what a DC solve reports for
+`VIN = 2.5 V`. The transient run reaches the static answer instead of being handed it, and the test
+asserts that agreement rather than a literal. Doubling the load capacitance doubles the measured
+constant, so the decay belongs to the network rather than to the integrator. The energy ledger
+closes to 1.8 × 10⁻³ of the energy delivered, larger than the load-only case because gate charge is
+now part of what is delivered and stored.
 
 **Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,
 or `cgs`/`cgd` in a transient JSON netlist, both defaulting to zero so an existing netlist keeps its

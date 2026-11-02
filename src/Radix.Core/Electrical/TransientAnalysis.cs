@@ -1017,7 +1017,10 @@ public sealed class TransientNetlist
 
         for (int index = 0; index < _capacitors.Count; index++)
         {
-            capacitorCurrents[index] = initialState.ElementCurrents[_capacitors[index].Id];
+            capacitorCurrents[index] =
+                initialState.ElementCurrents.TryGetValue(_capacitors[index].Id, out double amperes)
+                    ? amperes
+                    : 0;
         }
 
         for (int index = 0; index < _inductors.Count; index++)
@@ -1574,17 +1577,29 @@ public sealed class TransientNetlist
     }
 
     /// <summary>
-    /// Solves the state at the start time by imposing each reactive element's state:
-    /// a capacitor becomes an ideal voltage source at its initial voltage, and an
-    /// inductor becomes an ideal current source at its initial current. The reported
-    /// initial node voltages then agree with the states the first integration step
-    /// continues from, including preset initial conditions.
+    /// Solves the state at the start time. A preset is imposed, so a capacitor becomes an ideal
+    /// voltage source at its initial voltage and an inductor an ideal current source at its initial
+    /// current; the reported initial node voltages then agree with the states the first integration
+    /// step continues from.
+    /// <para>
+    /// With no preset, every state came from the DC operating point and imposing it again can only
+    /// restate what that operating point already satisfies — but the imposed ideal sources can form
+    /// a redundant loop whose branch currents have no unique solution. Two capacitors between the
+    /// same pair of ideal rails is enough: a gate bus tied to both rails, or a pair of decoupling
+    /// capacitors. The operating point itself has no such loop, because a capacitor is an open
+    /// circuit in it, and it is the same state, so it is returned directly.
+    /// </para>
     /// </summary>
     private DcSolution SolveInitialState(
         double time,
         double[] capacitorVoltages,
         double[] inductorCurrents)
     {
+        if (_initialCapacitorVolts.Count == 0 && _initialInductorAmperes.Count == 0)
+        {
+            return SolveOperatingPoint(time);
+        }
+
         if (_capacitors.Count == 0 && _inductors.Count == 0)
         {
             return SolveOperatingPoint(time);
