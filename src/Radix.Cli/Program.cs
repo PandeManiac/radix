@@ -1077,6 +1077,25 @@ internal static class Program
                         $"timing failed: {timing.Mismatches.Count} transition(s) outside the declared delay.");
                     return 1;
                 }
+
+                foreach (ElectricalDelayTolerance tolerance in timing.UnusedTolerances)
+                {
+                    Console.WriteLine(
+                        $"timing: the tolerance for {(tolerance.PinId is null ? "any pin" : tolerance.PinId)} {tolerance.FromLevel}->{tolerance.ToLevel} was not exercised by this run.");
+                }
+
+                if (timing.UnknownPinTolerances.Count > 0)
+                {
+                    foreach (ElectricalDelayTolerance tolerance in timing.UnknownPinTolerances)
+                    {
+                        Console.Error.WriteLine(
+                            $"timing: tolerance {tolerance.FromLevel}->{tolerance.ToLevel} names pin '{tolerance.PinId}', which this definition does not declare as an output.");
+                    }
+
+                    Console.Error.WriteLine(
+                        $"timing failed: {timing.UnknownPinTolerances.Count} tolerance(s) can never apply.");
+                    return 1;
+                }
             }
         }
 

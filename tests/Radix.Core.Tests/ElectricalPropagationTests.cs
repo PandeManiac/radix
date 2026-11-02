@@ -176,6 +176,28 @@ public sealed class ElectricalPropagationTests
     }
 
     [Fact]
+    public void AToleranceNothingConsultsIsReportedAndAPinThatDoesNotExistIsSeparated()
+    {
+        (CircuitProject project, ElectricalCircuit circuit, TransientResult run, ElectricalLevelSampler sampler) =
+            Load();
+
+        // One entry names a real pin but a transition this run never makes; the other names a pin the
+        // definition does not declare at all and can never apply.
+        circuit.DelayTolerances.Add(new ElectricalDelayTolerance("y", 0, 1, 5));
+        circuit.DelayTolerances.Add(new ElectricalDelayTolerance("zzz", 2, 1, 0));
+
+        ElectricalPropagationReport report = Assert.IsType<ElectricalPropagationReport>(
+            ElectricalDriveSimulation.Propagation(project, circuit, run, sampler));
+
+        Assert.Equal(2, report.UnusedTolerances.Count);
+        ElectricalDelayTolerance unknown = Assert.Single(report.UnknownPinTolerances);
+        Assert.Equal("zzz", unknown.PinId);
+
+        // Neither mistake disturbs the judgement itself: the exercised entries still agree.
+        Assert.True(report.Agrees);
+    }
+
+    [Fact]
     public void ACircuitWithNothingToPairHasNoReport()
     {
         // The drive example drives and claims the same node, so there is no output to time.

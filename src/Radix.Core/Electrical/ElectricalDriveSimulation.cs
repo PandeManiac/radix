@@ -80,9 +80,11 @@ public sealed class ElectricalPropagationReport
         int? declaredTicks,
         int toleranceTicks,
         IReadOnlyList<ElectricalDelayTolerance> overrides,
+        IReadOnlySet<string> outputPins,
         IReadOnlyList<ElectricalPropagationStep> steps)
     {
         ArgumentNullException.ThrowIfNull(overrides);
+        ArgumentNullException.ThrowIfNull(outputPins);
         ArgumentNullException.ThrowIfNull(steps);
         InputPinId = inputPinId;
         OutputPinId = outputPinId;
@@ -96,7 +98,33 @@ public sealed class ElectricalPropagationReport
         Mismatches = declaredTicks is int declared
             ? [.. steps.Where(step => Math.Abs(step.Ticks - declared) > ToleranceFor(step))]
             : [];
+
+        // An entry that no transition consulted is inert: the file stated something the check never
+        // used. That is worth saying loudly, because a tolerance that silently does nothing reads as
+        // protection the circuit does not actually have.
+        var used = new HashSet<int>();
+        foreach (ElectricalPropagationStep step in steps)
+        {
+            int index = FindOverrideIndex(step);
+            if (index >= 0)
+            {
+                used.Add(index);
+            }
+        }
+
+        UnusedTolerances = [.. overrides.Where((_, index) => !used.Contains(index))];
+
+        // A pin the definition does not declare is a different mistake from a transition this run
+        // never produced: the first can never apply, the second may apply to a longer run.
+        UnknownPinTolerances = [.. overrides.Where(tolerance =>
+            tolerance.PinId is string pin && !outputPins.Contains(pin))];
     }
+
+    /// <summary>Tolerances no measured transition consulted.</summary>
+    public IReadOnlyList<ElectricalDelayTolerance> UnusedTolerances { get; }
+
+    /// <summary>Tolerances naming a pin the definition does not declare as an output.</summary>
+    public IReadOnlyList<ElectricalDelayTolerance> UnknownPinTolerances { get; }
 
     /// <summary>Tolerances that replace the circuit-wide one for a named transition.</summary>
     public IReadOnlyList<ElectricalDelayTolerance> Overrides { get; }
@@ -106,29 +134,38 @@ public sealed class ElectricalPropagationReport
     /// A pin's own entry wins over one that names no pin, so a circuit can set a general allowance
     /// and still hold one output to a tighter standard. An entry for another pin is never consulted.
     /// </remarks>
-    public int ToleranceFor(ElectricalPropagationStep step)
+    public int ToleranceFor(ElectricalPropagationStep step) =>
+        FindOverrideIndex(step) is int index && index >= 0
+            ? Overrides[index].Ticks
+            : ToleranceTicks;
+
+    /// <summary>The entry that governs a transition, or -1 when the circuit-wide tolerance does.</summary>
+    private int FindOverrideIndex(ElectricalPropagationStep step)
     {
-        foreach (ElectricalDelayTolerance tolerance in Overrides)
+        for (int index = 0; index < Overrides.Count; index++)
         {
-            if (tolerance.FromLevel == step.PreviousOutputLevel &&
+            ElectricalDelayTolerance tolerance = Overrides[index];
+            if (tolerance.PinId is not null &&
+                tolerance.FromLevel == step.PreviousOutputLevel &&
                 tolerance.ToLevel == step.OutputLevel &&
                 string.Equals(tolerance.PinId, OutputPinId, StringComparison.Ordinal))
             {
-                return tolerance.Ticks;
+                return index;
             }
         }
 
-        foreach (ElectricalDelayTolerance tolerance in Overrides)
+        for (int index = 0; index < Overrides.Count; index++)
         {
-            if (tolerance.FromLevel == step.PreviousOutputLevel &&
-                tolerance.ToLevel == step.OutputLevel &&
-                tolerance.PinId is null)
+            ElectricalDelayTolerance tolerance = Overrides[index];
+            if (tolerance.PinId is null &&
+                tolerance.FromLevel == step.PreviousOutputLevel &&
+                tolerance.ToLevel == step.OutputLevel)
             {
-                return tolerance.Ticks;
+                return index;
             }
         }
 
-        return ToleranceTicks;
+        return -1;
     }
 
     public string InputPinId { get; }
@@ -452,12 +489,16 @@ public static class ElectricalDriveSimulation
                 ticks / output.TicksPerSecond));
         }
 
+        HashSet<string> outputPins = [.. definition.Pins
+            .Where(pin => pin.Direction == PinDirection.Output)
+            .Select(pin => pin.Id)];
         return new ElectricalPropagationReport(
             input.PinId,
             output.PinId,
             DeclaredDelayTicks(definition, output.PinId),
             circuit.DelayToleranceTicks,
             circuit.DelayTolerances,
+            outputPins,
             steps);
     }
 

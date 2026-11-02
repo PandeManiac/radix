@@ -9381,10 +9381,26 @@ public sealed class EditorViewModel : ObservableObject
                         $"{tolerance.FromLevel}->{tolerance.ToLevel} within {tolerance.Ticks}"))) + ")";
             verdict +=
                 $" Timing: {measured}; the definition declares {declared} tick(s) within {timing.ToleranceTicks} tick(s){perTransition}.";
+
+            // The two silences are different mistakes: one may apply to a longer run, the other never.
+            if (timing.UnknownPinTolerances.Count > 0)
+            {
+                verdict +=
+                    $" {timing.UnknownPinTolerances.Count} tolerance(s) name a pin this definition does not declare as an output.";
+            }
+
+            if (timing.UnusedTolerances.Count > 0)
+            {
+                verdict +=
+                    $" {timing.UnusedTolerances.Count} tolerance(s) were not exercised by this run.";
+            }
         }
 
         ElectricalDriveSummary = verdict;
-        return simulation.Passed && (audit?.Passed ?? true) && (timing?.Agrees ?? true);
+        return simulation.Passed &&
+               (audit?.Passed ?? true) &&
+               (timing?.Agrees ?? true) &&
+               (timing is null || timing.UnknownPinTolerances.Count == 0);
     }
 
     public bool ShowElectricalTransientRun()
