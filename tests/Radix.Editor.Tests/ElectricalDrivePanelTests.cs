@@ -86,6 +86,22 @@ public sealed class ElectricalDrivePanelTests
     }
 
     [Fact]
+    public void TheSummaryAuditsWhatTheDefinitionWouldHaveComputed()
+    {
+        // The supply example hands Y to the network, so the claim count is zero and the audit is the
+        // only thing that can say whether the definition would have agreed.
+        EditorViewModel viewModel = Load("electrical-ternary-supply.radix");
+        SetField(viewModel, "Transient stop (s)", "120e-9");
+        SetField(viewModel, "Transient steps", "1280");
+
+        Assert.True(viewModel.RunElectricalDriveBindings());
+        Assert.Contains(
+            "would have produced the same levels on 1 supplied pin(s) over 45 tick(s)",
+            viewModel.ElectricalDriveSummary,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ACircuitWithoutBindingsSaysSoInsteadOfReportingSuccess()
     {
         EditorViewModel viewModel = Load("transient-ternary-inverter.radix");

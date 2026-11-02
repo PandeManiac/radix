@@ -9225,11 +9225,30 @@ public sealed class EditorViewModel : ObservableObject
             }
         }
 
-        ElectricalDriveSummary = simulation.Passed
+        string verdict = simulation.Passed
             ? $"'{simulation.DefinitionId}' agreed on {plan.Claims.Count} claim tick(s) across {plan.ClaimedPins} pin(s); {ElectricalDriveRows.Count} change(s) shown."
             : $"'{simulation.DefinitionId}' disagreed: " +
               string.Join("; ", simulation.Failures.Take(3).Select(failure => failure.Message));
-        return simulation.Passed;
+
+        // A supplied output is masked while it is driven, so what the definition would have computed
+        // for it comes from a second run - the same audit the command line reports.
+        ElectricalDriveAudit? audit = ElectricalDriveSimulation.Audit(
+            _project,
+            circuit,
+            result,
+            sampler,
+            _electricalDriveDefinitionId.Length == 0 ? null : _electricalDriveDefinitionId);
+        verdict += audit switch
+        {
+            null => string.Empty,
+            { Passed: true } =>
+                $" It would have produced the same levels on {audit.AuditedPins} supplied pin(s) over {audit.CheckedTicks} tick(s).",
+            _ =>
+                $" It would have answered differently on {audit.AuditedPins} supplied pin(s): {audit.Result.Failures[0].Message}.",
+        };
+
+        ElectricalDriveSummary = verdict;
+        return simulation.Passed && (audit?.Passed ?? true);
     }
 
     public bool ShowElectricalTransientRun()
