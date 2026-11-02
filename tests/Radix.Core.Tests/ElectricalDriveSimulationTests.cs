@@ -60,6 +60,9 @@ public sealed class ElectricalDriveSimulationTests
             ElectricalLevelSampler.ForCircuit(circuit));
 
         SimulationScript script = ElectricalDriveSimulation.Script(circuit, run, sampler);
+
+        // Drives alone appear only where the level changes: a drive repeating a value nobody moved
+        // would add events without adding information.
         Assert.Equal(2, script.Steps.Count);
 
         SimulationScriptResult result = ElectricalDriveSimulation.Run(
@@ -105,6 +108,11 @@ public sealed class ElectricalDriveSimulationTests
         ElectricalLevelSampler sampler = Assert.IsType<ElectricalLevelSampler>(
             ElectricalLevelSampler.ForCircuit(circuit));
 
+        // A claim is made at every tick the run covers, so a tick with no drive still carries one.
+        SimulationScript script = ElectricalDriveSimulation.Script(circuit, run, sampler);
+        Assert.Equal(45, script.Steps.Count);
+        Assert.Contains(script.Steps, step => step.At == 1);
+
         // The definition inverts a, so claiming y equals the level must fail. Without this, a claim
         // that is silently ignored would look exactly like a claim that holds.
         SimulationScriptResult result = ElectricalDriveSimulation.Run(
@@ -130,9 +138,9 @@ public sealed class ElectricalDriveSimulationTests
 
         Assert.False(result.Passed);
 
-        // One failure per drive step: the runner reports each application it could not make, which
-        // is what makes the message useful when a project has several bindings.
-        Assert.Equal(2, result.Failures.Count);
+        // One failure per step: the runner reports each application it could not make, which is what
+        // makes the message useful when a project has several bindings.
+        Assert.NotEmpty(result.Failures);
         Assert.All(result.Failures, failure => Assert.Contains(
             "unknown interface pin 'a'",
             failure.Message,

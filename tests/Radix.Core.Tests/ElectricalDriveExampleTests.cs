@@ -65,7 +65,8 @@ public sealed class ElectricalDriveExampleTests
             result.Passed,
             string.Join(Environment.NewLine, result.Failures.Select(failure => failure.Message)));
         Assert.Equal("demo.follow", result.DefinitionId);
-        Assert.Equal(2, result.StepsExecuted);
+        // The claim is checked on every tick of the run, not only where the level changes.
+        Assert.Equal(45, result.StepsExecuted);
         Assert.Equal(44, result.FinalTime);
     }
 }

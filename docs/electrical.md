@@ -1545,9 +1545,11 @@ definition without the bound pin fails with the runner's own message, `unknown i
 (available: d, q)`, rather than reporting a pass that proved nothing.
 
 A binding may also state what a pin should read rather than what it should be driven to: `checks`
-turns it into an expectation, because an output cannot be driven. Each claim is checked at the same
-ticks as the drives, so a definition has to agree with the network in the moment it is fed, and a
-disagreement fails the simulation with the runner's own expectation message. A test feeds an
+turns it into an expectation, because an output cannot be driven. Each claim is checked at every
+tick the run covers — not only where the node changes level, so a definition that drifts between
+changes fails too — and a disagreement fails the simulation with the runner's own expectation
+message. A window wider than 512 ticks is sampled rather than written out in full, because a rate
+that maps a long run onto millions of ticks is not a better check, only a slower failure. A test feeds an
 inverting definition a claim that its output equals the level and requires that to fail — otherwise
 a claim that was silently ignored would look exactly like a claim that holds.
 
