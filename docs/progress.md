@@ -1099,3 +1099,8 @@ summary and full local verification results; see the PR for the latest CI state.
      once halted, preserving the frozen partial simulation until `Reset`. The
      regression and all four event-budget tests pass; broader verification remains
      pending.
+
+113. Verified frozen halted-state behavior end to end: Release build passed with
+     0 warnings/errors, Core passed 652/652, and headless Editor passed 242/242.
+     The binary-counter CLI script passed all 3 steps (3,574 events). The halted
+     external-drive regression and all four event-budget tests pass.
