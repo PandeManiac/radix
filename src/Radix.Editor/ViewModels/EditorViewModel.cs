@@ -338,6 +338,8 @@ public sealed class EditorViewModel : ObservableObject
         ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
         CompareElectricalCapacitanceModelsCommand =
             new RelayCommand(() => CompareElectricalCapacitanceModels());
+        ShowElectricalTransientRunCommand =
+            new RelayCommand(() => ShowElectricalTransientRun());
         RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
         RunElectricalDcSweepCommand = new RelayCommand(() => RunElectricalDcSweep());
         RunElectricalAcSweepCommand = new RelayCommand(() => RunElectricalAcSweep());
@@ -1514,6 +1516,9 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Plots the same circuit under both gate-charge models, one curve each.</summary>
     public ICommand CompareElectricalCapacitanceModelsCommand { get; }
+
+    /// <summary>Returns the plot to the last single run after a comparison replaced it.</summary>
+    public ICommand ShowElectricalTransientRunCommand { get; }
 
     public ICommand RunElectricalSweepCommand { get; }
 
@@ -8824,6 +8829,23 @@ public sealed class EditorViewModel : ObservableObject
                 circuit.Components[index].BiasDependentCapacitance = authored[index];
             }
         }
+    }
+
+    /// <summary>
+    /// Puts the plot back on the last single run. The comparison's sentence stays, because the
+    /// numbers it reports are still true of the circuit; only the picture changes. Touching a node
+    /// checkbox does the same thing through the rebuild it already calls.
+    /// </summary>
+    public bool ShowElectricalTransientRun()
+    {
+        if (_electricalTransientSeries.Length == 0)
+        {
+            ElectricalTransientComparisonText = "No run to show yet; run a transient first.";
+            return false;
+        }
+
+        RebuildElectricalTransientPlot();
+        return true;
     }
 
     private void ShowCapacitanceComparison(TransientResult constant, TransientResult biasDependent)

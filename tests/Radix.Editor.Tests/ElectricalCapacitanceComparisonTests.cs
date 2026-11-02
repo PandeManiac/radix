@@ -84,6 +84,41 @@ public sealed class ElectricalCapacitanceComparisonTests
     }
 
     [Fact]
+    public void TheLastRunComesBackAfterAComparison()
+    {
+        EditorViewModel viewModel = WithRunSettings("transient-ternary-inverter.radix");
+
+        // A run first, so there is something to come back to; the comparison then replaces the plot.
+        Assert.True(viewModel.SolveElectricalTransient());
+        int runSeries = viewModel.ElectricalTransientPlot!.Series.Count;
+        Assert.True(viewModel.CompareElectricalCapacitanceModels());
+        Assert.Equal(2, viewModel.ElectricalTransientPlot!.Series.Count);
+
+        Assert.True(viewModel.ShowElectricalTransientRun());
+        Assert.Equal(runSeries, viewModel.ElectricalTransientPlot!.Series.Count);
+        Assert.DoesNotContain(viewModel.ElectricalTransientPlot.Series, series =>
+            series.NodeId.EndsWith("authored C", StringComparison.Ordinal));
+
+        // The node checkboxes drive the run, so a checkbox change must also leave the comparison.
+        Assert.True(viewModel.CompareElectricalCapacitanceModels());
+        ElectricalTransientSeriesItem item = viewModel.ElectricalTransientSeries[0];
+        item.IsVisible = !item.IsVisible;
+        Assert.DoesNotContain(
+            viewModel.ElectricalTransientPlot!.Series,
+            series => series.NodeId.EndsWith("authored C", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AskingForTheRunBeforeOneExistsSaysSo()
+    {
+        EditorViewModel viewModel = WithRunSettings("transient-ternary-inverter.radix");
+
+        Assert.False(viewModel.ShowElectricalTransientRun());
+        Assert.Null(viewModel.ElectricalTransientPlot);
+        Assert.Contains("run a transient first", viewModel.ElectricalTransientComparisonText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheComparisonRestoresTheAuthoredFlagsSoItCanBeTakenTwice()
     {
         EditorViewModel viewModel = WithRunSettings("transient-ternary-inverter-bias-dependent.radix");
