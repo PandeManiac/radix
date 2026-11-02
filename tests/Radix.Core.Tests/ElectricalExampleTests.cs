@@ -1,4 +1,5 @@
 using Radix.Core.Electrical;
+using Radix.Core.Model;
 using Radix.Core.Serialization;
 using Xunit;
 
@@ -49,6 +50,31 @@ public sealed class ElectricalExampleTests
         Assert.All(
             netlist.Nodes,
             node => Assert.True(solution.NodeVoltages.ContainsKey(node)));
+    }
+
+    [Fact]
+    public void AuthoredTernaryInverterExampleSwitchesThroughTheMiddleRail()
+    {
+        // The same inverter as the netlist example, but shipped as an authored project
+        // asset so it can be opened in the inspector. Its devices carry no lambda, so the
+        // shoulders sit slightly higher than the netlist version; the levels do not move.
+        CircuitProject project = ProjectSerializer.Load(ExamplePath("dc-ternary-inverter.radix"));
+        ElectricalCircuit circuit = Assert.Single(project.ElectricalCircuits);
+        Assert.Equal(6, circuit.Nodes.Count);
+        Assert.Equal(4, circuit.Components.Count(component =>
+            component.Kind == ElectricalComponentKind.Mosfet));
+
+        DcNetlist netlist = circuit.ToDcNetlist();
+        Assert.Equal(5, Output(netlist, "VIN", 0), 3);
+        Assert.Equal(2.5, Output(netlist, "VIN", 2.5), 3);
+        Assert.True(Output(netlist, "VIN", 5) < 1e-6, Output(netlist, "VIN", 5).ToString());
+
+        // Every input from 1.5 V to 3.5 V stays within 50 mV of the middle rail, so the
+        // intermediate level is a plateau rather than a knife edge.
+        foreach (double volts in new[] { 1.5, 2.0, 2.5, 3.0, 3.5 })
+        {
+            Assert.InRange(Output(netlist, "VIN", volts), 2.45, 2.55);
+        }
     }
 
     [Fact]

@@ -416,6 +416,15 @@ The full curve, rather than the three sampled points, is what the design is judg
   capacitance, and a fixed `lambda`. It demonstrates that an intermediate logic level can be
   produced by a solved electrical network; it is not a manufacturable ternary gate.
 
+The same topology ships as an authored project asset,
+`examples/dc-ternary-inverter.radix` (format v11), so the design opens in the Electrical
+inspector instead of living only in a netlist file. Authored components carry a
+transconductance, a channel and a threshold but no `lambda`, so its curve is the
+`lambda = 0` case of the table above: 0 V → 5 V, 2.5 V → 2.5 V, 5 V → 56 nV, with
+4.2395 V at 1.25 V and 2.547 V at 1.5 V. The middle plateau still holds 2.5 ± 0.05 V
+across 1.5–3.5 V, and the example test asserts those levels, so the shipped asset and
+the measured claims cannot drift apart.
+
 ## Transient analysis
 
 `TransientNetlist` adds ideal capacitors and inductors to the element set and

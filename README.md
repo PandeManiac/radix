@@ -108,6 +108,7 @@ dotnet run --project src/Radix.Cli -- dc examples/dc-divider.json
 dotnet run --project src/Radix.Cli -- dc examples/dc-mosfet-common-source.json --sweep VG=0:5:11
 dotnet run --project src/Radix.Cli -- dc examples/dc-cmos-inverter.json --sweep VIN=0:5:21
 dotnet run --project src/Radix.Cli -- dc examples/dc-ternary-inverter.json --sweep VIN=0:5:51 --csv
+dotnet run --project src/Radix.Cli -- dc examples/dc-ternary-inverter.radix --sweep VIN=0:5:21
 
 # Integrate a transient circuit in time: RC charge, RLC ring, or a pulse drive
 dotnet run --project src/Radix.Cli -- transient examples/transient-rc.json
@@ -211,6 +212,7 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 | [dc-mosfet-common-source.json](examples/dc-mosfet-common-source.json) | One n-channel MOSFET switching a resistor load: the drain follows the gate voltage by the square law |
 | [dc-cmos-inverter.json](examples/dc-cmos-inverter.json) | A static CMOS inverter solved from a p- and an n-channel MOSFET, with a rail-to-rail transfer curve |
 | [dc-ternary-inverter.json](examples/dc-ternary-inverter.json) | A resistor-summed dual-threshold ternary inverter: 0 V → 5 V, 2.5 V → 2.5 V, 5 V → 0 V from the network solution |
+| [dc-ternary-inverter.radix](examples/dc-ternary-inverter.radix) | The same ternary inverter as an authored project circuit, with `channel` and `thresholdVoltage` fields, openable in the Electrical inspector |
 | [full-adder.radix](examples/full-adder.radix) | Hierarchical half adders combined into a full adder |
 | [8-bit-alu.radix](examples/8-bit-alu.radix) | An 8-bit ADD/AND/OR/XOR unit with carry and zero flags, built from the 8-bit adder, gates, and muxes |
 | [multiplier.radix](examples/multiplier.radix) | A 4 × 4 array multiplier: sixteen AND partial products accumulated by three 8-bit adders, with A, B, and P numeric lanes |
