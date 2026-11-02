@@ -247,7 +247,10 @@ between 1 and 1,000,000, and the last point lands exactly on `stop`. The run is
 deterministic: identical netlists produce identical samples. Choosing `h`
 against the smallest time constant or period that matters is then the user's
 responsibility; roughly twenty steps per time constant is a reasonable starting
-point.
+point. A step must also advance the absolute time at double precision; a start
+time so large that the requested step rounds away is rejected, and any later
+step that cannot advance time ends with a numerical failure instead of spinning
+through the step budget.
 
 Setting `AdaptiveTolerance` (CLI `--tol`) switches to step-doubling control. At
 each point the solver takes one step of size `h` and two of size `h/2` from the

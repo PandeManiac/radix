@@ -226,6 +226,16 @@ public sealed record TransientOptions
                 "The requested time range and step count do not produce a finite positive time step.");
         }
 
+        double span = StopTime - StartTime;
+        double firstFixedStep = Math.Min(TimeStep, span);
+        if (StartTime + firstFixedStep <= StartTime)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(Steps),
+                Steps,
+                "The requested time step is too small to advance the start time at double precision.");
+        }
+
         if (AdaptiveTolerance is not double tolerance)
         {
             return;
@@ -270,6 +280,14 @@ public sealed record TransientOptions
                 nameof(InitialTimeStep),
                 InitialTimeStep,
                 "The initial adaptive step must be finite and greater than zero.");
+        }
+
+        if (StartTime + Math.Min(initial, span) <= StartTime)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(InitialTimeStep),
+                initial,
+                "The initial adaptive time step is too small to advance the start time at double precision.");
         }
 
         if (!double.IsFinite(MinimumTimeStep) || MinimumTimeStep < 0)
@@ -987,6 +1005,16 @@ public sealed class TransientNetlist
             }
 
             double next = step >= remaining ? options.StopTime : time + step;
+            if (next <= time)
+            {
+                return new TransientResult(
+                    options,
+                    points,
+                    DcSolveFailure.NonConvergent,
+                    $"Fixed-step integration cannot advance time from {time:G17} s by {step:G6} s at double precision.",
+                    points.Count - 1);
+            }
+
             bool trapezoidal = options.Method == TransientMethod.Trapezoidal && points.Count > 1;
             if (!TryAdvance(
                     next,
@@ -1060,6 +1088,17 @@ public sealed class TransientNetlist
             if (remaining - trial <= rounding)
             {
                 trial = remaining;
+            }
+
+            double nextTime = trial >= remaining ? options.StopTime : time + trial;
+            if (nextTime <= time)
+            {
+                return new TransientResult(
+                    options,
+                    points,
+                    DcSolveFailure.NonConvergent,
+                    $"Adaptive integration cannot advance time from {time:G17} s by {trial:G6} s at double precision; allow a larger minimum step or use a smaller absolute time origin.",
+                    points.Count - 1);
             }
 
             bool trapezoidal = options.Method == TransientMethod.Trapezoidal && !firstStep;

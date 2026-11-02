@@ -1058,3 +1058,10 @@ summary and full local verification results; see the PR for the latest CI state.
      1e16 s, 2 s span, 100 steps). Both cases currently pass validation even though
      repeated time addition leaves the simulation clock unchanged. Implementation
      and broader verification remain pending.
+
+106. Fixed transient time-grid representability. Validation now rejects fixed and
+     adaptive starting steps that cannot advance the absolute clock; an explicitly
+     configured adaptive initial step is checked too. Both integration loops detect
+     any later step that rounds to no time progress and return `NonConvergent` with
+     a precise message. The three focused regressions and all 26 transient solver
+     tests pass; broader verification remains pending.

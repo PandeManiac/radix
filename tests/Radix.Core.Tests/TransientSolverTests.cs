@@ -694,6 +694,21 @@ public sealed class TransientSolverTests
         Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
     }
 
+    [Fact]
+    public void RejectsUnrepresentableExplicitAdaptiveInitialStep()
+    {
+        var options = new TransientOptions
+        {
+            StartTime = 1e16,
+            StopTime = 1e16 + 2,
+            Steps = 1,
+            AdaptiveTolerance = 1e-6,
+            InitialTimeStep = 0.02,
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
+    }
+
     private static double AdaptiveRcError(double tolerance, out int points)
     {
         const double supply = 5;
