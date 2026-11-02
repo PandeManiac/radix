@@ -4,4 +4,7 @@
     <AssemblyName>Radix.Core</AssemblyName>
     <Description>Simulation kernel, circuit model, compiler, and persistence for RADIX.</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Radix.Core.Tests" />
+  </ItemGroup>
 </Project>

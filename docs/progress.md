@@ -1318,3 +1318,9 @@ summary and full local verification results; see the PR for the latest CI state.
      with 0 warnings/errors, Core passed 665/665, and headless Editor passed
      242/242 with `.local-native`. The extreme-range regression passes alongside
      the full refinement suite; PR #6 needs its description refreshed.
+
+149. WIP: refinement's observed convergence order now subtracts the logarithms of
+     successive deviations instead of taking their ratio first. Added a focused
+     regression for finite deviations whose ratio exceeds `double.MaxValue`; all
+     12 `TransientRefinementTests` pass. Full solution and Editor verification is
+     pending.

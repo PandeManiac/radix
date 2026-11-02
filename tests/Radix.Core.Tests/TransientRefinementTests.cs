@@ -187,6 +187,16 @@ public sealed class TransientRefinementTests
         Assert.Equal(0, study.EstimatedRelativeError);
     }
 
+    [Fact]
+    public void ObservedOrderDoesNotFormAnOverflowingDeviationRatio()
+    {
+        double order = TransientRefinement.CalculateObservedOrder(1e308, 1e-20);
+
+        Assert.True(double.IsFinite(order));
+        Assert.Equal(Math.Log2(1e308) - Math.Log2(1e-20), order);
+        Assert.InRange(order, 1089, 1090);
+    }
+
     private static TransientOptions Options(int steps, TransientMethod method) => new()
     {
         StopTime = 5 * Tau,

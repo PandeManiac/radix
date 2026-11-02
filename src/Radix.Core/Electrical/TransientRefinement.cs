@@ -131,7 +131,7 @@ public sealed record TransientRefinement(
 
             (IReadOnlyList<TransientNodeDeviation> nodes, double maximum) = Compare(coarse, fine);
             order = coarseDeviation > 0 && maximum > 0
-                ? Math.Log2(coarseDeviation / maximum)
+                ? CalculateObservedOrder(coarseDeviation, maximum)
                 : null;
             summaries.Add(new TransientRefinementLevel(steps, fine.TimeStep, maximum, order));
             coarse = fine;
@@ -161,6 +161,13 @@ public sealed record TransientRefinement(
             double.IsFinite(estimate) ? estimate : null,
             null);
     }
+
+    /// <summary>
+    /// Computes log2(coarse / fine) without forming the ratio, which can overflow
+    /// or underflow even when both positive deviations are finite.
+    /// </summary>
+    internal static double CalculateObservedOrder(double coarseDeviation, double fineDeviation) =>
+        Math.Log2(coarseDeviation) - Math.Log2(fineDeviation);
 
     private static (IReadOnlyList<TransientNodeDeviation> Nodes, double Maximum) Compare(
         TransientResult coarse,
