@@ -12,8 +12,8 @@ humans; update it at each milestone instead of relying on chat history.
   engineering-suffix entry for authored electrical values.
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
   tests 632/632, Editor tests 234/234, and the DC divider CLI example reports the
-  expected 5 V midpoint. GitHub CI has passed on Ubuntu for the latest feature
-  commit; Windows is still running.
+  expected 5 V midpoint. GitHub CI passed on Ubuntu and Windows for feature commit
+  `649444659bfd6d0d351217fa5aff3af4566c36a6`; the branch tip adds only this note.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
   but the tests pass when Ubuntu native packages are extracted under ignored
   `.local-native` and `LD_LIBRARY_PATH`/`FONTCONFIG_FILE` are set.
@@ -839,5 +839,5 @@ code failures; 199 Editor tests did pass in that run.
 Verification for this feature commit: Release solution build clean (0 warnings/0
 errors); focused Electrical editor tests 40/40; full Editor tests 234/234 and Core
 tests 632/632 passed after extracting the existing Ubuntu native test libraries into
-the ignored `.local-native` directory. Ubuntu CI passed; Windows CI was still running
-when this note was written. Feature commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
+the ignored `.local-native` directory. Ubuntu and Windows CI both passed. Feature
+commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
