@@ -178,6 +178,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientProbeInput = string.Empty;
     private string _electricalTransientRefineLevelsText = "3";
     private string _electricalTransientProbeText = string.Empty;
+    private string _electricalTransientComparisonText = string.Empty;
     private double? _electricalTransientProbeTime;
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
         new SortedDictionary<string, double>(StringComparer.Ordinal);
@@ -335,6 +336,8 @@ public sealed class EditorViewModel : ObservableObject
         CheckElectricalTransientAccuracyCommand =
             new RelayCommand(() => CheckElectricalTransientAccuracy());
         ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
+        CompareElectricalCapacitanceModelsCommand =
+            new RelayCommand(() => CompareElectricalCapacitanceModels());
         RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
         RunElectricalDcSweepCommand = new RelayCommand(() => RunElectricalDcSweep());
         RunElectricalAcSweepCommand = new RelayCommand(() => RunElectricalAcSweep());
@@ -1509,6 +1512,9 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ProbeElectricalTransientCommand { get; }
 
+    /// <summary>Plots the same circuit under both gate-charge models, one curve each.</summary>
+    public ICommand CompareElectricalCapacitanceModelsCommand { get; }
+
     public ICommand RunElectricalSweepCommand { get; }
 
     public ICommand RunElectricalDcSweepCommand { get; }
@@ -1686,6 +1692,16 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasElectricalSolveError;
         private set => SetField(ref _hasElectricalSolveError, value);
+    }
+
+    /// <summary>
+    /// What the model comparison measured, or empty until one is taken. Separate from the run
+    /// summary because the comparison replaces the plot without replacing the last run.
+    /// </summary>
+    public string ElectricalTransientComparisonText
+    {
+        get => _electricalTransientComparisonText;
+        private set => SetField(ref _electricalTransientComparisonText, value);
     }
 
     public string ElectricalTransientSummary
@@ -8721,6 +8737,139 @@ public sealed class EditorViewModel : ObservableObject
     /// Drops the transient preview. It describes the circuit as it was when the run
     /// started, so any edit invalidates it rather than leaving stale numbers on screen.
     /// </summary>
+    /// <summary>
+    /// Runs the selected circuit twice, once with every device holding its authored gate
+    /// capacitances and once with the bias-dependent model on, and plots the node the runs
+    /// disagree on most. The devices' authored flags are restored afterwards: this compares the
+    /// two models on one circuit, it does not change what the circuit says about itself.
+    /// </summary>
+    public bool CompareElectricalCapacitanceModels()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ElectricalTransientComparisonText = "Select an authored circuit to compare models.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(_electricalTransientStopText, out double stop) || stop <= 0)
+        {
+            ElectricalTransientComparisonText = "Comparison needs a positive stop time.";
+            return false;
+        }
+
+        if (!int.TryParse(
+                _electricalTransientStepsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            ElectricalTransientComparisonText = "Comparison needs 2 to 20000 steps.";
+            return false;
+        }
+
+        if (!TryParseElectricalTransientMethod(_electricalTransientMethodName, out TransientMethod method))
+        {
+            ElectricalTransientComparisonText =
+                "Comparison needs 'backward-euler' or 'trapezoidal'.";
+            return false;
+        }
+
+        var options = new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = stop,
+            Steps = steps,
+            Method = method,
+            // Both runs share the grid, so a point-by-point difference is meaningful.
+            MaximumStepCount = 100_000,
+        };
+
+        bool[] authored = [.. circuit.Components.Select(component => component.BiasDependentCapacitance)];
+        try
+        {
+            foreach (ElectricalComponent component in circuit.Components)
+            {
+                component.BiasDependentCapacitance = false;
+            }
+
+            TransientResult constant = circuit.ToTransientNetlist().Run(options);
+
+            foreach (ElectricalComponent component in circuit.Components
+                         .Where(component => component.Kind == ElectricalComponentKind.Mosfet))
+            {
+                component.BiasDependentCapacitance = true;
+            }
+
+            TransientResult biasDependent = circuit.ToTransientNetlist().Run(options);
+            ShowCapacitanceComparison(constant, biasDependent);
+            return true;
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            ElectricalTransientComparisonText =
+                $"Comparison blocked by {exception.Diagnostics.ErrorCount} structural error(s).";
+            return false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ElectricalTransientComparisonText = "Comparison failed: " + exception.Message;
+            return false;
+        }
+        finally
+        {
+            for (int index = 0; index < authored.Length; index++)
+            {
+                circuit.Components[index].BiasDependentCapacitance = authored[index];
+            }
+        }
+    }
+
+    private void ShowCapacitanceComparison(TransientResult constant, TransientResult biasDependent)
+    {
+        string[] nodes = [.. constant.Points
+            .SelectMany(point => point.NodeVoltages.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+
+        string node = nodes[0];
+        double largest = -1;
+        double largestTime = 0;
+        int shared = Math.Min(constant.Points.Count, biasDependent.Points.Count);
+        for (int index = 0; index < shared; index++)
+        {
+            foreach (string candidate in nodes)
+            {
+                double difference = Math.Abs(
+                    constant.Points[index].NodeVoltages[candidate] -
+                    biasDependent.Points[index].NodeVoltages[candidate]);
+                if (difference > largest)
+                {
+                    largest = difference;
+                    node = candidate;
+                    largestTime = constant.Points[index].Time;
+                }
+            }
+        }
+
+        ElectricalTransientPlot = TransientPlot.Create(
+        [
+            new TransientPlotSeries(
+                $"{node} · authored C",
+                [.. constant.Points.Select(point => new TransientPlotPoint(
+                    point.Time, point.NodeVoltages[node]))],
+                0),
+            new TransientPlotSeries(
+                $"{node} · bias-dependent C",
+                [.. biasDependent.Points.Select(point => new TransientPlotPoint(
+                    point.Time, point.NodeVoltages[node]))],
+                1),
+        ]);
+        ElectricalTransientComparisonText =
+            $"'{node}' separates the two models most: {largest:0.###} V apart at {largestTime:E3} s.";
+    }
+
     private void ClearElectricalTransientResult()
     {
         ElectricalTransientResults.Clear();

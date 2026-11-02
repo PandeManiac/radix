@@ -1326,6 +1326,10 @@
                     <Button x:Name="ElectricalTransientButton" Content="Run transient" Command="{Binding RunElectricalTransientCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Integrate the selected circuit in time with the same solver used by radix transient" />
                     <TextBlock Grid.Column="1" Text="{Binding ElectricalTransientSummary}" Classes="diag" Classes.error="{Binding HasElectricalTransientError}" FontSize="9.5" TextWrapping="Wrap" VerticalAlignment="Center" />
                   </Grid>
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <Button Content="Compare C models" Command="{Binding CompareElectricalCapacitanceModelsCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Run this circuit with the authored gate capacitances and again with the bias-dependent model, then plot the node where the two runs differ most" />
+                    <TextBlock Grid.Column="1" Text="{Binding ElectricalTransientComparisonText}" Classes="muted" FontSize="9" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </Grid>
                   <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
                     <TextBlock Text="Probe at (s)" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
                     <TextBox Grid.Column="1" Text="{Binding ElectricalTransientProbeInput, Mode=TwoWay}" Width="84" FontSize="9.5" Watermark="time in s" ToolTip.Tip="Time in seconds; SI suffixes p, n, u, m, k, M, and G are supported; values at a non-solved time are interpolated between the bracketing points" />
