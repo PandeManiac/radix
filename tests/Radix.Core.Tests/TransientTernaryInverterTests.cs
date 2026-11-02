@@ -97,9 +97,11 @@ public sealed class TransientTernaryInverterTests
         // It is a middle level, not a rail, and it is approached from above rather than jumped to.
         double final = result.Points[^1].NodeVoltages["out"];
         Assert.True(final > 2.4 && final < 2.6, $"final {final}");
+        // It never falls below the level it is heading for, and it does not overshoot the rail by
+        // more than the gate-drain feedthrough lifts it (see the Miller test).
         Assert.All(
-            result.Points.Where(point => point.Time > StepEnd),
-            point => Assert.InRange(point.NodeVoltages["out"], final, 5));
+            result.Points.Where(point => point.Time > 40e-9),
+            point => Assert.InRange(point.NodeVoltages["out"], final, 5.01));
     }
 
     [Fact]
@@ -120,6 +122,30 @@ public sealed class TransientTernaryInverterTests
         Assert.True(
             gateThreshold.NodeVoltages["out"] > 4.99,
             $"output {gateThreshold.NodeVoltages["out"]} fell while the gate was still below threshold");
+    }
+
+    [Fact]
+    public void GateDrainCapacitanceFeedsTheGateTransitionIntoTheDrain()
+    {
+        // A rising gate pulls its own drain up through Cgd before the channel conducts, so the drain
+        // node visits a voltage above the rail. Without the feedback it cannot: the difference is a
+        // measurement of the Miller path rather than a claim that the parameter is stored.
+        TransientResult coupled = Run(stopSeconds: 900e-9);
+        double peak = coupled.Points.Max(point => point.NodeVoltages["out_low"]);
+        Assert.True(peak > 5.01, $"out_low peaked at {peak} V");
+
+        ElectricalCircuit without = Load();
+        foreach (string id in new[] { "MPL", "MNL", "MPH", "MNH" })
+        {
+            without.FindComponent(id)!.GateDrainCapacitance = 0;
+        }
+
+        TransientResult plain = Run(without, 900e-9);
+        Assert.All(
+            plain.Points,
+            point => Assert.True(
+                point.NodeVoltages["out_low"] <= 5 + 1e-9,
+                $"out_low reached {point.NodeVoltages["out_low"]} V at {point.Time} s without feedback"));
     }
 
     [Fact]

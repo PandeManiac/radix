@@ -450,23 +450,29 @@ the summing node. Two time constants are therefore in the path, and both are clo
 radix transient examples/transient-ternary-inverter.radix --stop 600e-9 --steps 600
 ```
 
-| `t` | 0 | 26 ns | 28 ns | 600 ns |
-| --- | --- | --- | --- | --- |
-| `g` | 0 | 1.0 | 1.25 | 2.5 |
-| `out` | 5 | 5 | 4.99 | 2.5086 |
+| `t` | 0 | 26 ns | 900 ns |
+| --- | --- | --- | --- |
+| `g` | 0 | 1.0 | 2.5 |
+| `out` | 5 | 5.004 | 2.5005 |
 
 The gate bus must be charged before anything can happen: 10 kΩ into the four 0.25 pF gates is
-1 pF, so the bus reaches the 1 V threshold at 26 ns and half of the drive at 28 ns, and the output
-only begins to fall there. The summing node then decays with its own constant, measured between the
-50 % and 90 % crossings so the gate delay cancels out: about 100 ns, against the closed form
-`(R/2) C = 50 kΩ × 2 pF`. The 2 % band is reached at 406 ns, the gates having settled at 61 ns.
+1 pF, so the bus reaches the 1 V threshold at 26 ns and half of the drive at 29 ns. The summing node
+then decays with its own constant, measured between the 50 % and 90 % crossings so the gate delay
+cancels out: about 100 ns, against the closed form `(R/2) C = 50 kΩ × 2 pF`. The 2 % band is reached
+at 424 ns, the gates having settled at 66 ns.
+
+Each device also has 0.02 pF from gate to drain, and that feedback is visible rather than decorative:
+while the bus climbs it drags the drain nodes up with it before any channel conducts, so `out_low`
+peaks at **5.149 V** — 149 mV above its own supply rail — and the output gets a 4 mV bump before it
+falls. Removing the gate-drain capacitance removes the overshoot entirely, which is what the test
+compares, so the effect measures the feedback path instead of the step size.
 
 Six hundred nanoseconds is inside the band but not converged: the output is still 8 mV above its
 destination there. A 3 µs run arrives at **2.5000 V**, which is exactly what a DC solve reports for
 `VIN = 2.5 V`. The transient run reaches the static answer instead of being handed it, and the test
 asserts that agreement rather than a literal. Doubling the load capacitance doubles the measured
 constant, so the decay belongs to the network rather than to the integrator. The energy ledger
-closes to 1.8 × 10⁻³ of the energy delivered, larger than the load-only case because gate charge is
+closes to 2.1 × 10⁻³ of the energy delivered, larger than the load-only case because gate charge is
 now part of what is delivered and stored.
 
 **Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,

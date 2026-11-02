@@ -25,7 +25,7 @@
     {
       "id": "ternary-switch",
       "name": "Ternary inverter, 0 V to mid-rail",
-      "description": "The dual-threshold ternary inverter driven from 0 V to 2.5 V: the output leaves the 5 V rail and settles on the middle level. Two time constants are in the path: the drive must first charge 1 pF of gate capacitance through the 10 kOhm gate resistor, then the summing node charges its 2 pF load through the 50 kOhm Thevenin resistance.",
+      "description": "The dual-threshold ternary inverter driven from 0 V to 2.5 V: the output leaves the 5 V rail and settles on the middle level. Two time constants are in the path: the drive must first charge the gate bus through the 10 kOhm gate resistor, then the summing node charges its 2 pF load through the 50 kOhm Thevenin resistance. Each device also has 0.02 pF from gate to drain, so a moving output feeds back into the gate bus through that path.",
       "ground": "gnd",
       "nodes": [
         { "id": "gnd", "name": "Ground" },
@@ -81,6 +81,7 @@
           "thresholdVoltage": 1,
           "channelLengthModulation": 0.02,
           "gateSourceCapacitance": 0.25e-12,
+          "gateDrainCapacitance": 0.02e-12,
           "terminals": [
             { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_low" },
             { "id": "gate", "name": "Gate", "polarity": "passive", "node": "g" },
@@ -96,6 +97,7 @@
           "thresholdVoltage": 1,
           "channelLengthModulation": 0.02,
           "gateSourceCapacitance": 0.25e-12,
+          "gateDrainCapacitance": 0.02e-12,
           "terminals": [
             { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_low" },
             { "id": "gate", "name": "Gate", "polarity": "passive", "node": "g" },
@@ -111,6 +113,7 @@
           "thresholdVoltage": 1,
           "channelLengthModulation": 0.02,
           "gateSourceCapacitance": 0.25e-12,
+          "gateDrainCapacitance": 0.02e-12,
           "terminals": [
             { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_high" },
             { "id": "gate", "name": "Gate", "polarity": "passive", "node": "g" },
@@ -126,6 +129,7 @@
           "thresholdVoltage": 1,
           "channelLengthModulation": 0.02,
           "gateSourceCapacitance": 0.25e-12,
+          "gateDrainCapacitance": 0.02e-12,
           "terminals": [
             { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_high" },
             { "id": "gate", "name": "Gate", "polarity": "passive", "node": "g" },
