@@ -95,25 +95,31 @@ public sealed class TransientEnergyTests
     }
 
     [Fact]
-    public void StoredEnergyDoesNotLoseSmallCapacitanceBeforeSquaringVoltage()
+    public void UnrepresentableStoredEnergyFailsTheTransientReport()
     {
-        // 0.5 * C * V^2 is 2.5e-16 J. Halving the minimum-subnormal
-        // capacitance first rounds it to zero, even though the final energy is
-        // representable.
+        // Each capacitor stores about 9.8e307 J, but the combined stored energy
+        // exceeds double.MaxValue. The transient points are finite; the derived
+        // energy report must not claim a successful analysis with an infinite total.
         TransientNetlist netlist = new TransientNetlist("gnd")
-            .AddCapacitor("C1", "out", "gnd", 1e-323)
-            .SetCapacitorInitialVoltage("C1", 1e154);
+            .AddCapacitor("C1", "out1", "gnd", 1e308)
+            .AddCapacitor("C2", "out2", "gnd", 1e308)
+            .SetCapacitorInitialVoltage("C1", 1.4)
+            .SetCapacitorInitialVoltage("C2", 1.4);
 
         TransientResult result = netlist.Run(new TransientOptions
         {
-            StopTime = 1e-3,
+            StopTime = 10,
             Steps = 1,
         });
 
-        Assert.True(result.Completed, result.Message);
-        TransientEnergyBalance energy = Assert.IsType<TransientEnergyBalance>(result.Energy);
-        Assert.True(double.IsFinite(energy.FinalStoredJoules));
-        AssertClose(5e-16, energy.FinalStoredJoules, 1e-15);
+        Assert.False(result.Completed);
+        Assert.Equal(DcSolveFailure.NonFiniteResult, result.Failure);
+        Assert.Contains("energy", result.Message!, StringComparison.OrdinalIgnoreCase);
+        Assert.All(result.Points, point =>
+        {
+            Assert.All(point.NodeVoltages.Values, value => Assert.True(double.IsFinite(value)));
+            Assert.All(point.ElementPowers.Values, value => Assert.True(double.IsFinite(value)));
+        });
     }
 
     [Fact]

@@ -914,9 +914,19 @@ public sealed class TransientNetlist
         TransientResult result = options.IsAdaptive
             ? RunAdaptive(options, state, points)
             : RunFixed(options, state, points);
+        TransientEnergyBalance? energy = MeasureEnergy(result.Points);
+        if (result.Completed && energy is not null && !IsFinite(energy))
+        {
+            result = result with
+            {
+                Failure = DcSolveFailure.NonFiniteResult,
+                Message = "Transient energy accounting produced a non-finite result; the total energy exceeds the numeric range.",
+            };
+        }
+
         return result with
         {
-            Energy = MeasureEnergy(result.Points),
+            Energy = energy,
             Metrics = MeasureMetrics(options, result.Points),
             Notes = notes,
             NetlistFingerprint = Fingerprint(),
@@ -1604,6 +1614,13 @@ public sealed class TransientNetlist
             ? sum / 2
             : (left / 2) + (right / 2);
     }
+
+    private static bool IsFinite(TransientEnergyBalance energy) =>
+        double.IsFinite(energy.DeliveredJoules) &&
+        double.IsFinite(energy.DissipatedJoules) &&
+        double.IsFinite(energy.StoredChangeJoules) &&
+        double.IsFinite(energy.FinalStoredJoules) &&
+        double.IsFinite(energy.ResidualJoules);
 
     /// <summary>
     /// Builds the per-node summary. Minima and maxima come from the same reported points

@@ -1225,8 +1225,17 @@ summary and full local verification results; see the PR for the latest CI state.
      the divider CLI returns the expected 5 V midpoint. The new non-finite-power
      regression and all prior Core coverage pass.
 
-134. WIP: added a transient-energy regression for a 1e-323 F capacitor at
-     1e154 V. Its stored energy (5e-16 J) is representable, but the current
-     `0.5 * C * V * V` evaluation halves capacitance first and rounds that
-     intermediate to zero. Focused execution, a scale-safe calculation, and
-     broader verification are pending.
+134. WIP: the first suspected stored-energy intermediate-underflow case was
+     invalid because capacitor values must have a finite reciprocal; the new
+     focused run confirmed that guard. Replaced it with a valid case containing
+     two capacitors that each store about 9.8e307 J. Their combined transient
+     energy is unrepresentable although all solved node values and element powers
+     are finite. The current expected-failure regression and explicit ledger
+     validation are pending.
+
+135. Made completed transient runs fail with `DcSolveFailure.NonFiniteResult`
+     when their derived energy ledger contains a non-finite delivered, dissipated,
+     stored, final, or residual value. The regression verifies finite reported
+     node voltages and element powers while rejecting the overflowing stored-energy
+     total. All nine focused `TransientEnergyTests` pass; broader verification is
+     pending.
