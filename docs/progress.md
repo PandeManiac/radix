@@ -1245,3 +1245,10 @@ summary and full local verification results; see the PR for the latest CI state.
      242/242 with `.local-native`. The transient RC CLI report completed 63 points
      with a finite energy ledger; the DC divider CLI report returned its expected
      5 V midpoint. The energy-overflow regression and all prior Core coverage pass.
+
+137. WIP: extended the stored-energy-overflow regression through report JSON.
+     The result now intentionally exposes `NonFiniteResult`, but retaining an
+     infinite energy ledger causes `TransientNetlistJson.ToReportJson` to reject
+     the report because JSON has no infinity value. Focused execution and omitting
+     the invalid ledger while preserving failure details and solved points remain
+     pending.

@@ -120,6 +120,13 @@ public sealed class TransientEnergyTests
             Assert.All(point.NodeVoltages.Values, value => Assert.True(double.IsFinite(value)));
             Assert.All(point.ElementPowers.Values, value => Assert.True(double.IsFinite(value)));
         });
+
+        using JsonDocument report = JsonDocument.Parse(
+            TransientNetlistJson.ToReportJson("test", netlist, result));
+        Assert.Null(result.Energy);
+        Assert.False(report.RootElement.GetProperty("completed").GetBoolean());
+        Assert.Equal("non-finite-result", report.RootElement.GetProperty("failure").GetString());
+        Assert.False(report.RootElement.TryGetProperty("energy", out _));
     }
 
     [Fact]
