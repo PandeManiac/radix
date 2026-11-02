@@ -6685,6 +6685,12 @@ public sealed class EditorViewModel : ObservableObject
                         hint: "Cds in farads, the device's own load on its output; 0 leaves the output speed to the circuit around it",
                         apply: value => SetElectricalComponentCapacitance(
                             circuit.Id, component.Id, value, DeviceCapacitance.DrainSource)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Bias-dependent C",
+                        component.BiasDependentCapacitance ? "yes" : "no",
+                        hint: "yes re-evaluates the gate capacitances from each step's region - two thirds of cgs and no cgd in saturation - instead of holding the authored values for the whole run",
+                        apply: value => SetElectricalComponentBiasDependentCapacitance(
+                            circuit.Id, component.Id, value)));
                 }
             }
         }
@@ -7903,6 +7909,50 @@ public sealed class EditorViewModel : ObservableObject
         TransientNetlist biased = netlist.Clone().WithElementValue(id, volts);
         biased.SetWaveform(id, [new TransientWaveformPoint(0, volts)]);
         biasedNetlist = biased;
+        return true;
+    }
+
+    /// <summary>
+    /// Turns the bias-dependent capacitance model on or off for a device, from the inspector's
+    /// yes/no field. The solver applies it per circuit, which the field's hint says.
+    /// </summary>
+    private bool SetElectricalComponentBiasDependentCapacitance(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        ElectricalComponent? component = circuit?.FindComponent(componentId);
+        if (circuit is null || component is null)
+        {
+            StatusText = $"No component '{componentId}' to edit.";
+            return false;
+        }
+
+        bool? enabled = value?.Trim().ToLowerInvariant() switch
+        {
+            "yes" or "true" or "on" or "1" => true,
+            "no" or "false" or "off" or "0" or "" => false,
+            _ => null,
+        };
+
+        if (enabled is not bool biasDependent)
+        {
+            StatusText = "Bias-dependent capacitance takes yes or no.";
+            return false;
+        }
+
+        if (component.BiasDependentCapacitance == biasDependent)
+        {
+            return true;
+        }
+
+        PushUndo();
+        component.BiasDependentCapacitance = biasDependent;
+        AfterElectricalMutation(
+            biasDependent
+                ? $"'{componentId}' follows its bias for gate capacitance"
+                : $"'{componentId}' holds its authored gate capacitance");
         return true;
     }
 

@@ -247,6 +247,15 @@ public sealed class ElectricalComponent
     public double DrainSourceCapacitance { get; set; }
 
     /// <summary>
+    /// Whether this device's gate capacitances follow the bias it is solved at, rather than staying
+    /// at their authored values for the whole run. The solver applies the setting to the whole
+    /// netlist, so enabling it on any device of a circuit makes that circuit's run bias-dependent;
+    /// keeping it per device records which device asked for it rather than pretending the model is
+    /// mixed within one solve.
+    /// </summary>
+    public bool BiasDependentCapacitance { get; set; }
+
+    /// <summary>
     /// Optional piecewise-linear drive for an independent source, in the source's unit.
     /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
     /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
@@ -410,6 +419,15 @@ public sealed class ElectricalCircuit
                         component.GateSourceCapacitance,
                         component.GateDrainCapacitance,
                         component.DrainSourceCapacitance);
+
+                    // The solver re-evaluates device capacitances per netlist, so one device asking
+                    // for the bias-dependent model makes the run use it. Asking on a device with no
+                    // capacitance changes nothing, because there is no element to re-evaluate.
+                    if (component.BiasDependentCapacitance)
+                    {
+                        netlist.UseBiasDependentCapacitance();
+                    }
+
                     break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
