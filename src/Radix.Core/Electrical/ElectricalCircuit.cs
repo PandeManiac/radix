@@ -218,6 +218,14 @@ public sealed class ElectricalComponent
     public double ThresholdVoltage { get; set; } = 1;
 
     /// <summary>
+    /// MOSFET channel-length modulation after SPICE's <c>lambda</c>, in 1/V. Zero, the default,
+    /// means the saturation current does not depend on the drain voltage. Meaningful only for
+    /// <see cref="ElectricalComponentKind.Mosfet"/>; other kinds ignore it and the serializer
+    /// does not store it for them.
+    /// </summary>
+    public double ChannelLengthModulation { get; set; }
+
+    /// <summary>
     /// Optional piecewise-linear drive for an independent source, in the source's unit.
     /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
     /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
@@ -304,7 +312,8 @@ public sealed class ElectricalCircuit
                         nodeB,
                         component.Channel,
                         component.ThresholdVoltage,
-                        component.Value);
+                        component.Value,
+                        component.ChannelLengthModulation);
                     break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
@@ -373,7 +382,8 @@ public sealed class ElectricalCircuit
                         nodeB,
                         component.Channel,
                         component.ThresholdVoltage,
-                        component.Value);
+                        component.Value,
+                        component.ChannelLengthModulation);
                     break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
@@ -513,6 +523,15 @@ public static class ElectricalCircuitValidator
                     diagnostics.Error(
                         "RAD-ELEC-022",
                         $"Component '{component.Id}' has an invalid MOSFET channel '{component.Channel}'.",
+                        path: path);
+                }
+
+                if (!double.IsFinite(component.ChannelLengthModulation) ||
+                    component.ChannelLengthModulation < 0)
+                {
+                    diagnostics.Error(
+                        "RAD-ELEC-023",
+                        $"Component '{component.Id}' has an invalid channel-length modulation; lambda must be a finite, non-negative number of 1/V.",
                         path: path);
                 }
             }

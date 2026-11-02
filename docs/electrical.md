@@ -393,7 +393,8 @@ The full curve, rather than the three sampled points, is what the design is judg
 
 - **Middle plateau.** Every input from 1.5 V to 3.5 V resolves within 100 mV of 2.5 V, a
   2 V wide input band, so the intermediate state is not a knife edge. Over that band the
-  output stays within ±0.05 V of 2.5 V.
+  output stays within 60 mV of 2.5 V, the worst samples being the endpoints themselves
+  (2.55006 V at 1.5 V and 2.44994 V at 3.5 V).
 - **Shoulders.** The transitions are the two inverters' own crossings, so the curve is
   monotone and crosses 2.5 V only once from either side. Between 1.25 V and 1.5 V the output
   moves from 4.19 V to 2.55 V, and between 3.5 V and 3.75 V from 2.45 V to 0.81 V.
@@ -417,13 +418,13 @@ The full curve, rather than the three sampled points, is what the design is judg
   produced by a solved electrical network; it is not a manufacturable ternary gate.
 
 The same topology ships as an authored project asset,
-`examples/dc-ternary-inverter.radix` (format v11), so the design opens in the Electrical
-inspector instead of living only in a netlist file. Authored components carry a
-transconductance, a channel and a threshold but no `lambda`, so its curve is the
-`lambda = 0` case of the table above: 0 V → 5 V, 2.5 V → 2.5 V, 5 V → 56 nV, with
-4.2395 V at 1.25 V and 2.547 V at 1.5 V. The middle plateau still holds 2.5 ± 0.05 V
-across 1.5–3.5 V, and the example test asserts those levels, so the shipped asset and
-the measured claims cannot drift apart.
+`examples/dc-ternary-inverter.radix` (format v12), so the design opens in the Electrical
+inspector instead of living only in a netlist file. Authored MOSFETs carry a
+transconductance, a channel, a threshold and `channelLengthModulation`, so with the
+example's `lambda = 0.02 1/V` the authored circuit reproduces the netlist table above
+exactly: 4.1933 V at 1.25 V, 2.55006 V at 1.5 V, 2.5 V at 2.5 V, 0.806701 V at 3.75 V.
+The example test solves both files and compares them to twelve decimal places, so the two
+shipped forms of the same design cannot drift apart.
 
 ## Transient analysis
 
@@ -881,7 +882,7 @@ reports it as `energy` with `deliveredJoules`, `dissipatedJoules`,
 
 ## Authored electrical circuits
 
-Projects may contain one or more `electricalCircuits` (project format v11; older
+Projects may contain one or more `electricalCircuits` (project format v12; older
 versions load unchanged). Each
 circuit owns its own nodes and components:
 

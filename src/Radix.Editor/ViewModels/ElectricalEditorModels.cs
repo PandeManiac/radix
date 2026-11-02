@@ -246,7 +246,12 @@ public sealed class ElectricalComponentListItem
         ValueText = FormatValue(component.Value);
         Unit = component.Unit;
         Summary = ElectricalComponentMetadata.IsMosfet(component.Kind)
-            ? $"{KindLabel} · {ElectricalComponentMetadata.ChannelName(component.Channel)}-channel · Vt {FormatValue(component.ThresholdVoltage)} V · {ValueText} {Unit}"
+            ? $"{KindLabel} · {ElectricalComponentMetadata.ChannelName(component.Channel)}-channel · " +
+              $"Vt {FormatValue(component.ThresholdVoltage)} V" +
+              (component.ChannelLengthModulation == 0
+                  ? string.Empty
+                  : $" · lambda {FormatValue(component.ChannelLengthModulation)} 1/V") +
+              $" · {ValueText} {Unit}"
             : $"{KindLabel} · {ValueText} {Unit}";
     }
 

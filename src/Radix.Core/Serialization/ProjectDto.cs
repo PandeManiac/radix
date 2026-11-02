@@ -66,6 +66,12 @@ internal sealed class ElectricalComponentDto
     /// <summary>MOSFET threshold voltage magnitude in volts. Stored only for a mosfet.</summary>
     public double? ThresholdVoltage { get; set; }
 
+    /// <summary>
+    /// MOSFET channel-length modulation <c>lambda</c> in 1/V; omitted means zero. Stored only for
+    /// a mosfet.
+    /// </summary>
+    public double? ChannelLengthModulation { get; set; }
+
     public List<ElectricalWaveformPointDto>? Waveform { get; set; }
 
     public List<ElectricalTerminalDto>? Terminals { get; set; }

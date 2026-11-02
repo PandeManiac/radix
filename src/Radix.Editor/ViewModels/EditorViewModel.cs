@@ -6409,6 +6409,11 @@ public sealed class EditorViewModel : ObservableObject
                         FormatElectricalValue(component.ThresholdVoltage),
                         hint: "Threshold voltage magnitude in volts; a negative value is a depletion device; SI suffixes p, n, u, m, k, M, and G are supported",
                         apply: value => SetElectricalComponentThresholdVoltage(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Channel-length modulation (1/V)",
+                        FormatElectricalValue(component.ChannelLengthModulation),
+                        hint: "SPICE lambda in 1/V; 0 means the saturation current does not depend on the drain voltage",
+                        apply: value => SetElectricalComponentChannelLengthModulation(circuit.Id, component.Id, value)));
                 }
             }
         }
@@ -7957,6 +7962,37 @@ public sealed class EditorViewModel : ObservableObject
         component.ThresholdVoltage = parsed;
         AfterElectricalMutation(
             $"Updated '{component.Id}' threshold to {FormatElectricalValue(parsed)} V");
+        return true;
+    }
+
+    private bool SetElectricalComponentChannelLengthModulation(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        // A negative or non-finite lambda would make the model's gain fall with drain voltage in
+        // a direction no device has, so it is refused rather than solved.
+        if (!TryParseEngineeringValue(value, out double parsed) || parsed < 0)
+        {
+            StatusText = "Channel-length modulation must be a finite, non-negative number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+            return false;
+        }
+
+        if (Math.Abs(component.ChannelLengthModulation - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.ChannelLengthModulation = parsed;
+        AfterElectricalMutation(
+            $"Updated '{component.Id}' channel-length modulation to {FormatElectricalValue(parsed)} 1/V");
         return true;
     }
 

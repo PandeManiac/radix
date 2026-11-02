@@ -286,10 +286,12 @@ public static class ProjectSerializer
         string id = dto.Id ?? throw new ProjectFormatException($"Electrical circuit '{circuitId}' has a component without 'id'.");
         ElectricalComponentKind kind = ParseElectricalKind(dto.Kind, circuitId, id);
         bool isMosfet = ElectricalComponentMetadata.IsMosfet(kind);
-        if (!isMosfet && (dto.Channel is not null || dto.ThresholdVoltage is not null))
+        if (!isMosfet && (dto.Channel is not null ||
+            dto.ThresholdVoltage is not null ||
+            dto.ChannelLengthModulation is not null))
         {
             throw new ProjectFormatException(
-                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel' or 'thresholdVoltage'; those belong to a mosfet.");
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage' or 'channelLengthModulation'; those belong to a mosfet.");
         }
 
         if (isMosfet && dto.ThresholdVoltage is null)
@@ -321,6 +323,7 @@ public static class ProjectSerializer
             InitialValue = dto.InitialValue,
             Channel = channel,
             ThresholdVoltage = dto.ThresholdVoltage ?? 1,
+            ChannelLengthModulation = dto.ChannelLengthModulation ?? 0,
         };
 
         foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
@@ -711,6 +714,9 @@ public static class ProjectSerializer
                 : null,
             ThresholdVoltage = ElectricalComponentMetadata.IsMosfet(component.Kind)
                 ? component.ThresholdVoltage
+                : null,
+            ChannelLengthModulation = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.ChannelLengthModulation
                 : null,
             Waveform = component.Waveform.Count == 0
                 ? null

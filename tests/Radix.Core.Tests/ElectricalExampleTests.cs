@@ -69,11 +69,23 @@ public sealed class ElectricalExampleTests
         Assert.Equal(2.5, Output(netlist, "VIN", 2.5), 3);
         Assert.True(Output(netlist, "VIN", 5) < 1e-6, Output(netlist, "VIN", 5).ToString());
 
-        // Every input from 1.5 V to 3.5 V stays within 50 mV of the middle rail, so the
-        // intermediate level is a plateau rather than a knife edge.
+        // The authored asset and the netlist example describe the same design, so now that an
+        // authored MOSFET carries its channel-length modulation too, they must agree exactly.
+        DcNetlist netlistTwin = DcNetlistJson.Load(ExamplePath("dc-ternary-inverter.json"));
+        foreach (double volts in new[] { 0d, 1.25, 2.5, 3.75, 5 })
+        {
+            Assert.Equal(
+                Output(netlistTwin, "VIN", volts),
+                Output(netlist, "VIN", volts),
+                12);
+        }
+
+        // Every input from 1.5 V to 3.5 V stays within 60 mV of the middle rail, the worst
+        // samples being the endpoints (2.55006 V and 2.44994 V), so the intermediate level
+        // is a plateau rather than a knife edge.
         foreach (double volts in new[] { 1.5, 2.0, 2.5, 3.0, 3.5 })
         {
-            Assert.InRange(Output(netlist, "VIN", volts), 2.45, 2.55);
+            Assert.InRange(Output(netlist, "VIN", volts), 2.44, 2.56);
         }
     }
 

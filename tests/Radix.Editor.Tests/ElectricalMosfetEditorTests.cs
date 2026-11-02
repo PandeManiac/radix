@@ -91,6 +91,20 @@ public sealed class ElectricalMosfetEditorTests
         gain.Value = "2m";
         Assert.True(viewModel.ApplyField(gain));
         Assert.Equal(2e-3, component.Value, 12);
+
+        EditableField lambda = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Channel-length modulation (1/V)");
+        lambda.Value = "0.02";
+        Assert.True(viewModel.ApplyField(lambda));
+        Assert.Equal(0.02, component.ChannelLengthModulation, 12);
+
+        // A negative lambda would model a device whose saturation current falls as its drain
+        // voltage rises above the source, which no transistor does, so the field refuses it.
+        EditableField rejectedLambda = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Channel-length modulation (1/V)");
+        rejectedLambda.Value = "-0.5";
+        Assert.False(viewModel.ApplyField(rejectedLambda));
+        Assert.Equal(0.02, component.ChannelLengthModulation, 12);
     }
 
     [Fact]
@@ -187,6 +201,10 @@ public sealed class ElectricalMosfetEditorTests
             .Single(field => field.Label == "Threshold voltage (V)");
         threshold.Value = "1.4";
         Assert.True(viewModel.ApplyField(threshold));
+        EditableField lambda = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Channel-length modulation (1/V)");
+        lambda.Value = "0.02";
+        Assert.True(viewModel.ApplyField(lambda));
 
         string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
         try
@@ -197,6 +215,7 @@ public sealed class ElectricalMosfetEditorTests
             Assert.Equal(ElectricalComponentKind.Mosfet, mosfet.Kind);
             Assert.Equal(DcMosfetChannel.PChannel, mosfet.Channel);
             Assert.Equal(1.4, mosfet.ThresholdVoltage);
+            Assert.Equal(0.02, mosfet.ChannelLengthModulation, 12);
             Assert.Equal(1e-3, mosfet.Value, 12);
             Assert.Equal(3, mosfet.Terminals.Count);
             Assert.False(ElectricalCircuitValidator.Validate(reloaded.ElectricalCircuits[0]).HasErrors);
