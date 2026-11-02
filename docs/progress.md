@@ -29,6 +29,18 @@ humans; update it at each milestone instead of relying on chat history.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
 
+## Session 2026-11-02 (bounded electrical hierarchy)
+
+- Electrical validation now enforces a maximum of 64 nested subcircuit edges, matching
+  the digital compiler's bound. A deeper reference reports `RAD-ELEC-045` before
+  expansion, so a malformed project cannot exhaust the call stack during validation
+  or netlist construction.
+- Added boundary regressions for a 64-edge hierarchy that validates, expands, and
+  solves to 10/3 V, and a 65-edge hierarchy that is rejected before `ToDcNetlist`.
+- Verification: Release build clean (0 warnings/errors); focused
+  `ElectricalHierarchyTests` 18/18. Full Core/CLI/Editor suite pending at this
+  checkpoint.
+
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 
 - The Electrical tab's solved NODES table now includes unported internal nodes from

@@ -441,7 +441,8 @@ to that instance. A referenced circuit must expose at least one port
 (`RAD-ELEC-030`) and must expose its ground node as a port (`RAD-ELEC-031`); a subcircuit
 has no implicit global ground. References must resolve (`RAD-ELEC-029`), cannot form a cycle
 (`RAD-ELEC-033`), and each instance must carry exactly the referenced ports with no extra or
-missing terminal (`RAD-ELEC-032`). A `value` is omitted on a subcircuit; device fields such as
+missing terminal (`RAD-ELEC-032`). A hierarchy may nest at most 64 subcircuit edges; a deeper
+reference reports `RAD-ELEC-045`. A `value` is omitted on a subcircuit; device fields such as
 `channel` also belong only to a mosfet.
 
 A subcircuit instance may replace the primary value of a direct child component with

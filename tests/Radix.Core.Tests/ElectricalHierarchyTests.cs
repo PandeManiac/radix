@@ -177,6 +177,39 @@ public sealed class ElectricalHierarchyTests
     }
 
     [Fact]
+    public void HierarchyAtMaximumDepthValidatesAndSolves()
+    {
+        (ElectricalCircuit root, ElectricalCircuit[] circuits) = CreateHierarchyChain(
+            ElectricalCircuitValidator.MaxHierarchyDepth);
+
+        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(root, Resolve(circuits));
+        Assert.False(diagnostics.HasErrors);
+
+        DcNetlist netlist = root.ToDcNetlist(Resolve(circuits));
+        DcSolution solution = netlist.Solve();
+        string prefix = string.Concat(Enumerable.Repeat(
+            "X1/",
+            ElectricalCircuitValidator.MaxHierarchyDepth));
+
+        Assert.Contains(prefix + "mid", netlist.Nodes);
+        Assert.Equal(10.0 / 3.0, solution.NodeVoltages["out"], 12);
+        Assert.Equal(0, solution.ElementPowers.Values.Sum(), 9);
+    }
+
+    [Fact]
+    public void HierarchyBeyondMaximumDepthIsRejectedBeforeExpansion()
+    {
+        (ElectricalCircuit root, ElectricalCircuit[] circuits) = CreateHierarchyChain(
+            ElectricalCircuitValidator.MaxHierarchyDepth + 1);
+
+        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(root, Resolve(circuits));
+
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "RAD-ELEC-045");
+        Assert.Throws<ElectricalCircuitValidationException>(
+            () => root.ToDcNetlist(Resolve(circuits)));
+    }
+
+    [Fact]
     public void SubcircuitTransientRunMatchesTheFlatRcClosedForm()
     {
         var child = new ElectricalCircuit
@@ -526,6 +559,26 @@ public sealed class ElectricalHierarchyTests
         circuit.Ports.Add(new ElectricalPort { Id = "gnd", Name = "Ground", NodeId = "gnd" });
         circuit.Components.Add(Subcircuit("X1", child, "in", "out", "gnd"));
         return circuit;
+    }
+
+    private static (ElectricalCircuit Root, ElectricalCircuit[] Circuits) CreateHierarchyChain(
+        int depth)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(depth, 1);
+
+        ElectricalCircuit leaf = CreateDividerChild();
+        var circuits = new List<ElectricalCircuit> { leaf };
+        ElectricalCircuit child = leaf;
+        for (int level = depth - 1; level >= 0; level--)
+        {
+            ElectricalCircuit wrapper = CreateWrapper($"level{level}", child);
+            circuits.Add(wrapper);
+            child = wrapper;
+        }
+
+        ElectricalCircuit root = child;
+        root.Components.Add(VoltageSource("V1", "in", "gnd", 10));
+        return (root, circuits.ToArray());
     }
 
     private static ElectricalCircuit CreateCycleCircuit(string id, string childId)

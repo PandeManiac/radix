@@ -495,6 +495,13 @@ public sealed class ElectricalCircuitValidationException : Exception
 /// </summary>
 public static class ElectricalCircuitValidator
 {
+    /// <summary>
+    /// Maximum number of nested subcircuit edges below one authored circuit. The digital
+    /// compiler uses the same bound; electrical hierarchy needs an explicit limit so a
+    /// pathological project produces a diagnostic instead of exhausting the call stack.
+    /// </summary>
+    public const int MaxHierarchyDepth = 64;
+
     public static DiagnosticBag Validate(ElectricalCircuit circuit) => Validate(circuit, null);
 
     /// <summary>
@@ -525,7 +532,7 @@ public static class ElectricalCircuitValidator
 
         var validated = new HashSet<string>(StringComparer.Ordinal) { circuit.Id };
         var stack = new HashSet<string>(StringComparer.Ordinal) { circuit.Id };
-        ValidateHierarchy(circuit, resolve, diagnostics, validated, stack);
+        ValidateHierarchy(circuit, resolve, diagnostics, validated, stack, depth: 0);
         return diagnostics;
     }
 
@@ -933,7 +940,8 @@ public static class ElectricalCircuitValidator
         Func<string, ElectricalCircuit?> resolve,
         DiagnosticBag diagnostics,
         HashSet<string> validated,
-        HashSet<string> stack)
+        HashSet<string> stack,
+        int depth)
     {
         foreach (ElectricalComponent component in circuit.Components)
         {
@@ -971,6 +979,15 @@ public static class ElectricalCircuitValidator
                 continue;
             }
 
+            if (depth >= MaxHierarchyDepth)
+            {
+                diagnostics.Error(
+                    "RAD-ELEC-045",
+                    $"Subcircuit '{component.Id}' in '{circuit.Id}' exceeds the maximum electrical hierarchy depth of {MaxHierarchyDepth}.",
+                    path: path);
+                continue;
+            }
+
             ValidateSubcircuitTerminals(circuit, component, child, diagnostics, path);
             ValidateSubcircuitOverrides(component, child, diagnostics, path);
 
@@ -981,7 +998,7 @@ public static class ElectricalCircuitValidator
 
             diagnostics.AddRange(ValidateOwn(child));
             stack.Add(child.Id);
-            ValidateHierarchy(child, resolve, diagnostics, validated, stack);
+            ValidateHierarchy(child, resolve, diagnostics, validated, stack, depth + 1);
             stack.Remove(child.Id);
         }
     }

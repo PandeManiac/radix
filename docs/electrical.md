@@ -1255,7 +1255,8 @@ those terminals; editing the child's ports later updates every direct parent ins
 bindings by terminal ID and putting a newly added port on the parent's ground node. A referenced
 circuit must expose its ground as a port, because a subcircuit has no implicit global ground.
 References must resolve, cannot form a cycle, and are validated with stable `RAD-ELEC-*` messages
-(`RAD-ELEC-029` to `RAD-ELEC-036`) before a solve.
+(`RAD-ELEC-029` to `RAD-ELEC-036`) before a solve. A hierarchy may nest at most 64 subcircuit
+edges; a deeper reference reports `RAD-ELEC-045` instead of risking unbounded recursion.
 
 Each instance can also override the primary value of a direct child component. The inspector's
 **Overrides** field accepts `component=value` pairs separated by semicolons, for example
