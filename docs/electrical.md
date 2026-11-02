@@ -1493,6 +1493,11 @@ Sampling a time the run did not land on interpolates linearly between the two br
 probe does not have to coincide with a step. A time outside the run answers with the nearest end
 rather than inventing an extrapolation.
 
+The editor's probe uses the same conversion: each probed node reads as `g 2.5 V (L1)`, with the
+level taken against the circuit's own rail — the highest source value, split into equal thirds — so
+the digital reading is visible beside the voltage it came from. A circuit with no positive source
+has no rail to read against and reports no levels rather than inventing one.
+
 This is the electrical-to-digital half of the bridge and nothing more: a level is produced, but no
 level yet drives the simulator's inputs, so the behavioural and electrical sides still meet only in
 a person's head.

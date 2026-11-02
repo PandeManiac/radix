@@ -182,6 +182,8 @@ public sealed class EditorViewModel : ObservableObject
     private double? _electricalTransientProbeTime;
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
         new SortedDictionary<string, double>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, int> _electricalTransientProbeLevels =
+        new SortedDictionary<string, int>(StringComparer.Ordinal);
     private int _electricalTransientPointCount;
     private IReadOnlyList<TransientSweepRow>? _electricalSweepResult;
     private SweepComparison? _electricalSweepComparison;
@@ -829,6 +831,16 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _electricalTransientProbeValues;
         private set => SetField(ref _electricalTransientProbeValues, value);
+    }
+
+    /// <summary>
+    /// The same probed voltages read as levels against the circuit's rail, empty when the circuit
+    /// has no positive source to take a rail from.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> ElectricalTransientProbeLevels
+    {
+        get => _electricalTransientProbeLevels;
+        private set => SetField(ref _electricalTransientProbeLevels, value);
     }
 
     /// <summary>Probed time, or null when no probe is active; drawn as a marker on the plot.</summary>
@@ -8347,6 +8359,35 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Reads each probed voltage as a level against the circuit's own rail, taken as the highest
+    /// source value and split into equal thirds. A circuit with no positive source has no rail to
+    /// read against, so it reports no levels instead of inventing one.
+    /// </summary>
+    private IReadOnlyDictionary<string, int> ProbeLevels(IReadOnlyDictionary<string, double> values)
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            return new SortedDictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        double rail = circuit.Components
+            .Where(component => component.Kind == ElectricalComponentKind.VoltageSource)
+            .Select(component => component.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+        if (!double.IsFinite(rail) || rail <= 0)
+        {
+            return new SortedDictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        var sampler = ElectricalLevelSampler.TernaryFromRail(rail);
+        return new SortedDictionary<string, int>(
+            values.ToDictionary(pair => pair.Key, pair => sampler.LevelFor(pair.Value)),
+            StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// Reads every node voltage at a chosen time, interpolating between the two solved
     /// points that bracket it. The readout names the bracketing points when the time is
     /// not itself a solved sample, so an interpolated value cannot be mistaken for one
@@ -8409,17 +8450,23 @@ public sealed class EditorViewModel : ObservableObject
             values[node] = from + (weight * (to - from));
         }
 
+        IReadOnlyDictionary<string, int> levels = ProbeLevels(values);
         ElectricalTransientProbeValues = values;
+        ElectricalTransientProbeLevels = levels;
         ElectricalTransientProbeTime = time;
         string source = solved
             ? "solved point"
             : $"interpolated {FormatElectricalValue(left.Time)}..{FormatElectricalValue(right.Time)} s";
+        // The level is what the digital side would read, so it travels with the voltage it came
+        // from rather than being a separate readout a reader has to compute from thresholds.
+        static string Read(KeyValuePair<string, double> pair, IReadOnlyDictionary<string, int> levels) =>
+            levels.TryGetValue(pair.Key, out int level)
+                ? $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V (L{level})"
+                : $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V";
+
         ElectricalTransientProbeText =
             $"At t={FormatElectricalValue(time)} s ({source}): " +
-            string.Join(
-                " · ",
-                values.Select(pair =>
-                    $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V"));
+            string.Join(" · ", values.Select(pair => Read(pair, levels)));
         StatusText = $"Probed transient values at t={FormatElectricalValue(time)} s";
         return true;
     }
@@ -8911,6 +8958,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientProbeText = string.Empty;
         ElectricalTransientProbeTime = null;
         ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        ElectricalTransientProbeLevels = new SortedDictionary<string, int>(StringComparer.Ordinal);
         _electricalTransientRefinement = null;
         ClearElectricalTransientRefinement();
         ClearElectricalSweep();
