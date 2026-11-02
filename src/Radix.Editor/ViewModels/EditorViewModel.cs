@@ -198,6 +198,7 @@ public sealed class EditorViewModel : ObservableObject
     private IReadOnlyList<DcSweepRow>? _electricalDcSweepResult;
     private DcNetlist? _electricalDcSweepNetlist;
     private string _electricalDcSweepElementId = string.Empty;
+    private TransientPlot? _electricalDcSweepPlot;
     private string _electricalSweepSummary =
         "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
@@ -514,6 +515,25 @@ public sealed class EditorViewModel : ObservableObject
         get => _electricalDcSweepSummary;
         private set => SetField(ref _electricalDcSweepSummary, value);
     }
+
+    /// <summary>
+    /// The displayed sweep as screen-independent XY geometry: the swept value on the horizontal
+    /// axis and one series per non-ground node. It reuses the transient plot model because the
+    /// padding, tick and decimation rules are the same for any analog curve.
+    /// </summary>
+    public TransientPlot? ElectricalDcSweepPlot
+    {
+        get => _electricalDcSweepPlot;
+        private set
+        {
+            _electricalDcSweepPlot = value;
+            RaisePropertyChanged(nameof(ElectricalDcSweepPlot));
+            RaisePropertyChanged(nameof(HasElectricalDcSweepPlot));
+        }
+    }
+
+    /// <summary>Whether the sweep has a curve to draw.</summary>
+    public bool HasElectricalDcSweepPlot => ElectricalDcSweepPlot is { IsEmpty: false };
 
     /// <summary>Whether the refinement table has rows to show.</summary>
     public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
@@ -6858,6 +6878,7 @@ public sealed class EditorViewModel : ObservableObject
         _electricalDcSweepResult = rows;
         _electricalDcSweepNetlist = netlist;
         _electricalDcSweepElementId = elementId;
+        RebuildElectricalDcSweepPlot(rows, netlist);
         RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
         ElectricalDcSweepSummary = failed == 0
             ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalDcSweepRows.Count} rows."
@@ -6884,9 +6905,68 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Turns the sweep into one series per node for the plot. A row that could not solve
+    /// contributes no point rather than a zero, so a gap in the curve matches the row that says
+    /// what failed. Palette slots come from the netlist's node order, so hiding nothing and
+    /// editing nothing keeps a node's colour stable.
+    /// </summary>
+    private void RebuildElectricalDcSweepPlot(IReadOnlyList<DcSweepRow> rows, DcNetlist netlist)
+    {
+        IReadOnlyList<string> nodes = netlist.Nodes;
+        var series = new List<TransientPlotSeries>();
+        for (int index = 0; index < nodes.Count; index++)
+        {
+            string nodeId = nodes[index];
+            if (string.Equals(nodeId, netlist.GroundNodeId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var points = new List<TransientPlotPoint>(rows.Count);
+            foreach (DcSweepRow row in rows)
+            {
+                if (row.Solution is { } solution &&
+                    solution.NodeVoltages.TryGetValue(nodeId, out double volts))
+                {
+                    points.Add(new TransientPlotPoint(row.Value, volts));
+                }
+            }
+
+            if (points.Count > 0)
+            {
+                series.Add(new TransientPlotSeries(nodeId, points, index));
+            }
+        }
+
+        ElectricalDcSweepPlot = series.Count == 0 ? null : TransientPlot.Create(series);
+    }
+
+    /// <summary>
+    /// The sweep curve as a standalone SVG, so a transfer characteristic can be shared without a
+    /// screenshot. It uses the same geometry and renderer as the transient plot; the title names
+    /// the circuit and the swept component, because a curve of an unnamed study is not evidence.
+    /// </summary>
+    public bool TryBuildElectricalDcSweepSvg(out string svg)
+    {
+        svg = string.Empty;
+        if (ElectricalDcSweepPlot is not { IsEmpty: false } plot)
+        {
+            return false;
+        }
+
+        string circuitId = SelectedElectricalCircuitModel?.Id ?? "circuit";
+        svg = TransientPlotSvg.Render(
+            plot,
+            markerTime: null,
+            title: $"DC sweep: {circuitId} {_electricalDcSweepElementId}");
+        return true;
+    }
+
     private void ClearElectricalDcSweep(string summary)
     {
         ElectricalDcSweepRows.Clear();
+        ElectricalDcSweepPlot = null;
         _electricalDcSweepResult = null;
         _electricalDcSweepNetlist = null;
         _electricalDcSweepElementId = string.Empty;

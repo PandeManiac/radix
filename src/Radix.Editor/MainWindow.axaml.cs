@@ -410,6 +410,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ElectricalDcSweepCopySvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalDcSweepSvg(out string svg))
+        {
+            await CopyElectricalSolveTextAsync(svg, "Copied DC sweep curve as SVG");
+        }
+    }
+
+    private async void ElectricalDcSweepSaveSvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalDcSweepSvg(out string svg))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, svg, "svg", SvgFileType);
+        }
+    }
+
     private async void ElectricalTransientCopyJson_Click(object? sender, RoutedEventArgs e)
     {
         if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalTransientJson(out string json))

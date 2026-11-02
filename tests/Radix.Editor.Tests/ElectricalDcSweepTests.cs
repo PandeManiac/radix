@@ -1,5 +1,6 @@
 using Radix.Core.Electrical;
 using Radix.Core.Model;
+using Radix.Editor.Rendering;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -108,6 +109,45 @@ public sealed class ElectricalDcSweepTests
 
         // A curve that describes an older circuit would be worse than no curve at all.
         Assert.False(viewModel.HasElectricalDcSweepResult);
+        Assert.False(viewModel.HasElectricalDcSweepPlot);
         Assert.False(viewModel.TryBuildElectricalDcSweepCsv(out _));
+        Assert.False(viewModel.TryBuildElectricalDcSweepSvg(out _));
+    }
+
+    [Fact]
+    public void ASweepProducesADrawableCurve()
+    {
+        EditorViewModel viewModel = DividerWithSource();
+        viewModel.ElectricalDcSweepElementText = "r1";
+        viewModel.ElectricalDcSweepValuesText = "0:10:3";
+        Assert.True(viewModel.RunElectricalDcSweep());
+        Assert.True(viewModel.HasElectricalDcSweepPlot);
+
+        TransientPlot plot = Assert.IsType<TransientPlot>(viewModel.ElectricalDcSweepPlot);
+        TransientPlotSeries series = Assert.Single(plot.Series);
+
+        // Ground is the reference, so only the driven node is drawn, with one point per value
+        // and the swept value on the horizontal axis.
+        Assert.Equal("n1", series.NodeId);
+        Assert.Equal([0d, 5d, 10d], series.Points.Select(point => point.Time).ToArray());
+        Assert.Equal([0d, 5d, 10d], series.Points.Select(point => point.Value).ToArray());
+        Assert.Equal(0, plot.NormalizeX(0), 12);
+        Assert.Equal(1, plot.NormalizeX(10), 12);
+    }
+
+    [Fact]
+    public void TheCurveSvgNamesTheCircuitAndTheSweptComponent()
+    {
+        EditorViewModel viewModel = DividerWithSource();
+        viewModel.ElectricalDcSweepElementText = "r1";
+        viewModel.ElectricalDcSweepValuesText = "0:10:3";
+        Assert.True(viewModel.RunElectricalDcSweep());
+
+        Assert.True(viewModel.TryBuildElectricalDcSweepSvg(out string svg));
+        Assert.Contains("<svg", svg, StringComparison.Ordinal);
+        Assert.Contains("DC sweep", svg, StringComparison.Ordinal);
+        Assert.Contains("r1", svg, StringComparison.Ordinal);
+        Assert.Contains(">n1<", svg, StringComparison.Ordinal);
+        Assert.Contains("<polyline", svg, StringComparison.Ordinal);
     }
 }

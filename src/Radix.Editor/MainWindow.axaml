@@ -1153,6 +1153,7 @@
                       Padding="7,5"
                       Margin="0,0,0,4">
                     <StackPanel Spacing="3">
+                      <controls:TransientPlotView Plot="{Binding ElectricalDcSweepPlot}" Height="150" Margin="0,2,0,4" IsVisible="{Binding HasElectricalDcSweepPlot}" />
                       <ItemsControl ItemsSource="{Binding ElectricalDcSweepRows}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalDcSweepRowItem">
@@ -1167,6 +1168,8 @@
                       <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
                         <Button x:Name="ElectricalDcSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalDcSweepCopyCsv_Click" ToolTip.Tip="Copy the sweep as the same CSV table radix dc --sweep --csv writes" />
                         <Button x:Name="ElectricalDcSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalDcSweepSaveCsv_Click" ToolTip.Tip="Save the sweep as CSV" />
+                        <Button x:Name="ElectricalDcSweepCopySvgButton" Content="Copy sweep SVG" Click="ElectricalDcSweepCopySvg_Click" ToolTip.Tip="Copy the transfer curve as a standalone SVG document" />
+                        <Button x:Name="ElectricalDcSweepSaveSvgButton" Content="Save sweep SVG…" Click="ElectricalDcSweepSaveSvg_Click" ToolTip.Tip="Save the transfer curve as SVG" />
                       </StackPanel>
                     </StackPanel>
                   </Border>

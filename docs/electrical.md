@@ -996,6 +996,16 @@ saved from the panel and one produced by `radix dc --sweep --csv` describe the s
 study. Any edit invalidates the sweep along with the DC preview, because a curve of an
 older circuit would be worse than no curve.
 
+The sweep also **draws** its curve: the swept value on the horizontal axis, one series per
+non-ground node, and one measured point per value. It reuses `TransientPlot` because the
+padding, tick, decimation and palette rules are the same for any analog curve, so a long
+sweep is decimated evenly and the value axis is padded rather than configurable per panel.
+A value that could not solve leaves a gap in the trace rather than a point at zero, so the
+picture and the table agree about where the study failed. **Copy sweep SVG** / **Save sweep
+SVG…** write the curve through `TransientPlotSvg`, whose title names the circuit and the
+swept component, so a transfer characteristic can go into a note or a report without a
+screenshot.
+
 ## Editor result export
 
 After **Solve**, **Copy JSON** and **Copy CSV** place the displayed result on the
