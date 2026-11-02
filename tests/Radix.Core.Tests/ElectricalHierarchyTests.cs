@@ -39,6 +39,19 @@ public sealed class ElectricalHierarchyTests(ITestOutputHelper output)
             CultureInfo.InvariantCulture,
             $"{circuits.Length} circuits at depth {ElectricalCircuitValidator.MaxHierarchyDepth}: " +
             $"{watch.Elapsed.TotalMilliseconds / runs:F3} ms per project validation ({runs} runs)"));
+
+        const int fullRuns = 20;
+        var fullWatch = Stopwatch.StartNew();
+        for (int run = 0; run < fullRuns; run++)
+        {
+            _ = CircuitValidator.Validate(project);
+        }
+
+        fullWatch.Stop();
+        output.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{circuits.Length} circuits at depth {ElectricalCircuitValidator.MaxHierarchyDepth}: " +
+            $"{fullWatch.Elapsed.TotalMilliseconds / fullRuns:F3} ms per full validation ({fullRuns} runs)"));
     }
 
     [Fact]

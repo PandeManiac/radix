@@ -301,4 +301,4 @@ RADIX_ELECTRICAL_VALIDATION_BENCH=1 dotnet test \
   --logger "console;verbosity=detailed"
 ```
 
-On this VM, the pre-change sample was **2.80 ms per project validation**. Caching each circuit's own structural report and each subcircuit edge's terminal/override report brought three post-change samples to **1.17, 1.17, and 1.41 ms**. The recursive walk remains, because depth and cycle diagnostics depend on the root context; only repeated, context-independent validation is cached.
+On this VM, the pre-change sample was **2.80 ms per project validation**. Caching each circuit's own structural report and each subcircuit edge's terminal/override report brought three post-change samples to **1.17, 1.17, and 1.41 ms**. The recursive walk remains, because depth and cycle diagnostics depend on the root context; only repeated, context-independent validation is cached. The same chain costs **8.86 ms** through `CircuitValidator.Validate`, which also runs ERC expansion and topology analysis for every circuit; that remains the dominant validation cost.

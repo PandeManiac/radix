@@ -97,6 +97,8 @@ humans; update it at each milestone instead of relying on chat history.
 - Measured on this VM: 2.80 ms before; 1.17, 1.17, and 1.41 ms after (three runs,
   200 project validations each). The benchmark is opt-in under
   `RADIX_ELECTRICAL_VALIDATION_BENCH=1`.
+- The same benchmark now also reports the combined `CircuitValidator.Validate` path:
+  8.86 ms for the 65-circuit chain, including ERC expansion and topology analysis.
 - Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
   Editor 313/313.
 
