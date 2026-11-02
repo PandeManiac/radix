@@ -1462,6 +1462,12 @@ table below was measured. On the ternary inverter over 120 ns at 1280 steps:
 | `out` settle | 49.5 ns | **38.4 ns** |
 | `out_low` peak | 5.0194 V | **5.0000 V** |
 
+`examples/transient-ternary-inverter-bias-dependent.radix` ships format 15 with the field set on
+all four devices and nothing else changed, so the right-hand column reproduces without a switch:
+`radix transient examples/transient-ternary-inverter-bias-dependent.radix --stop 1.2e-7 --steps 1280`.
+A test compares the two files and holds their ratio to 1.45–1.65, so the table cannot drift away
+from what the repository actually runs.
+
 The gate arrives 1.55× sooner, and the overshoot above the rail disappears: with the authored
 values held for the whole run, a saturated device keeps a drain-gate capacitance it should have
 lost, and that Miller feedback is what pushes the output past 5 V. A single-device stage shows the
