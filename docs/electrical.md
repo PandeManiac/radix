@@ -143,21 +143,22 @@ iteration linearizes the combined terminal conductance
 isothermal and has no junction capacitance, self-heating, or high-injection
 effects. Reverse breakdown is included only when `BV` and `IBV` are supplied.
 
-Diodes are solved with a damped Newton iteration. Each iteration linearizes every
-junction around its current voltage, solves the same scaled-pivot MNA system used
-for linear circuits, and applies standard pn-junction limiting when a forward step
-exceeds two junction voltages. A result is accepted only when the junction
-voltages stop moving and the nonlinear KCL/source residual is within a relative
+Diodes are solved with Newton iteration and pn-junction step limiting. Each iteration
+linearizes every junction around its current voltage, solves the same scaled-pivot
+MNA system used for linear circuits, and applies standard pn-junction limiting when
+a forward step exceeds two junction voltages. A result is accepted only when the
+junction voltages stop moving and the nonlinear KCL/source residual is within a relative
 `1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. The absolute
 floors matter at picoamp reverse currents, where subtracting nearly equal node
-voltages limits how small a KCL residual is representable. Failure to converge within 100 iterations raises `NonConvergent` rather
-than returning a partial operating point. The linear fast path is unchanged when
+voltages limits how small a KCL residual is representable. Failure to converge
+within 100 iterations raises `NonConvergent` rather than returning a partial
+operating point. The linear fast path is unchanged when
 a netlist has no diodes.
 
-The exponential argument is capped at 80 (about 2 V per junction at `N = 1`).
-That keeps the arithmetic finite but means the ideal model must not be used at
-large forward bias without series resistance; it is a modelling limit, not a
-convergence tolerance.
+Exponential arguments above 80 (about 2 V per junction at `N = 1`) use the linear
+tangent continuation described above. This keeps the arithmetic finite, but it is
+a numerical continuation rather than a physical high-current model or a convergence
+tolerance.
 
 Standalone netlists can express a diode:
 

@@ -970,3 +970,9 @@ summary and full local verification results; see the PR for the latest CI state.
 
 92. Reran the full Core suite after adding the energy-ledger comparison; all 641
     tests passed. No production code changed in this test-only follow-up.
+
+93. Corrected `docs/electrical.md` to match the implemented diode solver: it uses
+    pn-junction step limiting, and the exponential overflow guard is a linear tangent
+    continuation with matching conductance above the threshold. Clarified that this
+    is a numerical continuation rather than a physical high-current prediction, and
+    reflowed the solver description for readability. Documentation-only; no tests run.
