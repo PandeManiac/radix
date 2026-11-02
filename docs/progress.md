@@ -935,5 +935,5 @@ summary and full local verification results; see the PR for the latest CI state.
     over bounded linear/logarithmic ranges. An independent scalar bisection solves
     the combined resistor/junction equation; the test compares terminal voltage and
     diode current and checks power balance plus the solver residual. Failures include
-    the fixed seed and case parameters. Focused campaign passes 1/1; broader suites
-    are pending.
+    the fixed seed and case parameters. Focused campaign passes 1/1; after adding
+    it, the full Core suite passes 640/640.
