@@ -1277,3 +1277,9 @@ summary and full local verification results; see the PR for the latest CI state.
      original failure, message, and failed-step index. Both paths retain solved
      points and serialize as valid JSON without an invalid energy object. All ten
      `TransientEnergyTests` pass; broader verification remains pending.
+
+142. Verified partial-run ledger handling: Release solution build passed with 0
+     warnings/errors, Core passed 663/663, and headless Editor passed 242/242 with
+     `.local-native`. The new regression confirms a later step's current-source
+     power failure and step index survive energy-ledger overflow, while solved
+     points remain available and the JSON report remains valid.
