@@ -17,8 +17,10 @@ humans; update it at each milestone instead of relying on chat history.
   (DC sweep private nodes and labels).
 - Bounded-hierarchy checkpoint: `98e3cf1315788208dc652e8c9ae1b505f9fea216`
   (64-edge electrical hierarchy limit and boundary regressions).
+- Project-electrical-validation checkpoint: `55d63769b5bbd48e4c2a4bd0225feb638e1d5fad`
+  (structural errors in `radix validate` and editor diagnostics).
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 832/832, CLI tests 2/2, Editor tests 312/312. The buffered example solves both
+  tests 833/833, CLI tests 3/3, Editor tests 312/312. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
   diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
@@ -55,8 +57,9 @@ humans; update it at each milestone instead of relying on chat history.
 - Added a Core regression for `RAD-ELEC-011` and a CLI JSON contract test that
   corrupts `examples/dc-divider.radix`, asserts exit code 1, `passed: false`, and
   the error diagnostic.
-- Verification: Release build clean (0 warnings/errors); focused electrical rule
-  tests 7/7 and CLI tests 3/3. Full suite pending at this checkpoint.
+- Verification: Release build clean (0 warnings/errors); Core 833/833, CLI 3/3,
+  Editor 312/312; focused electrical rule tests 7/7. All 36 shipped `.radix`
+  examples pass `radix validate` after the electrical structural report is included.
 
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 
