@@ -976,3 +976,10 @@ summary and full local verification results; see the PR for the latest CI state.
     continuation with matching conductance above the threshold. Clarified that this
     is a numerical continuation rather than a physical high-current prediction, and
     reflowed the solver description for readability. Documentation-only; no tests run.
+
+94. Fixed the nonlinear DC stopping test so its voltage-update tolerance is scaled
+    only by node and diode-junction voltages. MNA source branch currents are in
+    amperes and no longer inflate that voltage tolerance. A regression adds a
+    disconnected 1e12 A ideal-source branch beside an ultra-low-current diode; the
+    old solver stopped at 0.974 V instead of the independent scalar reference
+    0.573 V. The regression demonstrated the bug before the fix.

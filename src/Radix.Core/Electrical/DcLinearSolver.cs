@@ -563,12 +563,17 @@ public sealed class DcNetlist
 
             (solution, _) = SolveLinearSystem(matrix, rhs);
 
-            double maxChange = 0;
-            double maxValue = 0;
-            for (int index = 0; index < size; index++)
+            // Only node voltages share the voltage units used by the nonlinear
+            // convergence tolerance. The remaining MNA unknowns are source branch
+            // currents in amperes and must not scale a voltage update threshold.
+            double maxVoltageChange = 0;
+            double maxVoltage = 0;
+            for (int index = 0; index < nodeIds.Length; index++)
             {
-                maxChange = Math.Max(maxChange, Math.Abs(solution[index] - previous[index]));
-                maxValue = Math.Max(maxValue, Math.Abs(solution[index]));
+                maxVoltageChange = Math.Max(
+                    maxVoltageChange,
+                    Math.Abs(solution[index] - previous[index]));
+                maxVoltage = Math.Max(maxVoltage, Math.Abs(solution[index]));
             }
 
             double maxLimitError = 0;
@@ -585,14 +590,16 @@ public sealed class DcNetlist
                     diodeJunctionVoltages[index],
                     diodes[index]);
                 maxLimitError = Math.Max(maxLimitError, Math.Abs(rawJunction - limited));
-                maxChange = Math.Max(maxChange, Math.Abs(limited - diodeJunctionVoltages[index]));
-                maxValue = Math.Max(maxValue, Math.Abs(limited));
+                maxVoltageChange = Math.Max(
+                    maxVoltageChange,
+                    Math.Abs(limited - diodeJunctionVoltages[index]));
+                maxVoltage = Math.Max(maxVoltage, Math.Abs(limited));
                 nextDiodeVoltages[index] = limited;
             }
 
             residual = NonlinearResidual(nodeIndex, voltageSources, voltageSourceRows, solution);
-            double tolerance = voltageTolerance * Math.Max(1, maxValue);
-            if (maxChange <= tolerance &&
+            double tolerance = voltageTolerance * Math.Max(1, maxVoltage);
+            if (maxVoltageChange <= tolerance &&
                 maxLimitError <= tolerance &&
                 residual <= 1)
             {

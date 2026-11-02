@@ -148,8 +148,9 @@ linearizes every junction around its current voltage, solves the same scaled-piv
 MNA system used for linear circuits, and applies standard pn-junction limiting when
 a forward step exceeds two junction voltages. A result is accepted only when the
 junction voltages stop moving and the nonlinear KCL/source residual is within a relative
-`1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. The absolute
-floors matter at picoamp reverse currents, where subtracting nearly equal node
+`1e-9` tolerance plus a 1 fA current and 1 pV branch-equation floor. Voltage
+updates are scaled only by node and junction voltages; source branch currents do not
+set a voltage tolerance. The absolute floors matter at picoamp reverse currents, where subtracting nearly equal node
 voltages limits how small a KCL residual is representable. Failure to converge
 within 100 iterations raises `NonConvergent` rather than returning a partial
 operating point. The linear fast path is unchanged when
