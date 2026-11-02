@@ -1121,3 +1121,10 @@ summary and full local verification results; see the PR for the latest CI state.
      warnings/errors, Core passed 654/654, and headless Editor passed 242/242 with
      `.local-native`. Both option tests pass: invalid direct limits are rejected,
      and zero correctly disables the optional runtime caps.
+
+117. WIP: added event-budget regressions for `Step` and `StepTimestamp`. If the
+     configured budget is reached before a pending event, `Step()` currently
+     returns `true` despite processing nothing, and `StepTimestamp()` includes
+     the unprocessed attempt in its count. Focused `EventBudgetTests` reproduce
+     both failures (2 failed, 4 passed). Implementation and broader verification
+     remain pending.

@@ -69,4 +69,28 @@ public sealed class EventBudgetTests
         Assert.Equal(250, engine.EventsProcessed);
         Assert.Contains(engine.RuntimeDiagnostics, diagnostic => diagnostic.Code == SimulationEngine.EventBudgetCode);
     }
+
+    [Fact]
+    public void StepReportsFalseWhenBudgetHaltsBeforeNextEvent()
+    {
+        SimulationEngine engine = Counter(1);
+
+        Assert.True(engine.Step());
+        Assert.Equal(1, engine.EventsProcessed);
+        Assert.False(engine.Step());
+        Assert.True(engine.IsHalted);
+        Assert.Equal(1, engine.EventsProcessed);
+    }
+
+    [Fact]
+    public void StepTimestampCountsOnlyEventsProcessedBeforeBudgetHalt()
+    {
+        SimulationEngine engine = Counter(1);
+
+        int processed = engine.StepTimestamp();
+
+        Assert.Equal(engine.EventsProcessed, processed);
+        Assert.Equal(1, processed);
+        Assert.True(engine.IsHalted);
+    }
 }
