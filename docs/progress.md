@@ -1180,22 +1180,15 @@ summary and full local verification results; see the PR for the latest CI state.
      All seven `TransientEnergyTests` pass, including the 1e308 W / 1e305 J analytic
      regression. Broader verification remains pending.
 
-125. WIP: added a transient-energy regression with a 1e154 V ideal source and a
-     1 ohm load over 1 ms. Source and load powers are each finite at 1e308 W, so
-     expected delivered and dissipated energies are each representable as 1e305 J.
-     The energy ledger currently adds adjacent powers before dividing by two, which
-     can overflow despite the finite average and final energy. Focused test and fix
-     are pending.
-
-126. Fixed trapezoidal energy-average overflow. The ledger now divides each finite
-     sampled power by two before adding only if their direct sum overflowed; ordinary
-     finite sums still use sum-then-halving to preserve small-value precision.
-     All seven `TransientEnergyTests` pass, including the 1e308 W / 1e305 J analytic
-     regression. Broader verification remains pending.
-
 127. Verified transient energy averaging: Release solution build passed with 0
      warnings/errors, Core passed 659/659, and headless Editor passed 242/242 with
      `.local-native`. The RC transient CLI report completed with 63 finite points
      and finite energy residual; this count includes 61 uniform grid points plus
      two off-grid waveform breakpoints. Correction: notes 123 and 124 incorrectly
      stated that the same example emitted 61 points.
+
+128. WIP: added a second transient-energy regression with two independent 1e154 V,
+     1 ohm branches over 1 ms. Each element power is finite and the total delivered
+     or dissipated energy is a representable 2e305 J, but `PowerFlow` sums branch
+     powers before integration and overflows. Focused test execution and the
+     per-element integration fix are pending.

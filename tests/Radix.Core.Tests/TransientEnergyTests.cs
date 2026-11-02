@@ -70,6 +70,31 @@ public sealed class TransientEnergyTests
     }
 
     [Fact]
+    public void EnergyLedgerIntegratesFiniteBranchesBeforeTheirPowerSumOverflows()
+    {
+        TransientNetlist netlist = new TransientNetlist("gnd")
+            .AddVoltageSource("V1", "n1", "gnd", 1e154)
+            .AddResistor("R1", "n1", "gnd", 1)
+            .AddVoltageSource("V2", "n2", "gnd", 1e154)
+            .AddResistor("R2", "n2", "gnd", 1);
+
+        TransientResult result = netlist.Run(new TransientOptions
+        {
+            StopTime = 1e-3,
+            Steps = 1,
+        });
+
+        Assert.True(result.Completed, result.Message);
+        TransientEnergyBalance energy = Assert.IsType<TransientEnergyBalance>(result.Energy);
+        Assert.True(double.IsFinite(energy.DeliveredJoules));
+        Assert.True(double.IsFinite(energy.DissipatedJoules));
+        AssertClose(2e305, energy.DeliveredJoules, 1e-12);
+        AssertClose(2e305, energy.DissipatedJoules, 1e-12);
+        Assert.Equal(0, energy.StoredChangeJoules);
+        Assert.Equal(0, energy.ResidualJoules);
+    }
+
+    [Fact]
     public void LosslessTankConservesEnergyUnderTheTrapezoidalRule()
     {
         double initial = 0.5 * 1e-6 * 25;
