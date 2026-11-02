@@ -68,6 +68,7 @@ public sealed class SimulationEngine
     {
         _circuit = circuit ?? throw new ArgumentNullException(nameof(circuit));
         _options = options ?? new SimulationOptions();
+        _options.Validate();
         _pinValues = new int[circuit.Pins.Count];
         _netValues = new int[circuit.Nets.Count];
         _pendingEvaluation = new bool[circuit.Components.Count];

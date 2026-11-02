@@ -1110,3 +1110,9 @@ summary and full local verification results; see the PR for the latest CI state.
      engine currently accepts invalid direct options (settings loaded through
      `FromSettings` are normalized), and the new validation test fails. Guard and
      broader verification remain pending.
+
+115. Added `SimulationOptions.Validate` and call it before engine initialization.
+     The component settle limit must be at least one; optional event, diagnostic,
+     and trace caps may be zero to disable them but cannot be negative. Settings
+     normalization remains unchanged. Both direct-construction validation tests
+     pass, including the zero-disabled cases; broader verification remains pending.
