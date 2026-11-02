@@ -15,8 +15,10 @@ humans; update it at each milestone instead of relying on chat history.
 - Hierarchy-analysis checkpoints: `37d6c69cfe6e8d2125f8f1ccabb971760d7c0e51`
   (transient/AC labels) and `54eb630448c2552cc362cc954eb4c8a6a599d58b`
   (DC sweep private nodes and labels).
+- Bounded-hierarchy checkpoint: `98e3cf1315788208dc652e8c9ae1b505f9fea216`
+  (64-edge electrical hierarchy limit and boundary regressions).
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 830/830, CLI tests 2/2, Editor tests 312/312. The buffered example solves both
+  tests 832/832, CLI tests 2/2, Editor tests 312/312. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
   diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
@@ -37,9 +39,8 @@ humans; update it at each milestone instead of relying on chat history.
   or netlist construction.
 - Added boundary regressions for a 64-edge hierarchy that validates, expands, and
   solves to 10/3 V, and a 65-edge hierarchy that is rejected before `ToDcNetlist`.
-- Verification: Release build clean (0 warnings/errors); focused
-  `ElectricalHierarchyTests` 18/18. Full Core/CLI/Editor suite pending at this
-  checkpoint.
+- Verification: Release build clean (0 warnings/errors); Core 832/832, CLI 2/2,
+  Editor 312/312; focused `ElectricalHierarchyTests` 18/18.
 
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 
