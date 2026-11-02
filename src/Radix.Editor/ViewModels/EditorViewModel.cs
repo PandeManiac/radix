@@ -6424,14 +6424,20 @@ public sealed class EditorViewModel : ObservableObject
                         "Gate-source capacitance (F)",
                         FormatElectricalValue(component.GateSourceCapacitance),
                         hint: "Cgs in farads; the gate must be charged through its drive before the channel follows, and a DC solve ignores it",
-                        apply: value => SetElectricalComponentGateCapacitance(
-                            circuit.Id, component.Id, value, drainToGate: false)));
+                        apply: value => SetElectricalComponentCapacitance(
+                            circuit.Id, component.Id, value, DeviceCapacitance.GateSource)));
                     ElectricalComponentFields.Add(new EditableField(
                         "Gate-drain capacitance (F)",
                         FormatElectricalValue(component.GateDrainCapacitance),
                         hint: "Cgd in farads, the feedback path from drain to gate; 0 leaves the gate loading independent of the drain",
-                        apply: value => SetElectricalComponentGateCapacitance(
-                            circuit.Id, component.Id, value, drainToGate: true)));
+                        apply: value => SetElectricalComponentCapacitance(
+                            circuit.Id, component.Id, value, DeviceCapacitance.GateDrain)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Drain-source capacitance (F)",
+                        FormatElectricalValue(component.DrainSourceCapacitance),
+                        hint: "Cds in farads, the device's own load on its output; 0 leaves the output speed to the circuit around it",
+                        apply: value => SetElectricalComponentCapacitance(
+                            circuit.Id, component.Id, value, DeviceCapacitance.DrainSource)));
                 }
             }
         }
@@ -8074,16 +8080,24 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>Which of a device's capacitances an inspector field edits.</summary>
+    private enum DeviceCapacitance
+    {
+        GateSource,
+        GateDrain,
+        DrainSource,
+    }
+
     /// <summary>
-    /// Sets one of a MOSFET's gate capacitances, in farads. Both are refused when negative or
-    /// non-finite: the solver would otherwise be asked to integrate a circuit that gains energy
+    /// Sets one of a MOSFET's device capacitances, in farads. All three are refused when negative
+    /// or non-finite: the solver would otherwise be asked to integrate a circuit that gains energy
     /// from a capacitor, which no device does.
     /// </summary>
-    private bool SetElectricalComponentGateCapacitance(
+    private bool SetElectricalComponentCapacitance(
         string circuitId,
         string componentId,
         string value,
-        bool drainToGate)
+        DeviceCapacitance which)
     {
         ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
         if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
@@ -8093,30 +8107,43 @@ public sealed class EditorViewModel : ObservableObject
 
         if (!TryParseEngineeringValue(value, out double parsed) || parsed < 0)
         {
-            StatusText = "Gate capacitance must be a finite, non-negative number of farads, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+            StatusText = "Device capacitance must be a finite, non-negative number of farads, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
             return false;
         }
 
-        double current = drainToGate
-            ? component.GateDrainCapacitance
-            : component.GateSourceCapacitance;
+        double current = which switch
+        {
+            DeviceCapacitance.GateSource => component.GateSourceCapacitance,
+            DeviceCapacitance.GateDrain => component.GateDrainCapacitance,
+            _ => component.DrainSourceCapacitance,
+        };
         if (Math.Abs(current - parsed) <= double.Epsilon)
         {
             return false;
         }
 
         PushUndo();
-        if (drainToGate)
+        switch (which)
         {
-            component.GateDrainCapacitance = parsed;
-        }
-        else
-        {
-            component.GateSourceCapacitance = parsed;
+            case DeviceCapacitance.GateSource:
+                component.GateSourceCapacitance = parsed;
+                break;
+            case DeviceCapacitance.GateDrain:
+                component.GateDrainCapacitance = parsed;
+                break;
+            default:
+                component.DrainSourceCapacitance = parsed;
+                break;
         }
 
+        string name = which switch
+        {
+            DeviceCapacitance.GateSource => "gate-source",
+            DeviceCapacitance.GateDrain => "gate-drain",
+            _ => "drain-source",
+        };
         AfterElectricalMutation(
-            $"Updated '{component.Id}' {(drainToGate ? "gate-drain" : "gate-source")} capacitance to {FormatElectricalValue(parsed)} F");
+            $"Updated '{component.Id}' {name} capacitance to {FormatElectricalValue(parsed)} F");
         return true;
     }
 

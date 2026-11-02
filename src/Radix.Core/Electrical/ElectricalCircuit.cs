@@ -240,6 +240,13 @@ public sealed class ElectricalComponent
     public double GateDrainCapacitance { get; set; }
 
     /// <summary>
+    /// MOSFET drain-source capacitance in farads. This is the device's own load on its output: with
+    /// it, a drain node has a speed of its own instead of needing an explicit capacitor beside it.
+    /// Zero by default; ignored by a DC solve.
+    /// </summary>
+    public double DrainSourceCapacitance { get; set; }
+
+    /// <summary>
     /// Optional piecewise-linear drive for an independent source, in the source's unit.
     /// Empty keeps <see cref="Value"/> constant, which is also what a DC solve uses.
     /// Breakpoints use absolute times, are evaluated by linear interpolation, and clamp
@@ -401,7 +408,8 @@ public sealed class ElectricalCircuit
                         component.Value,
                         component.ChannelLengthModulation,
                         component.GateSourceCapacitance,
-                        component.GateDrainCapacitance);
+                        component.GateDrainCapacitance,
+                        component.DrainSourceCapacitance);
                     break;
                 default:
                     throw new InvalidOperationException($"Unsupported electrical component kind '{component.Kind}'.");
@@ -558,11 +566,13 @@ public static class ElectricalCircuitValidator
                 if (!double.IsFinite(component.GateSourceCapacitance) ||
                     component.GateSourceCapacitance < 0 ||
                     !double.IsFinite(component.GateDrainCapacitance) ||
-                    component.GateDrainCapacitance < 0)
+                    component.GateDrainCapacitance < 0 ||
+                    !double.IsFinite(component.DrainSourceCapacitance) ||
+                    component.DrainSourceCapacitance < 0)
                 {
                     diagnostics.Error(
                         "RAD-ELEC-024",
-                        $"Component '{component.Id}' has an invalid gate capacitance; cgs and cgd must be finite, non-negative numbers of farads.",
+                        $"Component '{component.Id}' has an invalid device capacitance; cgs, cgd and cds must be finite, non-negative numbers of farads.",
                         path: path);
                 }
             }

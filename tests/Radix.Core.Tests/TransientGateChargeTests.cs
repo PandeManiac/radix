@@ -130,7 +130,7 @@ public sealed class TransientGateChargeTests
                 { "id": "M1", "type": "mosfet", "nodeA": "d", "nodeB": "gnd",
                   "drain": "d", "gate": "g", "source": "gnd", "channel": "n",
                   "thresholdVoltage": 5, "transconductance": 0.001,
-                  "cgs": 1e-12, "cgd": 1e-12 }
+                  "cgs": 1e-12, "cgd": 1e-12, "cds": 0.05e-12 }
               ],
               "analysis": { "start": 0, "stop": 2e-7, "steps": 4000 }
             }

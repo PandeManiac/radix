@@ -89,6 +89,25 @@ public sealed class ElectricalMosfetEditorTests
     }
 
     [Fact]
+    public void DrainSourceCapacitanceIsEditableThroughTheInspector()
+    {
+        EditorViewModel viewModel = WithMosfet();
+        ElectricalComponent component = Assert.Single(
+            viewModel.SelectedElectricalCircuitModel!.Components);
+
+        EditableField cds = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Drain-source capacitance (F)");
+        Assert.Equal("0", cds.Value);
+        cds.Value = "2p";
+        Assert.True(viewModel.ApplyField(cds));
+        Assert.Equal(2e-12, component.DrainSourceCapacitance, 15);
+
+        // The gate field is still the gate field: three capacitances, three independent values.
+        Assert.Equal(0, component.GateSourceCapacitance, 15);
+        Assert.Equal(0, component.GateDrainCapacitance, 15);
+    }
+
+    [Fact]
     public void ChannelAndThresholdAreEditableThroughTheInspector()
     {
         EditorViewModel viewModel = WithMosfet();

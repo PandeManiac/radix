@@ -764,7 +764,8 @@ public sealed class TransientNetlist
     /// Adds a three-terminal MOSFET with the same parameters as
     /// <see cref="DcNetlist.AddMosfet"/>.
     /// <para>
-    /// Gate capacitances are optional and default to zero, which keeps a DC-tuned netlist
+    /// The device capacitances — gate-source, gate-drain and drain-source — are optional and
+    /// default to zero, which keeps a DC-tuned netlist
     /// time-invariant. When they are given they are stamped between gate and source and between
     /// gate and drain for every step, so the gate has to be charged through the circuit before the
     /// channel can follow: the resulting transition times then come from the device instead of
@@ -781,7 +782,8 @@ public sealed class TransientNetlist
         double transconductance,
         double channelLengthModulation = 0,
         double gateSourceFarads = 0,
-        double gateDrainFarads = 0)
+        double gateDrainFarads = 0,
+        double drainSourceFarads = 0)
     {
         ValidateElement(id, drain, source);
         if (string.IsNullOrWhiteSpace(gate))
@@ -833,6 +835,14 @@ public sealed class TransientNetlist
                 "Gate-drain capacitance must be finite and non-negative.");
         }
 
+        if (!double.IsFinite(drainSourceFarads) || drainSourceFarads < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(drainSourceFarads),
+                drainSourceFarads,
+                "Drain-source capacitance must be finite and non-negative.");
+        }
+
         AddStatic(new DcMosfet(
             id,
             drain,
@@ -853,6 +863,13 @@ public sealed class TransientNetlist
         if (gateDrainFarads > 0 && !string.Equals(gate, drain, StringComparison.Ordinal))
         {
             AddInternalCapacitor(CompanionId(id, "cgd"), gate, drain, gateDrainFarads);
+        }
+
+        // Drain-to-source capacitance is what lets a device load its own output: without it an
+        // output node has no speed of its own and any delay must be added as a separate capacitor.
+        if (drainSourceFarads > 0)
+        {
+            AddInternalCapacitor(CompanionId(id, "cds"), drain, source, drainSourceFarads);
         }
 
         return this;

@@ -290,10 +290,11 @@ public static class ProjectSerializer
             dto.ThresholdVoltage is not null ||
             dto.ChannelLengthModulation is not null ||
             dto.GateSourceCapacitance is not null ||
-            dto.GateDrainCapacitance is not null))
+            dto.GateDrainCapacitance is not null ||
+            dto.DrainSourceCapacitance is not null))
         {
             throw new ProjectFormatException(
-                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage', 'channelLengthModulation', 'gateSourceCapacitance' or 'gateDrainCapacitance'; those belong to a mosfet.");
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage', 'channelLengthModulation', 'gateSourceCapacitance', 'gateDrainCapacitance' or 'drainSourceCapacitance'; those belong to a mosfet.");
         }
 
         if (isMosfet && dto.ThresholdVoltage is null)
@@ -328,6 +329,7 @@ public static class ProjectSerializer
             ChannelLengthModulation = dto.ChannelLengthModulation ?? 0,
             GateSourceCapacitance = dto.GateSourceCapacitance ?? 0,
             GateDrainCapacitance = dto.GateDrainCapacitance ?? 0,
+            DrainSourceCapacitance = dto.DrainSourceCapacitance ?? 0,
         };
 
         foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
@@ -727,6 +729,9 @@ public static class ProjectSerializer
                 : null,
             GateDrainCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
                 ? component.GateDrainCapacitance
+                : null,
+            DrainSourceCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.DrainSourceCapacitance
                 : null,
             Waveform = component.Waveform.Count == 0
                 ? null

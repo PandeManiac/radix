@@ -295,8 +295,8 @@ operating point, which the tests assert. `radix dc` and the JSON report list a M
 
 It is a **compact teaching model, not a production SPICE transistor**. In particular:
 
-- no junction, overlap or body capacitance, so without the optional gate capacitance below
-  the device is charge-free and adds no dynamics;
+- no junction, overlap or body capacitance, so without the optional device capacitances
+  below the device is charge-free and adds no dynamics;
 - no subthreshold conduction, so current is exactly zero below the threshold apart from
   `GMIN`;
 - no mobility degradation, velocity saturation, high-injection, drain-induced barrier
@@ -443,37 +443,42 @@ single-point sweep, a value that failed to solve, or repeated swept values repor
 instead of a fabricated zero.
 
 **Switching.** `examples/transient-ternary-inverter.radix` drives the same inverter from 0 V to
-2.5 V through a 1 ns ramp, with 1 pF of gate capacitance behind a 10 kΩ gate resistor and 2 pF on
-the summing node. Two time constants are therefore in the path, and both are closed forms:
+2.5 V through a 1 ns ramp, and every capacitance in it now belongs to a device: 0.25 pF of
+gate-source and 1 pF of drain-source per transistor, plus 0.02 pF from each gate to its own drain.
+There is no separate load capacitor, so the output's speed is the transistors':
 
 ```bash
-radix transient examples/transient-ternary-inverter.radix --stop 600e-9 --steps 600
+radix transient examples/transient-ternary-inverter.radix --stop 900e-9 --steps 3600
 ```
 
 | `t` | 0 | 26 ns | 900 ns |
 | --- | --- | --- | --- |
 | `g` | 0 | 1.0 | 2.5 |
-| `out` | 5 | 5.004 | 2.5005 |
+| `out` | 5 | 5.010 | 2.5 |
 
-The gate bus must be charged before anything can happen: 10 kΩ into the four 0.25 pF gates is
-1 pF, so the bus reaches the 1 V threshold at 26 ns and half of the drive at 29 ns. The summing node
-then decays with its own constant, measured between the 50 % and 90 % crossings so the gate delay
-cancels out: about 100 ns, against the closed form `(R/2) C = 50 kΩ × 2 pF`. The 2 % band is reached
-at 424 ns, the gates having settled at 66 ns.
+The gate bus must be charged first: 10 kΩ into the four gates is 1 pF, so the bus reaches the 1 V
+threshold at 26 ns and half of the drive at 29 ns, and no device can respond before it. Their drains
+then charge the 2 pF that the two devices on each branch present, seen through the 50 kΩ the two
+summing resistors give the output, and the 2 % band closes at 50 ns with the gates settled at 68 ns.
+
+The output lands on **exactly 2.5000 V**, which is what a DC solve reports for `VIN = 2.5 V`, and it
+is the mean of the two branch outputs — `(0.0206 + 4.9794)/2` — because two equal resistors sum
+them. The tests assert the DC agreement and the summing identity rather than a literal, so the
+figures cannot drift with the step size. Doubling the gate capacitance doubles the time the bus
+takes to reach half of its drive, which is the closed form `RG·C·ln 2` and cannot come from the
+integrator. The branch nodes are not that simple: once a device leaves saturation its on-resistance
+sets the tail, so doubling the drain capacitance moves the settling time by much less than double,
+and the tests do not claim otherwise.
 
 Each device also has 0.02 pF from gate to drain, and that feedback is visible rather than decorative:
-while the bus climbs it drags the drain nodes up with it before any channel conducts, so `out_low`
-peaks at **5.149 V** — 149 mV above its own supply rail — and the output gets a 4 mV bump before it
-falls. Removing the gate-drain capacitance removes the overshoot entirely, which is what the test
-compares, so the effect measures the feedback path instead of the step size.
+while the bus climbs it drags the drain nodes up through that path before any channel conducts, so
+`out_low` peaks at **5.019 V**, 19 mV above its own rail, and the output takes a 10 mV bump before
+falling. Removing the gate-drain capacitance removes the overshoot entirely, which is what the test
+compares, so the effect measures the feedback path and not the step size.
 
-Six hundred nanoseconds is inside the band but not converged: the output is still 8 mV above its
-destination there. A 3 µs run arrives at **2.5000 V**, which is exactly what a DC solve reports for
-`VIN = 2.5 V`. The transient run reaches the static answer instead of being handed it, and the test
-asserts that agreement rather than a literal. Doubling the load capacitance doubles the measured
-constant, so the decay belongs to the network rather than to the integrator. The energy ledger
-closes to 2.1 × 10⁻³ of the energy delivered, larger than the load-only case because gate charge is
-now part of what is delivered and stored.
+**Step size matters here.** At 1 ns steps the energy ledger closes to 1.8 × 10⁻² of the energy
+delivered, because 1 ns is a fiftieth of the transition; at 0.25 ns it closes to 1.5 × 10⁻³. The
+model is fixed-step, so the figure is quoted with the grid that produced it.
 
 **Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,
 or `cgs`/`cgd` in a transient JSON netlist, both defaulting to zero so an existing netlist keeps its
@@ -482,10 +487,11 @@ so the gate must be charged through whatever drives it before the channel can fo
 internal capacitors rather than authored elements: they carry state, energy and companion stamps
 like any other capacitor, but never appear in `Capacitors`, element tables or reports.
 
-An authored MOSFET carries the same two values as `gateSourceCapacitance` and
-`gateDrainCapacitance`, so a `.radix` circuit can be built with device charge from the Electrical
-panel's inspector; both default to zero, and a DC run ignores them because an operating point
-holds no charge.
+An authored MOSFET carries the same values as `gateSourceCapacitance`, `gateDrainCapacitance` and
+`drainSourceCapacitance`, so a `.radix` circuit can be built with device charge from the Electrical
+panel's inspector; all three default to zero, and a DC run ignores them because an operating point
+holds no charge. Drain-source capacitance is what lets a transistor load its own output, so a
+circuit can derive its speed from the devices instead of from a capacitor beside them.
 
 The closed form is checkable. A 10 kΩ resistor driving a gate with 1 pF of gate-source capacitance
 gives `RC = 10 ns`; the measured half-rise converts back to that constant, and adding 1 pF of
