@@ -1,5 +1,6 @@
 using Radix.Core.Electrical;
 using Radix.Core.Model;
+using Radix.Core.Serialization;
 using Radix.Editor.ViewModels;
 using Radix.StdLib;
 using Xunit;
@@ -89,6 +90,34 @@ public sealed class ElectricalHierarchyEditorTests
     }
 
     [Fact]
+    public void SolvedHierarchyShowsPrivateChildNodesWithTheirInstanceScope()
+    {
+        EditorViewModel viewModel = new(
+            ProjectSerializer.Load(
+                ExamplePath("electrical-ternary-hierarchy.radix"), validate: false));
+        viewModel.SelectedElectricalCircuit = viewModel.ElectricalCircuits
+            .Single(item => item.Id == "chain");
+
+        Assert.True(viewModel.SolveElectricalCircuit(), viewModel.ElectricalSolveSummary);
+
+        ElectricalNodeResultItem childNode = viewModel.ElectricalNodeResults
+            .Single(node => node.Id == "X1/out_low");
+        Assert.Equal("X1", childNode.Scope);
+        Assert.Equal("Low-threshold inverter output", childNode.Name);
+        Assert.True(childNode.HasVoltage);
+
+        // The ported output is the parent's 'mid' node, so it is one row, not a second X1/out row.
+        Assert.DoesNotContain(
+            viewModel.ElectricalNodeResults,
+            node => node.Id == "X1/out");
+        Assert.Equal(
+            ["root", "X1", "X2"],
+            viewModel.ElectricalNodeResults
+                .Select(node => node.Scope)
+                .Distinct(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void EditingAChildInterfaceKeepsParentTerminalsInStep()
     {
         EditorViewModel viewModel = CreateEditor();
@@ -146,6 +175,18 @@ public sealed class ElectricalHierarchyEditorTests
         Assert.False(viewModel.ApplyField(ports));
         Assert.Contains("unknown node", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2, viewModel.SelectedElectricalCircuitModel.Ports.Count);
+    }
+
+    private static string ExamplePath(string fileName)
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Radix.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        return Path.Combine(directory!.FullName, "examples", fileName);
     }
 
     private static EditorViewModel CreateEditor()

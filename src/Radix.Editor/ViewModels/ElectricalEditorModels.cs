@@ -341,14 +341,14 @@ public sealed class ElectricalTerminalListItem : ObservableObject
 }
 
 
-/// <summary>One solved or unreferenced authored node in the Electrical solve preview.</summary>
+/// <summary>One solved or unreferenced node in the Electrical solve preview.</summary>
 public sealed class ElectricalNodeResultItem
 {
-    public ElectricalNodeResultItem(ElectricalNode node, double? volts)
+    public ElectricalNodeResultItem(string id, string name, string scope, double? volts)
     {
-        ArgumentNullException.ThrowIfNull(node);
-        Id = node.Id;
-        Name = string.IsNullOrWhiteSpace(node.Name) ? node.Id : node.Name;
+        Id = id;
+        Name = string.IsNullOrWhiteSpace(name) ? id : name;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
         Volts = volts;
         HasVoltage = volts is not null;
         VoltageText = volts is double value
@@ -359,6 +359,9 @@ public sealed class ElectricalNodeResultItem
     public string Id { get; }
 
     public string Name { get; }
+
+    /// <summary>The authored circuit root, or the instance path that owns this internal node.</summary>
+    public string Scope { get; }
 
     /// <summary>Solved node voltage, or null when the node is unreferenced.</summary>
     public double? Volts { get; }

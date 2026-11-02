@@ -1290,9 +1290,10 @@
                       <ItemsControl ItemsSource="{Binding ElectricalNodeResults}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalNodeResultItem">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,1">
-                              <TextBlock Text="{Binding Name}" FontSize="10" />
-                              <TextBlock Grid.Column="1" Text="{Binding VoltageText}" FontFamily="monospace" FontSize="10" Foreground="{DynamicResource App.Accent}" />
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" Margin="0,1">
+                              <TextBlock Text="{Binding Scope}" Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                              <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="10" ToolTip.Tip="{Binding Id}" />
+                              <TextBlock Grid.Column="2" Text="{Binding VoltageText}" FontFamily="monospace" FontSize="10" Foreground="{DynamicResource App.Accent}" />
                             </Grid>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>

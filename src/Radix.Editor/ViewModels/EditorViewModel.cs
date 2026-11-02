@@ -7194,10 +7194,28 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         ElectricalNodeResults.Clear();
+        var rootNodeIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (ElectricalNode node in circuit.Nodes)
         {
+            rootNodeIds.Add(node.Id);
             double? volts = solution.NodeVoltages.TryGetValue(node.Id, out double value) ? value : null;
-            ElectricalNodeResults.Add(new ElectricalNodeResultItem(node, volts));
+            ElectricalNodeResults.Add(new ElectricalNodeResultItem(
+                node.Id, node.Name, "root", volts));
+        }
+
+        // A recursive solve creates private nodes with instance-path prefixes. Add the ones that
+        // are not a port (ported nodes already appear as the parent node) so the panel exposes the
+        // child implementation rather than only the parent boundary.
+        foreach (string nodeId in netlist.Nodes)
+        {
+            if (!rootNodeIds.Add(nodeId))
+            {
+                continue;
+            }
+
+            (string scope, string name) = DescribeElectricalNode(nodeId, circuit);
+            double? volts = solution.NodeVoltages.TryGetValue(nodeId, out double value) ? value : null;
+            ElectricalNodeResults.Add(new ElectricalNodeResultItem(nodeId, name, scope, volts));
         }
 
         ElectricalElementResults.Clear();
@@ -7214,6 +7232,49 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalSolveSummary = $"Solved '{circuit.Id}' · {ElectricalNodeResults.Count} nodes · {ElectricalElementResults.Count} elements.";
         StatusText = $"Solved DC operating point for '{circuit.Id}'";
         return true;
+    }
+
+    /// <summary>
+    /// Resolves the authored name and owning instance path of a possibly prefixed netlist node.
+    /// The final segment is a node ID; every earlier segment names a direct subcircuit instance.
+    /// </summary>
+    private (string Scope, string Name) DescribeElectricalNode(
+        string netlistNodeId,
+        ElectricalCircuit root)
+    {
+        int separator = netlistNodeId.LastIndexOf('/');
+        if (separator < 0)
+        {
+            ElectricalNode? rootNode = root.FindNode(netlistNodeId);
+            return ("root", string.IsNullOrWhiteSpace(rootNode?.Name)
+                ? netlistNodeId
+                : rootNode.Name);
+        }
+
+        string path = netlistNodeId[..separator];
+        string nodeId = netlistNodeId[(separator + 1)..];
+        ElectricalCircuit circuit = root;
+        var scope = new List<string>();
+        foreach (string instanceId in path.Split('/'))
+        {
+            ElectricalComponent? instance = circuit.FindComponent(instanceId);
+            ElectricalCircuit? child = instance is not null &&
+                ElectricalComponentMetadata.IsSubcircuit(instance.Kind)
+                    ? _project.FindElectricalCircuit(instance.CircuitId)
+                    : null;
+            if (child is null)
+            {
+                return (path, nodeId);
+            }
+
+            scope.Add(instanceId);
+            circuit = child;
+        }
+
+        ElectricalNode? node = circuit.FindNode(nodeId);
+        return (string.Join("/", scope), string.IsNullOrWhiteSpace(node?.Name)
+            ? nodeId
+            : node.Name);
     }
 
     /// <summary>

@@ -9,12 +9,11 @@ humans; update it at each milestone instead of relying on chat history.
 - Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
 - Draft PR #7 is open against `main`: electrical hierarchy, reusable subcircuits,
   and the buffered ternary inverter.
-- Latest verified checkpoint: `faa218605a519db1886a2e7c36555922bfb126bd`
-  (editor overrides, v23 examples, and format/electrical/README docs).
-- Backend checkpoint: `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`
-  (per-instance subcircuit value overrides in the netlist and format 23).
+- Base checkpoint before the hierarchy-results change: `426626bbfbedff217f815f4a350166b55b6f5c77`
+  (verified editor overrides, v23 examples, format/electrical/README docs).
+- Backend override checkpoint: `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`.
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 830/830, CLI tests 2/2, Editor tests 311/311. The buffered example solves both
+  tests 830/830, CLI tests 2/2, Editor tests 312/312. The buffered example solves both
   from JSON and as an authored project; its 100 kOhm loaded operating point and a
   diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
@@ -26,6 +25,22 @@ humans; update it at each milestone instead of relying on chat history.
 - Latest verified code commit: see `git log agent/radix-verification`; benchmark documentation has a fresh seven-sample run recorded below.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
+
+## Session 2026-11-02 (hierarchical operating-point nodes)
+
+- The Electrical tab's solved NODES table now includes unported internal nodes from
+  recursively expanded subcircuits, not only the selected circuit's authored nodes.
+- Each row carries the netlist node ID, the child node's authored name, and an
+  instance scope: `root` for the selected circuit, or the path such as `X1` or
+  `X1/X1` for a nested instance. Ported nodes are not duplicated because they are
+  the same electrical node as their parent binding.
+- Added a regression that loads `examples/electrical-ternary-hierarchy.radix`, solves
+  `chain`, and checks that `X1/out_low` appears with scope `X1`, its authored name,
+  and no duplicate `X1/out` row.
+- Updated `docs/electrical.md` to describe the hierarchy rows and the distinction
+  between ported and private child nodes.
+- Verification: build clean (0 warnings/errors), Core 830/830, CLI 2/2, Editor 312/312;
+  focused hierarchy editor tests 4/4.
 
 ## Session 2026-11-02 (per-instance subcircuit overrides)
 

@@ -1293,15 +1293,19 @@ Open the file in the editor with
 `dotnet run --project src/Radix.Editor -- examples/electrical-ternary-hierarchy.radix`. The
 Electrical tab lists both circuits; select `sti` to see its ports and independent devices, then
 select `chain` to see the two subcircuit instances, their terminal bindings, and the solved
-operating point. The instance nodes are reported under their prefixed names, so the internal
-implementation of each stage remains inspectable rather than being replaced by a black box.
+operating point. After **Solve**, the NODES table includes unported child nodes under their
+prefixed ID, labels each with its owning instance path (`X1`, `X1/X1`, or `root`), and uses the
+child node's authored name; a ported node appears once at the parent boundary because it is the
+same electrical node. The internal implementation of each stage therefore remains inspectable
+rather than being replaced by a black box.
 
 Tests: `ElectricalHierarchyTests` covers flat-equivalent solves, two independent instances with
 different overrides, nested expansion, the serialized round trip, the transient RC closed form,
 every validation failure above, and the shipped chain at all three levels.
 `ElectricalHierarchyEditorTests` covers authoring ports, choosing a referenced circuit, filling
-and rebinding terminals, interface synchronization, invalid port and override text, and a solved
-parent whose override changes the divider from 2.5 V to 3.75 V.
+and rebinding terminals, interface synchronization, invalid port and override text, a solved
+parent whose override changes the divider from 2.5 V to 3.75 V, and the prefixed child-node rows
+exposed in the solved hierarchy table.
 
 Limitations: ports are bidirectional node aliases with no analog direction; a referenced circuit
 must expose its ground; an override replaces only one direct child's primary value, so it cannot
