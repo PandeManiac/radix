@@ -112,7 +112,11 @@ internal static class Program
                                              Solve a DC linear electrical circuit
               drive <project.radix>          Run a circuit's authored drive bindings and report
                                              the levels they would write, with their ticks
-                  [--circuit <id>] [--stop <s>] [--steps <n>] [--json]
+                  [--circuit <id>] [--stop <s>] [--steps <n>]
+                  [--simulate [--definition <id>]]
+                                             Apply the reported drives to a definition of the
+                                             same project instead of only showing them
+                  [--json]
                   [--circuit <id>]           Choose an authored circuit in a project
                   [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>]
                                              Solve once per value of one element parameter
@@ -853,12 +857,12 @@ internal static class Program
     {
         (var positional, var options) = Parse(
             args,
-            ["circuit", "stop", "steps"],
-            ["json"]);
+            ["circuit", "stop", "steps", "definition"],
+            ["json", "simulate"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
-                "usage: radix drive <project.radix> [--circuit <id>] [--stop <s>] [--steps <n>] [--json]");
+                "usage: radix drive <project.radix> [--circuit <id>] [--stop <s>] [--steps <n>] [--simulate [--definition <id>]] [--json]");
             return 2;
         }
 
@@ -907,6 +911,43 @@ internal static class Program
             MaximumStepCount = 100_000,
         });
 
+        SimulationScriptResult? simulation = null;
+        if (options.ContainsKey("simulate"))
+        {
+            simulation = ElectricalDriveSimulation.Run(
+                project, circuit, run, sampler, GetOption(options, "definition"));
+            if (!simulation.Passed)
+            {
+                if (options.ContainsKey("json"))
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(
+                        new
+                        {
+                            circuit = circuit.Id,
+                            simulated = false,
+                            failures = simulation.Failures.Select(failure => new
+                            {
+                                step = failure.Step,
+                                at = failure.At,
+                                message = failure.Message,
+                            }),
+                        },
+                        ReportJsonOptions));
+                }
+                else
+                {
+                    foreach (ScriptFailure failure in simulation.Failures)
+                    {
+                        Console.Error.WriteLine($"step {failure.Step} at t={failure.At}: {failure.Message}");
+                    }
+                }
+
+                Console.Error.WriteLine(
+                    $"simulation failed: {simulation.Failures.Count} failure(s) over {simulation.StepsExecuted} step(s).");
+                return 1;
+            }
+        }
+
         if (options.ContainsKey("json"))
         {
             Console.WriteLine(JsonSerializer.Serialize(
@@ -929,6 +970,15 @@ internal static class Program
                             level = entry.Step.Level,
                         }),
                     }),
+                    simulation = simulation is null
+                        ? null
+                        : new
+                        {
+                            simulated = true,
+                            definition = simulation.DefinitionId,
+                            steps = simulation.StepsExecuted,
+                            finalTime = simulation.FinalTime,
+                        },
                 },
                 ReportJsonOptions));
             return 0;
@@ -947,6 +997,12 @@ internal static class Program
                 Console.WriteLine(
                     $"  {binding.NodeId,-10}  {binding.PinId,-4}  {at,-8}  {step.Time:E3}  {step.Volts,8:G4}  {step.Level}");
             }
+        }
+
+        if (simulation is not null)
+        {
+            Console.WriteLine(
+                $"simulated {simulation.StepsExecuted} drive step(s) in definition '{simulation.DefinitionId}' to t={simulation.FinalTime}.");
         }
 
         return 0;
