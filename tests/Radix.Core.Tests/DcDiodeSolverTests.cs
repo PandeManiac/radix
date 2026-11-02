@@ -37,6 +37,31 @@ public sealed class DcDiodeSolverTests
     }
 
     [Fact]
+    public void IndependentLargeVoltageSourceBranchCurrentDoesNotLoosenDiodeVoltageConvergence()
+    {
+        const double sourceVoltage = 1;
+        const double resistance = 1e30;
+        const double saturationCurrent = 1e-40;
+        const double unrelatedCurrent = 1e12;
+        var netlist = new DcNetlist("gnd")
+            .AddVoltageSource("Vbias", "in", "gnd", sourceVoltage)
+            .AddResistor("Rbias", "in", "out", resistance)
+            .AddDiode("D1", "out", "gnd", saturationCurrent)
+            .AddVoltageSource("Vstress", "stress", "gnd", 1)
+            .AddCurrentSource("Istress", "stress", "gnd", unrelatedCurrent)
+            .AddResistor("Rstress", "stress", "gnd", 1);
+
+        DcSolution solution = netlist.Solve();
+        DcDiode diode = Assert.IsType<DcDiode>(netlist.Elements[2]);
+        double expected = BisectForwardVoltage(sourceVoltage, resistance, diode);
+
+        AssertClose(expected, solution.NodeVoltages["out"], 1e-7);
+        Assert.InRange(Math.Abs(solution.NodeVoltages["out"] - expected), 0, 1e-7);
+        Assert.True(Math.Abs(solution.ElementCurrents["Vstress"]) > unrelatedCurrent * 0.99);
+        Assert.True(solution.RelativeResidual <= 1);
+    }
+
+    [Fact]
     public void ReverseBiasedDiodePassesOnlySaturationCurrent()
     {
         var netlist = new DcNetlist("gnd")
