@@ -94,11 +94,14 @@ public sealed class TransientPlotView : Control
             context.DrawText(label, new Point(LeftMargin - label.Width - 3, y - (label.Height / 2)));
         }
 
-        foreach (double tick in plot.TimeTicks)
+        for (int index = 0; index < plot.TimeTicks.Count; index++)
         {
+            double tick = plot.TimeTicks[index];
             double x = Map(tick, plot.ValueMin).X;
             context.DrawLine(gridPen, new Point(x, TopMargin), new Point(x, TopMargin + height));
-            FormattedText label = Text(TransientPlot.FormatTick(tick), 8.5, muted);
+            // A log-frequency axis plots exponents but must read as decades, so the model owns
+            // the label rather than the renderer formatting whatever number it happens to get.
+            FormattedText label = Text(plot.TimeTickLabel(index), 8.5, muted);
             context.DrawText(label, new Point(x - (label.Width / 2), TopMargin + height + 3));
         }
 
@@ -149,8 +152,15 @@ public sealed class TransientPlotView : Control
             context.DrawText(name, new Point(LeftMargin + (index * 56), 2));
         }
 
-        // A short unit hint keeps the value axis unambiguous; voltages are the only node quantity.
-        context.DrawText(Text("V", 8.5, ink), new Point(2, 2));
+        // Short unit hints keep both axes unambiguous: volts for a transient, dB for a response.
+        context.DrawText(Text(plot.VerticalUnit, 8.5, ink), new Point(2, 2));
+        if (plot.HorizontalUnit.Length > 0)
+        {
+            FormattedText unit = Text(plot.HorizontalUnit, 8.5, ink);
+            context.DrawText(
+                unit,
+                new Point(LeftMargin + width - unit.Width, TopMargin + height + 3));
+        }
     }
 
     private static FormattedText Text(string text, double size, IBrush brush) => new(

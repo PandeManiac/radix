@@ -89,6 +89,60 @@ public sealed class ElectricalAcSweepTests
         Assert.Equal(7, output.Points[^1].Time, 9);
         // The first sample is the gain the summary names.
         Assert.InRange(output.Points[0].Value, 20, 40);
+
+        // The axis plots exponents but reads in decades, so a reader never sees "3" for 1 kHz.
+        Assert.Equal([3d, 4d, 5d, 6d, 7d], plot.TimeTicks);
+        Assert.Equal(
+            ["1k", "10k", "100k", "1M", "10M"],
+            Enumerable.Range(0, plot.TimeTicks.Count)
+                .Select(plot.TimeTickLabel)
+                .ToArray());
+        Assert.Equal("Hz", plot.HorizontalUnit);
+        Assert.Equal("dB", plot.VerticalUnit);
+    }
+
+    [Fact]
+    public void ThePhaseIsDrawnOnItsOwnAxis()
+    {
+        EditorViewModel viewModel = TernaryInverter();
+        viewModel.ElectricalAcSweepDriveText = "VIN";
+        viewModel.ElectricalAcSweepBiasText = "VIN=1.3";
+        viewModel.ElectricalAcSweepRangeText = "1e3:1e7:9";
+        Assert.True(viewModel.RunElectricalAcSweep());
+
+        // Degrees and decibels share no scale, so the phase gets its own geometry and its own
+        // unit rather than being squeezed onto the gain curve's axis.
+        TransientPlot phase = Assert.IsType<TransientPlot>(viewModel.ElectricalAcSweepPhasePlot);
+        Assert.Equal("°", phase.VerticalUnit);
+        Assert.Equal("Hz", phase.HorizontalUnit);
+
+        TransientPlotSeries output = phase.Series.Single(series => series.NodeId == "out");
+        Assert.Equal(9, output.Points.Count);
+        // The gate inverts at low frequency and rolls off towards zero phase at high frequency.
+        Assert.InRange(output.Points[0].Value, 170, 190);
+        Assert.InRange(output.Points[^1].Value, 0, 120);
+    }
+
+    [Fact]
+    public void AxisTicksAndLabelsMustPairUp()
+    {
+        var series = new[]
+        {
+            new TransientPlotSeries("out", [new TransientPlotPoint(0, 1), new TransientPlotPoint(1, 2)]),
+        };
+
+        // A tick without a label would render a number where a decade belongs, so the model
+        // refuses the pair instead of silently formatting the wrong axis.
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => TransientPlot.Create(
+            series,
+            TransientPlot.DefaultMaximumPointsPerSeries,
+            [3, 4, 5],
+            ["1k", "10k"],
+            "Hz",
+            "dB"));
+
+        Assert.Contains("3 ticks", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("2 labels", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -207,6 +207,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalAcSweepSummary = DefaultElectricalAcSweepSummary;
     private AcReport? _electricalAcSweepReport;
     private TransientPlot? _electricalAcSweepPlot;
+    private TransientPlot? _electricalAcSweepPhasePlot;
     private string _electricalSweepSummary =
         "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
@@ -605,6 +606,24 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Whether the response has a curve to draw.</summary>
     public bool HasElectricalAcSweepPlot => ElectricalAcSweepPlot is { IsEmpty: false };
+
+    /// <summary>
+    /// Phase against log frequency, drawn separately from the gain: degrees and decibels share no
+    /// scale, and overlaying them on one axis would make both curves meaningless.
+    /// </summary>
+    public TransientPlot? ElectricalAcSweepPhasePlot
+    {
+        get => _electricalAcSweepPhasePlot;
+        private set
+        {
+            _electricalAcSweepPhasePlot = value;
+            RaisePropertyChanged(nameof(ElectricalAcSweepPhasePlot));
+            RaisePropertyChanged(nameof(HasElectricalAcSweepPhasePlot));
+        }
+    }
+
+    /// <summary>Whether the phase has a curve to draw.</summary>
+    public bool HasElectricalAcSweepPhasePlot => ElectricalAcSweepPhasePlot is { IsEmpty: false };
 
     /// <summary>Whether the refinement table has rows to show.</summary>
     public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
@@ -7247,7 +7266,7 @@ public sealed class EditorViewModel : ObservableObject
         // Keep the study, not the formatted table: the export must describe what the solver
         // produced, so it is built from the response and not from the display strings.
         _electricalAcSweepReport = AcReport.From(response, null, circuit.Id);
-        RebuildElectricalAcSweepPlot(response, nodes);
+        RebuildElectricalAcSweepPlot(response, nodes, from, to);
         RaisePropertyChanged(nameof(HasElectricalAcSweepResult));
 
         // Name the loudest responding node and where it starts rolling off: a response is judged
@@ -7319,13 +7338,19 @@ public sealed class EditorViewModel : ObservableObject
         return true;
     }
 
-    private void RebuildElectricalAcSweepPlot(AcResponse response, IReadOnlyList<string> nodes)
+    private void RebuildElectricalAcSweepPlot(
+        AcResponse response,
+        IReadOnlyList<string> nodes,
+        double from,
+        double to)
     {
-        var series = new List<TransientPlotSeries>();
+        var gainSeries = new List<TransientPlotSeries>();
+        var phaseSeries = new List<TransientPlotSeries>();
         for (int index = 0; index < nodes.Count; index++)
         {
             string nodeId = nodes[index];
-            var points = new List<TransientPlotPoint>(response.Points.Count);
+            var gain = new List<TransientPlotPoint>(response.Points.Count);
+            var phase = new List<TransientPlotPoint>(response.Points.Count);
             foreach (AcPoint point in response.Points)
             {
                 double magnitude = point.NodeVoltages[nodeId].Magnitude;
@@ -7334,24 +7359,90 @@ public sealed class EditorViewModel : ObservableObject
                     continue;
                 }
 
-                points.Add(new TransientPlotPoint(
-                    Math.Log10(point.FrequencyHertz), 20 * Math.Log10(magnitude)));
+                double decades = Math.Log10(point.FrequencyHertz);
+                gain.Add(new TransientPlotPoint(decades, 20 * Math.Log10(magnitude)));
+                phase.Add(new TransientPlotPoint(
+                    decades, AcResponse.PhaseDegrees(point.NodeVoltages[nodeId])));
             }
 
             // A node with no response anywhere would flatten the vertical range to its floor.
-            if (points.Count > 1)
+            if (gain.Count > 1)
             {
-                series.Add(new TransientPlotSeries(nodeId, points, index));
+                gainSeries.Add(new TransientPlotSeries(nodeId, gain, index));
+                phaseSeries.Add(new TransientPlotSeries(nodeId, phase, index));
             }
         }
 
-        ElectricalAcSweepPlot = series.Count == 0 ? null : TransientPlot.Create(series);
+        (IReadOnlyList<double> ticks, IReadOnlyList<string> labels) = AcDecadeAxis(from, to);
+        bool labelled = ticks.Count >= 2;
+        ElectricalAcSweepPlot = gainSeries.Count == 0
+            ? null
+            : TransientPlot.Create(
+                gainSeries,
+                TransientPlot.DefaultMaximumPointsPerSeries,
+                labelled ? ticks : null,
+                labelled ? labels : null,
+                "Hz",
+                "dB");
+        ElectricalAcSweepPhasePlot = phaseSeries.Count == 0
+            ? null
+            : TransientPlot.Create(
+                phaseSeries,
+                TransientPlot.DefaultMaximumPointsPerSeries,
+                labelled ? ticks : null,
+                labelled ? labels : null,
+                "Hz",
+                "°");
+    }
+
+    /// <summary>
+    /// Decade ticks for a log-frequency axis: the horizontal values are exponents, so the labels
+    /// say 1k, 10k, 100k rather than 3, 4, 5. A sweep narrower than a decade has no exposed
+    /// decade boundaries and falls back to evenly spaced numeric ticks.
+    /// </summary>
+    private static (IReadOnlyList<double> Ticks, IReadOnlyList<string> Labels) AcDecadeAxis(
+        double fromHertz,
+        double toHertz)
+    {
+        int first = (int)Math.Ceiling(Math.Log10(fromHertz) - 1e-9);
+        int last = (int)Math.Floor(Math.Log10(toHertz) + 1e-9);
+        var ticks = new List<double>();
+        var labels = new List<string>();
+        for (int exponent = first; exponent <= last && ticks.Count < 12; exponent++)
+        {
+            ticks.Add(exponent);
+            labels.Add(DecadeLabel(exponent));
+        }
+
+        return (ticks, labels);
+    }
+
+    private static string DecadeLabel(int exponent)
+    {
+        double hertz = Math.Pow(10, exponent);
+        if (hertz >= 1e9)
+        {
+            return (hertz / 1e9).ToString("G0", CultureInfo.InvariantCulture) + "G";
+        }
+
+        if (hertz >= 1e6)
+        {
+            return (hertz / 1e6).ToString("G0", CultureInfo.InvariantCulture) + "M";
+        }
+
+        if (hertz >= 1e3)
+        {
+            return (hertz / 1e3).ToString("G0", CultureInfo.InvariantCulture) + "k";
+        }
+
+        return hertz.ToString("G0", CultureInfo.InvariantCulture);
     }
 
     private void ClearElectricalAcSweep(string summary)
     {
         ElectricalAcSweepRows.Clear();
         ElectricalAcSweepPlot = null;
+        ElectricalAcSweepPhasePlot = null;
         _electricalAcSweepReport = null;
         ElectricalAcSweepSummary = summary;
         RaisePropertyChanged(nameof(HasElectricalAcSweepResult));

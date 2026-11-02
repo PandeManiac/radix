@@ -1209,7 +1209,8 @@
                       Padding="7,5"
                       Margin="0,0,0,4">
                     <StackPanel Spacing="3">
-                      <controls:TransientPlotView Plot="{Binding ElectricalAcSweepPlot}" Height="150" Margin="0,2,0,4" IsVisible="{Binding HasElectricalAcSweepPlot}" />
+                      <controls:TransientPlotView Plot="{Binding ElectricalAcSweepPlot}" Height="140" Margin="0,2,0,2" IsVisible="{Binding HasElectricalAcSweepPlot}" />
+                      <controls:TransientPlotView Plot="{Binding ElectricalAcSweepPhasePlot}" Height="96" Margin="0,0,0,4" IsVisible="{Binding HasElectricalAcSweepPhasePlot}" />
                       <Grid ColumnDefinitions="72,*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="hz" Classes="muted" FontSize="8.5" />
                         <TextBlock Grid.Column="1" Text="node" Classes="muted" FontSize="8.5" />

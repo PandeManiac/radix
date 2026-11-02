@@ -538,8 +538,9 @@ assembly and the DC slope cross-check each other instead of each being trusted a
 
 The editor's **AC SWEEP** panel runs the same analysis on the selected circuit: name the drive, a
 `from:to:points` range, and optionally `source=volts` as a bias. It lists every node's gain and phase
-per frequency, plots gain in dB against log frequency, and copies the table as the same CSV
-`radix ac --csv` writes. Editing the circuit drops the response, because a curve describing an older
+per frequency, plots gain in dB and phase in degrees against log frequency on separate axes, and
+copies the table as the same CSV `radix ac --csv` writes. The frequency axis is labelled in decades
+(1k, 10k, 100k, …) even though it plots exponents, because "3" is not a frequency a reader can use. Editing the circuit drops the response, because a curve describing an older
 circuit is worse than no curve.
 
 **Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,

@@ -53,7 +53,10 @@ public sealed class TransientPlot
         double valueMax,
         IReadOnlyList<TransientPlotSeries> series,
         IReadOnlyList<double> timeTicks,
-        IReadOnlyList<double> valueTicks)
+        IReadOnlyList<double> valueTicks,
+        IReadOnlyList<string>? timeTickLabels,
+        string horizontalUnit,
+        string verticalUnit)
     {
         TimeStart = timeStart;
         TimeEnd = timeEnd;
@@ -62,6 +65,9 @@ public sealed class TransientPlot
         Series = series;
         TimeTicks = timeTicks;
         ValueTicks = valueTicks;
+        TimeTickLabels = timeTickLabels;
+        HorizontalUnit = horizontalUnit;
+        VerticalUnit = verticalUnit;
     }
 
     public double TimeStart { get; }
@@ -78,7 +84,26 @@ public sealed class TransientPlot
 
     public IReadOnlyList<double> ValueTicks { get; }
 
+    /// <summary>
+    /// Labels for <see cref="TimeTicks" /> when the horizontal axis is not a plain number line —
+    /// a log-frequency axis reads as decades (1k, 10k, …) rather than as the exponents it plots.
+    /// Null means each tick is formatted from its value.
+    /// </summary>
+    public IReadOnlyList<string>? TimeTickLabels { get; }
+
+    /// <summary>Unit of the horizontal axis, empty when it carries no unit.</summary>
+    public string HorizontalUnit { get; }
+
+    /// <summary>Unit of the vertical axis, drawn as a short hint.</summary>
+    public string VerticalUnit { get; }
+
     public bool IsEmpty => Series.Count == 0;
+
+    /// <summary>The label for one horizontal tick, using the supplied labels when present.</summary>
+    public string TimeTickLabel(int index) =>
+        TimeTickLabels is { } labels && index >= 0 && index < labels.Count
+            ? labels[index]
+            : FormatTick(TimeTicks[index]);
 
     /// <summary>
     /// Builds the plot from per-node samples, or null when there is nothing to draw. The
@@ -87,10 +112,32 @@ public sealed class TransientPlot
     /// </summary>
     public static TransientPlot? Create(
         IEnumerable<TransientPlotSeries> series,
-        int maximumPointsPerSeries = DefaultMaximumPointsPerSeries)
+        int maximumPointsPerSeries = DefaultMaximumPointsPerSeries) =>
+        Create(series, maximumPointsPerSeries, null, null, string.Empty, "V");
+
+    /// <summary>
+    /// Builds a plot whose horizontal axis carries its own ticks, labels and units, which is what
+    /// a frequency response needs: the axis is logarithmic, so evenly spaced numbers would be
+    /// unreadable and decade labels are the only honest ticks.
+    /// </summary>
+    public static TransientPlot? Create(
+        IEnumerable<TransientPlotSeries> series,
+        int maximumPointsPerSeries,
+        IReadOnlyList<double>? timeTicks,
+        IReadOnlyList<string>? timeTickLabels,
+        string horizontalUnit,
+        string verticalUnit)
     {
         ArgumentNullException.ThrowIfNull(series);
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumPointsPerSeries, 2);
+        if (timeTicks is not null &&
+            timeTickLabels is not null &&
+            timeTicks.Count != timeTickLabels.Count)
+        {
+            throw new ArgumentException(
+                $"Axis ticks and labels must pair up: {timeTicks.Count} ticks but {timeTickLabels.Count} labels.",
+                nameof(timeTickLabels));
+        }
 
         var prepared = new List<TransientPlotSeries>();
         double timeStart = double.PositiveInfinity;
@@ -155,8 +202,11 @@ public sealed class TransientPlot
             valueMin,
             valueMax,
             decimated,
-            Ticks(timeStart, timeEnd),
-            Ticks(valueMin, valueMax));
+            timeTicks ?? Ticks(timeStart, timeEnd),
+            Ticks(valueMin, valueMax),
+            timeTickLabels,
+            horizontalUnit,
+            verticalUnit);
     }
 
     /// <summary>Horizontal position in [0, 1] for a time inside the range.</summary>
