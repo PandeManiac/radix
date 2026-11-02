@@ -21,7 +21,17 @@ public enum TransientMethod
 /// A two-terminal ideal capacitor, <c>i = C dv/dt</c>, with current flowing from
 /// <see cref="NodeA"/> to <see cref="NodeB"/> through the element.
 /// </summary>
-public sealed record TransientCapacitor(string Id, string NodeA, string NodeB, double Farads);
+public sealed record TransientCapacitor(string Id, string NodeA, string NodeB, double Farads)
+{
+    /// <summary>
+    /// The value the current step should stamp, when a model supplies one. Null means the authored
+    /// value, which is what every constant capacitance uses.
+    /// </summary>
+    public double? EffectiveFaradsOverride { get; set; }
+
+    /// <summary>The capacitance the solver stamps: the override when set, otherwise the authored value.</summary>
+    public double EffectiveFarads => EffectiveFaradsOverride ?? Farads;
+}
 
 /// <summary>
 /// A two-terminal ideal inductor, <c>v = L di/dt</c>, with current flowing from
@@ -473,6 +483,9 @@ public sealed class TransientNetlist
 {
     private const string CompanionPrefix = "~";
 
+    private bool _biasDependentCapacitance;
+    private IReadOnlyDictionary<string, double>? _lastBiasVoltages;
+
     private readonly List<DcElement> _elements = [];
     private readonly List<TransientCapacitor> _capacitors = [];
     private readonly List<TransientInductor> _inductors = [];
@@ -499,7 +512,20 @@ public sealed class TransientNetlist
     /// <summary>The non-reactive elements, in insertion order.</summary>
     public IReadOnlyList<DcElement> Elements => _elements;
 
-    public IReadOnlyList<TransientCapacitor> Capacitors => _capacitors;
+    /// <summary>
+    /// The capacitors that were added to the circuit. A MOSFET's own gate capacitance lives in the
+    /// same state list so it integrates with everything else, but it is a device detail rather than
+    /// an authored element, so it is not reported here and does not appear in element tables.
+    /// </summary>
+    public IReadOnlyList<TransientCapacitor> Capacitors =>
+        _capacitors.Where(capacitor => !IsInternal(capacitor.Id)).ToArray();
+
+    /// <summary>
+    /// Every capacitor the solver integrates, device parasitics included. Frequency-domain analysis
+    /// needs all of them: a transistor's own capacitance is exactly what its bandwidth depends on,
+    /// even though element tables hide it.
+    /// </summary>
+    public IReadOnlyList<TransientCapacitor> CapacitorsIncludingDevices => _capacitors;
 
     public IReadOnlyList<TransientInductor> Inductors => _inductors;
 
@@ -538,6 +564,17 @@ public sealed class TransientNetlist
                         diode.BreakdownVoltage,
                         diode.BreakdownCurrent);
                     break;
+                case DcMosfet mosfet:
+                    copy.AddMosfet(
+                        mosfet.Id,
+                        mosfet.Drain,
+                        mosfet.Gate,
+                        mosfet.Source,
+                        mosfet.Channel,
+                        mosfet.ThresholdVoltage,
+                        mosfet.Transconductance,
+                        mosfet.ChannelLengthModulation);
+                    break;
                 default:
                     throw new InvalidOperationException(
                         $"Element '{element.Id}' has an unknown type and cannot be copied.");
@@ -546,7 +583,14 @@ public sealed class TransientNetlist
 
         foreach (TransientCapacitor capacitor in _capacitors)
         {
-            copy.AddCapacitor(capacitor.Id, capacitor.NodeA, capacitor.NodeB, capacitor.Farads);
+            if (IsInternal(capacitor.Id))
+            {
+                copy.AddInternalCapacitor(capacitor.Id, capacitor.NodeA, capacitor.NodeB, capacitor.Farads);
+            }
+            else
+            {
+                copy.AddCapacitor(capacitor.Id, capacitor.NodeA, capacitor.NodeB, capacitor.Farads);
+            }
         }
 
         foreach (TransientInductor inductor in _inductors)
@@ -598,6 +642,7 @@ public sealed class TransientNetlist
                 DcDiode => throw new ArgumentException(
                     $"Element '{id}' is a diode; its diode parameters cannot be swept as one value, so sweep a resistor, source, capacitor or inductor instead.",
                     nameof(id)),
+                DcMosfet mosfet => mosfet with { Transconductance = RequireSweptPositive(value, id) },
                 _ => throw new ArgumentException($"Element '{id}' cannot be swept.", nameof(id)),
             };
             return copy;
@@ -735,6 +780,121 @@ public sealed class TransientNetlist
             breakdownCurrent));
     }
 
+    /// <summary>
+    /// Adds a three-terminal MOSFET with the same parameters as
+    /// <see cref="DcNetlist.AddMosfet"/>.
+    /// <para>
+    /// The device capacitances — gate-source, gate-drain and drain-source — are optional and
+    /// default to zero, which keeps a DC-tuned netlist
+    /// time-invariant. When they are given they are stamped between gate and source and between
+    /// gate and drain for every step, so the gate has to be charged through the circuit before the
+    /// channel can follow: the resulting transition times then come from the device instead of
+    /// only from an explicit load capacitor. There is still no junction or body capacitance.
+    /// </para>
+    /// </summary>
+    public TransientNetlist AddMosfet(
+        string id,
+        string drain,
+        string gate,
+        string source,
+        DcMosfetChannel channel,
+        double thresholdVoltage,
+        double transconductance,
+        double channelLengthModulation = 0,
+        double gateSourceFarads = 0,
+        double gateDrainFarads = 0,
+        double drainSourceFarads = 0)
+    {
+        ValidateElement(id, drain, source);
+        if (string.IsNullOrWhiteSpace(gate))
+        {
+            throw new ArgumentException("The MOSFET gate node ID must not be empty.", nameof(gate));
+        }
+
+        if (!Enum.IsDefined(channel))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(channel), channel, "Channel must be an n-channel or p-channel device.");
+        }
+
+        if (!double.IsFinite(thresholdVoltage))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(thresholdVoltage), thresholdVoltage, "Threshold voltage must be finite.");
+        }
+
+        if (!double.IsFinite(transconductance) || transconductance <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(transconductance),
+                transconductance,
+                "The transconductance parameter must be finite and greater than zero.");
+        }
+
+        if (!double.IsFinite(channelLengthModulation) || channelLengthModulation < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(channelLengthModulation),
+                channelLengthModulation,
+                "Channel-length modulation must be finite and non-negative.");
+        }
+
+        if (!double.IsFinite(gateSourceFarads) || gateSourceFarads < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(gateSourceFarads),
+                gateSourceFarads,
+                "Gate-source capacitance must be finite and non-negative.");
+        }
+
+        if (!double.IsFinite(gateDrainFarads) || gateDrainFarads < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(gateDrainFarads),
+                gateDrainFarads,
+                "Gate-drain capacitance must be finite and non-negative.");
+        }
+
+        if (!double.IsFinite(drainSourceFarads) || drainSourceFarads < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(drainSourceFarads),
+                drainSourceFarads,
+                "Drain-source capacitance must be finite and non-negative.");
+        }
+
+        AddStatic(new DcMosfet(
+            id,
+            drain,
+            gate,
+            source,
+            channel,
+            thresholdVoltage,
+            transconductance,
+            channelLengthModulation));
+
+        // A capacitance between two names for the same node has no voltage across it and can
+        // contribute nothing, and stamping it would add a resistor from a node to itself.
+        if (gateSourceFarads > 0 && !string.Equals(gate, source, StringComparison.Ordinal))
+        {
+            AddInternalCapacitor(CompanionId(id, "cgs"), gate, source, gateSourceFarads);
+        }
+
+        if (gateDrainFarads > 0 && !string.Equals(gate, drain, StringComparison.Ordinal))
+        {
+            AddInternalCapacitor(CompanionId(id, "cgd"), gate, drain, gateDrainFarads);
+        }
+
+        // Drain-to-source capacitance is what lets a device load its own output: without it an
+        // output node has no speed of its own and any delay must be added as a separate capacitor.
+        if (drainSourceFarads > 0)
+        {
+            AddInternalCapacitor(CompanionId(id, "cds"), drain, source, drainSourceFarads);
+        }
+
+        return this;
+    }
+
     public TransientNetlist AddCapacitor(string id, string nodeA, string nodeB, double farads)
     {
         ValidateElement(id, nodeA, nodeB);
@@ -836,6 +996,78 @@ public sealed class TransientNetlist
     }
 
     /// <summary>
+    /// The DC operating point this netlist starts from: capacitors open, inductors ideal shorts,
+    /// and every source at its value at <paramref name="time"/>. This is also the bias point a
+    /// frequency-domain analysis linearizes around.
+    /// </summary>
+    public DcSolution SolveDc(double time = 0) => SolveOperatingPoint(time);
+
+    /// <summary>
+    /// Turns on the bias dependence of the MOSFET gate capacitances. Each step then stamps the
+    /// fraction of the authored value its device's region presents — two thirds towards the source
+    /// and nothing towards the drain in saturation — instead of the authored value throughout.
+    /// <para>
+    /// The region is taken from the last accepted solution, so this is an explicit rather than an
+    /// implicit capacitance: the value is constant within a step and the charge it moves is the
+    /// value times the voltage change it saw. Off by default, because a constant capacitance is
+    /// what every existing measurement was taken with.
+    /// </para>
+    /// </summary>
+    public TransientNetlist UseBiasDependentCapacitance(bool enabled = true)
+    {
+        _biasDependentCapacitance = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Re-evaluates each device capacitor from the last solved voltages. Internal ids follow the
+    /// companion pattern <c>~&lt;device&gt;.&lt;terminal&gt;</c>, so the device and the terminal it belongs to are
+    /// recovered from the id rather than from a second table that could fall out of step.
+    /// </summary>
+    private void ApplyBiasDependentDeviceCapacitances()
+    {
+        if (!_biasDependentCapacitance || _lastBiasVoltages is not { } bias)
+        {
+            return;
+        }
+
+        // Device capacitors are identified by their terminals rather than by parsing their ids: the
+        // gate-source capacitor sits across the gate and source, the gate-drain one across the gate
+        // and drain, and matching nodes cannot fall out of step with a naming convention.
+        foreach (DcMosfet device in _elements.OfType<DcMosfet>())
+        {
+            double gateSource = NodeVoltage(bias, device.Gate) - NodeVoltage(bias, device.Source);
+            double drainSource = NodeVoltage(bias, device.Drain) - NodeVoltage(bias, device.Source);
+            DcMosfetRegion region = device.Evaluate(drainSource, gateSource).Region;
+            double gateSourceFraction = MosfetCapacitance.GateSourceFraction(region);
+            double gateDrainFraction = MosfetCapacitance.GateDrainFraction(region);
+
+            foreach (TransientCapacitor capacitor in _capacitors)
+            {
+                if (!IsInternal(capacitor.Id))
+                {
+                    continue;
+                }
+
+                if (Across(capacitor, device.Gate, device.Source))
+                {
+                    capacitor.EffectiveFaradsOverride = capacitor.Farads * gateSourceFraction;
+                }
+                else if (Across(capacitor, device.Gate, device.Drain))
+                {
+                    capacitor.EffectiveFaradsOverride = capacitor.Farads * gateDrainFraction;
+                }
+            }
+        }
+
+        static bool Across(TransientCapacitor capacitor, string nodeA, string nodeB) =>
+            (string.Equals(capacitor.NodeA, nodeA, StringComparison.Ordinal) &&
+             string.Equals(capacitor.NodeB, nodeB, StringComparison.Ordinal)) ||
+            (string.Equals(capacitor.NodeA, nodeB, StringComparison.Ordinal) &&
+             string.Equals(capacitor.NodeB, nodeA, StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Runs a fixed-step transient analysis from the DC operating point. The
     /// operating point treats capacitors as open circuits and inductors as ideal
     /// zero-volt shorts, uses every source's waveform value at
@@ -894,7 +1126,10 @@ public sealed class TransientNetlist
 
         for (int index = 0; index < _capacitors.Count; index++)
         {
-            capacitorCurrents[index] = initialState.ElementCurrents[_capacitors[index].Id];
+            capacitorCurrents[index] =
+                initialState.ElementCurrents.TryGetValue(_capacitors[index].Id, out double amperes)
+                    ? amperes
+                    : 0;
         }
 
         for (int index = 0; index < _inductors.Count; index++)
@@ -904,6 +1139,7 @@ public sealed class TransientNetlist
                 initialState.NodeVoltages, inductor.NodeA, inductor.NodeB);
         }
 
+        _lastBiasVoltages = initialState.NodeVoltages;
         var state = new ReactiveState(
             capacitorVoltages, capacitorCurrents, inductorVoltages, inductorCurrents);
         var points = new List<TransientPoint>(options.Steps + 1)
@@ -1274,6 +1510,7 @@ public sealed class TransientNetlist
         try
         {
             solution = netlist!.Solve();
+            _lastBiasVoltages = solution.NodeVoltages;
         }
         catch (DcSolveException exception)
         {
@@ -1288,10 +1525,20 @@ public sealed class TransientNetlist
         {
             TransientCapacitor capacitor = _capacitors[index];
             double volts = VoltageAcross(solution.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
+
+            // No capacitance means no channel charge and no current: the element holds nothing, so
+            // it neither carries a companion current nor contributes to the next step's history.
+            if (capacitor.EffectiveFarads <= 0)
+            {
+                capacitorVolts[index] = volts;
+                capacitorAmps[index] = 0;
+                continue;
+            }
+
             double current = trapezoidal
-                ? ((2 * capacitor.Farads / timeStep) * (volts - state.CapacitorVolts[index])) -
+                ? ((2 * capacitor.EffectiveFarads / timeStep) * (volts - state.CapacitorVolts[index])) -
                   state.CapacitorAmps[index]
-                : (capacitor.Farads / timeStep) * (volts - state.CapacitorVolts[index]);
+                : (capacitor.EffectiveFarads / timeStep) * (volts - state.CapacitorVolts[index]);
             if (!double.IsFinite(volts) || !double.IsFinite(current))
             {
                 failure = DcSolveFailure.NonFiniteResult;
@@ -1451,17 +1698,29 @@ public sealed class TransientNetlist
     }
 
     /// <summary>
-    /// Solves the state at the start time by imposing each reactive element's state:
-    /// a capacitor becomes an ideal voltage source at its initial voltage, and an
-    /// inductor becomes an ideal current source at its initial current. The reported
-    /// initial node voltages then agree with the states the first integration step
-    /// continues from, including preset initial conditions.
+    /// Solves the state at the start time. A preset is imposed, so a capacitor becomes an ideal
+    /// voltage source at its initial voltage and an inductor an ideal current source at its initial
+    /// current; the reported initial node voltages then agree with the states the first integration
+    /// step continues from.
+    /// <para>
+    /// With no preset, every state came from the DC operating point and imposing it again can only
+    /// restate what that operating point already satisfies — but the imposed ideal sources can form
+    /// a redundant loop whose branch currents have no unique solution. Two capacitors between the
+    /// same pair of ideal rails is enough: a gate bus tied to both rails, or a pair of decoupling
+    /// capacitors. The operating point itself has no such loop, because a capacitor is an open
+    /// circuit in it, and it is the same state, so it is returned directly.
+    /// </para>
     /// </summary>
     private DcSolution SolveInitialState(
         double time,
         double[] capacitorVoltages,
         double[] inductorCurrents)
     {
+        if (_initialCapacitorVolts.Count == 0 && _initialInductorAmperes.Count == 0)
+        {
+            return SolveOperatingPoint(time);
+        }
+
         if (_capacitors.Count == 0 && _inductors.Count == 0)
         {
             return SolveOperatingPoint(time);
@@ -1510,11 +1769,23 @@ public sealed class TransientNetlist
             CopyElement(netlist, element, time);
         }
 
+        // The devices' own capacitances are re-evaluated here, from the voltages the last accepted
+        // step solved, before any of them is stamped.
+        ApplyBiasDependentDeviceCapacitances();
+
         for (int index = 0; index < _capacitors.Count; index++)
         {
             TransientCapacitor capacitor = _capacitors[index];
+
+            // A region that presents no capacitance is an open circuit. Stamping it would divide by
+            // zero, so it is omitted instead: nothing is in parallel with the node it used to load.
+            if (capacitor.EffectiveFarads <= 0)
+            {
+                continue;
+            }
+
             double conductance =
-                ((trapezoidal ? 2 : 1) * capacitor.Farads) / timeStep;
+                ((trapezoidal ? 2 : 1) * capacitor.EffectiveFarads) / timeStep;
             double history = (conductance * state.CapacitorVolts[index]) +
                 (trapezoidal ? state.CapacitorAmps[index] : 0);
             if (!IsUsable(conductance) || !double.IsFinite(history))
@@ -1709,8 +1980,10 @@ public sealed class TransientNetlist
         double stored = 0;
         foreach (TransientCapacitor capacitor in _capacitors)
         {
-            double volts = point.ElementVoltages[capacitor.Id];
-            stored += 0.5 * capacitor.Farads * volts * volts;
+            // Taken from the node voltages rather than the element table so internal parasitics,
+            // which are deliberately absent from that table, are still counted.
+            double volts = VoltageAcross(point.NodeVoltages, capacitor.NodeA, capacitor.NodeB);
+            stored += 0.5 * capacitor.EffectiveFarads * volts * volts;
         }
 
         foreach (TransientInductor inductor in _inductors)
@@ -1907,6 +2180,11 @@ public sealed class TransientNetlist
         for (int index = 0; index < _capacitors.Count; index++)
         {
             TransientCapacitor capacitor = _capacitors[index];
+            if (IsInternal(capacitor.Id))
+            {
+                continue;
+            }
+
             Record(
                 capacitor.Id,
                 VoltageAcross(nodeVoltages, capacitor.NodeA, capacitor.NodeB),
@@ -1938,6 +2216,25 @@ public sealed class TransientNetlist
 
     private static string CompanionId(string id, string suffix) =>
         $"{CompanionPrefix}{id}/{suffix}";
+
+    /// <summary>A device parasitic: solved in state, but not an authored element.</summary>
+    private static bool IsInternal(string id) =>
+        id.StartsWith(CompanionPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Adds a device parasitic capacitor. It carries state, is stamped with the other capacitors
+    /// and counts towards stored energy, but its reserved id keeps it out of <see cref="Capacitors"/>,
+    /// so element tables and reports describe the circuit that was authored. The prefix that makes
+    /// that possible is also what <see cref="ValidateElement"/> refuses, so this path skips it.
+    /// </summary>
+    private TransientNetlist AddInternalCapacitor(string id, string nodeA, string nodeB, double farads)
+    {
+        _ids.Add(id);
+        _nodes.Add(nodeA);
+        _nodes.Add(nodeB);
+        _capacitors.Add(new TransientCapacitor(id, nodeA, nodeB, farads));
+        return this;
+    }
 
     private static double VoltageAcross(
         IReadOnlyDictionary<string, double> nodeVoltages,
@@ -1973,6 +2270,17 @@ public sealed class TransientNetlist
                     diode.BreakdownVoltage,
                     diode.BreakdownCurrent);
                 break;
+            case DcMosfet mosfet:
+                target.AddMosfet(
+                    mosfet.Id,
+                    mosfet.Drain,
+                    mosfet.Gate,
+                    mosfet.Source,
+                    mosfet.Channel,
+                    mosfet.ThresholdVoltage,
+                    mosfet.Transconductance,
+                    mosfet.ChannelLengthModulation);
+                break;
             default:
                 throw new InvalidOperationException(
                     $"Unsupported transient element '{element.Id}' ({element.Kind}).");
@@ -1984,6 +2292,13 @@ public sealed class TransientNetlist
         _ids.Add(element.Id);
         _nodes.Add(element.NodeA);
         _nodes.Add(element.NodeB);
+        if (element is DcMosfet mosfet)
+        {
+            // The gate is solved and reported as a node, but it conducts nothing, so
+            // the floating-network analysis does not treat it as a connection.
+            _nodes.Add(mosfet.Gate);
+        }
+
         _elements.Add(element);
         return this;
     }

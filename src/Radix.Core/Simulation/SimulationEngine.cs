@@ -583,7 +583,10 @@ public sealed class SimulationEngine
         return _externalValues.TryGetValue(netIndex, out int value) ? value : null;
     }
 
-    /// <summary>Sets an input port's external value. Output ports cannot be driven.</summary>
+    /// <summary>
+    /// Sets a port's external value. An output can only be written when its declaration says it is
+    /// externally supplied; every other output keeps the rule that its value is the model's to decide.
+    /// </summary>
     public void SetPortValue(int portIndex, int value)
     {
         if ((uint)portIndex >= (uint)_circuit.Ports.Count)
@@ -592,7 +595,7 @@ public sealed class SimulationEngine
         }
 
         CompiledPort port = _circuit.Ports[portIndex];
-        if (port.Direction != PinDirection.Input)
+        if (port.Direction != PinDirection.Input && !port.ExternalSupply)
         {
             throw new InvalidOperationException($"Port '{port.PinId}' is an output and cannot be driven externally.");
         }

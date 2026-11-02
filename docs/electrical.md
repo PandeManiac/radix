@@ -7,6 +7,7 @@ electrical-analysis layer:
 - ideal independent voltage sources;
 - ideal independent current sources;
 - a two-terminal Shockley diode with optional series resistance;
+- a three-terminal square-law MOSFET (n- or p-channel) with channel-length modulation;
 - one explicit ground reference.
 
 The solvers are **not** connected to the digital event engine: electrical
@@ -97,6 +98,10 @@ share this topology analysis. An island with no ground path, a contradictory
 ideal-source loop, and a consistent but redundant source loop are reported as
 `RAD-ERC-101`–`RAD-ERC-103` warnings before a solve (see [erc.md](erc.md)). They
 are warnings so an electrical asset never blocks digital compilation.
+
+The same surfaces also include `RAD-ELEC-*` structural errors from
+`ElectricalCircuitValidator.ValidateProject`; these are reported by validation and
+the editor but remain outside the digital compiler.
 
 The implementation is a dense `double` factorization: time and memory grow as
 O(n³) and O(n²). It is intended for interactive, small and medium netlists; it is
@@ -196,6 +201,491 @@ a second component parameter in the project format.
 radix dc examples/dc-diode.json
 radix dc examples/dc-zener.json
 ```
+
+## MOSFET model
+
+A three-terminal device whose channel current is set by another node's voltage is the
+first genuinely electrical control element. It is what lets a circuit switch itself, so
+the model is deliberately small and written down in full rather than hidden behind a
+library call.
+
+```bash
+radix dc examples/dc-mosfet-common-source.json
+radix dc examples/dc-mosfet-common-source.json --sweep VG=0:5:11
+```
+
+### Terminals and parameters
+
+| Netlist field | Meaning | Unit |
+| --- | --- | --- |
+| `drain`, `source` | the channel terminals; also reported as `nodeA` and `nodeB` | node id |
+| `gate` | the insulated control terminal; draws exactly zero current | node id |
+| `channel` | `n` or `p` | — |
+| `thresholdVoltage` | threshold voltage magnitude; negative for a depletion device | V |
+| `transconductance` | SPICE `KP`, i.e. `mu Cox W/L` | A/V² |
+| `channelLengthModulation` | SPICE `lambda`; optional, defaults to 0 | 1/V |
+
+`transconductance` is required and must be greater than zero. The **body/bulk terminal is
+not exposed**: it is tied to the source, so there is no body effect and the device is
+exactly symmetric in drain and source.
+
+### Governing equations
+
+With `Vgs` and `Vds` the terminal voltages, `Vt` the threshold voltage and `Vov = Vgs - Vt`:
+
+```text
+cutoff      Vov <= 0:          Ids = 0
+triode      0 < Vds <  Vov:    Ids = K (Vov Vds - Vds^2/2) (1 + lambda Vds)
+saturation  Vds >= Vov:        Ids = K/2 Vov^2 (1 + lambda Vds)
+```
+
+That is the Shichman-Hodges square law, SPICE's level 1. A p-channel device negates both
+driving voltages and negates the resulting current, so one set of equations covers both
+polarities. Because the device is symmetric, a negative `Vds` is evaluated with the drain
+and source roles exchanged, which keeps reverse conduction signed correctly instead of
+reporting a saturation current with the wrong direction. The derivatives used by Newton
+follow from the same three branches:
+
+```text
+triode:      gds = K((Vov - Vds)(1 + lambda Vds) + lambda (Vov Vds - Vds^2/2))
+             gm  = K Vds (1 + lambda Vds)
+saturation:  gds = lambda K Vov^2 / 2
+             gm  = K Vov (1 + lambda Vds)
+cutoff:      gds = gm = 0
+```
+
+A leakage conductance `GMIN = 1e-12 S` is added across drain and source at every operating
+point — five picoamperes at five volts. It stands in for SPICE's `GMIN` and keeps a cutoff
+device from making the Jacobian exactly singular, which is what would otherwise happen when
+a CMOS output node is driven only by an off transistor. It is part of the reported device
+current, so KCL and the convergence residual stay consistent.
+
+### MNA stamping
+
+Linearizing `Ids ~ I0 + gds (Vds - Vds0) + gm (Vgs - Vgs0)` around the previous Newton
+iterate gives one equivalent current
+`Ieq = I0 - gds Vds0 - gm Vgs0` plus conductance and transconductance terms, with
+`d` the drain, `s` the source and `g` the gate node:
+
+```text
+G[d,d] += gds   G[s,s] += gds   G[d,s] -= gds   G[s,d] -= gds
+G[d,g] += gm    G[s,g] -= gm    G[d,s] -= gm    G[s,s] += gm
+rhs[d] -= Ieq   rhs[s] += Ieq
+```
+
+The gate contributes no row of its own; it appears only as the control node in the drain
+and source KCL rows. Newton carries no extra state for a MOSFET — it is a pure
+voltage-controlled current source — so each iteration linearizes it at the previous
+iterate's node voltages, starting from zero volts. Convergence is unchanged: node voltages
+must stop moving within `1e-9` relative and the nonlinear KCL/source residual must fall
+within its acceptance bound. Failing to converge in 100 iterations raises
+`NonConvergent`; the solver never returns a partly converged point.
+
+A MOSFET's gate node is added to the solved node set so its voltage is reported, but it is
+**not** added to the conductive adjacency used by the floating-network check. Gate oxide
+conducts nothing, so a node attached only to gates has no DC operating point and is
+reported as `FloatingNetwork` instead of being given an invented voltage.
+
+### Device-current continuation
+
+Cold Newton starts every node at zero volts. That is usually fine, but a high-gain
+feedback amplifier or a diode-clamped high-impedance node can make the first step so
+poor that the 100-iteration budget is exhausted. When the direct solve returns
+`NonConvergent`, the DC solver retries with a homotopy: it solves a devices-off system
+where both diode and MOSFET currents are zero, then ramps both current laws back to full,
+seeding each Newton solve with the previous operating point. The diode stamp adds a
+fading 1 pS shunt during the ramp so an otherwise open node still has a defined voltage;
+the shunt vanishes at full scale. If a step fails, the step is halved; a step that still
+fails is reported as a real non-convergence, not hidden. `DcSolution.UsedContinuation`
+reports which path produced the answer. This is a numerical fallback, not a physical gmin
+or source-stepping model.
+
+### Conservation and conventions
+
+The reported element current is the channel current from drain to source, and the reported
+element voltage is `V(drain) - V(source)`, so absorbed power is `Vds * Ids` and the gate
+draws no power. The algebraic sum of all absorbed element powers is zero at any solved
+operating point, which the tests assert. `radix dc` and the JSON report list a MOSFET's
+`channel`, `gate`, `thresholdVoltage`, `transconductance` and
+`channelLengthModulation` beside its solved values.
+
+### What this model is not
+
+It is a **compact teaching model, not a production SPICE transistor**. In particular:
+
+- no junction, overlap or body capacitance, so without the optional device capacitances
+  below the device is charge-free and adds no dynamics;
+- no subthreshold conduction, so current is exactly zero below the threshold apart from
+  `GMIN`;
+- no mobility degradation, velocity saturation, high-injection, drain-induced barrier
+  lowering or gate leakage;
+- no body effect, no temperature dependence, no self-heating, no noise, no mismatch, no
+  process corners, and no breakdown;
+- no channel-length modulation unless `lambda` is given, and `lambda` here is a constant
+  rather than a geometry lookup.
+
+### Milestone A: controlled-device validation
+
+`examples/dc-mosfet-common-source.json` is an n-channel device with a 1 kΩ resistor to a
+5 V rail, driven by the gate source `VG`:
+
+| `VG` | `out` | region |
+| --- | --- | --- |
+| 0, 0.5, 1 | 5 | cutoff |
+| 2 | 4.45545 | saturation (`Vov = 1 V`) |
+| 3 | 2.88462 | saturation |
+| 5 | 1.10533 | triode |
+
+Every value matches the closed form. At `VG = 2` the saturation current is
+`0.5 mA (1 + lambda Vds)`, and `Vds = 5 - 1000 Ids` gives `Vds = 4.5 / 1.01 = 4.45545 V`. At
+`VG = 5` the triode law and the load together give `Vds^2 - 10 Vds + 10 = 0`, so
+`Vds = 5 - sqrt(15) = 1.127 V`. The tests check those two roots directly, the p-channel
+mirror, reverse conduction (`Vds < 0`, where the device sources 6 mA into a grounded drain
+and the 2 V source delivers exactly the channel's absorbed 12 mW), and that the summed
+absorbed power is zero.
+
+### Milestone B: electrical binary inverter
+
+`examples/dc-cmos-inverter.json` is a static CMOS inverter: a p-channel pull-up to the
+5 V rail, an n-channel pull-down, both gates driven by `VIN`, `K = 1 mA/V²`,
+`Vt = 1 V`, `lambda = 0.02 1/V`.
+
+```bash
+radix dc examples/dc-cmos-inverter.json --sweep VIN=0:5:21
+```
+
+| `VIN` | `out` | | `VIN` | `out` |
+| --- | --- | --- | --- | --- |
+| 0 | 5 | | 2.5 | 2.5 |
+| 1 | 5 | | 2.75 | 0.574822 |
+| 1.5 | 4.9445 | | 3 | 0.293467 |
+| 2 | 4.70653 | | 3.5 | 0.0554996 |
+| 2.25 | 4.42518 | | 4 | 1.67e-9 |
+| 2.45 | 3.88167 | | 5 | 1.25e-9 |
+
+- **Static current**: at either rail exactly one device has overdrive, so the rail supplies
+  only the `GMIN` leakage (`< 1e-9 A`). The inverter pays current only while switching.
+- **Transition**: matched devices put the switching point at `VDD/2` by symmetry, and the
+  measured maximum small-signal gain over a 50 mV grid is about 28 V/V. The curve has real
+  analog shoulders (a 21-point sweep shows 4.43 V at 2.25 V and 0.575 V at 2.75 V), which a
+  behavioural inverter could not produce.
+- **Output loading**: the output resistance in the transition is `1/(gm (ro_n || ro_p))`;
+  with `lambda = 0` it would be a pure current balance with no finite conductance, which is
+  why the example sets `lambda` explicitly.
+
+### Milestone C: electrical ternary inverter
+
+`examples/dc-ternary-inverter.json` is a resistor-summed dual-threshold standard ternary
+inverter. Two CMOS inverters share `VIN` but have opposite device-strength ratios, which
+moves their switching points to 1.25 V and 3.75 V:
+
+```text
+sqrt(K_n/K_p) = 11   =>  Vin_sw = (beta Vtn + VDD - |Vtp|) / (beta + 1) = 15/12 = 1.25 V
+sqrt(K_n/K_p) = 1/11 =>  Vin_sw = 4.0909/1.0909 = 3.75 V
+```
+
+The two outputs are summed by two 100 kΩ resistors (`out_low`, `out_high` → `out`), so the
+output is a solved divider between two low-impedance nodes:
+
+```bash
+radix dc examples/dc-ternary-inverter.json --sweep VIN=0:5:21
+radix dc examples/dc-ternary-inverter.json --sweep VIN=0,2.5,5
+```
+
+| `VIN` | `out` | `out_low` | `out_high` |
+| --- | --- | --- | --- |
+| 0 | 5 | 5 | 5 |
+| 1.25 | 4.1933 | 3.38912 | 4.99748 |
+| 1.5 | 2.55006 | 0.108655 | 4.99146 |
+| 2 | 2.51341 | 0.0393598 | 4.98747 |
+| **2.5** | **2.5** | 0.0206093 | 4.97939 |
+| 3 | 2.48659 | 0.0125317 | 4.96064 |
+| 3.5 | 2.44994 | 0.00853836 | 4.89134 |
+| 3.75 | 0.806701 | 0.0025211 | 1.61088 |
+| 5 | 2.9e-8 | 1.6e-9 | 5.6e-8 |
+
+The truth table is a result, not an assignment: `0 V → 5 V`, `2.5 V → 2.5 V`, `5 V → 0 V`,
+and the middle rail appears because one inverter output is low while the other is high.
+
+The full curve, rather than the three sampled points, is what the design is judged on:
+
+- **Middle plateau.** Every input from 1.5 V to 3.5 V resolves within 100 mV of 2.5 V, a
+  2 V wide input band, so the intermediate state is not a knife edge. Over that band the
+  output stays within 60 mV of 2.5 V, the worst samples being the endpoints themselves
+  (2.55006 V at 1.5 V and 2.44994 V at 3.5 V).
+- **Shoulders.** The transitions are the two inverters' own crossings, so the curve is
+  monotone and crosses 2.5 V only once from either side. Between 1.25 V and 1.5 V the output
+  moves from 4.19 V to 2.55 V, and between 3.5 V and 3.75 V from 2.45 V to 0.81 V.
+- **Output impedance.** In the middle state the output is `R/2 = 50 kΩ` from a Thevenin pair
+  of about 0 V and 5 V. A 100 kΩ load to ground therefore divides 2.5 V by
+  `(2 + R/R_load) = 3`, and the solve returns **1.667 V**; a 1 MΩ load returns 2.487 V. The
+  tests assert that the loaded result matches the two-source prediction, so the loading is
+  characterised rather than discovered later.
+- **Static power.** At either rail one inverter per pair is fully off and the summing path
+  carries only leakage, so the total is below a microwatt. The middle state is not free:
+  the divider carries 25 µA and both inverters sit in their own crossover region, so the
+  5 V rail supplies about 49.5 µA — **0.248 mW**. This is inherent to resistor summing; the
+  buffered variant below trades additional quiescent power for a low-impedance output.
+- **Noise margin (ideal, unloaded).** `radix dc --sweep … --margins out` finds the unity-gain
+  crossings and reports the windows between them: `0 → 1.042`, `1.422 → 3.578`, `3.958 → 5` V.
+  The middle window is 2.155 V wide, so a level placed at 2.5 V has ±1.078 V of margin, and each
+  rail window is 1.042 V wide. That figure shrinks with load because the middle level moves; it
+  is a property of this topology, not a datasheet number.
+- **Region of validity.** This is an *idealised educational* topology: the levels come from
+  two ideal CMOS inverters and ideal resistors, with no mismatch, no temperature, no
+  capacitance, and a fixed `lambda`. It demonstrates that an intermediate logic level can be
+  produced by a solved electrical network; it is not a manufacturable ternary gate.
+
+#### Buffered ternary inverter
+
+`examples/dc-ternary-inverter-buffered.json` and the authored
+`examples/dc-ternary-inverter-buffered.radix` keep the same dual-threshold front end but make
+the summed node an internal high-impedance node instead of the output. Four small CMOS
+inverters first complement each `out_low`/`out_high` pair; the complementary outputs are
+summed through the same 100 kΩ resistors, and a two-stage CMOS feedback amplifier buffers
+the result.
+
+The complements are placed **before** the summing resistors on purpose. A high-gain stage
+placed after the summing node amplifies the summing network's 100 mV middle plateau into a
+full transition, destroying the intermediate level. Complementing the two inverter outputs
+before the divider preserves the plateau and restores inverter polarity: 0 V input gives a
+5 V output, 2.5 V gives 2.5 V, and 5 V gives 0 V.
+
+The amplifier is a differential pair (`MN1`/`MN2`, 0.4 mA/V², `lambda = 0.002`), a p-channel
+mirror load (`MP1`/`MP2`), and an asymmetric push-pull output (`MP3` at 1 mA/V², `MN3` at
+0.1 mA/V²). `RIN = 10 MΩ` and `RF = 10.1 MΩ` set a closed-loop gain near -1; the 100 kΩ/100 kΩ
+divider sets the 2.5 V reference. The output p device is ten times the n device so the high
+state can source a ground-referenced load while the n device sets the mid-state quiescent
+current.
+
+```bash
+radix dc examples/dc-ternary-inverter-buffered.json --sweep VIN=0,2.5,5
+radix dc examples/dc-ternary-inverter-buffered.radix --sweep VIN=0:5:51 --csv
+```
+
+| `VIN` | buffered, open | buffered, 100 kΩ | original, 100 kΩ |
+| --- | --- | --- | --- |
+| 0 V | 4.9955 V | 4.9776 V | 3.2088 V |
+| 2.5 V | 2.5081 V | 2.5078 V | 1.6636 V |
+| 5 V | 0.00471 V | 0.00470 V | ~0 V |
+
+The middle level moves by only 0.0003 V when a 100 kΩ load is attached, versus 0.836 V for
+the unbuffered gate. The full 0–5 V sweep is monotone and every input from 1.5 V to 3.5 V
+stays within 2.5076–2.5086 V, so the buffered output keeps a real plateau rather than
+sharpening it into a comparator.
+
+Power is the price of the buffer. The first-stage tail and reference divider are always
+biased, so the rail supplies about **0.68 mW at 0 V**, **2.18 mW at 2.5 V**, and **0.64 mW at
+5 V** with no load; a 100 kΩ load raises those to 0.91 mW, 2.27 mW, and 0.64 mW. The
+unbuffered design's 0.248 mW middle-state figure is therefore not the whole comparison:
+the buffer pays quiescent power at every level in exchange for load regulation.
+
+Limitations: the output stage is class-A-ish rather than a production class-AB stage, so it
+burns quiescent current at the rails; lower load resistances are current-limited; the model
+still has no mismatch, temperature, compensation capacitor, or transient stability claim.
+The 100 kΩ case is the verified load, and the DC path is what the example and tests cover.
+
+**Gain.** `radix dc --sweep … --gain <node>` differentiates the measured curve and reports
+`d(node)/d(swept)`, so the shoulder sharpness a gate is judged on is a number rather than an
+impression:
+
+```bash
+radix dc examples/dc-cmos-inverter.json --sweep VIN=2.3:2.7:5 --gain out
+```
+
+```text
+d(out)/dVIN: 5 points, 5 with a defined slope, max |gain| 15.9101 V/V at VIN=2.5
+         VIN        out'
+         2.3     -2.4696
+         2.4    -9.18984
+         2.5    -15.9101
+         2.6    -9.18984
+         2.7     -2.4696
+```
+
+A finer grid measures a larger peak because the transition is steeper than a coarse grid can
+resolve: this is the slope of the reported points, not a second solve, so it cannot disagree
+with the table above it. Being a difference quotient, it needs two solved points — a
+single-point sweep, a value that failed to solve, or repeated swept values report no slope
+instead of a fabricated zero.
+
+**Switching.** `examples/transient-ternary-inverter.radix` drives the same inverter from 0 V to
+2.5 V through a 1 ns ramp, and every capacitance in it now belongs to a device: 0.25 pF of
+gate-source and 1 pF of drain-source per transistor, plus 0.02 pF from each gate to its own drain.
+There is no separate load capacitor, so the output's speed is the transistors':
+
+```bash
+radix transient examples/transient-ternary-inverter.radix --stop 900e-9 --steps 3600
+```
+
+| `t` | 0 | 26 ns | 900 ns |
+| --- | --- | --- | --- |
+| `g` | 0 | 1.0 | 2.5 |
+| `out` | 5 | 5.010 | 2.5 |
+
+The gate bus must be charged first: 10 kΩ into the four gates is 1 pF, so the bus reaches the 1 V
+threshold at 26 ns and half of the drive at 29 ns, and no device can respond before it. Their drains
+then charge the 2 pF that the two devices on each branch present, seen through the 50 kΩ the two
+summing resistors give the output, and the 2 % band closes at 50 ns with the gates settled at 68 ns.
+
+The output lands on **exactly 2.5000 V**, which is what a DC solve reports for `VIN = 2.5 V`, and it
+is the mean of the two branch outputs — `(0.0206 + 4.9794)/2` — because two equal resistors sum
+them. The tests assert the DC agreement and the summing identity rather than a literal, so the
+figures cannot drift with the step size. Doubling the gate capacitance doubles the time the bus
+takes to reach half of its drive, which is the closed form `RG·C·ln 2` and cannot come from the
+integrator. The branch nodes are not that simple: once a device leaves saturation its on-resistance
+sets the tail, so doubling the drain capacitance moves the settling time by much less than double,
+and the tests do not claim otherwise.
+
+Each device also has 0.02 pF from gate to drain, and that feedback is visible rather than decorative:
+while the bus climbs it drags the drain nodes up through that path before any channel conducts, so
+`out_low` peaks at **5.019 V**, 19 mV above its own rail, and the output takes a 10 mV bump before
+falling. Removing the gate-drain capacitance removes the overshoot entirely, which is what the test
+compares, so the effect measures the feedback path and not the step size.
+
+**Step size matters here.** At 1 ns steps the energy ledger closes to 1.8 × 10⁻² of the energy
+delivered, because 1 ns is a fiftieth of the transition; at 0.25 ns it closes to 1.5 × 10⁻³. The
+model is fixed-step, so the figure is quoted with the grid that produced it.
+
+### Frequency-domain analysis
+
+`AcAnalysis` linearizes a circuit at its DC operating point and solves the complex network
+frequency by frequency. A capacitor becomes `jωC`, an inductor `1/(jωL)`, a diode its junction
+conductance and a MOSFET its drain conductance with its gate transconductance; independent sources
+are set to zero except the one named as the drive, whose branch is imposed at unit amplitude. Each
+node's phasor is therefore the transfer function from that source to that node, phase included.
+
+```csharp
+AcResponse response = AcAnalysis.Run(
+    circuit.ToTransientNetlist(),
+    driveSourceId: "V1",
+    AcFrequencySweep.Logarithmic(1, 1e6, 61));
+Console.Write(response.ToText());
+```
+
+The device capacitances take part, so a transistor's own charge appears in its bandwidth: a
+common-source stage with 1 mA/V of transconductance, a 1 kΩ drain resistor and 1 pF of drain-source
+capacitance has unity gain at low frequency, inverts (180°), and halves at
+`1/(2π · 1 kΩ · 1 pF)`. That case, the RC corner where the magnitude is `1/√2` and the phase −45°,
+an RL corner at `R/(2πL)`, a tank resonance at `1/(2π√(LC))` and a resistive divider that must be
+flat at its DC ratio are the tests, so an error in the assembly or in the complex arithmetic cannot
+hide behind a plausible curve.
+
+This is a small-signal linearization, not a large-signal answer: it describes how a small
+disturbance travels around the operating point, which is what a gain, a corner frequency or a phase
+margin is about.
+
+`radix ac` runs the same analysis from the command line. The drive must be named, because the
+transfer function is from that source to every node, and `--bias` exists because an operating point
+takes each source at its waveform's value at t = 0 — the ternary example's drive starts at 0 V,
+where the gate is off and its gain is zero. Held on the lower transition instead:
+
+```bash
+radix ac examples/transient-ternary-inverter.radix --drive VIN --bias VIN=1.3 --from 1e3 --to 1e7 --points 7
+```
+
+```text
+  Hz  g dB  phase g  in dB  phase in  out dB  phase out  ...
+  1000          -2.6e-12  -1.2e-05         0         0  29.4397        180  ...
+  215443        -0.104154 -2.38925         0         0  28.6745   155.532  ...
+  4.64159E+06   -1.02871  -16.7123         0         0  9.52886   79.6753  ...
+```
+
+`--csv` writes the sweep as one row per node per frequency and `--json` as a versioned report;
+`--compare <archive.json> --compare-tolerance <db>` reads such a report back and prints how far each
+node's gain and phase moved, exiting non-zero when the gain moves further than the tolerance. That is
+how a capacitance change is shown rather than described: doubling the RC example's capacitor is
+6.02 dB down well above the corner, which is exactly what the comparison reports.
+
+The gate has 29.4 dB of gain at low frequency, inverting at 180°, and is 3 dB down near 500 kHz,
+with the phase past 136° by 447 kHz. `--devices` adds the transistors themselves: each one's
+region at the bias, its `gm` and `gds`, and their ratio, which is the largest gain the device could
+manage into an ideal load. The node table is assembled from those slopes, so printing them makes a
+gain traceable to a device instead of to a matrix.
+
+The editor's inspector shows the same numbers for the selected transistor, beside the bias it was
+measured at. Without a bias the circuit sits at its rest state — each source at its value at t = 0 —
+so a driven gate reads `Cutoff`; entering `VIN=1.3` puts it on the transition and the region, `gm`,
+`gds` and `|gm/gds|` appear next to the capacitances they are assembled with, together with the
+gate-charge fractions that region presents (`Cgs ×`, `Cgd ×`), so the bias dependence sits beside
+the fields that author it. The bias-sweep CSV carries the same two columns for every device at
+every bias.
+
+One operating point says where a device sits; a sweep says where it switches. `radix ac
+--bias-sweep 0:5:11` steps the drive and prints every transistor's region, `Vgs`, `Vds`, `gm` and
+`gds` at each value, so the ternary gate's two transitions appear as a sequence of regions rather
+than as one number taken at a bias somebody guessed. The sweep holds the source at each value in
+turn — a waveform would otherwise pin every point to the rest state — and it measures devices with
+the same helper the AC analysis uses, so the two cannot report different slopes for one bias.
+
+The editor's **BIAS SWEEP** section runs the same study on the selected circuit, using the AC
+drive id and a `from:to:count` range. It draws transconductance against bias with one series per
+transistor — a device that is cut off at 0 V and conducting at 2.5 V is a slope you can see rather
+than a region column you have to read — names the device that conducts hardest and the bias where
+it does, and copies the whole table as CSV with one row per device per bias. Those are the same numbers the DC sweep measures as a slope at
+the same bias: because the analysis is linearized at the operating point, the test asserts that the
+AC magnitude at 1 Hz agrees with the difference quotient within 15 %, so the frequency-domain
+assembly and the DC slope cross-check each other instead of each being trusted alone.
+
+The editor's **AC SWEEP** panel runs the same analysis on the selected circuit: name the drive, a
+`from:to:points` range, and optionally `source=volts` as a bias. It lists every node's gain and phase
+per frequency, plots gain in dB and phase in degrees against log frequency on separate axes, and
+copies the table as the same CSV `radix ac --csv` writes, and exports both curves as one standalone
+SVG document — a response shared as a file keeps its axes, its decade labels and its units, which a
+screenshot does not. The frequency axis is labelled in decades
+(1k, 10k, 100k, …) even though it plots exponents, because "3" is not a frequency a reader can use. Editing the circuit drops the response, because a curve describing an older
+circuit is worse than no curve.
+
+**Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,
+or `cgs`/`cgd` in a transient JSON netlist, both defaulting to zero so an existing netlist keeps its
+behaviour. Given, they are stamped between gate and source and between gate and drain on every step,
+so the gate must be charged through whatever drives it before the channel can follow. They are
+internal capacitors rather than authored elements: they carry state, energy and companion stamps
+like any other capacitor, but never appear in `Capacitors`, element tables or reports.
+
+An authored MOSFET carries the same values as `gateSourceCapacitance`, `gateDrainCapacitance` and
+`drainSourceCapacitance`, so a `.radix` circuit can be built with device charge from the Electrical
+panel's inspector; all three default to zero, and a DC run ignores them because an operating point
+holds no charge. Drain-source capacitance is what lets a transistor load its own output, so a
+circuit can derive its speed from the devices instead of from a capacitor beside them.
+
+The closed form is checkable. A 10 kΩ resistor driving a gate with 1 pF of gate-source capacitance
+gives `RC = 10 ns`; the measured half-rise converts back to that constant, and adding 1 pF of
+gate-drain capacitance against a fixed drain doubles it, because both plates then see an AC ground.
+Both are tests, so a capacitance that never reached the solver would fail as an instant rise instead
+of hiding inside a plausible-looking curve.
+
+**Input windows.** `--margins <node>` turns the measured gain into the windows a level can
+occupy, by finding where `|dV(node)/d(swept)|` crosses one and reporting the ranges between those
+crossings:
+
+```bash
+radix dc examples/dc-ternary-inverter.radix --sweep VIN=0:5:64 --margins out
+```
+
+```text
+input windows for out over VIN: 3 windows where |dV(out)/dVIN| < 1
+  0 -> 1.042  (1.042 wide)
+  1.422 -> 3.578  (2.155 wide)
+  3.958 -> 5  (1.042 wide)
+unity-gain crossings: 1.042, 1.422, 3.578, 3.958
+```
+
+A circuit holds a level where it does not amplify, so the gaps are the legal levels and the bands
+between crossings are forbidden. The same command on the binary inverter reports two windows of
+2.085 V each meeting at a single transition, and on a resistive divider a single window covering
+the whole range, because a divider never amplifies. The crossings are interpolated from the
+measured gain, so they inherit its grid: a coarse sweep reports a correspondingly coarse edge,
+which is why the number is quoted with the sweep that produced it.
+
+The same topology ships as an authored project asset,
+`examples/dc-ternary-inverter.radix` (format v12), so the design opens in the Electrical
+inspector instead of living only in a netlist file. Authored MOSFETs carry a
+transconductance, a channel, a threshold and `channelLengthModulation`, so with the
+example's `lambda = 0.02 1/V` the authored circuit reproduces the netlist table above
+exactly: 4.1933 V at 1.25 V, 2.55006 V at 1.5 V, 2.5 V at 2.5 V, 0.806701 V at 3.75 V.
+The example test solves both files and compares them to twelve decimal places, so the two
+shipped forms of the same design cannot drift apart.
 
 ## Transient analysis
 
@@ -377,11 +867,14 @@ invalid options. The command never writes project or netlist state.
 ### Not modelled
 
 There is no junction capacitance, carrier storage, high-injection, self-heating,
-noise, temperature dependence, transformer, dependent source, switch, relay, or
-transmission-line model. There is no AC or small-signal analysis, no
-stiffness detection or implicit method switching, no gmin or source
-continuation, and no SPICE-style built-in source functions beyond
-piecewise-linear tables. Adaptive control uses step doubling with one method at
+noise, temperature dependence, transformer, other dependent-source model
+(VCVS/VCCS/CCCS), switch, relay, or transmission-line model, and the MOSFET has no
+charge storage of its own. There is no AC or small-signal analysis, no
+stiffness detection or implicit method switching, no source stepping, and no
+SPICE-style built-in source functions beyond piecewise-linear tables. The DC
+solver's device-current continuation is a numerical fallback for a failed cold
+Newton start; its fading 1 pS shunt exists only during the homotopy and is not a
+physical gmin model. Adaptive control uses step doubling with one method at
 a time; it does not estimate a spectral radius or choose between methods. The
 editor's **Electrical** tab runs the same solver on an authored circuit, and
 `radix transient` remains the headless entry point.
@@ -652,7 +1145,8 @@ reports it as `energy` with `deliveredJoules`, `dissipatedJoules`,
 
 ## Authored electrical circuits
 
-Projects may contain one or more `electricalCircuits` (project format v8). Each
+Projects may contain one or more `electricalCircuits` (project format v12; older
+versions load unchanged). Each
 circuit owns its own nodes and components:
 
 ```csharp
@@ -747,6 +1241,130 @@ rules (`RAD-ELEC-017` to `RAD-ELEC-020`).
 If a project has exactly one electrical circuit, `--circuit` may be omitted. A
 project with several circuits requires it. Standalone JSON netlists remain
 supported for tools that do not author a project.
+
+## Hierarchical authored circuits
+
+An authored circuit can expose named interface nodes as `ports`, and another circuit can
+instantiate it as a `subcircuit`. This is electrical hierarchy, not a behavioural shortcut: the
+referenced circuit's components are expanded recursively into the parent's modified-nodal system.
+The child keeps its actual resistors, transistors, sources and reactive elements, and every
+internal node and element ID is prefixed by the instance path (`X1/out_low`, `X1/R1`). A ported
+node becomes the parent node named by the instance terminal, so the child's `out` port and the
+parent's `mid` node are the same electrical node; an unported node stays private to that instance.
+
+The port editor writes `id:node` pairs separated by semicolons, for example
+`in:in; out:out; vdd:vdd; gnd:gnd`. A subcircuit instance has exactly one passive terminal per
+port of the referenced circuit. Choosing the referenced circuit in the component inspector fills
+those terminals; editing the child's ports later updates every direct parent instance, preserving
+bindings by terminal ID and putting a newly added port on the parent's ground node. A referenced
+circuit must expose its ground as a port, because a subcircuit has no implicit global ground.
+References must resolve, cannot form a cycle, and are validated with stable `RAD-ELEC-*` messages
+(`RAD-ELEC-029` to `RAD-ELEC-036`) before a solve. A hierarchy may nest at most 64 subcircuit
+edges; a deeper reference reports `RAD-ELEC-045` instead of risking unbounded recursion.
+
+Each instance can also override the primary value of a direct child component. The inspector's
+**Overrides** field accepts `component=value` pairs separated by semicolons, for example
+`R3=3k`, with the same SI suffixes as ordinary values. The target must be a direct child that is
+not itself a subcircuit, and a source with a waveform cannot be overridden because it has no
+single primary value. An empty field restores the child's authored values. Overrides are applied
+during recursive DC and transient expansion and affect only that instance; they are serialized in
+project format 23. Invalid targets and values are rejected with `RAD-ELEC-037` to
+`RAD-ELEC-044` rather than being half-applied.
+
+`examples/electrical-ternary-hierarchy.radix` authors the resistor-summed ternary inverter once as
+the `sti` circuit, with ports `in`, `out`, `vdd` and `gnd`, then instantiates it twice in the
+`chain` root. The first stage drives `mid`; the second drives `out`. The root supplies 5 V and the
+input source.
+
+```bash
+radix dc examples/electrical-ternary-hierarchy.radix --circuit chain --sweep VIN=0,2.5,5
+radix dc examples/electrical-ternary-hierarchy.radix --circuit chain --sweep VIN=0:5:21 --gain out
+radix dc examples/electrical-ternary-hierarchy.radix --circuit sti
+```
+
+| `VIN` | `mid` | `out` |
+| --- | --- | --- |
+| 0 V | 5 V | ~0 V (5.6 × 10⁻⁸) |
+| 2.5 V | 2.5 V | 2.5 V |
+| 5 V | ~0 V (5.6 × 10⁻⁸) | 5 V |
+
+The two-stage chain is identity at the three nominal levels because each stage inverts the
+ternary ordering. At the middle level each stage's summing divider carries about 25 µA, so the
+chain's 5 V supply delivers about 99 µA (0.50 mW); the stage outputs and the middle node are
+driven by the network, not by a lookup. The `--gain out` study differentiates the composed
+transfer curve, so the two shoulders are measured in the same units as the single-stage example.
+
+Open the file in the editor with
+`dotnet run --project src/Radix.Editor -- examples/electrical-ternary-hierarchy.radix`. The
+Electrical tab lists both circuits; select `sti` to see its ports and independent devices, then
+select `chain` to see the two subcircuit instances, their terminal bindings, and the solved
+operating point. After **Solve**, the NODES table includes unported child nodes under their
+prefixed ID, labels each with its owning instance path (`X1`, `X1/X1`, or `root`), and uses the
+child node's authored name; a ported node appears once at the parent boundary because it is the
+same electrical node. The ELEMENTS table applies the same instance scope and resolves each child
+component's authored name, so a row such as `X1/RSUM1` reads as `X1 · Summing resistor` rather
+than an opaque prefixed ID. The same scope and name resolution is used by transient node series,
+node metrics, AC rows, DC sweep rows and input windows, transient parameter-sweep rows,
+bias-sweep legends and peak summaries, and the transient/AC/DC plot legends. The DC sweep also enumerates private child nodes, not just
+the selected circuit's authored nodes, so a child output can be measured as its parent parameter
+moves. The internal implementation of each stage therefore remains inspectable rather than being
+replaced by a black box.
+
+Tests: `ElectricalHierarchyTests` covers flat-equivalent solves, two independent instances with
+different overrides, nested expansion, the serialized round trip, the transient RC closed form,
+every validation failure above, and the shipped chain at all three levels.
+`ElectricalHierarchyEditorTests` covers authoring ports, choosing a referenced circuit, filling
+and rebinding terminals, interface synchronization, invalid port and override text, a solved
+parent whose override changes the divider from 2.5 V to 3.75 V, the prefixed child-node and
+element rows exposed in the solved hierarchy table, and hierarchy labels in transient series,
+node metrics, AC rows, DC sweep rows, DC input windows, transient parameter-sweep rows, and a
+child MOSFET's bias-sweep curve.
+
+Limitations: ports are bidirectional node aliases with no analog direction; a referenced circuit
+must expose its ground; an override replaces only one direct child's primary value, so it cannot
+add, remove, or retarget components or change a MOSFET channel; there is no graphical analog
+schematic canvas; and CSV, JSON, and CLI reports identify internal nodes by their prefixed
+names, while the editor resolves their instance scopes and authored labels. These are
+deliberate boundaries of this intermediate hierarchy, not silent approximations of a full
+analogue design system.
+
+## Editor DC sweep
+
+One operating point does not show a transfer characteristic, so the panel has its own
+**DC SWEEP**: name one component and give either a comma list (`0,2.5,5`) or
+`from:to:count` (`0:5:21`), and the circuit is solved once per value by the same
+`DcSweep` that `radix dc --sweep` runs. Each point is a real operating point of a fresh
+copy with that one value changed, so a difference between rows belongs to the value
+rather than to how the circuit was rebuilt.
+
+The table prints the swept value once per value and one row per non-ground node, because
+ground is the reference by definition and a 0 V row is not information. Each row also carries
+the measured `dV(node)/d(swept)` — the same difference quotient as `radix dc --gain` — and the
+summary names the steepest point, so the shoulder a gate is judged on is visible in the panel
+rather than only on the command line. A value with no solved neighbour shows `-` instead of a
+zero. CSV export stays the CLI's table, which carries values only, so a file saved in the panel
+and one written by `radix dc --sweep --csv` remain identical.
+
+Below the table the panel lists each node's measured **input windows** — the ranges where the
+curve does not amplify, using the same analysis as `radix dc --margins` — so the levels a gate
+can hold are visible next to the curve that produced them. A node whose curve never crosses
+unity gain reports one window covering the sweep instead of an empty list. A value that
+cannot solve keeps a row saying which failure it hit instead of vanishing, so a transfer
+curve with a missing point is visible as such. **Copy sweep CSV** / **Save sweep CSV…**
+write the table through `DcSweepReport.ToCsv`, the same writer the CLI uses, so a file
+saved from the panel and one produced by `radix dc --sweep --csv` describe the same
+study. Any edit invalidates the sweep along with the DC preview, because a curve of an
+older circuit would be worse than no curve.
+
+The sweep also **draws** its curve: the swept value on the horizontal axis, one series per
+non-ground node, and one measured point per value. It reuses `TransientPlot` because the
+padding, tick, decimation and palette rules are the same for any analog curve, so a long
+sweep is decimated evenly and the value axis is padded rather than configurable per panel.
+A value that could not solve leaves a gap in the trace rather than a point at zero, so the
+picture and the table agree about where the study failed. **Copy sweep SVG** / **Save sweep
+SVG…** write the curve through `TransientPlotSvg`, whose title names the circuit and the
+swept component, so a transfer characteristic can go into a note or a report without a
+screenshot.
 
 ## Editor result export
 
@@ -856,6 +1474,9 @@ Supported now:
 
 - authoring and editing circuits, nodes, components, values, polarity, and
   explicit terminal bindings in the editor's Electrical inspector;
+- authoring a three-terminal `mosfet` — channel, threshold voltage, and
+  transconductance — in that same inspector, with its gate bound to a node like
+  any other terminal, and solving it through the same `DcNetlist` bridge;
 - on-demand DC solve preview of node voltages and each element's terminal
   voltage, current, and absorbed power, with explicit structural/singularity
   failures;
@@ -880,14 +1501,16 @@ Supported now:
 
 Not supported:
 
-- transformers, dependent sources, switches, relays, fuses, or transmission
-  lines;
-- frequency-domain/AC analysis or small-signal extraction;
-- transistors, MOSFETs, op-amps, regulators, LEDs, or temperature-dependent
-  models;
+- transformers, op-amps, switches, relays, fuses, or transmission lines;
+- dependent sources other than the MOSFET's gate-controlled channel;
+- op-amps, regulators, LEDs, or temperature-dependent models;
+- a production transistor model: the MOSFET is a square-law level-1 compact model with
+  optional gate and drain capacitances, not a SPICE device with subthreshold
+  conduction, a body effect, or geometry-derived parameters;
 - junction capacitance, carrier storage, high-injection, self-heating, or noise;
-- gmin continuation, or SPICE-style built-in source functions beyond
-  piecewise-linear tables;
+- source stepping, a physical gmin model, or SPICE-style built-in source
+  functions beyond piecewise-linear tables (the DC solver's device-current
+  fallback is a numerical homotopy, not a model parameter);
 - an interactive transient plot or waveform cursor (the panel lists solved
   points as text, and `radix transient` remains the scriptable entry point);
 - temperature, thermal limits, component tolerances, or datasheet ratings;
@@ -962,6 +1585,160 @@ A singular system still produces valid JSON with `solved: false`, a stable
 message. Malformed input exits 2 before a report is emitted; a solve failure
 exits 1. Successful solves exit 0. The command never writes project or netlist
 state.
+
+## What the bias does to the gate charge
+
+A gate capacitance is not a constant. `MosfetCapacitance` gives the fraction of the authored value
+the channel presents at a bias point, by the Meyer charge split: nothing in cut-off (there is no
+channel), one half towards each terminal in triode (the channel connects both), and two thirds
+towards the source with nothing towards the drain in saturation, where the channel is pinched off.
+The last of those is why a saturated stage stops feeding its output back into its own gate, and it
+is why the authored `Cgd` is a zero-bias reference rather than a fixed coupling.
+
+`radix ac --devices` prints the fractions as `cgs×` and `cgd×` beside `gm` and `gds`, so one table
+shows the region, the gain the region allows, and the charge it presents. On the ternary inverter at
+1.3 V the two saturated output devices read 0.667 and 0, while MPH in triode reads 0.5 and 0.5.
+
+The constants are exact in the model — ⅔ and ½ — so the tests compare against the algebra rather
+than a tolerance.
+
+The transient solver can use them: `UseBiasDependentCapacitance()` re-evaluates each device
+capacitor from the last accepted solution at the start of every step, so a saturated device is
+charged through two thirds of its gate-source capacitance and none of its gate-drain. It is off by
+default, because a constant capacitance is what every earlier measurement was taken with, and the
+stamps stay explicit — the value is constant within a step, taken from the previous one, so the
+charge moved is that value times the voltage change it saw.
+
+`radix transient --bias-dependent-capacitance` runs a file with the model on, which is how the
+table below was measured. On the ternary inverter over 120 ns at 1280 steps:
+
+| quantity | constant model | bias-dependent |
+|---|---|---|
+| gate bus settle (2 % band) | 67.4 ns | **43.6 ns** |
+| `out` settle | 49.5 ns | **38.4 ns** |
+| `out_low` peak | 5.0194 V | **5.0000 V** |
+
+`examples/transient-ternary-inverter-bias-dependent.radix` ships format 15 with the field set on
+all four devices and nothing else changed, so the right-hand column reproduces without a switch:
+`radix transient examples/transient-ternary-inverter-bias-dependent.radix --stop 1.2e-7 --steps 1280`.
+A test compares the two files and holds their ratio to 1.45–1.65, so the table cannot drift away
+from what the repository actually runs.
+
+The gate arrives 1.55× sooner, and the overshoot above the rail disappears: with the authored
+values held for the whole run, a saturated device keeps a drain-gate capacitance it should have
+lost, and that Miller feedback is what pushes the output past 5 V. A single-device stage shows the
+same effect more sharply — the gate load is `Cgs + (1+A)·Cgd`, so removing the drain coupling takes
+the time constant down by about 4.5 when both capacitors are 1 pF and the gain is one. That closed
+form, not a fitted number, is what the test asserts.
+
+The ratio is refined across three grids (240, 480 and 960 steps) and required to stay inside 10 % of
+its mean, so the figure is an effect of the model rather than of where samples landed. Arrival times
+remain quantised by the step, which is why the comparison is stated as a ratio between two runs on
+the same grid.
+
+## Reading a solved node as a level
+
+`ElectricalLevelSampler` turns a solved node voltage into a domain level, which is the index of a
+value in that domain's list. Boundaries ascend; a voltage exactly on one reads as the level above
+it, as a comparator with no offset would; outside the outermost boundaries the ends clamp, so a rail
+that overshoots is still that rail. `TernaryFromRail(5)` places the boundaries at 1.667 V and
+3.333 V, and the ternary inverter then reads level 2 at 0 s (4.98 V) and level 1 once settled
+(2.50 V).
+
+Sampling a time the run did not land on interpolates linearly between the two bracketing points, so a
+probe does not have to coincide with a step. A time outside the run answers with the nearest end
+rather than inventing an extrapolation.
+
+The editor's probe uses the same conversion: each probed node reads as `g 2.5 V (L1)`, with the
+level taken against the circuit's own rail — the highest source value, split into equal thirds — so
+the digital reading is visible beside the voltage it came from. A circuit with no positive source
+has no rail to read against and reports no levels rather than inventing one.
+
+A circuit may author the boundaries itself with `levelThresholds` (project format 16), an ascending
+list of volts, edited as `Level thresholds (V)` in the inspector. Authored boundaries outrank the
+rail, so a 5 V circuit that signals between 2.5 V and 5 V can read 2.5 V as level 0; an empty list
+returns the reader to the rail, and a descending, duplicated or non-numeric list is refused on load
+and in the inspector rather than stored in a shape no reading could use. Editing the boundaries
+invalidates the last run, as any circuit change does.
+
+`ElectricalDriveSchedule` carries a level into the simulator. Only changes are emitted — a drive
+repeating a held value adds events without adding information — and a level is written as its index,
+which is how a domain identifies a value, so a ternary pin accepts it. Seconds and ticks are
+different clocks, so the rate is supplied rather than guessed; when scheduling, two changes landing
+on the same tick collapse to the later one, while the plain drive list keeps every change.
+
+An end-to-end test builds a script from the ternary inverter's own run, drives a ternary gate with
+it and lets the script runner's expectations check that the output followed: the circuit reads 2
+then 1, and the gate turns those into 0 then 1. The runner applies the drives through the same
+compiler and engine the editor and CLI use, so this is the handoff executed, not a type match.
+
+A circuit can declare the claim itself with `driveBindings` (project format 17): a node, a digital
+pin, and the ticks per second that convert solved time into simulator ticks. The rate travels with
+the binding because it is part of the claim — without it the drives would land at times nobody
+chose — and load refuses a binding to a node the circuit does not have, a missing pin, or a rate
+that is not finite and positive. From a loaded file, `binding.Schedule(run, sampler)` needs no
+further arguments.
+
+`radix drive <project.radix>` runs a binding from the file: it solves the circuit over `--stop` and
+`--steps`, reads the bound node as levels, and prints the tick, time, voltage and level of every
+change. On the ternary inverter with `out` bound to `a` at one tick per nanosecond:
+
+```
+  node        pin   tick      time (s)     volts    level
+  out         a     0         0.000E+000         5  2
+  out         a     44        4.359E-008     3.317  1
+```
+
+The output crossing 3.333 V at 43.6 ns is the same settle the capacitance comparison measured, read
+as a digital change 44 ticks in. `--json` emits the same report for a script, and a circuit that
+declares no bindings is refused rather than silently doing nothing.
+
+`--simulate` goes one step further and applies those drives: the changes become a script, the script
+runs through the same runner the editor, the CLI and the tests use, and a definition of the project
+takes the value. `--definition <id>` picks which definition (the root otherwise). The script carries
+drives only — expectations belong to whoever knows what the digital side should answer — so a
+definition without the bound pin fails with the runner's own message, `unknown interface pin 'a'
+(available: d, q)`, rather than reporting a pass that proved nothing.
+
+A binding may also state what a pin should read rather than what it should be driven to: `checks`
+turns it into an expectation, because an output cannot be driven. Each claim is checked at every
+tick the run covers — not only where the node changes level, so a definition that drifts between
+changes fails too — and a disagreement fails the simulation with the runner's own expectation
+message. A window wider than 512 ticks is sampled rather than written out in full, because a rate
+that maps a long run onto millions of ticks is not a better check, only a slower failure.
+
+The report says how much was compared rather than only whether everything passed:
+`radix drive --simulate` prints `checked 45 claim tick(s) on 1 pin(s)`, and a run with no claim says
+so instead of implying the definition's answer was verified when it was only fed.
+
+What is still missing is the opposite direction, and it is blocked in the kernel rather than in the
+CLI: `SimulationEngine.SetPortValue` refuses an output with "Port 'y' is an output and cannot be
+driven externally", and the script runner rejects a drive on an output before it reaches the engine.
+That rule is deliberate — it keeps a definition's output a function of its inputs — so widening it
+is a modelling decision, not a bug fix: either a new kind of external source that a definition's
+output net may read, or an output pin whose value is declared to come from outside.
+
+A test pins the invariant with that exact message, so opening the direction has to be a knowing
+change. Until then the circuit can be cross-examined against a definition but cannot answer for
+one, and the report says which of the two it did. A test feeds an
+inverting definition a claim that its output equals the level and requires that to fail — otherwise
+a claim that was silently ignored would look exactly like a claim that holds.
+
+`examples/electrical-ternary-drive.radix` puts the two sides in one file: the transient inverter, a
+digital follower `demo.follow` with an input `a` and output `y`, one binding driving `a` from the
+circuit's `out` node, and one claiming `y` reads the same level, both at one tick per nanosecond.
+Running `radix drive examples/electrical-ternary-drive.radix --simulate --stop 1.2e-7 --steps 1280`
+solves the network, reads level 2 then level 1, drives `a` with each and checks `y` agrees, ending
+at tick 44. A test loads the same file and holds the run to that result, so the example cannot
+drift away from the path it demonstrates.
+
+The editor has no equivalent control yet, so a binding is authored in the file and run from the
+command line.
+
+Project format 15 stores the choice per device as `biasDependentCapacitance`, so a file can ask
+for it; the field is written only for a MOSFET, and a non-MOSFET that sets it is rejected on load
+with the same rule that guards the other device fields. Format 14 files have no such field and load
+with constant capacitance, which is what they were written with.
 
 ## Analytical validation
 

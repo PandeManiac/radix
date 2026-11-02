@@ -14,12 +14,17 @@ public sealed class ElectricalSweepRowItem
         double value,
         string nodeId,
         Radix.Core.Electrical.TransientNodeMetrics? metrics,
-        bool showValue)
+        bool showValue,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
 
         ValueText = showValue ? value.ToString("G4", CultureInfo.InvariantCulture) : string.Empty;
         NodeId = nodeId;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? nodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         PeakText = metrics is null
             ? "-"
             : metrics.MaximumVolts.ToString("G4", CultureInfo.InvariantCulture);
@@ -34,6 +39,12 @@ public sealed class ElectricalSweepRowItem
     public string ValueText { get; }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     public string PeakText { get; }
 

@@ -24,7 +24,11 @@ public static class ProjectSerializer
     /// numeric-format descriptors. Version 5 adds optional editor view metadata.
     /// Version 6 adds optional per-definition waveform pin selections inside that view.
     /// Version 7 adds the pending-event limit. Version 8 adds optional authored
-    /// electrical circuits. Older files load unchanged; every version up to
+    /// electrical circuits. Version 11 adds the authored MOSFET component kind with
+    /// its optional channel and threshold-voltage fields. Version 22 adds electrical
+    /// circuit ports and the subcircuit component kind. Version 23 adds optional
+    /// primary-value overrides on a subcircuit instance. Older files load unchanged;
+    /// every version up to
     /// <see cref="CurrentVersion"/> is accepted, and saving always writes the current
     /// version.
     /// </summary>
@@ -262,12 +266,92 @@ public static class ProjectSerializer
             GroundNodeId = dto.Ground ?? throw new ProjectFormatException($"Electrical circuit '{id}' is missing 'ground'."),
         };
 
+        circuit.DelayToleranceTicks = Math.Max(0, dto.DelayToleranceTicks ?? 0);
+        foreach (ElectricalDelayToleranceDto tolerance in dto.DelayTolerances ?? [])
+        {
+            if (tolerance.Ticks < 0)
+            {
+                throw new ProjectFormatException(
+                    $"Circuit '{circuit.Id}' has a negative tolerance for transition {tolerance.From}->{tolerance.To}.");
+            }
+
+            circuit.DelayTolerances.Add(new ElectricalDelayTolerance(
+                string.IsNullOrWhiteSpace(tolerance.Pin) ? null : tolerance.Pin,
+                tolerance.From,
+                tolerance.To,
+                tolerance.Ticks));
+        }
+
+        foreach (double threshold in dto.LevelThresholds ?? [])
+        {
+            if (!double.IsFinite(threshold) ||
+                (circuit.LevelThresholds.Count > 0 && threshold <= circuit.LevelThresholds[^1]))
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' has level thresholds that must be finite and ascending; '{threshold}' does not follow its predecessor.");
+            }
+
+            circuit.LevelThresholds.Add(threshold);
+        }
+
+        foreach (ElectricalDriveBindingDto bindingDto in dto.DriveBindings ?? [])
+        {
+            string nodeId = bindingDto.Node ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' has a drive binding without 'node'.");
+            // The circuit's nodes are added after this point, so the claim is checked against the
+            // authored list here rather than against a collection that is still empty.
+            if (dto.Nodes is null ||
+                !dto.Nodes.Any(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal)))
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' binds unknown node '{nodeId}' to a digital pin.");
+            }
+
+            string pinId = bindingDto.Pin ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' binds node '{nodeId}' without 'pin'.");
+            double rate = bindingDto.TicksPerSecond ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' binds '{nodeId}' to '{pinId}' without 'ticksPerSecond'.");
+            if (!double.IsFinite(rate) || rate <= 0)
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' binds '{nodeId}' to '{pinId}' at a tick rate that must be finite and positive.");
+            }
+
+            circuit.DriveBindings.Add(new ElectricalDriveBinding
+            {
+                NodeId = nodeId,
+                PinId = pinId,
+                TicksPerSecond = rate,
+                Checks = bindingDto.Checks ?? false,
+            });
+        }
+
         foreach (ElectricalNodeDto nodeDto in dto.Nodes ?? [])
         {
             circuit.Nodes.Add(new ElectricalNode
             {
                 Id = nodeDto.Id ?? throw new ProjectFormatException($"Electrical circuit '{id}' has a node without 'id'."),
                 Name = nodeDto.Name ?? nodeDto.Id ?? string.Empty,
+            });
+        }
+
+        foreach (ElectricalPortDto portDto in dto.Ports ?? [])
+        {
+            string portId = portDto.Id ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' has a port without 'id'.");
+            string nodeId = portDto.Node ?? throw new ProjectFormatException(
+                $"Electrical circuit '{id}' port '{portId}' is missing 'node'.");
+            if (!circuit.Nodes.Any(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal)))
+            {
+                throw new ProjectFormatException(
+                    $"Electrical circuit '{id}' port '{portId}' refers to unknown node '{nodeId}'.");
+            }
+
+            circuit.Ports.Add(new ElectricalPort
+            {
+                Id = portId,
+                Name = string.IsNullOrWhiteSpace(portDto.Name) ? portId : portDto.Name,
+                NodeId = nodeId,
             });
         }
 
@@ -283,14 +367,105 @@ public static class ProjectSerializer
     {
         string id = dto.Id ?? throw new ProjectFormatException($"Electrical circuit '{circuitId}' has a component without 'id'.");
         ElectricalComponentKind kind = ParseElectricalKind(dto.Kind, circuitId, id);
+        bool isMosfet = ElectricalComponentMetadata.IsMosfet(kind);
+        bool isSubcircuit = ElectricalComponentMetadata.IsSubcircuit(kind);
+        if (!isSubcircuit && dto.Overrides is not null)
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'overrides'; only a subcircuit can override a child value.");
+        }
+
+        if (!isMosfet && (dto.Channel is not null ||
+            dto.ThresholdVoltage is not null ||
+            dto.ChannelLengthModulation is not null ||
+            dto.GateSourceCapacitance is not null ||
+            dto.GateDrainCapacitance is not null ||
+            dto.DrainSourceCapacitance is not null ||
+            dto.BiasDependentCapacitance is not null))
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'channel', 'thresholdVoltage', 'channelLengthModulation', 'gateSourceCapacitance', 'gateDrainCapacitance', 'drainSourceCapacitance' or 'biasDependentCapacitance'; those belong to a mosfet.");
+        }
+
+        if (isMosfet && dto.ThresholdVoltage is null)
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a mosfet and needs 'thresholdVoltage'.");
+        }
+
+        if (isSubcircuit && string.IsNullOrWhiteSpace(dto.Circuit))
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a subcircuit and needs 'circuit'.");
+        }
+
+        if (!isSubcircuit && dto.Circuit is not null)
+        {
+            throw new ProjectFormatException(
+                $"Electrical component '{circuitId}.{id}' is a {ElectricalComponentMetadata.KindName(kind)} and must not set 'circuit'; that belongs to a subcircuit.");
+        }
+
+        DcMosfetChannel channel = DcMosfetChannel.NChannel;
+        if (isMosfet)
+        {
+            try
+            {
+                channel = ElectricalComponentMetadata.ParseChannel(dto.Channel);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' is invalid: {exception.Message}", exception);
+            }
+        }
+
         var component = new ElectricalComponent
         {
             Id = id,
             Name = string.IsNullOrWhiteSpace(dto.Name) ? id : dto.Name,
             Kind = kind,
-            Value = dto.Value ?? throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' is missing 'value'."),
+            Value = dto.Value ?? (isSubcircuit
+                ? 0
+                : throw new ProjectFormatException($"Electrical component '{circuitId}.{id}' is missing 'value'.")),
+            CircuitId = isSubcircuit ? dto.Circuit! : string.Empty,
             InitialValue = dto.InitialValue,
+            Channel = channel,
+            ThresholdVoltage = dto.ThresholdVoltage ?? 1,
+            ChannelLengthModulation = dto.ChannelLengthModulation ?? 0,
+            GateSourceCapacitance = dto.GateSourceCapacitance ?? 0,
+            GateDrainCapacitance = dto.GateDrainCapacitance ?? 0,
+            DrainSourceCapacitance = dto.DrainSourceCapacitance ?? 0,
+            BiasDependentCapacitance = dto.BiasDependentCapacitance ?? false,
         };
+
+        if (isSubcircuit)
+        {
+            var overrideIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (ElectricalOverrideDto overrideDto in dto.Overrides ?? [])
+            {
+                string target = overrideDto.Component ?? throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' has an override without 'component'.");
+                if (!overrideIds.Add(target))
+                {
+                    throw new ProjectFormatException(
+                        $"Electrical component '{circuitId}.{id}' overrides '{target}' more than once.");
+                }
+
+                double overrideValue = overrideDto.Value ?? throw new ProjectFormatException(
+                    $"Electrical component '{circuitId}.{id}' overrides '{target}' without 'value'.");
+                if (!double.IsFinite(overrideValue))
+                {
+                    throw new ProjectFormatException(
+                        $"Electrical component '{circuitId}.{id}' has a non-finite override for '{target}'.");
+                }
+
+                component.Overrides.Add(new ElectricalOverride
+                {
+                    ComponentId = target,
+                    Value = overrideValue,
+                });
+            }
+        }
 
         foreach (ElectricalWaveformPointDto pointDto in dto.Waveform ?? [])
         {
@@ -325,6 +500,8 @@ public static class ProjectSerializer
             "current-source" => ElectricalComponentKind.CurrentSource,
             "capacitor" => ElectricalComponentKind.Capacitor,
             "inductor" => ElectricalComponentKind.Inductor,
+            "mosfet" => ElectricalComponentKind.Mosfet,
+            "subcircuit" => ElectricalComponentKind.Subcircuit,
             null => throw new ProjectFormatException($"Electrical component '{circuitId}.{componentId}' is missing 'kind'."),
             _ => throw new ProjectFormatException(
                 $"Electrical component '{circuitId}.{componentId}' has unknown kind '{value}'."),
@@ -455,6 +632,7 @@ public static class ProjectSerializer
                 Name = pin.Name ?? pin.Id ?? string.Empty,
                 Direction = ParseDirection(pin.Direction, $"definition '{id}' pin '{pin.Id}'"),
                 DomainId = pin.Domain ?? throw new ProjectFormatException($"Pin '{pin.Id}' in definition '{id}' is missing 'domain'."),
+                ExternalSupply = pin.ExternalSupply,
             });
         }
 
@@ -662,18 +840,80 @@ public static class ProjectSerializer
         Name = circuit.Name,
         Description = circuit.Description,
         Ground = circuit.GroundNodeId,
+        LevelThresholds = circuit.LevelThresholds.Count == 0 ? null : [.. circuit.LevelThresholds],
+        DelayToleranceTicks = circuit.DelayToleranceTicks == 0 ? null : circuit.DelayToleranceTicks,
+        DelayTolerances = circuit.DelayTolerances.Count == 0
+            ? null
+            : [.. circuit.DelayTolerances.Select(tolerance => new ElectricalDelayToleranceDto
+            {
+                Pin = tolerance.PinId,
+                From = tolerance.FromLevel,
+                To = tolerance.ToLevel,
+                Ticks = tolerance.Ticks,
+            })],
+        DriveBindings = circuit.DriveBindings.Count == 0
+            ? null
+            : [.. circuit.DriveBindings.Select(binding => new ElectricalDriveBindingDto
+            {
+                Node = binding.NodeId,
+                Pin = binding.PinId,
+                TicksPerSecond = binding.TicksPerSecond,
+                Checks = binding.Checks ? true : null,
+            })],
         Nodes = circuit.Nodes.Select(node => new ElectricalNodeDto
         {
             Id = node.Id,
             Name = node.Name,
         }).ToList(),
+        Ports = circuit.Ports.Count == 0
+            ? null
+            : circuit.Ports.Select(port => new ElectricalPortDto
+            {
+                Id = port.Id,
+                Name = port.Name,
+                Node = port.NodeId,
+            }).ToList(),
         Components = circuit.Components.Select(component => new ElectricalComponentDto
         {
             Id = component.Id,
             Name = component.Name,
             Kind = ElectricalComponentMetadata.KindName(component.Kind),
-            Value = component.Value,
+            Circuit = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
+                ? component.CircuitId
+                : null,
+            Overrides = component.Overrides.Count == 0
+                ? null
+                : component.Overrides.Select(entry => new ElectricalOverrideDto
+                {
+                    Component = entry.ComponentId,
+                    Value = entry.Value,
+                }).ToList(),
+            Value = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
+                ? null
+                : component.Value,
             InitialValue = component.InitialValue,
+            Channel = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? ElectricalComponentMetadata.ChannelName(component.Channel)
+                : null,
+            ThresholdVoltage = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.ThresholdVoltage
+                : null,
+            ChannelLengthModulation = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.ChannelLengthModulation
+                : null,
+            GateSourceCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.GateSourceCapacitance
+                : null,
+            GateDrainCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.GateDrainCapacitance
+                : null,
+            DrainSourceCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? component.DrainSourceCapacitance
+                : null,
+            BiasDependentCapacitance = ElectricalComponentMetadata.IsMosfet(component.Kind) &&
+                component.BiasDependentCapacitance
+                    ? true
+                    : null,
             Waveform = component.Waveform.Count == 0
                 ? null
                 : component.Waveform.Select(point => new ElectricalWaveformPointDto
@@ -749,6 +989,7 @@ public static class ProjectSerializer
             Name = pin.Name,
             Direction = pin.Direction == PinDirection.Input ? "input" : "output",
             Domain = pin.DomainId,
+            ExternalSupply = pin.ExternalSupply,
         }).ToList(),
         Instances = definition.Instances.Select(MapInstanceDto).ToList(),
         Nets = definition.Nets.Select(net => new NetDto

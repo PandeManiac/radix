@@ -135,17 +135,23 @@ public static class ElectricalRuleChecker
 
     private static void CheckElectricalCircuits(CircuitProject project, DiagnosticBag diagnostics)
     {
+        var ownCache = new Dictionary<ElectricalCircuit, DiagnosticBag>();
+        var referenceCache = new Dictionary<ElectricalComponent, DiagnosticBag>();
         foreach (ElectricalCircuit circuit in project.ElectricalCircuits)
         {
             DcNetlist netlist;
             try
             {
-                netlist = circuit.ToDcNetlist();
+                netlist = circuit.ToDcNetlist(
+                    project.FindElectricalCircuit,
+                    ownCache,
+                    referenceCache);
             }
             catch (ElectricalCircuitValidationException)
             {
-                // Structural terminal/node errors are reported by the electrical
-                // validator; a topology rule cannot add anything reliable here.
+                // Structural terminal/node errors are reported by project electrical
+                // validation. A parent with an invalid child is skipped so ERC never
+                // analyzes a partial expansion.
                 continue;
             }
 

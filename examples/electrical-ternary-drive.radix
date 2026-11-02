@@ -1,0 +1,452 @@
+{
+  "format": "radix-project",
+  "version": 17,
+  "name": "Electrical ternary drive",
+  "root": "demo.follow",
+  "settings": {
+    "maxEvaluationsPerComponentPerTimestamp": 64,
+    "maxPendingEvents": 1000000,
+    "maxRecordedNetChanges": 500000,
+    "defaultAdvanceTicks": 10,
+    "traceAllNets": true
+  },
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": [
+        "0",
+        "1"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Two-state domain. Values are indices; two\u0027s-complement and other interpretations live outside the kernel."
+    },
+    {
+      "id": "ternary",
+      "name": "Ternary",
+      "values": [
+        "0",
+        "1",
+        "2"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Three-state domain. No balanced or positional interpretation is implied."
+    },
+    {
+      "id": "quaternary",
+      "name": "Quaternary",
+      "values": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Four-state digit domain with no implied arithmetic. Unsigned radix-4 interpretation lives in the numeric format catalog."
+    },
+    {
+      "id": "balanced-ternary",
+      "name": "Balanced ternary",
+      "values": [
+        "-",
+        "0",
+        "\u002B"
+      ],
+      "drivers": {
+        "kind": "single"
+      },
+      "description": "Three-state domain whose labels suggest balanced ternary. The kernel still treats them as ordinals."
+    },
+    {
+      "id": "four-state",
+      "name": "Four-state logic",
+      "values": [
+        "0",
+        "1",
+        "X",
+        "Z"
+      ],
+      "drivers": {
+        "kind": "priority",
+        "priorities": [
+          1,
+          1,
+          3,
+          0
+        ],
+        "conflictValue": 2
+      },
+      "description": "Four-state domain with high impedance (Z) and unknown/conflict (X)."
+    }
+  ],
+  "definitions": [
+    {
+      "id": "demo.follow",
+      "name": "Follows the solved circuit",
+      "pins": [
+        {
+          "id": "a",
+          "name": "A",
+          "direction": "input",
+          "domain": "ternary"
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "direction": "output",
+          "domain": "ternary"
+        }
+      ],
+      "instances": [
+        {
+          "id": "gate",
+          "primitive": {
+            "kind": "lookup",
+            "inputCount": 1,
+            "table": [
+              0,
+              1,
+              2
+            ],
+            "delay": 0
+          },
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "nets": [
+        {
+          "id": "a_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "gate",
+              "pin": "in0"
+            }
+          ]
+        },
+        {
+          "id": "y_net",
+          "domain": "ternary",
+          "pins": [
+            {
+              "instance": "gate",
+              "pin": "out"
+            }
+          ]
+        }
+      ],
+      "ports": [
+        {
+          "pin": "a",
+          "net": "a_net"
+        },
+        {
+          "pin": "y",
+          "net": "y_net"
+        }
+      ]
+    }
+  ],
+  "electricalCircuits": [
+    {
+      "id": "ternary-switch",
+      "name": "Ternary inverter, 0 V to mid-rail",
+      "description": "The dual-threshold ternary inverter driven from 0 V to 2.5 V: the output leaves the 5 V rail and settles on the middle level. Two time constants are in the path: the drive must first charge the gate bus through the 10 kOhm gate resistor, then the summing node charges the devices\u0027 own drain capacitance through the 50 kOhm Thevenin resistance. Each device also has 0.02 pF from gate to drain, so a moving output feeds back into the gate bus through that path.",
+      "ground": "gnd",
+      "driveBindings": [
+        {
+          "node": "out",
+          "pin": "a",
+          "ticksPerSecond": 1000000000
+        },
+        {
+          "node": "out",
+          "pin": "y",
+          "ticksPerSecond": 1000000000,
+          "checks": true
+        }
+      ],
+      "nodes": [
+        {
+          "id": "gnd",
+          "name": "Ground"
+        },
+        {
+          "id": "vdd",
+          "name": "5 V rail"
+        },
+        {
+          "id": "in",
+          "name": "Input"
+        },
+        {
+          "id": "g",
+          "name": "Shared gate bus"
+        },
+        {
+          "id": "out_low",
+          "name": "Low-threshold inverter output"
+        },
+        {
+          "id": "out_high",
+          "name": "High-threshold inverter output"
+        },
+        {
+          "id": "out",
+          "name": "Summed output"
+        }
+      ],
+      "components": [
+        {
+          "id": "VDD",
+          "name": "Rail",
+          "kind": "voltage-source",
+          "value": 5,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "Positive",
+              "polarity": "positive",
+              "node": "vdd"
+            },
+            {
+              "id": "b",
+              "name": "Negative",
+              "polarity": "negative",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "VIN",
+          "name": "Input drive",
+          "kind": "voltage-source",
+          "value": 0,
+          "waveform": [
+            {
+              "time": 0,
+              "value": 0
+            },
+            {
+              "time": 2E-08,
+              "value": 0
+            },
+            {
+              "time": 2.1E-08,
+              "value": 2.5
+            }
+          ],
+          "terminals": [
+            {
+              "id": "a",
+              "name": "Positive",
+              "polarity": "positive",
+              "node": "in"
+            },
+            {
+              "id": "b",
+              "name": "Negative",
+              "polarity": "negative",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "RG",
+          "name": "Gate drive resistor",
+          "kind": "resistor",
+          "value": 10000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "in"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "g"
+            }
+          ]
+        },
+        {
+          "id": "MPL",
+          "name": "Weak p-channel pull-up",
+          "kind": "mosfet",
+          "value": 1E-05,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "gateSourceCapacitance": 2.5E-13,
+          "gateDrainCapacitance": 2E-14,
+          "drainSourceCapacitance": 1E-12,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_low"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "g"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "MNL",
+          "name": "Strong n-channel pull-down",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "gateSourceCapacitance": 2.5E-13,
+          "gateDrainCapacitance": 2E-14,
+          "drainSourceCapacitance": 1E-12,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_low"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "g"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "MPH",
+          "name": "Strong p-channel pull-up",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "gateSourceCapacitance": 2.5E-13,
+          "gateDrainCapacitance": 2E-14,
+          "drainSourceCapacitance": 1E-12,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_high"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "g"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "vdd"
+            }
+          ]
+        },
+        {
+          "id": "MNH",
+          "name": "Weak n-channel pull-down",
+          "kind": "mosfet",
+          "value": 1E-05,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "gateSourceCapacitance": 2.5E-13,
+          "gateDrainCapacitance": 2E-14,
+          "drainSourceCapacitance": 1E-12,
+          "terminals": [
+            {
+              "id": "drain",
+              "name": "Drain",
+              "polarity": "passive",
+              "node": "out_high"
+            },
+            {
+              "id": "gate",
+              "name": "Gate",
+              "polarity": "passive",
+              "node": "g"
+            },
+            {
+              "id": "source",
+              "name": "Source",
+              "polarity": "passive",
+              "node": "gnd"
+            }
+          ]
+        },
+        {
+          "id": "RSUM1",
+          "name": "Summing resistor",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "out_low"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "out"
+            }
+          ]
+        },
+        {
+          "id": "RSUM2",
+          "name": "Summing resistor",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            {
+              "id": "a",
+              "name": "A",
+              "polarity": "passive",
+              "node": "out_high"
+            },
+            {
+              "id": "b",
+              "name": "B",
+              "polarity": "passive",
+              "node": "out"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

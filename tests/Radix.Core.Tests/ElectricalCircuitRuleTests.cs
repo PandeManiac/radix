@@ -53,6 +53,42 @@ public sealed class ElectricalCircuitRuleTests
     }
 
     [Fact]
+    public void ReusedFloatingChildIsReportedOncePerOwningCircuit()
+    {
+        ElectricalCircuit child = Divider();
+        child.Ports.Add(new ElectricalPort { Id = "in", Name = "Input", NodeId = "in" });
+        child.Ports.Add(new ElectricalPort { Id = "out", Name = "Output", NodeId = "out" });
+        child.Ports.Add(new ElectricalPort { Id = "gnd", Name = "Ground", NodeId = "gnd" });
+        AddNode(child, "islandA");
+        AddNode(child, "islandB");
+        AddResistor(child, "R3", 1_000, "islandA", "islandB");
+        AddResistor(child, "R4", 2_000, "islandA", "islandB");
+        ElectricalCircuit parent = ParentWithTwoInstances(child);
+
+        DiagnosticBag report = CircuitValidator.Validate(ProjectWith(child, parent));
+
+        Diagnostic[] warnings = report
+            .Where(diagnostic => diagnostic.Code == ElectricalRuleChecker.ElectricalFloatingNodesCode)
+            .ToArray();
+        Assert.True(
+            warnings.Length == 2,
+            string.Join(" || ", warnings.Select(warning => $"{warning.Path}: {warning.Message}")));
+
+        Diagnostic childWarning = Assert.Single(
+            warnings,
+            diagnostic => diagnostic.Path == "electrical/divider");
+        Assert.Contains("'islandA'", childWarning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("'X1/islandA'", childWarning.Message, StringComparison.Ordinal);
+
+        Diagnostic parentWarning = Assert.Single(
+            warnings,
+            diagnostic => diagnostic.Path == "electrical/parent");
+        Assert.Contains("'X1/islandA'", parentWarning.Message, StringComparison.Ordinal);
+        Assert.Contains("'X2/islandA'", parentWarning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("'islandA'", parentWarning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ContradictoryIdealVoltageSourcesAreReported()
     {
         ElectricalCircuit circuit = Divider();
@@ -114,6 +150,24 @@ public sealed class ElectricalCircuitRuleTests
             report,
             diagnostic => diagnostic.Code.StartsWith("RAD-ERC-1", StringComparison.Ordinal));
         Assert.False(report.HasErrors);
+    }
+
+    [Fact]
+    public void ProjectElectricalValidationReportsACircuitStructuralError()
+    {
+        ElectricalCircuit circuit = Divider();
+        circuit.FindComponent("R1")!.FindTerminal("b")!.NodeId = "missing";
+        CircuitProject project = ProjectWith(circuit);
+
+        DiagnosticBag report = ElectricalCircuitValidator.ValidateProject(project);
+
+        Diagnostic diagnostic = Assert.Single(
+            report,
+            item => item.Code == "RAD-ELEC-011");
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal("electrical/divider/R1", diagnostic.Path);
+        Assert.Contains("'missing'", diagnostic.Message, StringComparison.Ordinal);
+        Assert.True(report.HasErrors);
     }
 
     [Fact]
@@ -203,7 +257,7 @@ public sealed class ElectricalCircuitRuleTests
         circuit.Components.Add(component);
     }
 
-    private static CircuitProject ProjectWith(ElectricalCircuit circuit)
+    private static CircuitProject ProjectWith(params ElectricalCircuit[] circuits)
     {
         var builder = new ProjectBuilder("electrical erc");
         var root = builder.Define("root", "Root");
@@ -211,7 +265,63 @@ public sealed class ElectricalCircuitRuleTests
         root.AddPrimitive("src", new ConstantSpec(0));
         root.Connect(output, root.Pin("src", "out"));
         CircuitProject project = builder.Build("root");
-        project.ElectricalCircuits.Add(circuit);
+        project.ElectricalCircuits.AddRange(circuits);
         return project;
+    }
+
+    private static ElectricalCircuit ParentWithTwoInstances(ElectricalCircuit child)
+    {
+        var parent = new ElectricalCircuit
+        {
+            Id = "parent",
+            Name = "Two instances",
+            GroundNodeId = "gnd",
+        };
+        AddNode(parent, "gnd");
+        AddNode(parent, "in");
+        AddNode(parent, "out1");
+        AddNode(parent, "out2");
+        AddSource(parent, "V1", ElectricalComponentKind.VoltageSource, 10, "in", "gnd");
+        parent.Components.Add(Subcircuit("X1", child.Id, "in", "out1", "gnd"));
+        parent.Components.Add(Subcircuit("X2", child.Id, "in", "out2", "gnd"));
+        return parent;
+    }
+
+    private static ElectricalComponent Subcircuit(
+        string id,
+        string childId,
+        string inNode,
+        string outNode,
+        string groundNode)
+    {
+        var component = new ElectricalComponent
+        {
+            Id = id,
+            Name = id,
+            Kind = ElectricalComponentKind.Subcircuit,
+            CircuitId = childId,
+        };
+        component.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "in",
+            Name = "Input",
+            Polarity = ElectricalTerminalPolarity.Passive,
+            NodeId = inNode,
+        });
+        component.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "out",
+            Name = "Output",
+            Polarity = ElectricalTerminalPolarity.Passive,
+            NodeId = outNode,
+        });
+        component.Terminals.Add(new ElectricalTerminal
+        {
+            Id = "gnd",
+            Name = "Ground",
+            Polarity = ElectricalTerminalPolarity.Passive,
+            NodeId = groundNode,
+        });
+        return component;
     }
 }

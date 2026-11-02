@@ -1,0 +1,13 @@
+{
+  "format": "radix-dc-netlist",
+  "version": 1,
+  "ground": "gnd",
+  "elements": [
+    { "id": "VDD", "type": "voltage-source", "nodeA": "vdd", "nodeB": "gnd", "volts": 5 },
+    { "id": "VG", "type": "voltage-source", "nodeA": "gate", "nodeB": "gnd", "volts": 2 },
+    { "id": "RL", "type": "resistor", "nodeA": "vdd", "nodeB": "out", "ohms": 1000 },
+    { "id": "M1", "type": "mosfet", "drain": "out", "gate": "gate", "source": "gnd",
+      "channel": "n", "thresholdVoltage": 1, "transconductance": 0.001,
+      "channelLengthModulation": 0.02 }
+  ]
+}

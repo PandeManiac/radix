@@ -9,6 +9,7 @@ public enum DcElementKind
     VoltageSource,
     CurrentSource,
     Diode,
+    Mosfet,
 }
 
 /// <summary>
@@ -20,7 +21,10 @@ public abstract record DcElement(string Id, string NodeA, string NodeB)
 {
     public abstract DcElementKind Kind { get; }
 
-    /// <summary>The element's resistance, voltage, or current in its natural unit.</summary>
+    /// <summary>
+    /// The element's resistance, voltage, current, or (for a MOSFET) transconductance
+    /// parameter in its natural unit.
+    /// </summary>
     public abstract double Value { get; }
 
     public abstract string Unit { get; }
@@ -313,6 +317,182 @@ public sealed record DcDiode(
             : MaximumExponentialValue;
 }
 
+/// <summary>The channel polarity of a MOSFET: the polarity of the carriers it conducts.</summary>
+public enum DcMosfetChannel
+{
+    NChannel,
+    PChannel,
+}
+
+/// <summary>Which square-law region an evaluated MOSFET operating point falls in.</summary>
+public enum DcMosfetRegion
+{
+    /// <summary>No inversion layer: the channel is off and only the leakage floor conducts.</summary>
+    Cutoff,
+
+    /// <summary>An inversion layer spans the whole channel; current rises linearly then bends over.</summary>
+    Triode,
+
+    /// <summary>The channel is pinched off at the drain; current depends on gate overdrive only.</summary>
+    Saturation,
+}
+
+/// <summary>
+/// One evaluation of a MOSFET's current law together with the two partial
+/// derivatives a Newton iteration needs. Current flows from the drain terminal to the
+/// source terminal through the channel (gate current is exactly zero).
+/// </summary>
+public readonly record struct DcMosfetOperatingPoint(
+    double Current,
+    double DrainConductance,
+    double GateTransconductance,
+    DcMosfetRegion Region);
+
+/// <summary>
+/// A three-terminal voltage-controlled MOSFET using the Shichman-Hodges square law
+/// (SPICE level 1). This is a compact, isothermal, charge-free teaching model, not a
+/// production transistor model.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The body/bulk terminal is not exposed: it is tied to the source, so there is no
+/// body effect. Gate current is exactly zero, there is no gate or junction
+/// capacitance, no subthreshold conduction, no mobility degradation, no
+/// high-injection or temperature dependence, and no self-heating.
+/// </para>
+/// <para>
+/// Let <c>Vgs</c> and <c>Vds</c> be terminal voltages and <c>Vov = Vgs - Vt</c>. For a
+/// p-channel device both voltages are negated, which makes the same equations apply
+/// and the drain current negation handle polarity. If <c>Vds &lt; 0</c> the drain and
+/// source roles are swapped, because the model is symmetric in the two terminals when
+/// the body is tied to the source:
+/// </para>
+/// <list type="bullet">
+/// <item><c>Vov &lt;= 0</c>: <c>Ids = 0</c> (cutoff).</item>
+/// <item><c>0 &lt; Vds &lt; Vov</c>: <c>Ids = K (Vov Vds - Vds^2/2)(1 + lambda Vds)</c> (triode).</item>
+/// <item><c>Vds &gt;= Vov</c>: <c>Ids = (K/2) Vov^2 (1 + lambda Vds)</c> (saturation).</item>
+/// </list>
+/// <para>
+/// <c>K</c> is the transconductance parameter in A/V^2 (SPICE <c>KP</c>, i.e.
+/// <c>mu Cox W/L</c>) and <c>lambda</c> is the channel-length modulation coefficient
+/// in 1/V. A leakage conductance <see cref="MinimumConductance"/> is added across
+/// drain and source so an off device never makes the Jacobian exactly singular; it is
+/// included in the reported device current so KCL stays consistent, and at 1 pS it is
+/// five picoamperes at five volts.
+/// </para>
+/// </remarks>
+/// <param name="Drain">The drain node, which is <see cref="DcElement.NodeA"/>.</param>
+/// <param name="Gate">The insulated control node; it draws no current.</param>
+/// <param name="Source">The source node, which is <see cref="DcElement.NodeB"/>.</param>
+/// <param name="ThresholdVoltage">
+/// The threshold voltage magnitude in volts. A positive value is an enhancement
+/// device; a negative value is a depletion device.
+/// </param>
+/// <param name="Transconductance">The transconductance parameter K in A/V^2, greater than zero.</param>
+/// <param name="ChannelLengthModulation">The channel-length modulation coefficient in 1/V, zero or greater.</param>
+public sealed record DcMosfet(
+    string Id,
+    string Drain,
+    string Gate,
+    string Source,
+    DcMosfetChannel Channel,
+    double ThresholdVoltage,
+    double Transconductance,
+    double ChannelLengthModulation = 0)
+    : DcElement(Id, Drain, Source)
+{
+    /// <summary>
+    /// Drain-source leakage conductance in siemens, added to every operating point. It
+    /// stands in for SPICE's <c>GMIN</c> and keeps a cutoff device from producing an
+    /// exactly singular system.
+    /// </summary>
+    public const double MinimumConductance = 1e-12;
+
+    public override DcElementKind Kind => DcElementKind.Mosfet;
+
+    public override double Value => Transconductance;
+
+    public override string Unit => "A/V^2";
+
+    public bool IsPChannel => Channel == DcMosfetChannel.PChannel;
+
+    /// <summary>+1 for an n-channel device, -1 for a p-channel device.</summary>
+    public double Polarity => IsPChannel ? -1 : 1;
+
+    /// <summary>
+    /// Evaluates the current law and its two partial derivatives at a terminal bias.
+    /// <paramref name="drainSourceVolts"/> is <c>V(drain) - V(source)</c> and
+    /// <paramref name="gateSourceVolts"/> is <c>V(gate) - V(source)</c>.
+    /// </summary>
+    public DcMosfetOperatingPoint Evaluate(double drainSourceVolts, double gateSourceVolts)
+    {
+        double polarity = Polarity;
+        double vds = polarity * drainSourceVolts;
+        double vgs = polarity * gateSourceVolts;
+
+        // With the body tied to the source the device is symmetric, so a negative
+        // drain-source voltage is the same device with the terminals exchanged. That
+        // keeps reverse conduction signed correctly instead of reporting a saturation
+        // current with the wrong direction.
+        bool reversed = vds < 0;
+        double effectiveVgs = reversed ? vgs - vds : vgs;
+        double effectiveVds = reversed ? -vds : vds;
+
+        double overdrive = effectiveVgs - ThresholdVoltage;
+        double current;
+        double drainConductance;
+        double gateTransconductance;
+        DcMosfetRegion region;
+        if (overdrive <= 0)
+        {
+            current = 0;
+            drainConductance = 0;
+            gateTransconductance = 0;
+            region = DcMosfetRegion.Cutoff;
+        }
+        else if (effectiveVds < overdrive)
+        {
+            double modulation = 1 + (ChannelLengthModulation * effectiveVds);
+            double charge = (overdrive * effectiveVds) - (0.5 * effectiveVds * effectiveVds);
+            current = Transconductance * charge * modulation;
+            drainConductance = Transconductance * (
+                ((overdrive - effectiveVds) * modulation) +
+                (ChannelLengthModulation * charge));
+            gateTransconductance = Transconductance * effectiveVds * modulation;
+            region = DcMosfetRegion.Triode;
+        }
+        else
+        {
+            double saturationCurrent = 0.5 * Transconductance * overdrive * overdrive;
+            current = saturationCurrent * (1 + (ChannelLengthModulation * effectiveVds));
+            drainConductance = saturationCurrent * ChannelLengthModulation;
+            gateTransconductance = Transconductance * overdrive *
+                (1 + (ChannelLengthModulation * effectiveVds));
+            region = DcMosfetRegion.Saturation;
+        }
+
+        // Undo the terminal swap: current negates, and the derivatives chain through
+        // Vgs' = Vgs - Vds and Vds' = -Vds.
+        double normalizedCurrent = reversed ? -current : current;
+        double normalizedDrainConductance = reversed
+            ? gateTransconductance + drainConductance
+            : drainConductance;
+        double normalizedGateTransconductance = reversed ? -gateTransconductance : gateTransconductance;
+
+        double machineCurrent = (polarity * normalizedCurrent) +
+            (MinimumConductance * drainSourceVolts);
+        return new DcMosfetOperatingPoint(
+            machineCurrent,
+            normalizedDrainConductance + MinimumConductance,
+            normalizedGateTransconductance,
+            region);
+    }
+
+    /// <summary>The drain-to-source channel current at a terminal bias, in amperes.</summary>
+    public double CurrentAt(double drainSourceVolts, double gateSourceVolts) =>
+        Evaluate(drainSourceVolts, gateSourceVolts).Current;
+}
+
 public enum DcSolveFailure
 {
     NoGround,
@@ -374,6 +554,8 @@ public sealed class DcSolveException : Exception
 /// </summary>
 public sealed class DcNetlist
 {
+    private const double DeviceContinuationConductance = 1e-12;
+
     private readonly List<DcElement> _elements = [];
     private readonly HashSet<string> _nodes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _ids = new(StringComparer.Ordinal);
@@ -528,9 +710,130 @@ public sealed class DcNetlist
     }
 
     /// <summary>
-    /// Solves the DC operating point with modified nodal analysis. Linear netlists
-    /// use one factorization; netlists containing diodes use a damped Newton
-    /// iteration with junction-voltage limiting.
+    /// Adds a three-terminal MOSFET. <paramref name="thresholdVoltage"/> is the
+    /// threshold voltage magnitude in volts (negative for a depletion device),
+    /// <paramref name="transconductance"/> is the SPICE <c>KP</c> parameter in A/V^2,
+    /// and <paramref name="channelLengthModulation"/> is <c>lambda</c> in 1/V. The body
+    /// is tied to the source and the gate draws no current.
+    /// </summary>
+    public DcNetlist AddMosfet(
+        string id,
+        string drain,
+        string gate,
+        string source,
+        DcMosfetChannel channel,
+        double thresholdVoltage,
+        double transconductance,
+        double channelLengthModulation = 0)
+    {
+        ValidateElement(id, drain, source);
+        if (string.IsNullOrWhiteSpace(gate))
+        {
+            throw new ArgumentException("The MOSFET gate node ID must not be empty.", nameof(gate));
+        }
+
+        if (!Enum.IsDefined(channel))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(channel), channel, "Channel must be an n-channel or p-channel device.");
+        }
+
+        if (!double.IsFinite(thresholdVoltage))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(thresholdVoltage), thresholdVoltage, "Threshold voltage must be finite.");
+        }
+
+        if (!double.IsFinite(transconductance) || transconductance <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(transconductance),
+                transconductance,
+                "The transconductance parameter must be finite and greater than zero.");
+        }
+
+        if (!double.IsFinite(channelLengthModulation) || channelLengthModulation < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(channelLengthModulation),
+                channelLengthModulation,
+                "Channel-length modulation must be finite and non-negative.");
+        }
+
+        return Add(new DcMosfet(
+            id,
+            drain,
+            gate,
+            source,
+            channel,
+            thresholdVoltage,
+            transconductance,
+            channelLengthModulation));
+    }
+
+    /// <summary>A copy that can be changed without touching this netlist.</summary>
+    public DcNetlist Clone()
+    {
+        var copy = new DcNetlist(GroundNodeId);
+        foreach (DcElement element in _elements)
+        {
+            copy.Add(element);
+        }
+
+        return copy;
+    }
+
+    /// <summary>
+    /// A copy with one element's value replaced, for a parameter sweep. A diode's behaviour
+    /// comes from four parameters, so it cannot be expressed as one swept value and is
+    /// rejected instead of being changed only partly. A MOSFET's transconductance is a
+    /// single well-defined parameter, so it can be swept.
+    /// </summary>
+    public DcNetlist WithElementValue(string id, double value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        if (!double.IsFinite(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "A swept value must be finite.");
+        }
+
+        int index = _elements.FindIndex(
+            element => string.Equals(element.Id, id, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            throw new ArgumentException($"Netlist has no element '{id}' to sweep.", nameof(id));
+        }
+
+        DcNetlist copy = Clone();
+        copy._elements[index] = copy._elements[index] switch
+        {
+            DcResistor resistor => resistor with { Ohms = RequireSweptPositive(value, id) },
+            DcVoltageSource source => source with { Volts = value },
+            DcCurrentSource source => source with { Amperes = value },
+            DcMosfet mosfet => mosfet with { Transconductance = RequireSweptPositive(value, id) },
+            DcDiode => throw new ArgumentException(
+                $"Element '{id}' is a diode; its diode parameters cannot be swept as one value, so sweep a resistor, source, or MOSFET transconductance instead.",
+                nameof(id)),
+            _ => throw new ArgumentException($"Element '{id}' cannot be swept.", nameof(id)),
+        };
+        return copy;
+    }
+
+    private static double RequireSweptPositive(double value, string id)
+    {
+        if (!(value > 0) || !double.IsFinite(value))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(value), value, $"A swept value for '{id}' must be finite and greater than zero.");
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Solves the DC operating point with modified nodal analysis. A netlist with no
+    /// nonlinear device uses one factorization; a netlist containing diodes or
+    /// MOSFETs uses a damped Newton iteration (with pn-junction limiting for diodes).
     /// </summary>
     public DcSolution Solve()
     {
@@ -601,7 +904,8 @@ public sealed class DcNetlist
         }
 
         DcDiode[] diodes = _elements.OfType<DcDiode>().ToArray();
-        return diodes.Length == 0
+        DcMosfet[] mosfets = _elements.OfType<DcMosfet>().ToArray();
+        return diodes.Length == 0 && mosfets.Length == 0
             ? SolveLinear(nodeIds, nodeIndex, voltageSources, voltageSourceRows, matrix, rhs)
             : SolveNonlinear(
                 nodeIds,
@@ -610,7 +914,8 @@ public sealed class DcNetlist
                 voltageSourceRows,
                 matrix,
                 rhs,
-                diodes);
+                diodes,
+                mosfets);
     }
 
     private DcSolution SolveLinear(
@@ -632,11 +937,12 @@ public sealed class DcNetlist
     }
 
     /// <summary>
-    /// Newton iteration over the diode junction voltages. Each iteration linearizes
-    /// every diode around its current junction voltage, solves the resulting linear
-    /// MNA system, limits a large forward jump (the standard pn-junction limiting
-    /// used to keep the exponential from overshooting), and stops only when the
-    /// solution is self-consistent and the nonlinear KCL/branch residual is small.
+    /// Newton iteration over the nonlinear devices. Each iteration linearizes every
+    /// diode around its current junction voltage and every MOSFET around the previous
+    /// iterate's node voltages, solves the resulting linear MNA system, limits a large
+    /// forward diode jump (the standard pn-junction limiting used to keep the exponential
+    /// from overshooting), and stops only when the solution is self-consistent and the
+    /// nonlinear KCL/branch residual is small.
     /// </summary>
     private DcSolution SolveNonlinear(
         string[] nodeIds,
@@ -645,15 +951,82 @@ public sealed class DcNetlist
         Dictionary<string, int> voltageSourceRows,
         double[,] baseMatrix,
         double[] baseRhs,
-        DcDiode[] diodes)
+        DcDiode[] diodes,
+        DcMosfet[] mosfets)
     {
-        const int maxIterations = 100;
+        try
+        {
+            return SolveNonlinearCore(
+                nodeIds,
+                nodeIndex,
+                voltageSources,
+                voltageSourceRows,
+                baseMatrix,
+                baseRhs,
+                diodes,
+                mosfets,
+                initialVoltages: null,
+                mosfetScale: 1.0,
+                diodeScale: 1.0,
+                maxIterations: 100);
+        }
+        catch (DcSolveException directFailure) when (
+            directFailure.Failure == DcSolveFailure.NonConvergent &&
+            (diodes.Length > 0 || mosfets.Length > 0))
+        {
+            try
+            {
+                return SolveWithDeviceContinuation(
+                    nodeIds,
+                    nodeIndex,
+                    voltageSources,
+                    voltageSourceRows,
+                    baseMatrix,
+                    baseRhs,
+                    diodes,
+                    mosfets);
+            }
+            catch (DcSolveException continuationFailure)
+            {
+                throw new DcSolveException(
+                    DcSolveFailure.NonConvergent,
+                    $"{directFailure.Message} device-current continuation also failed: {continuationFailure.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// One Newton solve at a chosen fraction of the nonlinear device currents. A
+    /// scale of one is the real circuit; a scale of zero leaves only a 1 pS
+    /// continuation conductance across each device, which gives a linear, easily
+    /// solved starting point. The same scale reaches both diode and MOSFET current
+    /// laws, and the diode conductance fades to zero at the final scale.
+    /// </summary>
+    private DcSolution SolveNonlinearCore(
+        string[] nodeIds,
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[,] baseMatrix,
+        double[] baseRhs,
+        DcDiode[] diodes,
+        DcMosfet[] mosfets,
+        double[]? initialVoltages,
+        double mosfetScale,
+        double diodeScale,
+        int maxIterations)
+    {
         const double voltageTolerance = 1e-9;
 
         int size = baseRhs.Length;
         var diodeJunctionVoltages = new double[diodes.Length];
         var nextDiodeVoltages = new double[diodes.Length];
         var previous = new double[size];
+        if (initialVoltages is not null)
+        {
+            Array.Copy(initialVoltages, previous, Math.Min(size, initialVoltages.Length));
+        }
+
         var solution = new double[size];
         double residual = double.PositiveInfinity;
 
@@ -663,7 +1036,21 @@ public sealed class DcNetlist
             var rhs = (double[])baseRhs.Clone();
             for (int index = 0; index < diodes.Length; index++)
             {
-                StampDiode(matrix, rhs, nodeIndex, diodes[index], diodeJunctionVoltages[index]);
+                StampDiode(
+                    matrix,
+                    rhs,
+                    nodeIndex,
+                    diodes[index],
+                    diodeJunctionVoltages[index],
+                    diodeScale);
+            }
+
+            // A MOSFET has no internal state, so it is linearized at the previous
+            // iterate's terminal voltages. A continuation step starts from the last
+            // solved bias instead of from zero.
+            for (int index = 0; index < mosfets.Length; index++)
+            {
+                StampMosfet(matrix, rhs, nodeIndex, mosfets[index], previous, mosfetScale);
             }
 
             (solution, _) = SolveLinearSystem(matrix, rhs);
@@ -702,7 +1089,8 @@ public sealed class DcNetlist
                 nextDiodeVoltages[index] = limited;
             }
 
-            residual = NonlinearResidual(nodeIndex, voltageSources, voltageSourceRows, solution);
+            residual = NonlinearResidual(
+                nodeIndex, voltageSources, voltageSourceRows, solution, mosfetScale, diodeScale);
             double tolerance = voltageTolerance * Math.Max(1, maxVoltage);
             if (maxVoltageChange <= tolerance &&
                 maxLimitError <= tolerance &&
@@ -721,9 +1109,131 @@ public sealed class DcNetlist
             Array.Copy(nextDiodeVoltages, diodeJunctionVoltages, diodes.Length);
         }
 
+        string scaleNote =
+            Math.Abs(mosfetScale - 1) < 1e-12 &&
+            Math.Abs(diodeScale - 1) < 1e-12
+                ? string.Empty
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $" at device-current scale {mosfetScale:G6}");
         throw new DcSolveException(
             DcSolveFailure.NonConvergent,
-            $"The nonlinear DC operating point did not converge after {maxIterations} Newton iterations (last normalized residual {residual.ToString("G6", CultureInfo.InvariantCulture)}); check diode parameters, series resistance, and whether the operating point is physically bounded.");
+            $"The nonlinear DC operating point did not converge after {maxIterations} Newton iterations{scaleNote} (last normalized residual {residual.ToString("G6", CultureInfo.InvariantCulture)}); check diode parameters, series resistance, and whether the operating point is physically bounded.");
+    }
+
+    /// <summary>
+    /// A device-current homotopy fallback for high-gain nonlinear circuits: start with
+    /// every diode and MOSFET current turned off, where the circuit is linear and has a
+    /// unique solution, then ramp both current laws to full. Each accepted step seeds
+    /// the next Newton solve, so a bistable or high-gain operating point is approached
+    /// along a continuous path instead of from an all-zero guess. If a step fails, the
+    /// step size is halved; a step that still cannot be solved is a real failure.
+    /// </summary>
+    private DcSolution SolveWithDeviceContinuation(
+        string[] nodeIds,
+        Dictionary<string, int> nodeIndex,
+        DcVoltageSource[] voltageSources,
+        Dictionary<string, int> voltageSourceRows,
+        double[,] baseMatrix,
+        double[] baseRhs,
+        DcDiode[] diodes,
+        DcMosfet[] mosfets)
+    {
+        DcSolution seed;
+        try
+        {
+            seed = SolveNonlinearCore(
+                nodeIds,
+                nodeIndex,
+                voltageSources,
+                voltageSourceRows,
+                baseMatrix,
+                baseRhs,
+                diodes,
+                mosfets,
+                initialVoltages: null,
+                mosfetScale: 0.0,
+                diodeScale: 0.0,
+                maxIterations: 100);
+        }
+        catch (DcSolveException exception)
+        {
+            throw new DcSolveException(
+                DcSolveFailure.NonConvergent,
+                $"The devices-off starting point could not be solved: {exception.Message}");
+        }
+
+        double scale = 0;
+        double step = 0.25;
+        int rejectedSteps = 0;
+        while (scale < 1)
+        {
+            double next = Math.Min(1.0, scale + step);
+            if (next <= scale)
+            {
+                break;
+            }
+
+            try
+            {
+                DcSolution candidate = SolveNonlinearCore(
+                    nodeIds,
+                    nodeIndex,
+                    voltageSources,
+                    voltageSourceRows,
+                    baseMatrix,
+                    baseRhs,
+                    diodes,
+                    mosfets,
+                    ToStateVector(seed, nodeIds, voltageSources),
+                    mosfetScale: next,
+                    diodeScale: next,
+                    maxIterations: 100);
+                seed = candidate;
+                scale = next;
+                step = Math.Min(0.5, step * 1.5);
+            }
+            catch (DcSolveException exception) when (
+                exception.Failure != DcSolveFailure.NonFiniteResult)
+            {
+                rejectedSteps++;
+                step *= 0.5;
+                if (step < 1e-4 || rejectedSteps > 80)
+                {
+                    throw new DcSolveException(
+                        DcSolveFailure.NonConvergent,
+                        $"Device-current continuation stalled at scale {scale.ToString("G6", CultureInfo.InvariantCulture)} after {rejectedSteps} rejected steps: {exception.Message}");
+                }
+            }
+        }
+
+        if (scale < 1)
+        {
+            throw new DcSolveException(
+                DcSolveFailure.NonConvergent,
+                $"Device-current continuation reached scale {scale.ToString("G6", CultureInfo.InvariantCulture)} but could not complete the final step.");
+        }
+
+        return seed with { UsedContinuation = true };
+    }
+
+    private static double[] ToStateVector(
+        DcSolution solution,
+        string[] nodeIds,
+        DcVoltageSource[] voltageSources)
+    {
+        var state = new double[nodeIds.Length + voltageSources.Length];
+        for (int index = 0; index < nodeIds.Length; index++)
+        {
+            state[index] = solution.NodeVoltages[nodeIds[index]];
+        }
+
+        for (int index = 0; index < voltageSources.Length; index++)
+        {
+            state[nodeIds.Length + index] = solution.ElementCurrents[voltageSources[index].Id];
+        }
+
+        return state;
     }
 
     private static void StampDiode(
@@ -731,15 +1241,22 @@ public sealed class DcNetlist
         double[] rhs,
         Dictionary<string, int> nodeIndex,
         DcDiode diode,
-        double junctionVolts)
+        double junctionVolts,
+        double diodeScale = 1.0)
     {
         double junctionCurrent = diode.JunctionCurrent(junctionVolts);
         double junctionConductance = diode.JunctionConductance(junctionVolts);
         double terminalVolts = junctionVolts + (diode.SeriesResistance * junctionCurrent);
-        double conductance = diode.SeriesResistance <= 0
+        double terminalConductance = diode.SeriesResistance <= 0
             ? junctionConductance
             : junctionConductance / (1 + (diode.SeriesResistance * junctionConductance));
-        double equivalentCurrent = junctionCurrent - (conductance * terminalVolts);
+        // A zero-scale diode is an open branch and can leave a node without a defined
+        // voltage. A fading 1 pS shunt keeps the starting Jacobian nonsingular; it
+        // disappears at scale one, so the solved device is exactly the authored diode.
+        double conductance = (diodeScale * terminalConductance) +
+            ((1 - diodeScale) * DeviceContinuationConductance);
+        double equivalentCurrent = diodeScale *
+            (junctionCurrent - (terminalConductance * terminalVolts));
         int nodeA = IndexOf(nodeIndex, diode.NodeA);
         int nodeB = IndexOf(nodeIndex, diode.NodeB);
         Add(matrix, nodeA, nodeA, conductance);
@@ -755,6 +1272,72 @@ public sealed class DcNetlist
         {
             rhs[nodeB] += equivalentCurrent;
         }
+    }
+
+    /// <summary>
+    /// Stamps the linearization of a MOSFET around the previous Newton iterate:
+    /// <c>Ids ~ I0 + gds (Vds - Vds0) + gm (Vgs - Vgs0)</c>. The conductance stamps the
+    /// drain and source rows, and the gate transconductance stamps the control node into
+    /// those same rows, because the gate is an ideal insulator and contributes no row of
+    /// its own.
+    /// </summary>
+    private static void StampMosfet(
+        double[,] matrix,
+        double[] rhs,
+        Dictionary<string, int> nodeIndex,
+        DcMosfet mosfet,
+        double[] previousVoltages,
+        double mosfetScale = 1.0)
+    {
+        double drainVolts = PreviousVoltage(previousVoltages, nodeIndex, mosfet.Drain);
+        double sourceVolts = PreviousVoltage(previousVoltages, nodeIndex, mosfet.Source);
+        double gateVolts = PreviousVoltage(previousVoltages, nodeIndex, mosfet.Gate);
+        double drainSource = drainVolts - sourceVolts;
+        double gateSource = gateVolts - sourceVolts;
+
+        DcMosfetOperatingPoint point = mosfet.Evaluate(drainSource, gateSource);
+        // Continuation scales the channel current, not the 1 pS leakage floor. Keeping
+        // the floor unscaled gives the devices-off start a finite conductance and makes
+        // the scaled residual match the scaled stamp exactly.
+        double channelCurrent = point.Current - (DcMosfet.MinimumConductance * drainSource);
+        double channelConductance = point.DrainConductance - DcMosfet.MinimumConductance;
+        double conductance = (mosfetScale * channelConductance) + DcMosfet.MinimumConductance;
+        double transconductance = mosfetScale * point.GateTransconductance;
+        double current = (mosfetScale * channelCurrent) +
+            (DcMosfet.MinimumConductance * drainSource);
+        double equivalentCurrent = current
+            - (conductance * drainSource)
+            - (transconductance * gateSource);
+
+        int drain = IndexOf(nodeIndex, mosfet.Drain);
+        int source = IndexOf(nodeIndex, mosfet.Source);
+        int gate = IndexOf(nodeIndex, mosfet.Gate);
+        Add(matrix, drain, drain, conductance);
+        Add(matrix, source, source, conductance);
+        Add(matrix, drain, source, -conductance);
+        Add(matrix, source, drain, -conductance);
+        Add(matrix, drain, gate, transconductance);
+        Add(matrix, source, gate, -transconductance);
+        Add(matrix, drain, source, -transconductance);
+        Add(matrix, source, source, transconductance);
+        if (drain >= 0)
+        {
+            rhs[drain] -= equivalentCurrent;
+        }
+
+        if (source >= 0)
+        {
+            rhs[source] += equivalentCurrent;
+        }
+    }
+
+    private static double PreviousVoltage(
+        double[] voltages,
+        Dictionary<string, int> nodeIndex,
+        string nodeId)
+    {
+        int index = IndexOf(nodeIndex, nodeId);
+        return index >= 0 && index < voltages.Length ? voltages[index] : 0;
     }
 
     /// <summary>
@@ -810,7 +1393,9 @@ public sealed class DcNetlist
         Dictionary<string, int> nodeIndex,
         DcVoltageSource[] voltageSources,
         Dictionary<string, int> voltageSourceRows,
-        double[] solution)
+        double[] solution,
+        double mosfetScale = 1.0,
+        double diodeScale = 1.0)
     {
         var residual = new double[solution.Length];
         var currentScales = new double[nodeIndex.Count];
@@ -840,6 +1425,22 @@ public sealed class DcNetlist
                 case DcDiode diode:
                 {
                     double current = diode.CurrentAt(voltage);
+                    // Match the fading shunt in StampDiode exactly. At full scale this
+                    // is the authored diode current with no added conductance.
+                    current = (diodeScale * current) +
+                        ((1 - diodeScale) * DeviceContinuationConductance * voltage);
+                    AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
+                    break;
+                }
+
+                case DcMosfet mosfet:
+                {
+                    double gateVolts = VoltageAcross(
+                        solution, nodeIndex, mosfet.Gate, mosfet.NodeB);
+                    DcMosfetOperatingPoint point = mosfet.Evaluate(voltage, gateVolts);
+                    double channelCurrent = point.Current - (DcMosfet.MinimumConductance * voltage);
+                    double current = (mosfetScale * channelCurrent) +
+                        (DcMosfet.MinimumConductance * voltage);
                     AddNodeCurrentAndScale(residual, nodeIndex, currentScales, element.NodeA, element.NodeB, current);
                     break;
                 }
@@ -969,6 +1570,10 @@ public sealed class DcNetlist
                 DcCurrentSource currentSource => currentSource.Amperes,
                 DcVoltageSource => solution[voltageSourceRows[element.Id]],
                 DcDiode diode => diode.CurrentAt(voltage),
+                DcMosfet mosfet => mosfet.CurrentAt(
+                    voltage,
+                    (voltages.TryGetValue(mosfet.Gate, out double gateVolts) ? gateVolts : 0) -
+                    voltages[mosfet.NodeB]),
                 _ => throw new InvalidOperationException($"Unsupported DC element '{element.Id}'."),
             };
 
@@ -1176,6 +1781,14 @@ public sealed class DcNetlist
 
         _nodes.Add(element.NodeA);
         _nodes.Add(element.NodeB);
+        if (element is DcMosfet mosfet)
+        {
+            // The gate node exists in the node set so its voltage is solved and
+            // reported, but it is deliberately absent from the conductive adjacency
+            // used by the floating-network analysis: gate oxide conducts nothing.
+            _nodes.Add(mosfet.Gate);
+        }
+
         _elements.Add(element);
         return this;
     }
@@ -1315,6 +1928,24 @@ public sealed class DcNetlist
         // row. The floor is far above double precision (2.2e-16) but far below any
         // physically meaningful conductance ratio.
         const double relativePivotFloor = 1e-12;
+
+        (double Value, int Column) RowPeak(int row, int from)
+        {
+            double peak = 0;
+            int at = from;
+            for (int index = from; index < size; index++)
+            {
+                double magnitude = Math.Abs(matrix[row, index]);
+                if (magnitude > peak)
+                {
+                    peak = magnitude;
+                    at = index;
+                }
+            }
+
+            return (peak, at);
+        }
+
         for (int column = 0; column < size; column++)
         {
             int pivotRow = -1;
@@ -1334,12 +1965,23 @@ public sealed class DcNetlist
                 }
             }
 
-            if (pivotRow < 0 ||
-                Math.Abs(matrix[pivotRow, column]) <= rowScale[pivotRow] * relativePivotFloor)
+            // The pivot is judged against the row as elimination has left it, not against the
+            // magnitude it started with. Elimination removes the large entries a row shared with
+            // earlier columns, so a row that began at 1e12 can legitimately end with a pivot of 1;
+            // comparing that 1 with the original 1e12 would report a singular system for a matrix
+            // that is merely wider in scale than the floor assumes. `rowScale` still drives pivoting,
+            // because that choice should favour the row that was largest to begin with.
+            double pivotMagnitude = pivotRow < 0 ? 0 : Math.Abs(matrix[pivotRow, column]);
+            double rowMagnitude = pivotRow < 0 ? 0 : RowPeak(pivotRow, column).Value;
+            if (pivotRow < 0 || pivotMagnitude <= rowMagnitude * relativePivotFloor)
             {
                 throw new DcSolveException(
                     DcSolveFailure.SingularMatrix,
-                    "The DC linear system is singular: check for an open current-source path, an undriven node, or a redundant loop of ideal voltage sources.");
+                    pivotRow < 0
+                        ? "The DC linear system is singular: check for an open current-source path, an undriven node, or a redundant loop of ideal voltage sources."
+                        : string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"The DC linear system is singular at column {column}: the pivot {pivotMagnitude:G6} in row {pivotRow} is negligible beside the largest remaining entry in that row, {rowMagnitude:G6}. Check for an open current-source path, an undriven node, or a redundant loop of ideal voltage sources."));
             }
 
             if (pivotRow != column)
@@ -1462,4 +2104,10 @@ public sealed record DcSolution(
     /// forward-error bound.
     /// </summary>
     public double RelativeResidual { get; init; }
+
+    /// <summary>
+    /// True when the direct Newton solve failed and the operating point was reached by
+    /// ramping the diode and MOSFET currents from a devices-off start. False otherwise.
+    /// </summary>
+    public bool UsedContinuation { get; init; }
 }

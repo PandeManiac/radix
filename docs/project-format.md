@@ -1,4 +1,4 @@
-# RADIX project format, version 8
+# RADIX project format, version 23
 
 RADIX projects are UTF-8 JSON files with the extension `.radix`. The format is intentionally explicit: it records domains, definitions, instance placement, connectivity, parameters, and simulation settings. It does not record executable code.
 
@@ -9,7 +9,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 ```json
 {
   "format": "radix-project",
-  "version": 8,
+  "version": 23,
   "name": "Example",
   "description": "optional",
   "root": "main",
@@ -25,7 +25,7 @@ The loader is strict. Unknown object properties fail rather than being ignored, 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `format` | yes | Must be exactly `"radix-project"` (libraries use the same format) |
-| `version` | yes | Currently `8`. Versions 1–8 load unchanged; newer versions are rejected, not guessed |
+| `version` | yes | Currently `23`. Versions 1–23 load unchanged; newer versions are rejected, not guessed |
 | `name` | no | Display name; loader defaults to `Untitled` |
 | `description` | no | Optional project note |
 | `root` | yes | Simulation root; the editor falls back to it when `view.definition` is absent or invalid |
@@ -350,6 +350,11 @@ engine. A circuit has its own ground reference, nodes, and components:
       { "id": "in", "name": "Input" },
       { "id": "out", "name": "Output" }
     ],
+    "ports": [
+      { "id": "in", "name": "Input", "node": "in" },
+      { "id": "out", "name": "Output", "node": "out" },
+      { "id": "gnd", "name": "Ground", "node": "gnd" }
+    ],
     "components": [
       {
         "id": "R1",
@@ -375,6 +380,8 @@ Component kinds and terminal contracts:
 | `current-source` | `a` `positive`, `b` `negative` | A |
 | `capacitor` | `a`/`b`, both `passive` | F |
 | `inductor` | `a`/`b`, both `passive` | H |
+| `mosfet` | `drain`/`gate`/`source`, all `passive` | A/V^2 |
+| `subcircuit` | one per referenced-circuit port, all `passive` | none; `circuit` names the referenced circuit |
 
 A capacitor or inductor may carry an optional `initialValue`: the initial
 capacitor voltage in volts, or the initial inductor current in amperes, with the
@@ -382,6 +389,81 @@ sign taken from terminal `a` to terminal `b`. Omitting it means the component
 starts at the DC operating point, which is also what `radix dc` reports. The
 field is rejected on any other kind (`RAD-ELEC-015`) and must be finite
 (`RAD-ELEC-016`).
+
+A `mosfet` requires `channel` (`"n"` or `"p"`) and `thresholdVoltage` in volts.
+Both fields are rejected on any other kind (`RAD-ELEC-021`, `RAD-ELEC-022`), and
+its `value` is the transconductance after SPICE `KP`, which must be positive
+(`RAD-ELEC-007`). The gate is an insulated control terminal rather than a branch
+end: the reported element current flows from `drain` to `source`, the reported
+element voltage is `V(drain) - V(source)`, and the self-loop rule applies only to
+that pair (`RAD-ELEC-013`), so a gate tied to its own drain (diode-connected) or
+to a node at the same potential as the source (`Vgs = 0`) is legal.
+
+An optional `channelLengthModulation` is SPICE's `lambda` in 1/V: the saturation current
+is multiplied by `1 + lambda Vds`. It must be finite and non-negative (`RAD-ELEC-023`);
+omitted means zero, which makes the saturation current independent of the drain voltage.
+Like the other device fields it is rejected on any kind but a mosfet.
+
+Optional `gateSourceCapacitance`, `gateDrainCapacitance` and `drainSourceCapacitance` give the
+device its own charge, in farads. Omitted means zero, which keeps an existing circuit's behaviour exactly: the
+gate holds no charge and adds no dynamics. Given, they are stamped between gate and
+source and between gate and drain during a transient run, so the gate must be charged
+through its drive before the channel follows; a DC solve ignores them because an
+operating point carries no charge. Both must be finite and non-negative
+(`RAD-ELEC-024`), and like the other device fields they are rejected on any kind but a
+mosfet.
+
+A circuit may expose interface nodes as `ports`. A port is a named alias for an internal node,
+not an element: it carries no current of its own. A `subcircuit` component names another
+authored circuit with `circuit` and has exactly one terminal per port of that circuit, so a
+parent wires the child's interface rather than reaching into its internals:
+
+```json
+{
+  "id": "X1",
+  "name": "First inverter",
+  "kind": "subcircuit",
+  "circuit": "sti",
+  "terminals": [
+    { "id": "in", "name": "Input", "polarity": "passive", "node": "in" },
+    { "id": "out", "name": "Output", "polarity": "passive", "node": "mid" },
+    { "id": "vdd", "name": "5 V rail", "polarity": "passive", "node": "vdd" },
+    { "id": "gnd", "name": "Ground", "polarity": "passive", "node": "gnd" }
+  ]
+}
+```
+
+The referenced circuit's elements are expanded into the parent netlist with every internal
+node and element ID prefixed by the instance path (`X1/out_low`, `X1/R1`). A prefixed name
+cannot collide with an authored ID because `/` is forbidden in identifiers. Ported nodes
+become the parent node named by the instance terminal; unported internal nodes stay private
+to that instance. A referenced circuit must expose at least one port
+(`RAD-ELEC-030`) and must expose its ground node as a port (`RAD-ELEC-031`); a subcircuit
+has no implicit global ground. References must resolve (`RAD-ELEC-029`), cannot form a cycle
+(`RAD-ELEC-033`), and each instance must carry exactly the referenced ports with no extra or
+missing terminal (`RAD-ELEC-032`). A hierarchy may nest at most 64 subcircuit edges; a deeper
+reference reports `RAD-ELEC-045`. A `value` is omitted on a subcircuit; device fields such as
+`channel` also belong only to a mosfet.
+
+A subcircuit instance may replace the primary value of a direct child component with
+`overrides`. This is reuse with per-instance values: one referenced divider can drive two
+different loads without copying the child circuit.
+
+```json
+"overrides": [
+  { "component": "R3", "value": 3000 }
+]
+```
+
+Each `component` names a direct, non-subcircuit component of the referenced circuit. Its `value`
+replaces the child's primary parameter for this instance only: resistance in ohms, source
+amplitude in volts or amperes, capacitance in farads, inductance in henries, or MOSFET
+transconductance in A/V^2. `overrides` is omitted when empty and is rejected on a built-in kind
+(`RAD-ELEC-037`). Invalid or repeated target IDs (`RAD-ELEC-038`, `RAD-ELEC-039`), non-finite
+values (`RAD-ELEC-040`), unknown targets (`RAD-ELEC-041`), nested subcircuits
+(`RAD-ELEC-042`), non-positive passive or MOSFET values (`RAD-ELEC-043`), and sources with a
+waveform (`RAD-ELEC-044`) are rejected. Overrides replace only a value; they cannot add,
+remove, or retarget a component.
 
 An independent source may also carry a `waveform`: a piecewise-linear drive in
 its own unit, given as absolute-time breakpoints. The transient solver
@@ -414,7 +496,7 @@ one circuit selects it automatically.
 
 ## Versioning and migration
 
-Versions 1 through 10 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`. Older input is accepted and upgraded on the next save. Rules for future revisions:
+Versions 1 through 23 are implemented. Version 2 adds optional per-net `color` and `route`; version 3 adds optional definition `numericLanes`; version 4 adds optional `customNumericFormats`; version 5 adds optional top-level `view` metadata; version 6 adds optional `view.waveformPins`; version 7 adds optional `settings.maxPendingEvents`; version 8 adds optional authored `electricalCircuits`; version 9 adds optional electrical component `capacitor`, `inductor` and `initialValue`; version 10 adds an optional independent-source `waveform`; version 11 adds the electrical `mosfet` kind with required `channel` and `thresholdVoltage`; version 12 adds an optional electrical `channelLengthModulation`; version 13 adds optional mosfet `gateSourceCapacitance` and `gateDrainCapacitance` in farads; version 14 adds `drainSourceCapacitance`. Later versions add the bias-dependent capacitance choice, circuit level thresholds, node-to-pin drive bindings, and per-transition delay tolerances. Version 22 adds electrical circuit `ports` and the `subcircuit` component kind. Version 23 adds optional per-instance subcircuit `overrides`. Older input is accepted and upgraded on the next save. Rules for future revisions:
 
 1. Increment `version` for any breaking or semantically significant change.
 2. Reject files newer than the build supports; never load them partially.

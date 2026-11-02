@@ -7,13 +7,22 @@ humans; update it at each milestone instead of relying on chat history.
 
 - Remote: `origin` = https://github.com/PandeManiac/radix (write access verified).
 - Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
-- Latest verified feature commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
-- Draft PR #6 is open against `main`: nonlinear DC convergence scaling and
-  engineering-suffix entry for authored electrical values.
+- Draft PR #7 is open against `main`: electrical hierarchy, reusable subcircuits,
+  and the buffered ternary inverter.
+- Base checkpoint before the hierarchy-results change: `426626bbfbedff217f815f4a350166b55b6f5c77`
+  (verified editor overrides, v23 examples, format/electrical/README docs).
+- Backend override checkpoint: `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`.
+- Hierarchy-analysis checkpoints: `37d6c69cfe6e8d2125f8f1ccabb971760d7c0e51`
+  (transient/AC labels) and `54eb630448c2552cc362cc954eb4c8a6a599d58b`
+  (DC sweep private nodes and labels).
+- Bounded-hierarchy checkpoint: `98e3cf1315788208dc652e8c9ae1b505f9fea216`
+  (64-edge electrical hierarchy limit and boundary regressions).
+- Project-electrical-validation checkpoint: `55d63769b5bbd48e4c2a4bd0225feb638e1d5fad`
+  (structural errors in `radix validate` and editor diagnostics).
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 632/632, Editor tests 234/234, and the DC divider CLI example reports the
-  expected 5 V midpoint. GitHub CI passed on Ubuntu and Windows for feature commit
-  `649444659bfd6d0d351217fa5aff3af4566c36a6`; the branch tip adds only this note.
+  tests 836/836, CLI tests 3/3, Editor tests 313/313. The buffered example solves both
+  from JSON and as an authored project; its 100 kOhm loaded operating point and a
+  diode-clamped summing node both exercise the device-current continuation fallback.
 - Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
   but the tests pass when Ubuntu native packages are extracted under ignored
   `.local-native` and `LD_LIBRARY_PATH`/`FONTCONFIG_FILE` are set.
@@ -23,6 +32,186 @@ humans; update it at each milestone instead of relying on chat history.
 - Latest verified code commit: see `git log agent/radix-verification`; benchmark documentation has a fresh seven-sample run recorded below.
 - Baseline on this VM (.NET SDK 10.0.100): `dotnet build Radix.slnx` is clean with
   0 warnings; core tests pass 398/398; editor tests pass 178/178.
+
+## Session 2026-11-02 (bounded electrical hierarchy)
+
+- Electrical validation now enforces a maximum of 64 nested subcircuit edges, matching
+  the digital compiler's bound. A deeper reference reports `RAD-ELEC-045` before
+  expansion, so a malformed project cannot exhaust the call stack during validation
+  or netlist construction.
+- Added boundary regressions for a 64-edge hierarchy that validates, expands, and
+  solves to 10/3 V, and a 65-edge hierarchy that is rejected before `ToDcNetlist`.
+- Verification: Release build clean (0 warnings/errors); Core 832/832, CLI 2/2,
+  Editor 312/312; focused `ElectricalHierarchyTests` 18/18.
+
+## Session 2026-11-02 (project electrical structural validation)
+
+- Added `ElectricalCircuitValidator.ValidateProject`: it validates every authored
+  electrical circuit with the project resolver and deduplicates repeated hierarchy
+  diagnostics. `radix validate` and the editor Diagnostics tab now include the
+  result, so a terminal naming an unknown node is an error instead of being
+  silently skipped by ERC.
+- Digital compilation is deliberately unchanged: `CircuitValidator` and
+  `CircuitCompiler` do not consume electrical structural errors, preserving the
+  documented independence of electrical assets from the digital build.
+- Added a Core regression for `RAD-ELEC-011` and a CLI JSON contract test that
+  corrupts `examples/dc-divider.radix`, asserts exit code 1, `passed: false`, and
+  the error diagnostic.
+- Verification: Release build clean (0 warnings/errors); Core 833/833, CLI 3/3,
+  Editor 312/312; focused electrical rule tests 7/7. All 36 shipped `.radix`
+  examples pass `radix validate` after the electrical structural report is included.
+
+## Session 2026-11-02 (hierarchical ERC ownership)
+
+- Added a regression for a child circuit with a floating island reused by two
+  parent instances. It asserts one `RAD-ERC-101` at `electrical/divider` and one
+  aggregated warning at `electrical/parent` naming both `X1/islandA` and
+  `X2/islandA`, with no per-instance duplicate.
+- Clarified that structurally invalid parents are skipped by ERC because their
+  expansion is incomplete; their `RAD-ELEC-*` errors come from project electrical
+  validation.
+- Verification: Release build clean (0 warnings/errors); Core 834/834, CLI 3/3,
+  Editor 312/312.
+
+## Session 2026-11-02 (electrical diagnostic navigation)
+
+- Electrical structural diagnostics now carry locatable `electrical/...` paths into
+  the Diagnostics tab. Locate selects the owning authored circuit, component, or
+  node, opens the Electrical inspector tab, and reports the selected target in the
+  status line. Missing targets still open their owning circuit and explain that the
+  specific target is gone, matching digital diagnostic navigation.
+- Added a parser for the three emitted path shapes and a headless regression that
+  navigates all three, including clearing a previous component or node selection
+  when a circuit-level diagnostic is located.
+- Verification: Release build clean (0 warnings/errors); Core 834/834, CLI 3/3,
+  Editor 313/313; focused diagnostic navigation/rendering tests 3/3.
+
+## Session 2026-11-02 (electrical project validation cache)
+
+- `ElectricalCircuitValidator.ValidateProject` now caches each authored circuit's own
+  structural report and each subcircuit edge's terminal/override report. The recursive
+  walk is retained because depth and cycle diagnostics depend on the root context.
+- Added an opt-in 65-circuit maximum-depth benchmark and an equivalence regression
+  that checks `ValidateProject` against the deduplicated union of per-circuit
+  `Validate` calls on a shared child hierarchy.
+- Measured on this VM: 2.80 ms before; 1.17, 1.17, and 1.41 ms after (three runs,
+  200 project validations each). The benchmark is opt-in under
+  `RADIX_ELECTRICAL_VALIDATION_BENCH=1`.
+- The same benchmark now also reports the combined `CircuitValidator.Validate` path:
+  8.86 ms for the 65-circuit chain, including ERC expansion and topology analysis.
+- Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
+  Editor 313/313.
+
+## Session 2026-11-02 (electrical panel validation locate)
+
+- The Electrical panel's VALIDATION list now gives each located diagnostic a Locate
+  button. It selects the reported component or node directly, using the same path
+  parser and navigation used by the Diagnostics tab.
+- Extended the existing headless navigation regression to cover the panel action.
+- Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
+  Editor 313/313; focused navigation/rendering checks 6/6.
+
+## Session 2026-11-02 (ERC expansion validation cache)
+
+- Shared the circuit own/reference validation cache across the ERC circuit loop via
+  an internal `ToDcNetlist` overload. Public netlist construction and diagnostics
+  are unchanged; the cache only avoids repeating structural checks before expansion.
+- The 65-circuit maximum-depth benchmark's full `CircuitValidator.Validate` path
+  fell from 8.86 ms to 4.51, 2.28, and 4.86 ms across three runs (median 4.51 ms).
+  Expansion and topology analysis remain the dominant cost.
+- Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
+  Editor 313/313.
+
+## Session 2026-11-02 (hierarchical operating-point nodes)
+
+- The Electrical tab's solved NODES table now includes unported internal nodes from
+  recursively expanded subcircuits, not only the selected circuit's authored nodes.
+- Each row carries the netlist node ID, the child node's authored name, and an
+  instance scope: `root` for the selected circuit, or the path such as `X1` or
+  `X1/X1` for a nested instance. Ported nodes are not duplicated because they are
+  the same electrical node as their parent binding.
+- The solved ELEMENTS table now resolves child component names and the same
+  instance scope. A nested prefix such as `X1/RSUM1` is shown as `X1` plus the
+  authored label `Summing resistor` instead of an opaque element ID.
+- Transient series checkboxes, transient node metrics, AC rows, DC sweep rows and
+  input windows, and the transient/AC/DC plot legends use the same hierarchy labels,
+  so prefixed child nodes are readable in every analysis rather than only in the DC
+  table.
+- The DC sweep now enumerates private child nodes as well as root-authored nodes.
+  Before this, the solver and plot included child nodes but the table and input
+  windows silently omitted them.
+- Bias-sweep curves and the peak-device summary use the resolved child element
+  name and instance scope. CSV exports keep stable netlist device IDs.
+- Transient parameter-sweep rows use the resolved child node name and scope; the
+  sweep can target a child element and still reports stable IDs in its exports.
+- Added a regression that loads `examples/electrical-ternary-hierarchy.radix`, solves
+  `chain`, and checks that `X1/out_low` appears with scope `X1`, its authored name,
+  and no duplicate `X1/out` row.
+- Updated `docs/electrical.md` to describe the hierarchy rows and the distinction
+  between ported and private child nodes.
+- Verification: build clean (0 warnings/errors), Core 830/830, CLI 2/2, Editor 312/312;
+  focused hierarchy editor tests 4/4.
+
+## Session 2026-11-02 (per-instance subcircuit overrides)
+
+- Added `ElectricalOverride` and `ElectricalComponent.Overrides`: a subcircuit
+  instance can replace a direct child's primary value (resistance, source
+  amplitude, capacitance, inductance, or MOSFET transconductance) by child ID.
+- Applied overrides in both recursive DC and transient expansion, so two instances
+  of one child can solve to different outputs without copying the child circuit.
+- Added validation `RAD-ELEC-037` to `RAD-ELEC-044`: overrides only on subcircuits,
+  valid and unique IDs, finite values, known direct targets, no nested-subcircuit
+  target, positive passive/MOSFET values, and no waveform-driven source target.
+- Persisted overrides in project format 23 (`overrides` on a component, omitted when
+  empty); updated the two shipped examples and the format/electrical/README docs.
+- Added the editor's **Overrides** field (`child=value; ...`), parsing and validating
+  before mutation, clearing stale overrides when the referenced circuit or kind
+  changes, and one undo entry per accepted edit.
+- Backend checkpoint `505aa3d343e7ac6137ae3bbe9ba75bd2cd8dd4f0`; editor/docs
+  checkpoint `faa218605a519db1886a2e7c36555922bfb126bd`. Tests cover two instances
+  with different R3 values, transient R1 override timing, a v23 round trip, all new
+  rejection codes, and an editor solve changing 2.5 V to 3.75 V.
+- Verification: build clean (0 warnings/errors), Core 830/830, CLI 2/2, Editor 311/311;
+  focused hierarchy tests 16/16 and editor hierarchy tests 3/3.
+- Remaining limitations: an override replaces only the primary value; it cannot add,
+  remove, retarget components, or change a MOSFET channel. There is still no
+  graphical analog schematic canvas, and hierarchical reports use prefixed names.
+
+## Session 2026-11-02 (buffered ternary inverter)
+
+- Added a MOSFET-current continuation fallback to `DcNetlist.Solve()`: after a direct
+  Newton failure on a MOSFET-only nonlinear netlist, solve the devices-off linear
+  system and ramp channel current to full, seeding each step from the previous
+  operating point. The 1 pS leakage floor is not scaled.
+- Added `examples/dc-ternary-inverter-buffered.json` and the authored twin
+  `examples/dc-ternary-inverter-buffered.radix`. The dual-threshold pair now drives
+  complementary CMOS inverters before the 100 kOhm summing network, preserving the
+  2 V middle plateau. A two-stage CMOS feedback amplifier buffers the sum.
+- Measured unloaded levels: 4.9955 V at 0 V input, 2.5081 V at 2.5 V, 0.00471 V at
+  5 V. Into 100 kOhm: 4.9776 V, 2.5078 V, 0.00470 V; the unbuffered gate collapses
+  to 3.2088 V, 1.6636 V, ~0 V under the same load. Mid-state supply power is
+  2.178 mW unloaded and 2.274 mW loaded; the rails draw 0.64-0.68 mW.
+- Added `BufferedTernaryInverterTests` for JSON/authored equivalence, nominal levels,
+  plateau, 100 kOhm load regulation, power balance, and the loaded continuation path.
+- Verification: build clean (0 warnings/errors), Core 826/826, Editor 311/311.
+- Limitation: the output stage is class-A-ish and burns quiescent power at the rails;
+  it has no compensation capacitor, mismatch, temperature, or transient-stability claim.
+
+## Session 2026-11-02 (mixed-device continuation)
+
+- Generalized the DC homotopy fallback: after a failed cold Newton solve, both diode
+  and MOSFET current laws are ramped from zero together. A fading 1 pS shunt keeps
+  the diodes-off start nonsingular and disappears at full scale, so the final
+  solution is the authored model rather than a modified one.
+- Added `DcSolution.UsedContinuation` so callers and tests can distinguish a direct
+  solve from a fallback without guessing from residuals.
+- Added a mixed regression case: a diode clamp on the buffered inverter's
+  high-impedance summing node fails cold Newton and solves to 4.575 V output /
+  0.453 V summing node through the fallback. The existing 100 kOhm buffered load now
+  also asserts that continuation was used.
+- Fixed the Windows-only CSV failure by writing explicit LF row endings from the DC
+  sweep writer; the Core test now rejects any carriage return in the export.
+- Verification: build clean (0 warnings/errors), Core 827/827, CLI 2/2, Editor 311/311.
 
 ## Reproducible setup and commands
 
@@ -1329,3 +1518,57 @@ summary and full local verification results; see the PR for the latest CI state.
      passed with 0 warnings/errors, Core passed 666/666, and headless Editor passed
      242/242 with `.local-native`. The regression confirms a finite order for a
      deviation ratio near 1e328; the checkpoint is pushed and PR/CI update pending.
+
+## Session 2026-11-02 (hierarchical electrical circuits)
+
+151. Inspected the current electrical branch rather than assuming the earlier
+     milestone state. The branch already had the square-law MOSFET, CMOS and
+     resistor-summed ternary inverters, transient and AC analysis, editor previews,
+     and extensive nonlinear tests. The smallest missing architectural capability
+     was electrical reuse: circuits had no ports and no subcircuit composition.
+
+152. Added authored interface ports and a `subcircuit` component kind. A port is a
+     named alias for an internal node; a subcircuit instance has one passive
+     terminal per referenced port. `ElectricalCircuitNetlist` expands references
+     recursively into the parent MNA system, prefixing internal node and element
+     IDs with the instance path (`X1/out_low`). `/` is forbidden in authored IDs,
+     so expanded names cannot collide. Flat circuits keep their existing
+     `ToDcNetlist()`/`ToTransientNetlist()` calls because the resolver is optional.
+
+153. Added hierarchy validation: unknown references (`RAD-ELEC-029`), no ports
+     (`RAD-ELEC-030`), an unexposed child ground (`RAD-ELEC-031`), missing or
+     unexpected terminals (`RAD-ELEC-032`), reference cycles (`RAD-ELEC-033`),
+     subcircuit terminal polarity/node errors (`RAD-ELEC-034`), a `circuit` field on
+     a built-in kind (`RAD-ELEC-035`), and duplicate subcircuit terminals
+     (`RAD-ELEC-036`). Port IDs, duplicate ports, unknown port nodes, and duplicate
+     exposed nodes are rejected as `RAD-ELEC-025` to `RAD-ELEC-028`.
+
+154. Serialized the hierarchy in project format 22: circuit `ports` and component
+     `circuit`, with `value` omitted for a subcircuit. The CLI, electrical rule
+     checker, and editor pass the project's circuit lookup into validation and
+     netlist construction. The Electrical panel authors ports as `id:node` pairs,
+     offers `Subcircuit` as a kind, fills terminals from the referenced circuit,
+     and synchronizes direct parent instances when an interface changes.
+
+155. Shipped `examples/electrical-ternary-hierarchy.radix`: the resistor-summed
+     ternary inverter is authored once as `sti`, then instantiated twice in
+     `chain`. Verified with
+     `radix dc examples/electrical-ternary-hierarchy.radix --circuit chain --sweep VIN=0,2.5,5`:
+     `mid` is 5 V, 2.5 V, and ~0 V; `out` is ~0 V, 2.5 V, and 5 V. The middle state
+     draws about 99 uA from the 5 V supply, and element power sums to zero within
+     solver tolerance. No behavioural lookup is involved.
+
+156. Verification at checkpoint `dca618e541c03c30414dc00aa473cbf8eee3f08a`:
+     Release solution build passed with 0 warnings/errors; Core passed 820/820;
+     headless Editor passed 311/311; the focused hierarchy editor tests passed 3/3;
+     and the CLI sweep above reported the expected levels. The branch is pushed to
+     `origin/agent/radix-20261102-electrical-audit` at the same SHA. Draft PR #7 is
+     open against `main` with the hierarchy summary and limitations.
+
+157. Remaining hierarchy limitations: a referenced circuit must expose its ground
+     as a port; ports have no analog direction; all instances share the referenced
+     parameters and there are no per-instance overrides; internal nodes appear in
+     reports under prefixed names only; and the Electrical tab is still a form-based
+     inspector rather than a graphical analog schematic canvas. A useful next step
+     is per-instance parameter overrides or a hierarchical probe view, not a
+     behavioural replacement for the expanded circuit.

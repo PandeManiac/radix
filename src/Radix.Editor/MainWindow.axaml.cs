@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         {
             _watchedViewModel.RecentProjectOpenRequested -= ViewModel_RecentProjectOpenRequested;
             _watchedViewModel.SearchOpened -= ViewModel_SearchOpened;
+            _watchedViewModel.ElectricalPanelRequested -= ViewModel_ElectricalPanelRequested;
         }
 
         _watchedViewModel = ViewModel;
@@ -53,8 +54,11 @@ public partial class MainWindow : Window
         {
             _watchedViewModel.RecentProjectOpenRequested += ViewModel_RecentProjectOpenRequested;
             _watchedViewModel.SearchOpened += ViewModel_SearchOpened;
+            _watchedViewModel.ElectricalPanelRequested += ViewModel_ElectricalPanelRequested;
         }
     }
+
+    private void ViewModel_ElectricalPanelRequested() => ElectricalTab.IsSelected = true;
 
     private void ViewModel_RecentProjectOpenRequested(string path) => _ = OpenRecentProjectAsync(path);
 
@@ -391,6 +395,86 @@ public partial class MainWindow : Window
         if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalSolveCsv(out string csv))
         {
             await SaveElectricalSolveTextAsync(viewModel, csv, "csv", CsvFileType);
+        }
+    }
+
+    private async void ElectricalDcSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalDcSweepCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied DC sweep as CSV");
+        }
+    }
+
+    private async void ElectricalDcSweepSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalDcSweepCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, csv, "csv", CsvFileType);
+        }
+    }
+
+    private async void ElectricalDcSweepCopySvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalDcSweepSvg(out string svg))
+        {
+            await CopyElectricalSolveTextAsync(svg, "Copied DC sweep curve as SVG");
+        }
+    }
+
+    private async void ElectricalDcSweepSaveSvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalDcSweepSvg(out string svg))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, svg, "svg", SvgFileType);
+        }
+    }
+
+    private async void ElectricalAcSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalAcSweepCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied AC sweep as CSV");
+        }
+    }
+
+    private async void ElectricalAcSweepSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalAcSweepCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, csv, "csv", CsvFileType);
+        }
+    }
+
+    private async void ElectricalBiasSweepCopyCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalBiasSweepCsv(out string csv))
+        {
+            await CopyElectricalSolveTextAsync(csv, "Copied bias sweep as CSV");
+        }
+    }
+
+    private async void ElectricalBiasSweepSaveCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalBiasSweepCsv(out string csv))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, csv, "csv", CsvFileType);
+        }
+    }
+
+    private async void ElectricalAcSweepCopySvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalAcSweepSvg(out string svg))
+        {
+            await CopyElectricalSolveTextAsync(svg, "Copied AC response as SVG");
+        }
+    }
+
+    private async void ElectricalAcSweepSaveSvg_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is EditorViewModel viewModel && viewModel.TryBuildElectricalAcSweepSvg(out string svg))
+        {
+            await SaveElectricalSolveTextAsync(viewModel, svg, "svg", SvgFileType);
         }
     }
 

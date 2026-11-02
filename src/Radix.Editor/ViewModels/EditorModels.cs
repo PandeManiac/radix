@@ -306,7 +306,8 @@ public sealed class DiagnosticItem
         CanLocate = diagnostic.DefinitionId is not null ||
             diagnostic.InstanceId is not null ||
             diagnostic.NetId is not null ||
-            diagnostic.PinId is not null;
+            diagnostic.PinId is not null ||
+            ElectricalDiagnosticPath.TryParse(diagnostic.Path, out _);
     }
 
     public Diagnostic Diagnostic { get; }
@@ -337,6 +338,55 @@ public sealed class DiagnosticItem
 
     /// <summary>True when the diagnostic names something in the circuit.</summary>
     public bool CanLocate { get; }
+}
+
+/// <summary>The authored circuit target named by an electrical diagnostic path.</summary>
+internal readonly record struct ElectricalDiagnosticTarget(
+    string CircuitId,
+    string? ComponentId,
+    string? NodeId);
+
+/// <summary>
+/// Parses the stable paths emitted by <c>ElectricalCircuitValidator</c>. The suffix is
+/// <c>electrical/&lt;circuit&gt;</c>, <c>electrical/&lt;circuit&gt;/&lt;component&gt;</c>, or
+/// <c>electrical/&lt;circuit&gt;/node/&lt;node&gt;</c>.
+/// </summary>
+internal static class ElectricalDiagnosticPath
+{
+    private const string Prefix = "electrical/";
+
+    public static bool TryParse(string? path, out ElectricalDiagnosticTarget target)
+    {
+        target = default;
+        if (path is null || !path.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string[] parts = path[Prefix.Length..].Split('/');
+        if (parts.Length == 1 && parts[0].Length > 0)
+        {
+            target = new ElectricalDiagnosticTarget(parts[0], null, null);
+            return true;
+        }
+
+        if (parts.Length == 2 && parts[0].Length > 0 && parts[1].Length > 0)
+        {
+            target = new ElectricalDiagnosticTarget(parts[0], parts[1], null);
+            return true;
+        }
+
+        if (parts.Length == 3 &&
+            parts[0].Length > 0 &&
+            string.Equals(parts[1], "node", StringComparison.Ordinal) &&
+            parts[2].Length > 0)
+        {
+            target = new ElectricalDiagnosticTarget(parts[0], null, parts[2]);
+            return true;
+        }
+
+        return false;
+    }
 }
 
 public readonly record struct WaveValueChange(long Time, int Value);

@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Radix.Core;
 using Radix.Core.Electrical;
 
@@ -11,9 +12,13 @@ public sealed class ElectricalCircuitListItem
         ArgumentNullException.ThrowIfNull(circuit);
         Id = circuit.Id;
         Name = circuit.Name;
-        Summary = string.Create(
-            System.Globalization.CultureInfo.InvariantCulture,
-            $"{circuit.Nodes.Count} nodes · {circuit.Components.Count} components");
+        Summary = circuit.Ports.Count == 0
+            ? string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{circuit.Nodes.Count} nodes · {circuit.Components.Count} components")
+            : string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{circuit.Nodes.Count} nodes · {circuit.Components.Count} components · {circuit.Ports.Count} ports");
     }
 
     public string Id { get; }
@@ -28,10 +33,16 @@ public sealed class ElectricalCircuitListItem
 /// <summary>One node's peak and settling summary, shown beside the transient points.</summary>
 public sealed class ElectricalTransientMetricItem
 {
-    public ElectricalTransientMetricItem(TransientNodeMetrics metrics)
+    public ElectricalTransientMetricItem(
+        TransientNodeMetrics metrics,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentNullException.ThrowIfNull(metrics);
         NodeId = metrics.NodeId;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? NodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         ExtremesText = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
             $"min {metrics.MinimumVolts:G4} · max {metrics.MaximumVolts:G4} · final {metrics.FinalVolts:G4}");
@@ -46,6 +57,12 @@ public sealed class ElectricalTransientMetricItem
     }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     public string ExtremesText { get; }
 
@@ -66,16 +83,27 @@ public sealed class ElectricalTransientSeriesItem : ObservableObject
     public ElectricalTransientSeriesItem(
         string nodeId,
         int colorIndex,
-        Action<ElectricalTransientSeriesItem> changed)
+        Action<ElectricalTransientSeriesItem> changed,
+        string? scope = null,
+        string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
         ArgumentNullException.ThrowIfNull(changed);
         NodeId = nodeId;
         ColorIndex = colorIndex;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
+        Name = string.IsNullOrWhiteSpace(name) ? nodeId : name;
+        DisplayName = Scope == "root" ? Name : $"{Scope} · {Name}";
         _changed = changed;
     }
 
     public string NodeId { get; }
+
+    public string Scope { get; }
+
+    public string Name { get; }
+
+    public string DisplayName { get; }
 
     public int ColorIndex { get; }
 
@@ -91,7 +119,7 @@ public sealed class ElectricalTransientSeriesItem : ObservableObject
         }
     }
 
-    public override string ToString() => NodeId;
+    public override string ToString() => DisplayName;
 }
 
 /// <summary>
@@ -215,6 +243,8 @@ public sealed class ElectricalComponentKindChoice
             ElectricalComponentKind.CurrentSource => "Current source",
             ElectricalComponentKind.Capacitor => "Capacitor",
             ElectricalComponentKind.Inductor => "Inductor",
+            ElectricalComponentKind.Mosfet => "MOSFET",
+            ElectricalComponentKind.Subcircuit => "Subcircuit",
             _ => kind.ToString(),
         };
         Unit = ElectricalComponentMetadata.Unit(kind);
@@ -244,7 +274,17 @@ public sealed class ElectricalComponentListItem
         KindLabel = new ElectricalComponentKindChoice(component.Kind).Label;
         ValueText = FormatValue(component.Value);
         Unit = component.Unit;
-        Summary = $"{KindLabel} · {ValueText} {Unit}";
+        Summary = ElectricalComponentMetadata.IsSubcircuit(component.Kind)
+            ? $"{KindLabel} · {(component.CircuitId.Length == 0 ? "no circuit" : component.CircuitId)} · " +
+              $"{component.Terminals.Count} terminal(s)"
+            : ElectricalComponentMetadata.IsMosfet(component.Kind)
+                ? $"{KindLabel} · {ElectricalComponentMetadata.ChannelName(component.Channel)}-channel · " +
+                  $"Vt {FormatValue(component.ThresholdVoltage)} V" +
+                  (component.ChannelLengthModulation == 0
+                      ? string.Empty
+                      : $" · lambda {FormatValue(component.ChannelLengthModulation)} 1/V") +
+                  $" · {ValueText} {Unit}"
+                : $"{KindLabel} · {ValueText} {Unit}";
     }
 
     public string Id { get; }
@@ -325,14 +365,14 @@ public sealed class ElectricalTerminalListItem : ObservableObject
 }
 
 
-/// <summary>One solved or unreferenced authored node in the Electrical solve preview.</summary>
+/// <summary>One solved or unreferenced node in the Electrical solve preview.</summary>
 public sealed class ElectricalNodeResultItem
 {
-    public ElectricalNodeResultItem(ElectricalNode node, double? volts)
+    public ElectricalNodeResultItem(string id, string name, string scope, double? volts)
     {
-        ArgumentNullException.ThrowIfNull(node);
-        Id = node.Id;
-        Name = string.IsNullOrWhiteSpace(node.Name) ? node.Id : node.Name;
+        Id = id;
+        Name = string.IsNullOrWhiteSpace(name) ? id : name;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
         Volts = volts;
         HasVoltage = volts is not null;
         VoltageText = volts is double value
@@ -343,6 +383,9 @@ public sealed class ElectricalNodeResultItem
     public string Id { get; }
 
     public string Name { get; }
+
+    /// <summary>The authored circuit root, or the instance path that owns this internal node.</summary>
+    public string Scope { get; }
 
     /// <summary>Solved node voltage, or null when the node is unreferenced.</summary>
     public double? Volts { get; }
@@ -355,12 +398,22 @@ public sealed class ElectricalNodeResultItem
 /// <summary>One solved component with terminal voltage, current, and absorbed power.</summary>
 public sealed class ElectricalElementResultItem
 {
-    public ElectricalElementResultItem(DcElement element, ElectricalComponent? component, DcSolution solution)
+    public ElectricalElementResultItem(
+        DcElement element,
+        ElectricalComponent? component,
+        DcSolution solution,
+        string scope = "root",
+        string? name = null)
     {
         ArgumentNullException.ThrowIfNull(element);
         ArgumentNullException.ThrowIfNull(solution);
         Id = element.Id;
-        Name = component is null || string.IsNullOrWhiteSpace(component.Name) ? element.Id : component.Name;
+        Name = !string.IsNullOrWhiteSpace(name)
+            ? name
+            : component is null || string.IsNullOrWhiteSpace(component.Name)
+                ? element.Id
+                : component.Name;
+        Scope = string.IsNullOrWhiteSpace(scope) ? "root" : scope;
         NodeA = element.NodeA;
         NodeB = element.NodeB;
         Value = element.Value;
@@ -391,6 +444,9 @@ public sealed class ElectricalElementResultItem
     public string Id { get; }
 
     public string Name { get; }
+
+    /// <summary>The authored circuit root, or the instance path that owns this element.</summary>
+    public string Scope { get; }
 
     public string KindId { get; }
 
@@ -429,14 +485,17 @@ public sealed class ElectricalElementResultItem
 /// <summary>A current validation message for the selected authored circuit.</summary>
 public sealed class ElectricalDiagnosticItem
 {
-    public ElectricalDiagnosticItem(Diagnostic diagnostic)
+    public ElectricalDiagnosticItem(Diagnostic diagnostic, ICommand locateCommand)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
+        ArgumentNullException.ThrowIfNull(locateCommand);
         Code = diagnostic.Code;
         Message = diagnostic.Message;
         Severity = diagnostic.Severity;
         Location = diagnostic.Location;
         Display = diagnostic.ToString();
+        LocateCommand = locateCommand;
+        CanLocate = ElectricalDiagnosticPath.TryParse(diagnostic.Path, out _);
     }
 
     public string Code { get; }
@@ -452,4 +511,8 @@ public sealed class ElectricalDiagnosticItem
     public bool IsError => Severity == DiagnosticSeverity.Error;
 
     public bool IsWarning => Severity == DiagnosticSeverity.Warning;
+
+    public ICommand LocateCommand { get; }
+
+    public bool CanLocate { get; }
 }

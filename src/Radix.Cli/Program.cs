@@ -40,7 +40,9 @@ internal static class Program
             {
                 "validate" => ValidateCommand(args[1..]),
                 "dc" => DcCommand(args[1..]),
+                "ac" => AcCommand(args[1..]),
                 "transient" or "tran" => TransientCommand(args[1..]),
+                "drive" => DriveCommand(args[1..]),
                 "simulate" or "sim" => SimulateCommand(args[1..]),
                 "test" => TestCommand(args[1..]),
                 "sweep" => SweepCommand(args[1..]),
@@ -108,7 +110,19 @@ internal static class Program
                   [--json]                   Emit one machine-readable JSON report
               dc <netlist.json|project.radix>
                                              Solve a DC linear electrical circuit
+              drive <project.radix>          Run a circuit's authored drive bindings and report
+                                             the levels they would write, with their ticks
+                  [--circuit <id>] [--stop <s>] [--steps <n>]
+                  [--simulate [--definition <id>]]
+                                             Apply the reported drives to a definition of the
+                                             same project instead of only showing them
+                  [--json]
                   [--circuit <id>]           Choose an authored circuit in a project
+                  [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>]
+                                             Solve once per value of one element parameter
+                  [--gain <node>]            Add d(node)/d(swept) to the sweep table
+                  [--margins <node>]         Print the input windows where that curve is not amplified
+                  [--csv]                    Emit the sweep as a wide CSV table
                   [--json]                   Emit one machine-readable DC report
               transient <netlist.json|project.radix>
                                              Solve a time-domain electrical circuit
@@ -117,6 +131,9 @@ internal static class Program
                   [--stop <s>]               Stop time in seconds (default: file analysis or 1)
                   [--steps <n>]              Fixed steps, 1..10000 (default: file analysis or 100)
                   [--method <name>]          backward-euler (default) or trapezoidal
+                  [--bias-dependent-capacitance]
+                                             Re-evaluate each MOSFET's gate capacitance from the
+                                             region it is solved in, at every step
                   [--tol <x>]                Adaptive step control with this relative tolerance
                   [--atol <x>]               Absolute adaptive tolerance (default: derived from the circuit)
                   [--initial-step <s>]       First adaptive step (default: (stop-start)/steps)
@@ -126,6 +143,24 @@ internal static class Program
                   [--max-rows <n>]           Text rows to print (default 40)
                   [--csv]                    Emit the points as a wide CSV table
                   [--json]                   Emit one machine-readable transient report
+              ac <netlist.json|project.radix>
+                                             Small-signal frequency response at the DC operating point
+                  [--drive <source-id>]      Voltage source driven at the requested amplitude (required)
+                  [--circuit <id>]           Choose an authored circuit in a project
+                  [--from <hz>]              Start frequency (default 1)
+                  [--to <hz>]                Stop frequency (default 1000000)
+                  [--points <n>]             Log-spaced points, 2..256 (default 11)
+                  [--amplitude <v>]          Drive amplitude in volts (default 1)
+                  [--bias <source-id>=<v>]   Hold a source at this value for the operating point
+                                             (a waveform would otherwise bias at its start value)
+                  [--compare <archive>]      Compare with a recorded sweep and report deviations
+                  [--compare-tolerance <db>]  Gain deviation tolerated before exiting 1 (default 0)
+                  [--devices]                Also print each MOSFET's region, gm, gds and the gate-charge
+                                             fractions its region presents (cgs×, cgd× of the authored value)
+                  [--bias-sweep <from:to:count>]
+                                             Step the drive and report every device at each value
+                  [--csv]                    Emit one row per node per frequency
+                  [--json]                   Emit a versioned report that --compare can read back
               simulate <project.radix>       Compile and run a definition headlessly
                   [--definition <id>]        Definition to simulate (default: project root)
                   [--ticks <n>]              Simulated ticks to advance (default 100)
@@ -211,6 +246,13 @@ internal static class Program
                 out circuit,
                 out report);
 
+        // Electrical assets are deliberately separate from digital compilation, so the compiler
+        // must not be blocked by them. `validate` still reports their structural errors here.
+        foreach (Diagnostic diagnostic in ElectricalCircuitValidator.ValidateProject(project))
+        {
+            report.AddUnique(diagnostic);
+        }
+
         if (json)
         {
             Console.WriteLine(ValidationReport.ToJson(
@@ -262,14 +304,48 @@ internal static class Program
 
     private static int DcCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["circuit"], ["json"]);
+        (var positional, var options) = Parse(args, ["circuit", "sweep", "gain", "margins"], ["json", "csv"]);
         if (positional.Count != 1)
         {
-            Console.Error.WriteLine("usage: radix dc <netlist.json|project.radix> [--circuit <id>] [--json]");
+            Console.Error.WriteLine(
+                "usage: radix dc <netlist.json|project.radix> [--circuit <id>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--csv] [--json]");
             return 2;
         }
 
         bool json = options.ContainsKey("json");
+        bool csv = options.ContainsKey("csv");
+        string? sweepSpec = GetOption(options, "sweep");
+        string? marginsNode = GetOption(options, "margins");
+        if (marginsNode is not null)
+        {
+            if (sweepSpec is null)
+            {
+                Console.Error.WriteLine("--margins needs --sweep: it finds the unity-gain crossings of a swept curve.");
+                return 2;
+            }
+
+            if (csv)
+            {
+                Console.Error.WriteLine("--margins prints its own table; use it without --csv.");
+                return 2;
+            }
+        }
+
+        string? gainNode = GetOption(options, "gain");
+        if (gainNode is not null)
+        {
+            if (sweepSpec is null)
+            {
+                Console.Error.WriteLine("--gain needs --sweep: it differentiates a swept transfer curve.");
+                return 2;
+            }
+
+            if (csv)
+            {
+                Console.Error.WriteLine("--gain prints its own table; use it without --csv.");
+                return 2;
+            }
+        }
         string? requestedCircuit = GetOption(options, "circuit");
         string source = positional[0];
         string? circuitId = null;
@@ -281,7 +357,7 @@ internal static class Program
                 CircuitProject project = ProjectSerializer.Load(source, validate: false);
                 ElectricalCircuit circuit = SelectElectricalCircuit(project, requestedCircuit);
                 circuitId = circuit.Id;
-                netlist = circuit.ToDcNetlist();
+                netlist = circuit.ToDcNetlist(project.FindElectricalCircuit);
             }
             else
             {
@@ -303,6 +379,62 @@ internal static class Program
         {
             Console.Error.WriteLine($"DC input error: {exception.Message}");
             return 2;
+        }
+
+        if (sweepSpec is not null)
+        {
+            if (!TryParseSweep(sweepSpec, out string sweptElement, out double[] sweptValues, out string? sweepError))
+            {
+                Console.Error.WriteLine(sweepError);
+                return 2;
+            }
+
+            if (json)
+            {
+                Console.Error.WriteLine(
+                    "--json reports a single operating point; use the table or --csv with --sweep.");
+                return 2;
+            }
+
+            foreach (string? measured in new[] { gainNode, marginsNode })
+            {
+                if (measured is not null && !netlist.Nodes.Contains(measured, StringComparer.Ordinal))
+                {
+                    Console.Error.WriteLine(
+                        $"--gain/--margins node '{measured}' is not in this netlist; available: {string.Join(", ", netlist.Nodes)}.");
+                    return 2;
+                }
+            }
+
+            try
+            {
+                IReadOnlyList<DcSweepRow> rows = DcSweep.Run(netlist, sweptElement, sweptValues);
+                Console.Write(csv
+                    ? DcSweepReport.ToCsv(netlist, rows)
+                    : DcSweepReport.ToText(netlist, sweptElement, rows));
+                if (gainNode is not null)
+                {
+                    Console.Write(DcSweepReport.ToGainText(
+                        sweptElement,
+                        gainNode,
+                        DcSweepGain.Along(rows, gainNode)));
+                }
+
+                if (marginsNode is not null)
+                {
+                    Console.Write(DcSweepMargins.ToText(
+                        sweptElement,
+                        marginsNode,
+                        DcSweepGain.Along(rows, marginsNode)));
+                }
+
+                return rows.All(row => row.Solved) ? 0 : 1;
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"DC sweep failed: {exception.Message}");
+                return 2;
+            }
         }
 
         try
@@ -364,6 +496,671 @@ internal static class Program
             $"Project has multiple electrical circuits; choose one with --circuit: {string.Join(", ", project.ElectricalCircuits.Select(circuit => circuit.Id))}");
     }
 
+    /// <summary>
+    /// Small-signal frequency response. The circuit is linearized at the operating point its
+    /// transient run would start from, so a report here and a transient run of the same file
+    /// describe the same circuit rather than two configurations.
+    /// </summary>
+    private static int AcCommand(string[] args)
+    {
+        (var positional, var options) = Parse(
+            args,
+            [
+                "circuit", "drive", "from", "to", "points", "amplitude", "bias",
+                "compare", "compare-tolerance", "bias-sweep",
+            ],
+            ["csv", "json", "devices"]);
+        string? drive = GetOption(options, "drive");
+        if (positional.Count != 1 || drive is null)
+        {
+            Console.Error.WriteLine(
+                "usage: radix ac <netlist.json|project.radix> --drive <source-id> [--circuit <id>] [--from <hz>] [--to <hz>] [--points <n>] [--amplitude <v>] [--bias <source>=<v>] [--compare <archived-ac.json>] [--compare-tolerance <db>] [--csv|--json]");
+            return 2;
+        }
+
+        bool csv = options.ContainsKey("csv");
+        bool json = options.ContainsKey("json");
+        if (csv && json)
+        {
+            Console.Error.WriteLine("--csv and --json are mutually exclusive.");
+            return 2;
+        }
+
+        string source = positional[0];
+        string? circuitId = null;
+        TransientNetlist netlist;
+        try
+        {
+            if (string.Equals(Path.GetExtension(source), ".radix", StringComparison.OrdinalIgnoreCase))
+            {
+                CircuitProject project = ProjectSerializer.Load(source, validate: false);
+                ElectricalCircuit circuit = SelectElectricalCircuit(project, GetOption(options, "circuit"));
+                circuitId = circuit.Id;
+                netlist = circuit.ToTransientNetlist(project.FindElectricalCircuit);
+            }
+            else
+            {
+                if (GetOption(options, "circuit") is not null)
+                {
+                    Console.Error.WriteLine("--circuit is only valid when solving an authored .radix project.");
+                    return 2;
+                }
+
+                netlist = TransientNetlistJson.Load(source).Netlist;
+            }
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            PrintDiagnostics(exception.Diagnostics, Console.Error);
+            return 2;
+        }
+        catch (ProjectFormatException exception)
+        {
+            Console.Error.WriteLine($"ac input error: {exception.Message}");
+            return 2;
+        }
+
+        DcVoltageSource[] sources = netlist.Elements.OfType<DcVoltageSource>().ToArray();
+        if (!sources.Any(source => string.Equals(source.Id, drive, StringComparison.Ordinal)))
+        {
+            Console.Error.WriteLine(
+                $"--drive source '{drive}' is not a voltage source in this netlist; available: {string.Join(", ", sources.Select(source => source.Id))}.");
+            return 2;
+        }
+
+        // A waveform biases a source at its value at t = 0, which is usually the rest state. An
+        // analysis of a gate at its switching point needs the source held there instead, so the
+        // bias override replaces the waveform with a constant for this run.
+        if (GetOption(options, "bias") is string biasSpec)
+        {
+            int equals = biasSpec.IndexOf('=');
+            if (equals <= 0 ||
+                !double.TryParse(
+                    biasSpec[(equals + 1)..],
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out double biasVolts) ||
+                !double.IsFinite(biasVolts))
+            {
+                Console.Error.WriteLine("--bias takes <source-id>=<volts>, for example --bias VIN=1.3.");
+                return 2;
+            }
+
+            string biasId = biasSpec[..equals];
+            if (!sources.Any(source => string.Equals(source.Id, biasId, StringComparison.Ordinal)))
+            {
+                Console.Error.WriteLine(
+                    $"--bias source '{biasId}' is not a voltage source in this netlist; available: {string.Join(", ", sources.Select(source => source.Id))}.");
+                return 2;
+            }
+
+            netlist = netlist.Clone().WithElementValue(biasId, biasVolts);
+            netlist.SetWaveform(biasId, [new TransientWaveformPoint(0, biasVolts)]);
+        }
+
+        double from = GetDoubleOption(options, "from", 1);
+        double to = GetDoubleOption(options, "to", 1e6);
+        int points = GetIntOption(options, "points", 11, 2, AcFrequencySweep.MaximumCount);
+        double amplitude = GetDoubleOption(options, "amplitude", 1);
+        if (amplitude == 0 || !double.IsFinite(amplitude))
+        {
+            Console.Error.WriteLine("--amplitude must be a finite, non-zero number of volts.");
+            return 2;
+        }
+
+        string? compareSpec = GetOption(options, "compare");
+        double compareTolerance = 0;
+        if (GetOption(options, "compare-tolerance") is not null)
+        {
+            compareTolerance = GetDoubleOption(options, "compare-tolerance", 0);
+            if (!double.IsFinite(compareTolerance) || compareTolerance < 0)
+            {
+                Console.Error.WriteLine("--compare-tolerance takes a non-negative number of decibels.");
+                return 2;
+            }
+
+            if (compareSpec is null)
+            {
+                Console.Error.WriteLine("--compare-tolerance needs --compare.");
+                return 2;
+            }
+        }
+
+        if (compareSpec is not null && (csv || json))
+        {
+            Console.Error.WriteLine("--compare prints a comparison; drop --csv or --json.");
+            return 2;
+        }
+
+        if (options.ContainsKey("devices") && (csv || json))
+        {
+            Console.Error.WriteLine("--devices prints a device table; drop --csv or --json.");
+            return 2;
+        }
+
+        AcResponse response;
+        try
+        {
+            response = AcAnalysis.Run(
+                netlist, drive, AcFrequencySweep.Logarithmic(from, to, points), amplitude);
+        }
+        catch (DcSolveException exception)
+        {
+            Console.Error.WriteLine($"ac failed: {exception.Message}");
+            return 1;
+        }
+
+        AcReport report = AcReport.From(response, source, circuitId);
+        if (compareSpec is not null)
+        {
+            AcReport archived;
+            try
+            {
+                archived = AcReport.Load(compareSpec);
+            }
+            catch (ProjectFormatException exception)
+            {
+                Console.Error.WriteLine($"archived sweep error: {exception.Message}");
+                return 2;
+            }
+
+            IReadOnlyList<AcDeviation> deviations;
+            try
+            {
+                deviations = AcComparison.Compare(archived, response);
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"--compare: {exception.Message}");
+                return 2;
+            }
+
+            PrintAcComparison(report, deviations, Path.GetFileName(compareSpec), compareTolerance);
+            return deviations.Any(deviation => deviation.GainDeviationDb > compareTolerance) ? 1 : 0;
+        }
+
+        if (csv)
+        {
+            Console.Write(report.ToCsv());
+        }
+        else if (json)
+        {
+            Console.WriteLine(report.ToJson());
+        }
+        else
+        {
+            Console.Write(response.ToText());
+            if (options.ContainsKey("devices"))
+            {
+                PrintAcDevices(response);
+            }
+        }
+
+        if (GetOption(options, "bias-sweep") is string biasSweepSpec)
+        {
+            if (!TryParseBiasSweep(biasSweepSpec, out double[] biases, out string biasError))
+            {
+                Console.Error.WriteLine(biasError);
+                return 2;
+            }
+
+            IReadOnlyList<MosfetBiasPoint> biasPoints;
+            try
+            {
+                biasPoints = MosfetBiasSweep.Run(netlist, drive, biases);
+            }
+            catch (Exception exception) when (exception is ArgumentException or DcSolveException)
+            {
+                Console.Error.WriteLine($"bias sweep failed: {exception.Message}");
+                return 1;
+            }
+
+            Console.WriteLine();
+            PrintMosfetBiasSweep(drive, biasPoints);
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Parses <c>from:to:count</c> for a bias sweep, reusing the even spacing the Core helper
+    /// defines so the CLI and the panel describe the same study.
+    /// </summary>
+    private static bool TryParseBiasSweep(string text, out double[] values, out string error)
+    {
+        values = [];
+        error = string.Empty;
+
+        string[] parts = text.Split(':');
+        if (parts.Length != 3 ||
+            !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double from) ||
+            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double to) ||
+            !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
+        {
+            error = "--bias-sweep takes from:to:count, for example 0:5:11.";
+            return false;
+        }
+
+        try
+        {
+            values = [.. MosfetBiasSweep.Linear(from, to, count)];
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            error = "--bias-sweep: " + exception.Message;
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Region and slopes for every transistor at every bias, so a table says where a device
+    /// switches rather than only where it sits.
+    /// </summary>
+    private static void PrintMosfetBiasSweep(string drive, IReadOnlyList<MosfetBiasPoint> points)
+    {
+        int devices = points.Count == 0 ? 0 : points[0].Devices.Count;
+        if (devices == 0)
+        {
+            Console.WriteLine($"Bias sweep of '{drive}': the netlist has no MOSFETs.");
+            return;
+        }
+
+        string Number(double value) =>
+            double.IsFinite(value) ? value.ToString("G4", CultureInfo.InvariantCulture) : "inf";
+
+        Console.WriteLine($"Bias sweep of '{drive}': {points.Count} values · {devices} devices");
+        Console.WriteLine("  bias    device  region      Vgs         Vds         gm          gds");
+        foreach (MosfetBiasPoint point in points)
+        {
+            bool first = true;
+            foreach (AcDeviceReport device in point.Devices)
+            {
+                Console.WriteLine(
+                    "  " + (first ? Number(point.BiasVolts) : string.Empty).PadRight(8) +
+                    device.Id.PadRight(8) +
+                    device.Region.PadRight(12) +
+                    Number(device.GateSourceVolts).PadRight(12) +
+                    Number(device.DrainSourceVolts).PadRight(12) +
+                    Number(device.Transconductance).PadRight(12) +
+                    Number(device.DrainConductance));
+                first = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Each transistor's region and small-signal slopes at the bias. The gain table is assembled
+    /// from these numbers, so printing them is what makes a response traceable to a device.
+    /// </summary>
+    private static void PrintAcDevices(AcResponse response)
+    {
+        if (response.Devices.Count == 0)
+        {
+            Console.WriteLine("Devices: the netlist has no MOSFETs.");
+            return;
+        }
+
+        // Fixed field widths around a five-significant-digit number keep the columns apart: a
+        // longer format ran an exponent straight into the next value.
+        string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G5", CultureInfo.InvariantCulture)
+                : "inf";
+
+        Console.WriteLine("Devices at the operating point:");
+        Console.WriteLine(
+            "  id    region      Vgs         Vds         Id          gm          gds         gm/gds      cgs×    cgd×");
+        foreach (AcDeviceReport device in response.Devices)
+        {
+            Console.WriteLine(
+                "  " + device.Id.PadRight(6) +
+                device.Region.PadRight(12) +
+                Number(device.GateSourceVolts).PadRight(12) +
+                Number(device.DrainSourceVolts).PadRight(12) +
+                Number(device.CurrentAmperes).PadRight(12) +
+                Number(device.Transconductance).PadRight(12) +                    Number(device.DrainConductance).PadRight(12) +
+                    Number(device.IntrinsicGain).PadRight(12) +
+                    Number(device.GateSourceFraction).PadRight(8) +
+                    Number(device.GateDrainFraction));
+        }
+    }
+
+    private static void PrintAcComparison(
+        AcReport report,
+        IReadOnlyList<AcDeviation> deviations,
+        string against,
+        double toleranceDb)
+    {
+        Console.WriteLine(
+            $"AC comparison against {against}: drive '{report.Drive}' at " +
+            $"{report.Amplitude.ToString("G6", CultureInfo.InvariantCulture)} V, " +
+            $"{report.Points.Count} frequencies");
+        Console.WriteLine("  node  worst Hz  gain dB  phase deg");
+        foreach (AcDeviation deviation in deviations)
+        {
+            Console.WriteLine(
+                "  " + deviation.Node.PadRight(12) +
+                FormatDcNumber(deviation.WorstGainFrequencyHz).PadRight(12) +
+                FormatDcNumber(deviation.GainDeviationDb).PadRight(10) +
+                FormatDcNumber(deviation.MaximumPhaseDeviationDegrees));
+        }
+
+        AcDeviation worst = deviations.MaxBy(deviation => deviation.GainDeviationDb)!;
+        int exceeded = deviations.Count(deviation => deviation.GainDeviationDb > toleranceDb);
+        Console.WriteLine(
+            $"Worst gain deviation {FormatDcNumber(worst.GainDeviationDb)} dB on '{worst.Node}' " +
+            $"at {FormatDcNumber(worst.WorstGainFrequencyHz)} Hz; tolerance " +
+            $"{FormatDcNumber(toleranceDb)} dB, {exceeded} of {deviations.Count} node(s) outside it.");
+    }
+
+    /// <summary>
+    /// Runs every drive binding a circuit declares: solve the circuit, read the bound node as
+    /// levels, and report the drives the binding would apply. This is the electrical-to-digital
+    /// handoff executed from a file rather than from code that happens to know the node and rate.
+    /// </summary>
+    private static int DriveCommand(string[] args)
+    {
+        (var positional, var options) = Parse(
+            args,
+            ["circuit", "stop", "steps", "definition"],
+            ["json", "simulate"]);
+        if (positional.Count != 1)
+        {
+            Console.Error.WriteLine(
+                "usage: radix drive <project.radix> [--circuit <id>] [--stop <s>] [--steps <n>] [--simulate [--definition <id>]] [--json]");
+            return 2;
+        }
+
+        CircuitProject project = ProjectSerializer.Load(positional[0]);
+        ElectricalCircuit circuit = SelectElectricalCircuit(project, GetOption(options, "circuit"));
+        if (circuit.DriveBindings.Count == 0)
+        {
+            Console.Error.WriteLine(
+                $"circuit '{circuit.Id}' declares no driveBindings; a binding needs a node, a pin and a tick rate.");
+            return 2;
+        }
+
+        double stop = 120e-9;
+        if (GetOption(options, "stop") is { } stopText &&
+            (!double.TryParse(stopText, NumberStyles.Float, CultureInfo.InvariantCulture, out stop) ||
+             !double.IsFinite(stop) ||
+             stop <= 0))
+        {
+            Console.Error.WriteLine("--stop must be a positive number of seconds.");
+            return 2;
+        }
+
+        int steps = 1280;
+        if (GetOption(options, "steps") is { } stepsText &&
+            (!int.TryParse(
+                 stepsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out steps) ||
+             steps is < 2 or > 20_000))
+        {
+            Console.Error.WriteLine("--steps must be a whole number from 2 to 20000.");
+            return 2;
+        }
+
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit);
+        if (sampler is null)
+        {
+            Console.Error.WriteLine(
+                $"circuit '{circuit.Id}' has no levelThresholds and no positive source to take a rail from, so a level cannot be read.");
+            return 2;
+        }
+
+        TransientResult run = circuit.ToTransientNetlist(project.FindElectricalCircuit).Run(new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = stop,
+            Steps = steps,
+            MaximumStepCount = 100_000,
+        });
+
+        SimulationScriptResult? simulation = null;
+        ElectricalDrivePlan? plan = null;
+        if (options.ContainsKey("simulate"))
+        {
+            plan = ElectricalDriveSimulation.Plan(circuit, run, sampler);
+            simulation = ElectricalDriveSimulation.Run(
+                project, plan, GetOption(options, "definition"));
+            if (!simulation.Passed)
+            {
+                if (options.ContainsKey("json"))
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(
+                        new
+                        {
+                            circuit = circuit.Id,
+                            simulated = false,
+                            failures = simulation.Failures.Select(failure => new
+                            {
+                                step = failure.Step,
+                                at = failure.At,
+                                message = failure.Message,
+                            }),
+                        },
+                        ReportJsonOptions));
+                }
+                else
+                {
+                    foreach (ScriptFailure failure in simulation.Failures)
+                    {
+                        Console.Error.WriteLine($"step {failure.Step} at t={failure.At}: {failure.Message}");
+                    }
+                }
+
+                Console.Error.WriteLine(
+                    $"simulation failed: {simulation.Failures.Count} failure(s) over {simulation.StepsExecuted} step(s).");
+                return 1;
+            }
+        }
+
+        // A supplied output is masked while it is driven, so asking what the definition would have
+        // computed needs its own run. Null means nothing was supplied and there is nothing to audit.
+        ElectricalDriveAudit? audit = simulation is null
+            ? null
+            : ElectricalDriveSimulation.Audit(
+                project, circuit, run, sampler, GetOption(options, "definition"));
+
+        // Timing describes the circuit and the declaration, not the script, so both reports can carry
+        // it. Computing it here is what lets --json say what the text report says.
+        ElectricalPropagationReport? timing = ElectricalDriveSimulation.Propagation(
+            project, circuit, run, sampler, GetOption(options, "definition"));
+
+        if (options.ContainsKey("json"))
+        {
+            Console.WriteLine(JsonSerializer.Serialize(
+                new
+                {
+                    circuit = circuit.Id,
+                    stopTime = stop,
+                    steps,
+                    thresholds = sampler.Thresholds,
+                    bindings = circuit.DriveBindings.Select(binding => new
+                    {
+                        node = binding.NodeId,
+                        pin = binding.PinId,
+                        ticksPerSecond = binding.TicksPerSecond,
+                        changes = binding.Steps(run, sampler).Select(entry => new
+                        {
+                            at = entry.At,
+                            time = entry.Step.Time,
+                            volts = entry.Step.Volts,
+                            level = entry.Step.Level,
+                        }),
+                    }),
+                    simulation = simulation is null
+                        ? null
+                        : new
+                        {
+                            simulated = true,
+                            definition = simulation.DefinitionId,
+                            steps = simulation.StepsExecuted,
+                            finalTime = simulation.FinalTime,
+                        },
+                    audit = audit is null
+                        ? null
+                        : new
+                        {
+                            suppliedTicks = audit.CheckedTicks,
+                            pins = audit.AuditedPins,
+                            passed = audit.Passed,
+                            failures = audit.Result.Failures.Select(failure => new
+                            {
+                                step = failure.Step,
+                                at = failure.At,
+                                message = failure.Message,
+                            }),
+                        },
+                    timing = timing is null
+                        ? null
+                        : new
+                        {
+                            input = timing.InputPinId,
+                            output = timing.OutputPinId,
+                            declaredTicks = timing.DeclaredTicks,
+                            toleranceTicks = timing.ToleranceTicks,
+                            agreed = timing.Agrees,
+                            steps = timing.Steps.Select(step => new
+                            {
+                                from = step.PreviousOutputLevel,
+                                to = step.OutputLevel,
+                                inputLevel = step.InputLevel,
+                                inputAt = step.InputAt,
+                                outputAt = step.OutputAt,
+                                ticks = step.Ticks,
+                                seconds = step.Seconds,
+                                tolerance = timing.ToleranceFor(step),
+                            }),
+                            mismatches = timing.Mismatches.Select(step => new
+                            {
+                                from = step.PreviousOutputLevel,
+                                to = step.OutputLevel,
+                                ticks = step.Ticks,
+                                tolerance = timing.ToleranceFor(step),
+                            }),
+                            unusedTolerances = timing.UnusedTolerances.Select(tolerance => new
+                            {
+                                pin = tolerance.PinId,
+                                from = tolerance.FromLevel,
+                                to = tolerance.ToLevel,
+                                ticks = tolerance.Ticks,
+                            }),
+                            unknownPinTolerances = timing.UnknownPinTolerances.Select(tolerance => new
+                            {
+                                pin = tolerance.PinId,
+                                from = tolerance.FromLevel,
+                                to = tolerance.ToLevel,
+                                ticks = tolerance.Ticks,
+                            }),
+                        },
+                },
+                ReportJsonOptions));
+
+            // The JSON says whether it agreed; the exit code has to mean the same thing as the text
+            // path, or a script that parses the report would treat a failure as a pass.
+            return timing is not null &&
+                   (timing.UnknownPinTolerances.Count > 0 ||
+                    (timing.DeclaredTicks is not null && !timing.Agrees))
+                ? 1
+                : 0;
+        }
+
+        Console.WriteLine(
+            $"drive: {circuit.Id} · {stop:G6} s · {steps} steps · levels above " +
+            string.Join("/", sampler.Thresholds.Select(threshold =>
+                threshold.ToString("G6", CultureInfo.InvariantCulture))) +
+            " V");
+        Console.WriteLine("  node        pin   tick      time (s)     volts    level");
+        foreach (ElectricalDriveBinding binding in circuit.DriveBindings)
+        {
+            foreach ((ElectricalDriveStep step, long at) in binding.Steps(run, sampler))
+            {
+                Console.WriteLine(
+                    $"  {binding.NodeId,-10}  {binding.PinId,-4}  {at,-8}  {step.Time:E3}  {step.Volts,8:G4}  {step.Level}");
+            }
+        }
+
+        if (simulation is not null && plan is not null)
+        {
+            Console.WriteLine(
+                $"simulated {simulation.StepsExecuted} step(s) in definition '{simulation.DefinitionId}' to t={simulation.FinalTime}.");
+            if (plan.Claims.Count > 0)
+            {
+                Console.WriteLine(
+                    $"checked {plan.Claims.Count} claim tick(s) on {plan.ClaimedPins} pin(s): the definition agreed with the network everywhere it was asked.");
+            }
+            if (audit is null)
+            {
+                if (plan.Claims.Count == 0)
+                {
+                    Console.WriteLine(
+                        "no output was claimed and none is supplied, so the definition's answer was not checked.");
+                }
+            }
+            else if (audit.Passed)
+            {
+                Console.WriteLine(
+                    $"audited {audit.CheckedTicks} supplied tick(s) on {audit.AuditedPins} pin(s): the definition would have produced the network's levels.");
+            }
+            else
+            {
+                Console.WriteLine(
+                    $"audited {audit.CheckedTicks} supplied tick(s) on {audit.AuditedPins} pin(s): the definition would have answered differently - " +
+                    $"{audit.Result.Failures[0].Message}.");
+            }
+
+            // The audit says the answer is right; timing says when it arrives, which a static
+            // definition cannot describe and the circuit's own settling makes visible.
+            if (timing is not null)
+            {
+                Console.WriteLine(
+                    $"timing: {timing.InputPinId} to {timing.OutputPinId}, declared {(timing.DeclaredTicks is int declared ? declared.ToString(CultureInfo.InvariantCulture) : "no")} tick(s)");
+                foreach (ElectricalPropagationStep step in timing.Steps)
+                {
+                    Console.WriteLine(
+                        $"  {step.PreviousOutputLevel} -> {step.OutputLevel}: {step.Ticks} tick(s), {step.Seconds:E3} s after the input became level {step.InputLevel} at {step.InputAt}");
+                }
+
+                if (timing.DeclaredTicks is int declaredDelay && !timing.Agrees)
+                {
+                    foreach (ElectricalPropagationStep step in timing.Mismatches)
+                    {
+                        Console.Error.WriteLine(
+                            $"timing: {step.PreviousOutputLevel} -> {step.OutputLevel} took {step.Ticks} tick(s), declared {declaredDelay} with a tolerance of {timing.ToleranceFor(step)}.");
+                    }
+
+                    Console.Error.WriteLine(
+                        $"timing failed: {timing.Mismatches.Count} transition(s) outside the declared delay.");
+                    return 1;
+                }
+
+                foreach (ElectricalDelayTolerance tolerance in timing.UnusedTolerances)
+                {
+                    Console.WriteLine(
+                        $"timing: the tolerance for {(tolerance.PinId is null ? "any pin" : tolerance.PinId)} {tolerance.FromLevel}->{tolerance.ToLevel} was not exercised by this run.");
+                }
+
+                if (timing.UnknownPinTolerances.Count > 0)
+                {
+                    foreach (ElectricalDelayTolerance tolerance in timing.UnknownPinTolerances)
+                    {
+                        Console.Error.WriteLine(
+                            $"timing: tolerance {tolerance.FromLevel}->{tolerance.ToLevel} names pin '{tolerance.PinId}', which this definition does not declare as an output.");
+                    }
+
+                    Console.Error.WriteLine(
+                        $"timing failed: {timing.UnknownPinTolerances.Count} tolerance(s) can never apply.");
+                    return 1;
+                }
+            }
+        }
+
+        return 0;
+    }
+
     private static int TransientCommand(string[] args)
     {
         (var positional, var options) = Parse(
@@ -373,7 +1170,7 @@ internal static class Program
                 "initial-step", "min-step", "max-step", "max-steps", "settling-band",
                 "refine-levels", "sweep", "compare", "compare-tolerance",
             ],
-            ["json", "refine", "csv"]);
+            ["json", "refine", "csv", "bias-dependent-capacitance"]);
         if (positional.Count != 1)
         {
             Console.Error.WriteLine(
@@ -393,7 +1190,8 @@ internal static class Program
                 ElectricalCircuit circuit = SelectElectricalCircuit(
                     project, GetOption(options, "circuit"));
                 circuitId = circuit.Id;
-                document = new TransientDocument(circuit.ToTransientNetlist(), null);
+                document = new TransientDocument(
+                    circuit.ToTransientNetlist(project.FindElectricalCircuit), null);
             }
             else
             {
@@ -415,6 +1213,14 @@ internal static class Program
         {
             Console.Error.WriteLine($"transient input error: {exception.Message}");
             return 2;
+        }
+
+        // Device capacitances follow the region each step solves, instead of holding the authored
+        // values for the whole run. Off by default because the authored values are what every
+        // earlier measurement was taken with.
+        if (options.ContainsKey("bias-dependent-capacitance"))
+        {
+            document.Netlist.UseBiasDependentCapacitance();
         }
 
         TransientOptions defaults = document.Analysis ?? new TransientOptions();

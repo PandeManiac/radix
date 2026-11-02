@@ -682,7 +682,7 @@
               <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                 <StackPanel>
                   <TextBlock Text="{Binding DiagnosticSummary}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" />
-                  <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition and selects the reported instance or net." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
+                  <TextBlock Text="Validation, compile, and runtime messages. Locate opens the owning definition, or the authored electrical circuit, component, or node, and selects the reported target." Classes="muted" FontSize="9.5" Margin="0,1,0,6" TextWrapping="Wrap" />
                 </StackPanel>
                 <Button
                   Grid.Column="1"
@@ -794,7 +794,7 @@
                         <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" Classes.warning="{Binding IsWarning}" FontSize="10.5" TextWrapping="Wrap" Margin="2,2" />
                         <TextBlock Text="{Binding Details}" IsVisible="{Binding HasDetails}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="2,0,2,2" />
                       </StackPanel>
-                      <Button Grid.Column="1" Classes="tool" Content="Locate" Command="{Binding LocateCommand}" IsVisible="{Binding CanLocate}" Padding="5,1" VerticalAlignment="Top" ToolTip.Tip="Open the owning definition and select the instance or net named by this message" />
+                      <Button Grid.Column="1" Classes="tool" Content="Locate" Command="{Binding LocateCommand}" IsVisible="{Binding CanLocate}" Padding="5,1" VerticalAlignment="Top" ToolTip.Tip="Open the owning definition or electrical asset and select the target named by this message" />
                     </Grid>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -920,7 +920,7 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
               <StackPanel Margin="10,6,14,10">
                 <TextBlock Text="AUTHORED DC CIRCUITS" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource App.TextPrimary}" />
-                <TextBlock Text="Independent electrical assets. Terminals bind explicitly to named nodes; this never changes digital nets or signal values." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,8" />
+                <TextBlock Text="Independent electrical assets. Terminals bind explicitly to named nodes; this never changes digital nets or signal values. Expose internal nodes as ports, then place a Subcircuit component in another circuit to reuse the whole schematic with one terminal per port." Classes="muted" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,8" />
 
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
                   <Button Content="New circuit" Command="{Binding AddElectricalCircuitCommand}" HorizontalAlignment="Left" ToolTip.Tip="Add an empty authored DC circuit with ground and one node" />
@@ -1123,6 +1123,24 @@
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock Text="Select a component to edit its terminals." Classes="muted" FontSize="9.5" IsVisible="{Binding !HasElectricalTerminals}" />
+                    <Grid ColumnDefinitions="58,*" ColumnSpacing="6" Margin="0,4,0,2">
+                      <TextBox
+                          x:Name="ElectricalDeviceBiasBox"
+                          Text="{Binding ElectricalDeviceBiasText, Mode=TwoWay}"
+                          Width="58"
+                          FontSize="9.5"
+                          Watermark="bias"
+                          ToolTip.Tip="Optional operating-point override as source=volts, for example VIN=1.3; without one the circuit sits at each source's value at t=0, which for a driven gate is off" />
+                      <TextBlock
+                          Grid.Column="1"
+                          Text="{Binding ElectricalDeviceOperatingPointText}"
+                          IsVisible="{Binding HasElectricalDeviceOperatingPoint}"
+                          Classes="muted"
+                          FontSize="9"
+                          TextWrapping="Wrap"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="The selected transistor's region and small-signal slopes at the DC operating point; gm and gds are the numbers the AC analysis is assembled from" />
+                    </Grid>
                   </StackPanel>
 
                   <TextBlock Text="DC OPERATING POINT" Classes="section" />
@@ -1136,6 +1154,130 @@
                     <Button x:Name="ElectricalSaveJsonButton" Content="Save JSON…" Click="ElectricalSaveJson_Click" ToolTip.Tip="Save the displayed DC solve result as JSON" />
                     <Button x:Name="ElectricalSaveCsvButton" Content="Save CSV…" Click="ElectricalSaveCsv_Click" ToolTip.Tip="Save the displayed DC solve result as CSV" />
                   </StackPanel>
+
+                  <TextBlock Text="DC SWEEP" Classes="section" />
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBox x:Name="ElectricalDcSweepElementBox" Text="{Binding ElectricalDcSweepElementText, Mode=TwoWay}" Width="58" FontSize="9.5" Watermark="VIN" ToolTip.Tip="Id of the one component to vary; the sweep solves the circuit once per value" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalDcSweepValuesText, Mode=TwoWay}" FontSize="9.5" Watermark="0:5:21" ToolTip.Tip="A comma list of values or from:to:count; SI suffixes p, n, u, m, k, M, and G are supported" />
+                    <Button Grid.Column="2" Content="Sweep" Command="{Binding RunElectricalDcSweepCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Solve the selected circuit once per value and list every node voltage" />
+                  </Grid>
+                  <TextBlock Text="{Binding ElectricalDcSweepSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" Margin="0,0,0,4" />
+                  <ItemsControl ItemsSource="{Binding ElectricalDcSweepWindows}" IsVisible="{Binding HasElectricalDcSweepWindows}" Margin="0,0,0,4">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ElectricalDcSweepWindowItem">
+                        <Grid ColumnDefinitions="140,*,Auto" ColumnSpacing="6" Margin="0,1">
+                          <TextBlock Text="{Binding DisplayName}" FontSize="9.5" FontWeight="SemiBold" ToolTip.Tip="{Binding NodeId}" />
+                          <TextBlock Grid.Column="1" Text="{Binding WindowsText}" FontFamily="monospace" FontSize="9" TextWrapping="Wrap" ToolTip.Tip="Input ranges where the curve does not amplify; the bands between them are forbidden zones" />
+                          <TextBlock Grid.Column="2" Text="{Binding SummaryText}" Classes="muted" FontSize="8.5" VerticalAlignment="Center" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Border
+                      IsVisible="{Binding HasElectricalDcSweepResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,4">
+                    <StackPanel Spacing="3">
+                      <controls:TransientPlotView Plot="{Binding ElectricalDcSweepPlot}" Height="150" Margin="0,2,0,4" IsVisible="{Binding HasElectricalDcSweepPlot}" />
+                      <Grid ColumnDefinitions="62,*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Text="value" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="1" Text="node" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="2" Text="volts" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="3" Text="dV/dV" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" ToolTip.Tip="Measured local gain d(node)/d(swept), the same difference quotient as radix dc --gain" />
+                      </Grid>
+                      <ItemsControl ItemsSource="{Binding ElectricalDcSweepRows}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalDcSweepRowItem">
+                            <Grid ColumnDefinitions="62,*,Auto,Auto" ColumnSpacing="8" Margin="0,1">
+                              <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" />
+                              <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontSize="9.5" ToolTip.Tip="{Binding NodeId}" />
+                              <TextBlock Grid.Column="2" Text="{Binding VoltsText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" HorizontalAlignment="Right" />
+                              <TextBlock Grid.Column="3" Text="{Binding GainText}" FontFamily="monospace" FontSize="9.5" Classes="muted" HorizontalAlignment="Right" ToolTip.Tip="Measured dV(node)/d(swept); '-' means no slope is defined at this point" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
+                        <Button x:Name="ElectricalDcSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalDcSweepCopyCsv_Click" ToolTip.Tip="Copy the sweep as the same CSV table radix dc --sweep --csv writes" />
+                        <Button x:Name="ElectricalDcSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalDcSweepSaveCsv_Click" ToolTip.Tip="Save the sweep as CSV" />
+                        <Button x:Name="ElectricalDcSweepCopySvgButton" Content="Copy sweep SVG" Click="ElectricalDcSweepCopySvg_Click" ToolTip.Tip="Copy the transfer curve as a standalone SVG document" />
+                        <Button x:Name="ElectricalDcSweepSaveSvgButton" Content="Save sweep SVG…" Click="ElectricalDcSweepSaveSvg_Click" ToolTip.Tip="Save the transfer curve as SVG" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <TextBlock Text="BIAS SWEEP" Classes="section" />
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBox Text="{Binding ElectricalBiasSweepRangeText, Mode=TwoWay}" FontSize="9.5" Watermark="0:5:11" ToolTip.Tip="from:to:count in volts; each value holds the drive there and solves the circuit" />
+                    <Button Grid.Column="1" Content="Sweep bias" Command="{Binding RunElectricalBiasSweepCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Step the drive with the AC drive id and report every transistor's region and slope at each value" />
+                  </Grid>
+                  <TextBlock Text="{Binding ElectricalBiasSweepSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" Margin="0,0,0,4" />
+                  <Border
+                      IsVisible="{Binding HasElectricalBiasSweepResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,4">
+                    <StackPanel Spacing="3">
+                      <controls:TransientPlotView Plot="{Binding ElectricalBiasSweepPlot}" Height="130" Margin="0,2,0,4" IsVisible="{Binding HasElectricalBiasSweepPlot}" />
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button x:Name="ElectricalBiasSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalBiasSweepCopyCsv_Click" ToolTip.Tip="Copy transconductance against bias for every device as CSV" />
+                        <Button x:Name="ElectricalBiasSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalBiasSweepSaveCsv_Click" ToolTip.Tip="Save the bias sweep as CSV" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <TextBlock Text="AC SWEEP" Classes="section" />
+                  <Grid ColumnDefinitions="58,*,58,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBox x:Name="ElectricalAcSweepDriveBox" Text="{Binding ElectricalAcSweepDriveText, Mode=TwoWay}" Width="58" FontSize="9.5" Watermark="VIN" ToolTip.Tip="Id of the voltage source whose transfer function is measured" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalAcSweepRangeText, Mode=TwoWay}" FontSize="9.5" Watermark="10:1e6:21" ToolTip.Tip="from:to:points in hertz, log-spaced; SI suffixes p, n, u, m, k, M, and G are supported" />
+                    <TextBox Grid.Column="2" Text="{Binding ElectricalAcSweepBiasText, Mode=TwoWay}" Width="58" FontSize="9.5" Watermark="bias" ToolTip.Tip="Optional operating-point override as source=volts, for example VIN=1.3; a waveform would otherwise bias at its start value" />
+                    <Button Grid.Column="3" Content="Sweep" Command="{Binding RunElectricalAcSweepCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Linearize the circuit at its operating point and solve each frequency" />
+                  </Grid>
+                  <TextBlock Text="{Binding ElectricalAcSweepSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" Margin="0,0,0,4" />
+                  <Border
+                      IsVisible="{Binding HasElectricalAcSweepResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,4">
+                    <StackPanel Spacing="3">
+                      <controls:TransientPlotView Plot="{Binding ElectricalAcSweepPlot}" Height="140" Margin="0,2,0,2" IsVisible="{Binding HasElectricalAcSweepPlot}" />
+                      <controls:TransientPlotView Plot="{Binding ElectricalAcSweepPhasePlot}" Height="96" Margin="0,0,0,4" IsVisible="{Binding HasElectricalAcSweepPhasePlot}" />
+                      <Grid ColumnDefinitions="72,*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Text="hz" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="1" Text="node" Classes="muted" FontSize="8.5" />
+                        <TextBlock Grid.Column="2" Text="gain" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" ToolTip.Tip="Transfer function magnitude in decibels; the curve plots it against log10(Hz)" />
+                        <TextBlock Grid.Column="3" Text="phase" Classes="muted" FontSize="8.5" HorizontalAlignment="Right" />
+                      </Grid>
+                      <ItemsControl ItemsSource="{Binding ElectricalAcSweepRows}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalAcSweepRowItem">
+                            <Grid ColumnDefinitions="72,*,Auto,Auto" ColumnSpacing="8" Margin="0,1">
+                              <TextBlock Text="{Binding FrequencyText}" FontFamily="monospace" FontSize="9.5" />
+                              <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontSize="9.5" ToolTip.Tip="{Binding NodeId}" />
+                              <TextBlock Grid.Column="2" Text="{Binding GainText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" HorizontalAlignment="Right" />
+                              <TextBlock Grid.Column="3" Text="{Binding PhaseText}" FontFamily="monospace" FontSize="9.5" Classes="muted" HorizontalAlignment="Right" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
+                        <Button x:Name="ElectricalAcSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalAcSweepCopyCsv_Click" ToolTip.Tip="Copy the response as the same CSV table radix ac --csv writes" />
+                        <Button x:Name="ElectricalAcSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalAcSweepSaveCsv_Click" ToolTip.Tip="Save the response as CSV" />
+                        <Button x:Name="ElectricalAcSweepCopySvgButton" Content="Copy sweep SVG" Click="ElectricalAcSweepCopySvg_Click" ToolTip.Tip="Copy the gain and phase curves as one standalone SVG document" />
+                        <Button x:Name="ElectricalAcSweepSaveSvgButton" Content="Save sweep SVG…" Click="ElectricalAcSweepSaveSvg_Click" ToolTip.Tip="Save the response curves as SVG" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
                   <Border
                       IsVisible="{Binding HasElectricalSolveResult}"
                       Background="{DynamicResource App.PanelAltBackground}"
@@ -1148,9 +1290,10 @@
                       <ItemsControl ItemsSource="{Binding ElectricalNodeResults}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalNodeResultItem">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,1">
-                              <TextBlock Text="{Binding Name}" FontSize="10" />
-                              <TextBlock Grid.Column="1" Text="{Binding VoltageText}" FontFamily="monospace" FontSize="10" Foreground="{DynamicResource App.Accent}" />
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" Margin="0,1">
+                              <TextBlock Text="{Binding Scope}" Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                              <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="10" ToolTip.Tip="{Binding Id}" />
+                              <TextBlock Grid.Column="2" Text="{Binding VoltageText}" FontFamily="monospace" FontSize="10" Foreground="{DynamicResource App.Accent}" />
                             </Grid>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -1161,9 +1304,10 @@
                           <DataTemplate x:DataType="vm:ElectricalElementResultItem">
                             <Border BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="0,3" Margin="0,1">
                               <StackPanel Spacing="1">
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="10" />
-                                  <TextBlock Grid.Column="1" Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                                  <TextBlock Text="{Binding Scope}" Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="10" ToolTip.Tip="{Binding Id}" />
+                                  <TextBlock Grid.Column="2" Text="{Binding Summary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                                 </Grid>
                                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                                   <TextBlock Text="{Binding VoltageText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Terminal voltage from node a to node b" />
@@ -1185,6 +1329,22 @@
                     <TextBlock Grid.Column="1" Text="{Binding ElectricalTransientSummary}" Classes="diag" Classes.error="{Binding HasElectricalTransientError}" FontSize="9.5" TextWrapping="Wrap" VerticalAlignment="Center" />
                   </Grid>
                   <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <Button Content="Compare C models" Command="{Binding CompareElectricalCapacitanceModelsCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Run this circuit with the authored gate capacitances and again with the bias-dependent model, then plot the node where the two runs differ most" />
+                    <Button Grid.Column="1" Content="Show run" Command="{Binding ShowElectricalTransientRunCommand}" IsEnabled="{Binding HasElectricalTransientResult}" ToolTip.Tip="Put the plot back on the last single run; the comparison's numbers stay in the message" />
+                    <TextBlock Grid.Column="2" Text="{Binding ElectricalTransientComparisonText}" Classes="muted" FontSize="9" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </Grid>
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <Button Content="Run bindings" Command="{Binding RunElectricalDriveBindingsCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Solve this circuit, read its bound nodes as levels, and apply them to the project's root definition" />
+                    <TextBlock Grid.Column="1" Text="{Binding ElectricalDriveSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding ElectricalDriveRows}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ElectricalDriveRowItem">
+                        <TextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="9" Classes="muted" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
                     <TextBlock Text="Probe at (s)" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
                     <TextBox Grid.Column="1" Text="{Binding ElectricalTransientProbeInput, Mode=TwoWay}" Width="84" FontSize="9.5" Watermark="time in s" ToolTip.Tip="Time in seconds; SI suffixes p, n, u, m, k, M, and G are supported; values at a non-solved time are interpolated between the bracketing points" />
                     <Button Grid.Column="2" HorizontalAlignment="Left" Content="Probe" Command="{Binding ProbeElectricalTransientCommand}" IsEnabled="{Binding HasElectricalTransientResult}" ToolTip.Tip="Read every node voltage at this time" />
@@ -1204,9 +1364,9 @@
                   <ItemsControl ItemsSource="{Binding ElectricalSweepRows}" IsVisible="{Binding HasElectricalSweepResult}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:ElectricalSweepRowItem">
-                        <Grid ColumnDefinitions="56,64,74,74,*" ColumnSpacing="6" Margin="0,1">
+                        <Grid ColumnDefinitions="56,140,74,74,*" ColumnSpacing="6" Margin="0,1">
                           <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" FontWeight="SemiBold" />
-                          <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontFamily="monospace" FontSize="9.5" />
+                          <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="{Binding NodeId}" />
                           <TextBlock Grid.Column="2" Text="{Binding PeakText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Peak voltage over the run" />
                           <TextBlock Grid.Column="3" Text="{Binding FinalText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Final voltage at the stop time" />
                           <TextBlock Grid.Column="4" Text="{Binding SettleText}" FontFamily="monospace" FontSize="9.5" ToolTip.Tip="Time to within the settling band, or 'not settled'" />
@@ -1265,7 +1425,7 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalTransientSeriesItem">
-                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" Content="{Binding NodeId}" FontSize="9" Margin="0,0,10,0" ToolTip.Tip="Show this node on the plot" />
+                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" Content="{Binding DisplayName}" FontSize="9" Margin="0,0,10,0" ToolTip.Tip="{Binding NodeId}" />
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
@@ -1291,8 +1451,8 @@
                       <ItemsControl ItemsSource="{Binding ElectricalTransientMetrics}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:ElectricalTransientMetricItem">
-                            <Grid ColumnDefinitions="78,*,Auto" ColumnSpacing="6" Margin="0,1">
-                              <TextBlock Text="{Binding NodeId}" FontSize="9.5" FontWeight="SemiBold" />
+                            <Grid ColumnDefinitions="140,*,Auto" ColumnSpacing="6" Margin="0,1">
+                              <TextBlock Text="{Binding DisplayName}" FontSize="9.5" FontWeight="SemiBold" ToolTip.Tip="{Binding NodeId}" />
                               <TextBlock Grid.Column="1" Text="{Binding ExtremesText}" FontFamily="monospace" FontSize="9.5" TextWrapping="Wrap" ToolTip.Tip="{Binding PeakText}" />
                               <TextBlock Grid.Column="2" Text="{Binding SettleText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" />
                             </Grid>
@@ -1320,7 +1480,10 @@
                   <ItemsControl ItemsSource="{Binding ElectricalDiagnostics}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:ElectricalDiagnosticItem">
-                        <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" FontSize="9.5" TextWrapping="Wrap" Margin="2,1" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                          <TextBlock Text="{Binding Display}" Classes="diag" Classes.error="{Binding IsError}" FontSize="9.5" TextWrapping="Wrap" Margin="2,1" />
+                          <Button Grid.Column="1" Classes="tool" Content="Locate" Command="{Binding LocateCommand}" IsVisible="{Binding CanLocate}" Padding="5,1" VerticalAlignment="Top" ToolTip.Tip="Select the reported electrical component or node" />
+                        </Grid>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>

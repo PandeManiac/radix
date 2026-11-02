@@ -178,9 +178,15 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientProbeInput = string.Empty;
     private string _electricalTransientRefineLevelsText = "3";
     private string _electricalTransientProbeText = string.Empty;
+    private string _electricalTransientComparisonText = string.Empty;
+    private string _electricalDriveSummary =
+        "Run the bindings to see what this circuit would drive.";
+    private string _electricalDriveDefinitionId = string.Empty;
     private double? _electricalTransientProbeTime;
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
         new SortedDictionary<string, double>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, int> _electricalTransientProbeLevels =
+        new SortedDictionary<string, int>(StringComparer.Ordinal);
     private int _electricalTransientPointCount;
     private IReadOnlyList<TransientSweepRow>? _electricalSweepResult;
     private SweepComparison? _electricalSweepComparison;
@@ -190,6 +196,32 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalSweepElementId = string.Empty;
     private string _electricalSweepElementText = string.Empty;
     private string _electricalSweepValuesText = string.Empty;
+    private const string DefaultElectricalDcSweepSummary =
+        "Enter a component id and values, then Sweep to measure a transfer curve.";
+    private string _electricalDcSweepElementText = string.Empty;
+    private string _electricalDcSweepValuesText = string.Empty;
+    private string _electricalDcSweepSummary = DefaultElectricalDcSweepSummary;
+    private IReadOnlyList<DcSweepRow>? _electricalDcSweepResult;
+    private DcNetlist? _electricalDcSweepNetlist;
+    private string _electricalDcSweepElementId = string.Empty;
+    private TransientPlot? _electricalDcSweepPlot;
+    private const string DefaultElectricalAcSweepSummary =
+        "Name a voltage source and a frequency range, then Sweep to measure a response.";
+    private string _electricalAcSweepDriveText = "VIN";
+    private string _electricalAcSweepRangeText = "10:1e6:21";
+    private string _electricalAcSweepBiasText = string.Empty;
+    private string _electricalAcSweepSummary = DefaultElectricalAcSweepSummary;
+    private AcReport? _electricalAcSweepReport;
+    private TransientPlot? _electricalAcSweepPlot;
+    private TransientPlot? _electricalAcSweepPhasePlot;
+    private string? _electricalDeviceOperatingPoint;
+    private string _electricalDeviceBiasText = string.Empty;
+    private const string DefaultElectricalBiasSweepSummary =
+        "Name a source and a range, then Sweep bias to measure where each device switches.";
+    private string _electricalBiasSweepRangeText = "0:5:11";
+    private string _electricalBiasSweepSummary = DefaultElectricalBiasSweepSummary;
+    private IReadOnlyList<MosfetBiasPoint>? _electricalBiasSweepPoints;
+    private TransientPlot? _electricalBiasSweepPlot;
     private string _electricalSweepSummary =
         "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
@@ -309,7 +341,16 @@ public sealed class EditorViewModel : ObservableObject
         CheckElectricalTransientAccuracyCommand =
             new RelayCommand(() => CheckElectricalTransientAccuracy());
         ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
+        CompareElectricalCapacitanceModelsCommand =
+            new RelayCommand(() => CompareElectricalCapacitanceModels());
+        ShowElectricalTransientRunCommand =
+            new RelayCommand(() => ShowElectricalTransientRun());
+        RunElectricalDriveBindingsCommand =
+            new RelayCommand(() => RunElectricalDriveBindings());
         RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
+        RunElectricalDcSweepCommand = new RelayCommand(() => RunElectricalDcSweep());
+        RunElectricalAcSweepCommand = new RelayCommand(() => RunElectricalAcSweep());
+        RunElectricalBiasSweepCommand = new RelayCommand(() => RunElectricalBiasSweep());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -326,6 +367,9 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Raised with world bounds that should be centered after navigation.</summary>
     public event Action<Rect>? FocusRequested;
+
+    /// <summary>Raised after a diagnostic selects an authored electrical target.</summary>
+    public event Action? ElectricalPanelRequested;
 
     /// <summary>
     /// Raised when a recent-project entry is chosen. The window handles it so the
@@ -432,6 +476,16 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>Per-level rows of the last step-refinement check, empty until one is taken.</summary>
     public ObservableCollection<ElectricalTransientRefinementItem> ElectricalTransientRefinementLevels { get; } = [];
 
+    /// <summary>Rows of the last drive-binding run: one per change, drives and claims together.</summary>
+    public ObservableCollection<ElectricalDriveRowItem> ElectricalDriveRows { get; } = [];
+
+    /// <summary>What the last binding run did, empty until one is taken.</summary>
+    public string ElectricalDriveSummary
+    {
+        get => _electricalDriveSummary;
+        private set => SetField(ref _electricalDriveSummary, value);
+    }
+
     /// <summary>Rows of the last parameter sweep: one per swept value and node.</summary>
     public ObservableCollection<ElectricalSweepRowItem> ElectricalSweepRows { get; } = [];
 
@@ -479,6 +533,279 @@ public sealed class EditorViewModel : ObservableObject
         private set => SetField(ref _electricalSweepSummary, value);
     }
 
+    /// <summary>Rows of the last DC sweep: one per swept value and non-ground node.</summary>
+    public ObservableCollection<ElectricalDcSweepRowItem> ElectricalDcSweepRows { get; } = [];
+
+    /// <summary>Whether the DC sweep table has rows to show.</summary>
+    public bool HasElectricalDcSweepResult => ElectricalDcSweepRows.Count > 0;
+
+    /// <summary>Id of the component the DC sweep varies, as typed.</summary>
+    public string ElectricalDcSweepElementText
+    {
+        get => _electricalDcSweepElementText;
+        set => SetField(ref _electricalDcSweepElementText, value ?? string.Empty);
+    }
+
+    /// <summary>DC sweep values as typed: a comma list, or <c>from:to:count</c>.</summary>
+    public string ElectricalDcSweepValuesText
+    {
+        get => _electricalDcSweepValuesText;
+        set => SetField(ref _electricalDcSweepValuesText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the DC sweep, or why it could not run.</summary>
+    public string ElectricalDcSweepSummary
+    {
+        get => _electricalDcSweepSummary;
+        private set => SetField(ref _electricalDcSweepSummary, value);
+    }
+
+    /// <summary>
+    /// The displayed sweep as screen-independent XY geometry: the swept value on the horizontal
+    /// axis and one series per non-ground node. It reuses the transient plot model because the
+    /// padding, tick and decimation rules are the same for any analog curve.
+    /// </summary>
+    public TransientPlot? ElectricalDcSweepPlot
+    {
+        get => _electricalDcSweepPlot;
+        private set
+        {
+            _electricalDcSweepPlot = value;
+            RaisePropertyChanged(nameof(ElectricalDcSweepPlot));
+            RaisePropertyChanged(nameof(HasElectricalDcSweepPlot));
+        }
+    }
+
+    /// <summary>Whether the sweep has a curve to draw.</summary>
+    public bool HasElectricalDcSweepPlot => ElectricalDcSweepPlot is { IsEmpty: false };
+
+    /// <summary>Measured input windows per non-ground node: where the curve does not amplify.</summary>
+    public ObservableCollection<ElectricalDcSweepWindowItem> ElectricalDcSweepWindows { get; } = [];
+
+    /// <summary>Whether any node has a measured window to show.</summary>
+    public bool HasElectricalDcSweepWindows => ElectricalDcSweepWindows.Count > 0;
+
+    /// <summary>Rows of the last AC sweep: one per frequency and node.</summary>
+    public ObservableCollection<ElectricalAcSweepRowItem> ElectricalAcSweepRows { get; } = [];
+
+    /// <summary>Whether the AC sweep table has rows to show.</summary>
+    public bool HasElectricalAcSweepResult => ElectricalAcSweepRows.Count > 0;
+
+    /// <summary>Id of the voltage source whose transfer function is measured.</summary>
+    public string ElectricalAcSweepDriveText
+    {
+        get => _electricalAcSweepDriveText;
+        set => SetField(ref _electricalAcSweepDriveText, value ?? string.Empty);
+    }
+
+    /// <summary>Frequency range as typed: <c>from:to:points</c>, log-spaced.</summary>
+    public string ElectricalAcSweepRangeText
+    {
+        get => _electricalAcSweepRangeText;
+        set => SetField(ref _electricalAcSweepRangeText, value ?? string.Empty);
+    }
+
+    /// <summary>
+    /// An operating-point override as typed, <c>source=volts</c>. Without one a source biases at
+    /// its waveform's value at t = 0, which is the rest state rather than a gate's switching point.
+    /// </summary>
+    public string ElectricalAcSweepBiasText
+    {
+        get => _electricalAcSweepBiasText;
+        set => SetField(ref _electricalAcSweepBiasText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the AC sweep, or why it could not run.</summary>
+    public string ElectricalAcSweepSummary
+    {
+        get => _electricalAcSweepSummary;
+        private set => SetField(ref _electricalAcSweepSummary, value);
+    }
+
+    /// <summary>
+    /// The response as screen-independent geometry: log frequency on the horizontal axis and gain
+    /// in decibels on the vertical, one series per responding node. Decibels make a decade of
+    /// roll-off a straight line, which is the point of reading a response on this scale.
+    /// </summary>
+    public TransientPlot? ElectricalAcSweepPlot
+    {
+        get => _electricalAcSweepPlot;
+        private set
+        {
+            _electricalAcSweepPlot = value;
+            RaisePropertyChanged(nameof(ElectricalAcSweepPlot));
+            RaisePropertyChanged(nameof(HasElectricalAcSweepPlot));
+        }
+    }
+
+    /// <summary>Whether the response has a curve to draw.</summary>
+    public bool HasElectricalAcSweepPlot => ElectricalAcSweepPlot is { IsEmpty: false };
+
+    /// <summary>
+    /// Phase against log frequency, drawn separately from the gain: degrees and decibels share no
+    /// scale, and overlaying them on one axis would make both curves meaningless.
+    /// </summary>
+    public TransientPlot? ElectricalAcSweepPhasePlot
+    {
+        get => _electricalAcSweepPhasePlot;
+        private set
+        {
+            _electricalAcSweepPhasePlot = value;
+            RaisePropertyChanged(nameof(ElectricalAcSweepPhasePlot));
+            RaisePropertyChanged(nameof(HasElectricalAcSweepPhasePlot));
+        }
+    }
+
+    /// <summary>Whether the phase has a curve to draw.</summary>
+    public bool HasElectricalAcSweepPhasePlot => ElectricalAcSweepPhasePlot is { IsEmpty: false };
+
+    /// <summary>Bias values for the device sweep as typed: <c>from:to:count</c>.</summary>
+    public string ElectricalBiasSweepRangeText
+    {
+        get => _electricalBiasSweepRangeText;
+        set => SetField(ref _electricalBiasSweepRangeText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the bias sweep, or why it could not run.</summary>
+    public string ElectricalBiasSweepSummary
+    {
+        get => _electricalBiasSweepSummary;
+        private set => SetField(ref _electricalBiasSweepSummary, value);
+    }
+
+    /// <summary>
+    /// Transconductance against bias, one series per transistor. A region column says what a
+    /// device is at one bias; this curve says where it switches, which is the shape of the gate.
+    /// </summary>
+    public TransientPlot? ElectricalBiasSweepPlot
+    {
+        get => _electricalBiasSweepPlot;
+        private set
+        {
+            _electricalBiasSweepPlot = value;
+            RaisePropertyChanged(nameof(ElectricalBiasSweepPlot));
+            RaisePropertyChanged(nameof(HasElectricalBiasSweepPlot));
+        }
+    }
+
+    /// <summary>Whether the bias sweep has a curve to draw.</summary>
+    public bool HasElectricalBiasSweepPlot => ElectricalBiasSweepPlot is { IsEmpty: false };
+
+    /// <summary>Whether the bias sweep has a result to show.</summary>
+    public bool HasElectricalBiasSweepResult => _electricalBiasSweepPoints is { Count: > 0 };
+
+    /// <summary>
+    /// The selected transistor's region and small-signal slopes at the circuit's DC operating
+    /// point, or why they cannot be measured. These are the numbers the AC analysis is assembled
+    /// from, so showing them beside the device's capacitances explains the response rather than
+    /// just reporting it.
+    /// </summary>
+    public string ElectricalDeviceOperatingPointText
+    {
+        get
+        {
+            _electricalDeviceOperatingPoint ??= DescribeElectricalDeviceOperatingPoint();
+            return _electricalDeviceOperatingPoint;
+        }
+    }
+
+    /// <summary>Whether the selected component has an operating point to show.</summary>
+    public bool HasElectricalDeviceOperatingPoint => ElectricalDeviceOperatingPointText.Length > 0;
+
+    /// <summary>
+    /// An operating-point override as typed, <c>source=volts</c>. Without one the circuit sits at
+    /// its rest state — the value each source holds at t = 0 — which for a driven gate means off.
+    /// </summary>
+    public string ElectricalDeviceBiasText
+    {
+        get => _electricalDeviceBiasText;
+        set
+        {
+            if (SetField(ref _electricalDeviceBiasText, value ?? string.Empty))
+            {
+                InvalidateElectricalDeviceOperatingPoint();
+            }
+        }
+    }
+
+    private void InvalidateElectricalDeviceOperatingPoint()
+    {
+        _electricalDeviceOperatingPoint = null;
+        RaisePropertyChanged(nameof(ElectricalDeviceOperatingPointText));
+        RaisePropertyChanged(nameof(HasElectricalDeviceOperatingPoint));
+    }
+
+    /// <summary>
+    /// Solves the circuit and evaluates the selected device. The solve is the same one the panel's
+    /// Solve button performs, so the slopes here cannot describe a different operating point than
+    /// the one the user is looking at.
+    /// </summary>
+    private string DescribeElectricalDeviceOperatingPoint()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        string? componentId = _selectedElectricalComponent?.Id;
+        if (circuit is null || componentId is null)
+        {
+            return string.Empty;
+        }
+
+        ElectricalComponent? component = circuit.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            TransientNetlist netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
+            if ((ElectricalDeviceBiasText ?? string.Empty).Trim() is { Length: > 0 } biasText)
+            {
+                if (!TryApplyElectricalAcBias(netlist, biasText, out TransientNetlist biased, out string biasError))
+                {
+                    return "Operating point unavailable: " + biasError;
+                }
+
+                netlist = biased;
+            }
+
+            DcSolution bias = netlist.SolveDc();
+            DcMosfet? device = netlist.Elements
+                .OfType<DcMosfet>()
+                .FirstOrDefault(element => string.Equals(element.Id, component.Id, StringComparison.Ordinal));
+            if (device is null)
+            {
+                return string.Empty;
+            }
+
+            double gateSource = Bias(bias, device.Gate) - Bias(bias, device.Source);
+            double drainSource = Bias(bias, device.Drain) - Bias(bias, device.Source);
+            DcMosfetOperatingPoint point = device.Evaluate(drainSource, gateSource);
+            double intrinsic = point.DrainConductance > 0
+                ? Math.Abs(point.GateTransconductance / point.DrainConductance)
+                : double.PositiveInfinity;
+
+            // The gate charge is part of the operating point too: a saturated channel presents
+            // two thirds of its gate-source capacitance and none of its gate-drain capacitance.
+            return $"{point.Region} · Vgs {Number(gateSource)} V · Vds {Number(drainSource)} V · " +
+                $"Id {Number(point.Current)} A · gm {Number(point.GateTransconductance)} S · " +
+                $"gds {Number(point.DrainConductance)} S · |gm/gds| {Number(intrinsic)} · " +
+                $"Cgs ×{Number(MosfetCapacitance.GateSourceFraction(point.Region))} · " +
+                $"Cgd ×{Number(MosfetCapacitance.GateDrainFraction(point.Region))}";
+        }
+        catch (Exception exception) when (exception is DcSolveException or ArgumentException)
+        {
+            return "Operating point unavailable: " + exception.Message;
+        }
+
+        static double Bias(DcSolution solution, string node) =>
+            solution.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0;
+
+        static string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G4", CultureInfo.InvariantCulture)
+                : "inf";
+    }
+
     /// <summary>Whether the refinement table has rows to show.</summary>
     public bool HasElectricalTransientRefinement => ElectricalTransientRefinementLevels.Count > 0;
 
@@ -524,6 +851,16 @@ public sealed class EditorViewModel : ObservableObject
         private set => SetField(ref _electricalTransientProbeValues, value);
     }
 
+    /// <summary>
+    /// The same probed voltages read as levels against the circuit's rail, empty when the circuit
+    /// has no positive source to take a rail from.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> ElectricalTransientProbeLevels
+    {
+        get => _electricalTransientProbeLevels;
+        private set => SetField(ref _electricalTransientProbeLevels, value);
+    }
+
     /// <summary>Probed time, or null when no probe is active; drawn as a marker on the plot.</summary>
     public double? ElectricalTransientProbeTime
     {
@@ -556,6 +893,8 @@ public sealed class EditorViewModel : ObservableObject
         new(ElectricalComponentKind.CurrentSource),
         new(ElectricalComponentKind.Capacitor),
         new(ElectricalComponentKind.Inductor),
+        new(ElectricalComponentKind.Mosfet),
+        new(ElectricalComponentKind.Subcircuit),
     ];
 
     public ObservableCollection<NumericFormatModeChoice> FormatModes { get; } =
@@ -1206,7 +1545,24 @@ public sealed class EditorViewModel : ObservableObject
 
     public ICommand ProbeElectricalTransientCommand { get; }
 
+    /// <summary>Plots the same circuit under both gate-charge models, one curve each.</summary>
+    public ICommand CompareElectricalCapacitanceModelsCommand { get; }
+
+    /// <summary>Returns the plot to the last single run after a comparison replaced it.</summary>
+    public ICommand ShowElectricalTransientRunCommand { get; }
+
+    /// <summary>Solves the circuit and applies its drive bindings to the project's root definition.</summary>
+    public ICommand RunElectricalDriveBindingsCommand { get; }
+
     public ICommand RunElectricalSweepCommand { get; }
+
+    public ICommand RunElectricalDcSweepCommand { get; }
+
+    /// <summary>Measures the small-signal response of the selected circuit at its operating point.</summary>
+    public ICommand RunElectricalAcSweepCommand { get; }
+
+    /// <summary>Steps the drive and measures every transistor's region and slope at each value.</summary>
+    public ICommand RunElectricalBiasSweepCommand { get; }
 
     public bool IsEditingFormat => _editingFormatId is not null;
 
@@ -1375,6 +1731,16 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _hasElectricalSolveError;
         private set => SetField(ref _hasElectricalSolveError, value);
+    }
+
+    /// <summary>
+    /// What the model comparison measured, or empty until one is taken. Separate from the run
+    /// summary because the comparison replaces the plot without replacing the last run.
+    /// </summary>
+    public string ElectricalTransientComparisonText
+    {
+        get => _electricalTransientComparisonText;
+        private set => SetField(ref _electricalTransientComparisonText, value);
     }
 
     public string ElectricalTransientSummary
@@ -1900,6 +2266,12 @@ public sealed class EditorViewModel : ObservableObject
     public bool NavigateToDiagnostic(Diagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
+        if (diagnostic.DefinitionId is null &&
+            ElectricalDiagnosticPath.TryParse(diagnostic.Path, out ElectricalDiagnosticTarget electrical))
+        {
+            return NavigateToElectricalDiagnostic(diagnostic, electrical);
+        }
+
         if (diagnostic.DefinitionId is string definitionId)
         {
             if (_project.FindDefinition(definitionId) is null)
@@ -1956,6 +2328,77 @@ public sealed class EditorViewModel : ObservableObject
 
         StatusText = $"{diagnostic.Code} has no circuit location.";
         return false;
+    }
+
+    private bool NavigateToElectricalDiagnostic(
+        Diagnostic diagnostic,
+        ElectricalDiagnosticTarget target)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(target.CircuitId);
+        if (circuit is null)
+        {
+            StatusText = $"Electrical circuit '{target.CircuitId}' from {diagnostic.Code} no longer exists.";
+            return false;
+        }
+
+        ElectricalCircuitListItem? item = FindElectricalCircuitItem(circuit.Id);
+        if (item is null)
+        {
+            RefreshElectricalPanel();
+            item = FindElectricalCircuitItem(circuit.Id);
+        }
+
+        if (item is null)
+        {
+            StatusText = $"Electrical circuit '{circuit.Id}' is not available in the panel.";
+            return false;
+        }
+
+        SelectedElectricalCircuit = item;
+
+        if (target.ComponentId is string componentId)
+        {
+            ElectricalComponent? component = circuit.FindComponent(componentId);
+            if (component is null)
+            {
+                StatusText = $"Opened electrical circuit '{circuit.Id}' for {diagnostic.Code}; component '{componentId}' is gone.";
+                ElectricalPanelRequested?.Invoke();
+                return true;
+            }
+
+            SelectedElectricalNode = null;
+            SelectedElectricalComponent = ElectricalComponents.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, component.Id, StringComparison.Ordinal));
+            StatusText = $"Located electrical component '{component.Id}' ({diagnostic.Code})";
+            ElectricalPanelRequested?.Invoke();
+            return true;
+        }
+
+        if (target.NodeId is string nodeId)
+        {
+            ElectricalNode? node = circuit.FindNode(nodeId);
+            if (node is null)
+            {
+                StatusText = $"Opened electrical circuit '{circuit.Id}' for {diagnostic.Code}; node '{nodeId}' is gone.";
+                ElectricalPanelRequested?.Invoke();
+                return true;
+            }
+
+            SelectedElectricalComponent = null;
+            SelectedElectricalNode = ElectricalNodes.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, node.Id, StringComparison.Ordinal));
+            StatusText = $"Located electrical node '{node.Id}' ({diagnostic.Code})";
+            ElectricalPanelRequested?.Invoke();
+            return true;
+        }
+
+        // The diagnostic names only the circuit. Clear a previous component or node so
+        // the panel does not look as if the circuit-level message selected that target.
+        SelectedElectricalComponent = null;
+        SelectedElectricalNode = null;
+        StatusText = $"Located electrical circuit '{circuit.Id}' ({diagnostic.Code})";
+        ElectricalPanelRequested?.Invoke();
+        return true;
     }
 
     private void FocusBounds(Rect? bounds)
@@ -6021,7 +6464,7 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTerminal? terminal = component.FindTerminal(terminalId);
         if (terminal is null)
         {
-            ElectricalTerminalTemplate found = ElectricalComponentMetadata.Terminals(component.Kind)
+            ElectricalTerminalTemplate found = ElectricalTerminalTemplates(component)
                 .FirstOrDefault(candidate => string.Equals(candidate.Id, terminalId, StringComparison.Ordinal));
             if (string.IsNullOrEmpty(found.Id))
             {
@@ -6056,16 +6499,352 @@ public sealed class EditorViewModel : ObservableObject
             return;
         }
 
-        Dictionary<string, string> nodeBindings = component.Terminals
+        ElectricalTerminal[] previousTerminals = component.Terminals.ToArray();
+        Dictionary<string, string> nodeBindings = previousTerminals
             .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
+        ElectricalComponentKind previousKind = component.Kind;
         PushUndo();
         component.Kind = kind;
-        AddElectricalTerminals(
-            component,
-            nodeBindings.GetValueOrDefault("a", string.Empty),
-            nodeBindings.GetValueOrDefault("b", string.Empty));
+        component.CircuitId = string.Empty;
+        component.Overrides.Clear();
+        if (ElectricalComponentMetadata.IsSubcircuit(kind))
+        {
+            // A subcircuit has no terminal shape until a referenced circuit is chosen, and its
+            // numeric value is not a physical parameter. Start empty rather than inventing an
+            // unbound port; choosing the circuit fills the terminals in one more undo step.
+            component.Value = 0;
+            component.Terminals.Clear();
+        }
+        else
+        {
+            // A resistance is not a transconductance: a fresh resistor switched to a MOSFET
+            // used to keep 1000 and become a nonsensical 1000 A/V^2 device. Every other kind
+            // keeps the number already visible in the value field, as it always has.
+            if (ElectricalComponentMetadata.IsMosfet(kind) &&
+                !ElectricalComponentMetadata.IsMosfet(previousKind))
+            {
+                component.Value = DefaultElectricalValue(kind);
+            }
+
+            AddElectricalTerminals(
+                component,
+                ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 0),
+                ResolveElectricalTerminalNode(nodeBindings, previousTerminals, 1));
+        }
+
         AfterElectricalMutation($"'{component.Id}' is now a {new ElectricalComponentKindChoice(kind).Label.ToLowerInvariant()}");
+    }
+
+    private bool SetElectricalSubcircuitCircuit(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalCircuit? parent = _project.FindElectricalCircuit(circuitId);
+        ElectricalComponent? component = parent?.FindComponent(componentId);
+        if (parent is null || component is null ||
+            !ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+        {
+            return false;
+        }
+
+        string targetId = value.Trim();
+        if (string.Equals(component.CircuitId, targetId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (targetId.Length == 0)
+        {
+            PushUndo();
+            component.CircuitId = string.Empty;
+            component.Terminals.Clear();
+            component.Overrides.Clear();
+            AfterElectricalMutation($"Cleared the referenced circuit of '{component.Id}'");
+            return true;
+        }
+
+        ElectricalCircuit? target = _project.FindElectricalCircuit(targetId);
+        if (target is null)
+        {
+            StatusText = $"No electrical circuit '{targetId}'. Available: {string.Join(", ", _project.ElectricalCircuits.Select(circuit => circuit.Id))}.";
+            return false;
+        }
+
+        if (ReferenceEquals(target, parent))
+        {
+            StatusText = "A circuit cannot instantiate itself; choose another circuit.";
+            return false;
+        }
+
+        PushUndo();
+        component.CircuitId = target.Id;
+        component.Value = 0;
+        component.Overrides.Clear();
+        Dictionary<string, string> bindings = component.Terminals
+            .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
+        component.Terminals.Clear();
+        foreach (ElectricalPort port in target.Ports)
+        {
+            string node = bindings.GetValueOrDefault(port.Id) ?? string.Empty;
+            if (parent.FindNode(node) is null)
+            {
+                node = parent.GroundNodeId;
+            }
+
+            component.Terminals.Add(new ElectricalTerminal
+            {
+                Id = port.Id,
+                Name = string.IsNullOrWhiteSpace(port.Name) ? port.Id : port.Name,
+                Polarity = ElectricalTerminalPolarity.Passive,
+                NodeId = node,
+            });
+        }
+
+        AfterElectricalMutation(
+            $"'{component.Id}' reuses circuit '{target.Id}' ({target.Ports.Count} port(s))");
+        return true;
+    }
+
+    private bool SetElectricalComponentOverrides(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalCircuit? parent = _project.FindElectricalCircuit(circuitId);
+        ElectricalComponent? component = parent?.FindComponent(componentId);
+        if (parent is null || component is null ||
+            !ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+        {
+            return false;
+        }
+
+        ElectricalCircuit? child = _project.FindElectricalCircuit(component.CircuitId);
+        var overrides = new List<ElectricalOverride>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string entry in value.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int equals = entry.IndexOf('=');
+            if (equals <= 0 || equals != entry.LastIndexOf('='))
+            {
+                StatusText = $"Override '{entry}' must be written as component=value.";
+                return false;
+            }
+
+            string targetId = entry[..equals].Trim();
+            string number = entry[(equals + 1)..].Trim();
+            if (!Radix.Core.Model.Identifiers.IsValid(targetId))
+            {
+                StatusText = $"Override target '{targetId}' is invalid. {Radix.Core.Model.Identifiers.Rule}";
+                return false;
+            }
+
+            if (!ids.Add(targetId))
+            {
+                StatusText = $"Override target '{targetId}' is repeated.";
+                return false;
+            }
+
+            if (child is null)
+            {
+                StatusText = $"Choose a referenced circuit for '{component.Id}' before setting overrides.";
+                return false;
+            }
+
+            ElectricalComponent? target = child.FindComponent(targetId);
+            if (target is null)
+            {
+                StatusText = $"Circuit '{child.Id}' has no component '{targetId}'.";
+                return false;
+            }
+
+            if (ElectricalComponentMetadata.IsSubcircuit(target.Kind))
+            {
+                StatusText = $"'{targetId}' is a subcircuit; override a component inside it instead.";
+                return false;
+            }
+
+            if (target.Waveform.Count > 0)
+            {
+                StatusText = $"'{targetId}' has a waveform, so it has no single primary value to override.";
+                return false;
+            }
+
+            if (!TryParseEngineeringValue(number, out double parsed) || !double.IsFinite(parsed))
+            {
+                StatusText = $"Override value '{number}' must be a finite number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+                return false;
+            }
+
+            if (ElectricalComponentMetadata.RequiresPositiveValue(target.Kind) && parsed <= 0)
+            {
+                StatusText = $"Override for {target.Kind} '{targetId}' must be strictly positive.";
+                return false;
+            }
+
+            overrides.Add(new ElectricalOverride
+            {
+                ComponentId = targetId,
+                Value = parsed,
+            });
+        }
+
+        bool unchanged = overrides.Count == component.Overrides.Count &&
+            overrides.Zip(component.Overrides).All(pair =>
+                string.Equals(pair.First.ComponentId, pair.Second.ComponentId, StringComparison.Ordinal) &&
+                Math.Abs(pair.First.Value - pair.Second.Value) <= double.Epsilon);
+        if (unchanged)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Overrides.Clear();
+        component.Overrides.AddRange(overrides);
+        AfterElectricalMutation(
+            overrides.Count == 0
+                ? $"Cleared '{component.Id}' overrides"
+                : $"Updated '{component.Id}' overrides ({overrides.Count})");
+        return true;
+    }
+
+    private static string FormatElectricalPorts(ElectricalCircuit circuit) =>
+        string.Join(
+            "; ",
+            circuit.Ports.Select(port => $"{port.Id}:{port.NodeId}"));
+
+    private bool SetElectricalCircuitPorts(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            return false;
+        }
+
+        var ports = new List<ElectricalPort>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var nodes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string entry in value.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int colon = entry.IndexOf(':');
+            if (colon <= 0 || colon != entry.LastIndexOf(':'))
+            {
+                StatusText = $"Port '{entry}' must be written as id:node.";
+                return false;
+            }
+
+            string id = entry[..colon].Trim();
+            string node = entry[(colon + 1)..].Trim();
+            if (!Radix.Core.Model.Identifiers.IsValid(id))
+            {
+                StatusText = $"Port ID '{id}' is invalid. {Radix.Core.Model.Identifiers.Rule}";
+                return false;
+            }
+
+            if (!ids.Add(id))
+            {
+                StatusText = $"Port ID '{id}' is repeated.";
+                return false;
+            }
+
+            if (circuit.FindNode(node) is null)
+            {
+                StatusText = $"Port '{id}' refers to unknown node '{node}'.";
+                return false;
+            }
+
+            if (!nodes.Add(node))
+            {
+                StatusText = $"Node '{node}' is exposed by more than one port.";
+                return false;
+            }
+
+            ElectricalPort? existing = circuit.Ports.FirstOrDefault(port =>
+                string.Equals(port.Id, id, StringComparison.Ordinal));
+            ports.Add(new ElectricalPort
+            {
+                Id = id,
+                Name = existing is null || string.IsNullOrWhiteSpace(existing.Name) ? id : existing.Name,
+                NodeId = node,
+            });
+        }
+
+        bool unchanged = ports.Count == circuit.Ports.Count &&
+            ports.Zip(circuit.Ports).All(pair =>
+                string.Equals(pair.First.Id, pair.Second.Id, StringComparison.Ordinal) &&
+                string.Equals(pair.First.NodeId, pair.Second.NodeId, StringComparison.Ordinal));
+        if (unchanged)
+        {
+            return false;
+        }
+
+        PushUndo();
+        circuit.Ports.Clear();
+        circuit.Ports.AddRange(ports);
+        SyncSubcircuitInstances(circuit);
+        AfterElectricalMutation(
+            $"Updated '{circuit.Id}' ports ({circuit.Ports.Count})");
+        return true;
+    }
+
+    /// <summary>
+    /// Keeps parent instances in step when a referenced circuit's interface changes. Existing
+    /// bindings survive by terminal ID; a new port starts on the parent's ground node, and a
+    /// removed port loses its terminal. Validation still reports a stale instance if the user
+    /// never opens the project again.
+    /// </summary>
+    private void SyncSubcircuitInstances(ElectricalCircuit child)
+    {
+        foreach (ElectricalCircuit parent in _project.ElectricalCircuits)
+        {
+            foreach (ElectricalComponent component in parent.Components)
+            {
+                if (!ElectricalComponentMetadata.IsSubcircuit(component.Kind) ||
+                    !string.Equals(component.CircuitId, child.Id, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                Dictionary<string, string> bindings = component.Terminals
+                    .GroupBy(terminal => terminal.Id, StringComparer.Ordinal)
+                    .ToDictionary(group => group.Key, group => group.First().NodeId, StringComparer.Ordinal);
+                component.Terminals.Clear();
+                foreach (ElectricalPort port in child.Ports)
+                {
+                    string node = bindings.GetValueOrDefault(port.Id) ?? string.Empty;
+                    if (parent.FindNode(node) is null)
+                    {
+                        node = parent.GroundNodeId;
+                    }
+
+                    component.Terminals.Add(new ElectricalTerminal
+                    {
+                        Id = port.Id,
+                        Name = string.IsNullOrWhiteSpace(port.Name) ? port.Id : port.Name,
+                        Polarity = ElectricalTerminalPolarity.Passive,
+                        NodeId = node,
+                    });
+                }
+            }
+        }
+    }
+
+    private IReadOnlyList<ElectricalTerminalTemplate> ElectricalTerminalTemplates(
+        ElectricalComponent component)
+    {
+        if (!ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+        {
+            return ElectricalComponentMetadata.Terminals(component.Kind);
+        }
+
+        return ElectricalComponentMetadata.SubcircuitTerminals(
+            _project.FindElectricalCircuit(component.CircuitId));
     }
 
     private ElectricalCircuitListItem? FindElectricalCircuitItem(string? id) =>
@@ -6173,6 +6952,7 @@ public sealed class EditorViewModel : ObservableObject
                 ? null
                 : ElectricalComponentKinds.First(choice => choice.Kind == _selectedElectricalComponent.Kind);
             RefreshElectricalDetails(circuit);
+            InvalidateElectricalDeviceOperatingPoint();
         }
         finally
         {
@@ -6219,7 +6999,7 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         IReadOnlyList<ElectricalNodeChoice> choices = ElectricalGroundChoices.ToList();
-        IReadOnlyList<ElectricalTerminalTemplate> templates = ElectricalComponentMetadata.Terminals(component.Kind);
+        IReadOnlyList<ElectricalTerminalTemplate> templates = ElectricalTerminalTemplates(component);
         foreach (ElectricalTerminalTemplate template in templates)
         {
             ElectricalTerminal terminal = component.FindTerminal(template.Id) ?? new ElectricalTerminal
@@ -6252,6 +7032,11 @@ public sealed class EditorViewModel : ObservableObject
             hint: "Optional context for this DC circuit",
             apply: value => SetElectricalCircuitDescription(circuit.Id, value)));
         ElectricalCircuitFields.Add(new EditableField(
+            "Ports",
+            FormatElectricalPorts(circuit),
+            hint: "Interface as id:node, semicolon separated (for example in:in; out:out; vdd:vdd; gnd:gnd). A subcircuit has one terminal per port, and a referenced circuit must expose its ground",
+            apply: value => SetElectricalCircuitPorts(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
             "Transient stop (s)",
             _electricalTransientStopText,
             hint: "End of a transient run in seconds (SI suffixes p, n, u, m, k, M, G supported); a view setting, not saved with the project",
@@ -6266,6 +7051,34 @@ public sealed class EditorViewModel : ObservableObject
             _electricalTransientMethodName,
             hint: "backward-euler or trapezoidal",
             apply: SetElectricalTransientMethod));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Level thresholds (V)",
+            string.Join(
+                ", ",
+                circuit.LevelThresholds.Select(value =>
+                    value.ToString("G6", CultureInfo.InvariantCulture))),
+            hint: "ascending boundaries for reading nodes as levels, comma separated; blank falls back to equal thirds of the circuit's rail",
+            apply: value => SetElectricalCircuitLevelThresholds(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Delay tolerance (ticks)",
+            circuit.DelayToleranceTicks.ToString(CultureInfo.InvariantCulture),
+            hint: "how far a measured propagation delay may differ from the declared one before a run fails; 0 demands the declared value",
+            apply: value => SetElectricalCircuitDelayTolerance(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Delay tolerances",
+            FormatDelayTolerances(circuit),
+            hint: "per-transition tolerance as [pin:]from>to=ticks, semicolon separated; a pin's own entry wins over one that names no pin, and both override the circuit-wide tolerance",
+            apply: value => SetElectricalCircuitDelayTolerances(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Drive bindings",
+            FormatDriveBindings(circuit),
+            hint: "node:pin@ticksPerSecond, semicolon separated; a trailing ? states what the pin should read instead of driving it. Blank removes every binding",
+            apply: value => SetElectricalCircuitDriveBindings(circuit.Id, value)));
+        ElectricalCircuitFields.Add(new EditableField(
+            "Drive definition",
+            _electricalDriveDefinitionId,
+            hint: "which definition the bindings are applied to, by id; blank uses the project's root. A view setting, not saved with the project",
+            apply: SetElectricalDriveDefinition));
         ElectricalCircuitFields.Add(new EditableField(
             "Transient tolerance",
             _electricalTransientToleranceText,
@@ -6301,11 +7114,27 @@ public sealed class EditorViewModel : ObservableObject
                     component.Name,
                     hint: "Display label only",
                     apply: value => RenameElectricalComponent(circuit.Id, component.Id, value)));
-                ElectricalComponentFields.Add(new EditableField(
-                    $"Value ({component.Unit})",
-                    FormatElectricalValue(component.Value),
-                    hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; SI suffixes p, n, u, m, k, M, and G are supported",
-                    apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
+                if (ElectricalComponentMetadata.IsSubcircuit(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Circuit",
+                        component.CircuitId,
+                        hint: "ID of the authored circuit this instance reuses; its ports become this component's terminals",
+                        apply: value => SetElectricalSubcircuitCircuit(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Overrides",
+                        FormatElectricalOverrides(component),
+                        hint: "Primary values for direct child components as id=value, semicolon separated (for example r2=3k); blank uses the authored values. Unknown, duplicate, nested-subcircuit, waveform-driven, and non-positive passive targets are rejected",
+                        apply: value => SetElectricalComponentOverrides(circuit.Id, component.Id, value)));
+                }
+                else
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        $"Value ({component.Unit})",
+                        FormatElectricalValue(component.Value),
+                        hint: $"Finite {component.ParameterName.ToLowerInvariant()} in {component.Unit}; SI suffixes p, n, u, m, k, M, and G are supported",
+                        apply: value => SetElectricalComponentValue(circuit.Id, component.Id, value)));
+                }
                 if (ElectricalComponentMetadata.HasState(component.Kind))
                 {
                     ElectricalComponentFields.Add(new EditableField(
@@ -6327,9 +7156,58 @@ public sealed class EditorViewModel : ObservableObject
                         hint: $"Comma-separated time={component.Unit} breakpoints in seconds; both fields accept SI suffixes p, n, u, m, k, M, and G; blank keeps the source constant, and a DC solve always uses the value",
                         apply: value => SetElectricalComponentWaveform(circuit.Id, component.Id, value)));
                 }
+
+                if (ElectricalComponentMetadata.IsMosfet(component.Kind))
+                {
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Channel (n/p)",
+                        ElectricalComponentMetadata.ChannelName(component.Channel),
+                        hint: "n-channel or p-channel; the terminal bindings are kept",
+                        apply: value => SetElectricalComponentChannel(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Threshold voltage (V)",
+                        FormatElectricalValue(component.ThresholdVoltage),
+                        hint: "Threshold voltage magnitude in volts; a negative value is a depletion device; SI suffixes p, n, u, m, k, M, and G are supported",
+                        apply: value => SetElectricalComponentThresholdVoltage(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Channel-length modulation (1/V)",
+                        FormatElectricalValue(component.ChannelLengthModulation),
+                        hint: "SPICE lambda in 1/V; 0 means the saturation current does not depend on the drain voltage",
+                        apply: value => SetElectricalComponentChannelLengthModulation(circuit.Id, component.Id, value)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Gate-source capacitance (F)",
+                        FormatElectricalValue(component.GateSourceCapacitance),
+                        hint: "Cgs in farads; the gate must be charged through its drive before the channel follows, and a DC solve ignores it",
+                        apply: value => SetElectricalComponentCapacitance(
+                            circuit.Id, component.Id, value, DeviceCapacitance.GateSource)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Gate-drain capacitance (F)",
+                        FormatElectricalValue(component.GateDrainCapacitance),
+                        hint: "Cgd in farads, the feedback path from drain to gate; 0 leaves the gate loading independent of the drain",
+                        apply: value => SetElectricalComponentCapacitance(
+                            circuit.Id, component.Id, value, DeviceCapacitance.GateDrain)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Drain-source capacitance (F)",
+                        FormatElectricalValue(component.DrainSourceCapacitance),
+                        hint: "Cds in farads, the device's own load on its output; 0 leaves the output speed to the circuit around it",
+                        apply: value => SetElectricalComponentCapacitance(
+                            circuit.Id, component.Id, value, DeviceCapacitance.DrainSource)));
+                    ElectricalComponentFields.Add(new EditableField(
+                        "Bias-dependent C",
+                        component.BiasDependentCapacitance ? "yes" : "no",
+                        hint: "yes re-evaluates the gate capacitances from each step's region - two thirds of cgs and no cgd in saturation - instead of holding the authored values for the whole run",
+                        apply: value => SetElectricalComponentBiasDependentCapacitance(
+                            circuit.Id, component.Id, value)));
+                }
             }
         }
     }
+
+    private static string FormatElectricalOverrides(ElectricalComponent component) =>
+        string.Join(
+            "; ",
+            component.Overrides.Select(entry =>
+                $"{entry.ComponentId}={FormatElectricalValue(entry.Value)}"));
 
     private static string FormatElectricalWaveform(ElectricalComponent component) =>
         string.Join(
@@ -6353,7 +7231,7 @@ public sealed class EditorViewModel : ObservableObject
             return false;
         }
 
-        DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+        DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
         if (validation.HasErrors)
         {
             ShowElectricalSolveError(
@@ -6365,7 +7243,7 @@ public sealed class EditorViewModel : ObservableObject
         DcNetlist netlist;
         try
         {
-            netlist = circuit.ToDcNetlist();
+            netlist = circuit.ToDcNetlist(_project.FindElectricalCircuit);
         }
         catch (ElectricalCircuitValidationException exception)
         {
@@ -6396,19 +7274,40 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         ElectricalNodeResults.Clear();
+        var rootNodeIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (ElectricalNode node in circuit.Nodes)
         {
+            rootNodeIds.Add(node.Id);
             double? volts = solution.NodeVoltages.TryGetValue(node.Id, out double value) ? value : null;
-            ElectricalNodeResults.Add(new ElectricalNodeResultItem(node, volts));
+            ElectricalNodeResults.Add(new ElectricalNodeResultItem(
+                node.Id, node.Name, "root", volts));
+        }
+
+        // A recursive solve creates private nodes with instance-path prefixes. Add the ones that
+        // are not a port (ported nodes already appear as the parent node) so the panel exposes the
+        // child implementation rather than only the parent boundary.
+        foreach (string nodeId in netlist.Nodes)
+        {
+            if (!rootNodeIds.Add(nodeId))
+            {
+                continue;
+            }
+
+            (string scope, string name) = DescribeElectricalNode(nodeId, circuit);
+            double? volts = solution.NodeVoltages.TryGetValue(nodeId, out double value) ? value : null;
+            ElectricalNodeResults.Add(new ElectricalNodeResultItem(nodeId, name, scope, volts));
         }
 
         ElectricalElementResults.Clear();
         foreach (DcElement element in netlist.Elements)
         {
+            (string scope, string name) = DescribeElectricalElement(element.Id, circuit);
             ElectricalElementResults.Add(new ElectricalElementResultItem(
                 element,
                 circuit.FindComponent(element.Id),
-                solution));
+                solution,
+                scope,
+                name));
         }
 
         HasElectricalSolveResult = true;
@@ -6416,6 +7315,84 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalSolveSummary = $"Solved '{circuit.Id}' · {ElectricalNodeResults.Count} nodes · {ElectricalElementResults.Count} elements.";
         StatusText = $"Solved DC operating point for '{circuit.Id}'";
         return true;
+    }
+
+    /// <summary>Formats an instance scope and authored node name for a plot legend.</summary>
+    private static string FormatElectricalHierarchyLabel((string Scope, string Name) label) =>
+        label.Scope == "root" ? label.Name : $"{label.Scope} · {label.Name}";
+
+    /// <summary>
+    /// Resolves the authored name and owning instance path of a possibly prefixed netlist node.
+    /// The final segment is a node ID; every earlier segment names a direct subcircuit instance.
+    /// </summary>
+    private (string Scope, string Name) DescribeElectricalNode(
+        string netlistNodeId,
+        ElectricalCircuit root)
+    {
+        int separator = netlistNodeId.LastIndexOf('/');
+        string path = separator < 0 ? string.Empty : netlistNodeId[..separator];
+        string nodeId = separator < 0 ? netlistNodeId : netlistNodeId[(separator + 1)..];
+        ElectricalCircuit? circuit = ResolveElectricalScope(path, root, out string scope);
+        ElectricalNode? node = circuit?.FindNode(nodeId);
+        return (scope, string.IsNullOrWhiteSpace(node?.Name) ? nodeId : node.Name);
+    }
+
+    /// <summary>
+    /// Resolves the authored name and owning instance path of a possibly prefixed netlist
+    /// element. The final segment is a component ID; every earlier segment names a direct
+    /// subcircuit instance.
+    /// </summary>
+    private (string Scope, string Name) DescribeElectricalElement(
+        string netlistElementId,
+        ElectricalCircuit root)
+    {
+        int separator = netlistElementId.LastIndexOf('/');
+        string path = separator < 0 ? string.Empty : netlistElementId[..separator];
+        string componentId = separator < 0
+            ? netlistElementId
+            : netlistElementId[(separator + 1)..];
+        ElectricalCircuit? circuit = ResolveElectricalScope(path, root, out string scope);
+        ElectricalComponent? component = circuit?.FindComponent(componentId);
+        return (scope, string.IsNullOrWhiteSpace(component?.Name)
+            ? componentId
+            : component.Name);
+    }
+
+    /// <summary>
+    /// Walks an instance path such as X1/X2 and returns the referenced circuit. On failure the
+    /// scope remains the full path so the row still identifies the unresolved expansion.
+    /// </summary>
+    private ElectricalCircuit? ResolveElectricalScope(
+        string path,
+        ElectricalCircuit root,
+        out string scope)
+    {
+        scope = path.Length == 0 ? "root" : path;
+        if (path.Length == 0)
+        {
+            return root;
+        }
+
+        ElectricalCircuit circuit = root;
+        var resolved = new List<string>();
+        foreach (string instanceId in path.Split('/'))
+        {
+            ElectricalComponent? instance = circuit.FindComponent(instanceId);
+            ElectricalCircuit? child = instance is not null &&
+                ElectricalComponentMetadata.IsSubcircuit(instance.Kind)
+                    ? _project.FindElectricalCircuit(instance.CircuitId)
+                    : null;
+            if (child is null)
+            {
+                return null;
+            }
+
+            resolved.Add(instanceId);
+            circuit = child;
+        }
+
+        scope = string.Join("/", resolved);
+        return circuit;
     }
 
     /// <summary>
@@ -6467,7 +7444,7 @@ public sealed class EditorViewModel : ObservableObject
         TransientNetlist netlist;
         try
         {
-            netlist = circuit.ToTransientNetlist();
+            netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
         }
         catch (ElectricalCircuitValidationException exception)
         {
@@ -6539,19 +7516,29 @@ public sealed class EditorViewModel : ObservableObject
         }
 
         ElectricalTransientMetrics.Clear();
-        if (result.Metrics is TransientMetrics metrics)
-        {
-            foreach (TransientNodeMetrics node in metrics.Nodes)
-            {
-                ElectricalTransientMetrics.Add(new ElectricalTransientMetricItem(node));
-            }
-        }
-
         string[] plottedNodes = result.Points
             .SelectMany(point => point.NodeVoltages.Keys)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
+        var transientNodeLabels = plottedNodes.ToDictionary(
+            node => node,
+            node => DescribeElectricalNode(node, circuit),
+            StringComparer.Ordinal);
+        if (result.Metrics is TransientMetrics metrics)
+        {
+            foreach (TransientNodeMetrics node in metrics.Nodes)
+            {
+                if (!transientNodeLabels.TryGetValue(node.NodeId, out var label))
+                {
+                    label = DescribeElectricalNode(node.NodeId, circuit);
+                }
+
+                ElectricalTransientMetrics.Add(new ElectricalTransientMetricItem(
+                    node, label.Scope, label.Name));
+            }
+        }
+
         _electricalTransientSeries = plottedNodes
             .Select((node, index) => new TransientPlotSeries(
                 node,
@@ -6560,15 +7547,19 @@ public sealed class EditorViewModel : ObservableObject
                         point.Time,
                         point.NodeVoltages.TryGetValue(node, out double volts) ? volts : 0))
                     .ToArray(),
-                index))
+                index,
+                FormatElectricalHierarchyLabel(transientNodeLabels[node])))
             .ToArray();
         ElectricalTransientSeries.Clear();
         foreach (TransientPlotSeries series in _electricalTransientSeries)
         {
+            var label = transientNodeLabels[series.NodeId];
             ElectricalTransientSeries.Add(new ElectricalTransientSeriesItem(
                 series.NodeId,
                 series.ColorIndex,
-                _ => RebuildElectricalTransientPlot()));
+                _ => RebuildElectricalTransientPlot(),
+                label.Scope,
+                label.Name));
         }
 
         RebuildElectricalTransientPlot();
@@ -6604,7 +7595,9 @@ public sealed class EditorViewModel : ObservableObject
     /// </summary>
     public bool RunElectricalSweep()
     {
-        if (_electricalTransientNetlist is not { } netlist ||
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null ||
+            _electricalTransientNetlist is not { } netlist ||
             _electricalTransientResult is not { } baseline ||
             !HasElectricalTransientResult)
         {
@@ -6670,7 +7663,9 @@ public sealed class EditorViewModel : ObservableObject
                     continue;
                 }
 
-                ElectricalSweepRows.Add(new ElectricalSweepRowItem(row.Value, node.NodeId, node, first));
+                (string scope, string name) = DescribeElectricalNode(node.NodeId, circuit);
+                ElectricalSweepRows.Add(new ElectricalSweepRowItem(
+                    row.Value, node.NodeId, node, first, scope, name));
                 first = false;
             }
         }
@@ -6687,6 +7682,1155 @@ public sealed class EditorViewModel : ObservableObject
             ? $"Swept '{elementId}' over {rows.Count} values"
             : $"Swept '{elementId}': {failed} value(s) failed.";
         return failed == 0;
+    }
+
+    /// <summary>
+    /// Measures a DC transfer characteristic from the panel: one real operating point per value
+    /// of a single component, using the same <see cref="DcSweep"/> the <c>radix dc --sweep</c>
+    /// command runs. Nothing is mutated, because each point solves a fresh copy of the netlist.
+    /// </summary>
+    public bool RunElectricalDcSweep()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ClearElectricalDcSweep("Select an authored circuit before sweeping.");
+            StatusText = "No electrical circuit selected.";
+            return false;
+        }
+
+        string elementId = (ElectricalDcSweepElementText ?? string.Empty).Trim();
+        if (elementId.Length == 0)
+        {
+            ClearElectricalDcSweep("Enter the id of one component to vary, for example VIN.");
+            StatusText = "No sweep component given.";
+            return false;
+        }
+
+        if (circuit.FindComponent(elementId) is null)
+        {
+            ClearElectricalDcSweep($"Circuit '{circuit.Id}' has no component '{elementId}'.");
+            StatusText = "Unknown sweep component.";
+            return false;
+        }
+
+        if (!TryParseSweepValues(ElectricalDcSweepValuesText, out double[] values, out string error))
+        {
+            ClearElectricalDcSweep(error);
+            StatusText = "Invalid sweep values.";
+            return false;
+        }
+
+        DcNetlist netlist;
+        try
+        {
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
+            if (validation.HasErrors)
+            {
+                ClearElectricalDcSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
+                    "Fix the validation messages above.");
+                StatusText = "DC sweep blocked by structural errors.";
+                return false;
+            }
+
+            netlist = circuit.ToDcNetlist(_project.FindElectricalCircuit);
+        }
+        catch (Exception exception) when (
+            exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
+        {
+            ClearElectricalDcSweep("Cannot build the DC netlist: " + exception.Message);
+            StatusText = "DC netlist construction failed.";
+            return false;
+        }
+
+        IReadOnlyList<DcSweepRow> rows;
+        try
+        {
+            rows = DcSweep.Run(netlist, elementId, values);
+        }
+        catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException)
+        {
+            ClearElectricalDcSweep(exception.Message);
+            StatusText = "DC sweep rejected.";
+            return false;
+        }
+
+        // Measure every solved node's slope once, by the same difference quotient as
+        // `radix dc --gain`: the gain points are in sweep order, so a row's gain is the entry
+        // with the same index. Root-authored nodes come first, then private child nodes from
+        // recursive expansion; a ported node is already one of the root nodes and is not repeated.
+        var sweepNodes = new List<(string NodeId, string Scope, string Name)>();
+        var sweepNodeIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ElectricalNode node in circuit.Nodes)
+        {
+            if (string.Equals(node.Id, netlist.GroundNodeId, StringComparison.Ordinal) ||
+                !sweepNodeIds.Add(node.Id))
+            {
+                continue;
+            }
+
+            sweepNodes.Add((
+                node.Id,
+                "root",
+                string.IsNullOrWhiteSpace(node.Name) ? node.Id : node.Name));
+        }
+
+        foreach (string nodeId in netlist.Nodes)
+        {
+            if (string.Equals(nodeId, netlist.GroundNodeId, StringComparison.Ordinal) ||
+                !sweepNodeIds.Add(nodeId))
+            {
+                continue;
+            }
+
+            (string scope, string name) = DescribeElectricalNode(nodeId, circuit);
+            sweepNodes.Add((nodeId, scope, name));
+        }
+
+        var sweepNodeLabels = sweepNodes.ToDictionary(
+            node => node.NodeId,
+            node => (node.Scope, node.Name),
+            StringComparer.Ordinal);
+        var slopes = new Dictionary<string, IReadOnlyList<DcSweepGainPoint>>(StringComparer.Ordinal);
+        foreach ((string nodeId, _, _) in sweepNodes)
+        {
+            slopes[nodeId] = DcSweepGain.Along(rows, nodeId);
+        }
+
+        ElectricalDcSweepRows.Clear();
+        int failed = 0;
+        for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            DcSweepRow row = rows[rowIndex];
+            if (row.Solution is not DcSolution solution)
+            {
+                failed++;
+                ElectricalDcSweepRows.Add(new ElectricalDcSweepRowItem(
+                    row.Value,
+                    $"failed: {FailureLabel(row.Failure ?? DcSolveFailure.NonConvergent)}",
+                    null,
+                    null,
+                    showValue: true));
+                continue;
+            }
+
+            bool first = true;
+            foreach ((string nodeId, string scope, string name) in sweepNodes)
+            {
+                if (!solution.NodeVoltages.TryGetValue(nodeId, out double volts))
+                {
+                    continue;
+                }
+
+                double? gain = rowIndex < slopes[nodeId].Count
+                    ? slopes[nodeId][rowIndex].Gain
+                    : null;
+                ElectricalDcSweepRows.Add(new ElectricalDcSweepRowItem(
+                    row.Value, nodeId, volts, gain, first, scope, name));
+                first = false;
+            }
+        }
+
+        // Keep the study itself rather than the formatted table: the export must describe the
+        // numbers the solver produced, so it reads the rows instead of the display strings.
+        _electricalDcSweepResult = rows;
+        _electricalDcSweepNetlist = netlist;
+        _electricalDcSweepElementId = elementId;
+        RebuildElectricalDcSweepPlot(rows, netlist, sweepNodeLabels);
+        RebuildElectricalDcSweepWindows(sweepNodes, slopes);
+        RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
+        // Name the steepest measured slope: a transfer curve is judged where it switches.
+        (string NodeId, double Gain)? steepest = null;
+        foreach (KeyValuePair<string, IReadOnlyList<DcSweepGainPoint>> entry in slopes)
+        {
+            foreach (DcSweepGainPoint point in entry.Value)
+            {
+                if (point.Gain is double gain &&
+                    (steepest is null || Math.Abs(gain) > Math.Abs(steepest.Value.Gain)))
+                {
+                    steepest = (entry.Key, gain);
+                }
+            }
+        }
+
+        string gainNote = steepest is { } peak
+            ? $" · max |gain| {Math.Abs(peak.Gain).ToString("G4", CultureInfo.InvariantCulture)} V/V at {FormatElectricalHierarchyLabel(sweepNodeLabels[peak.NodeId])}"
+            : " · no defined slope yet";
+        ElectricalDcSweepSummary = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalDcSweepRows.Count} rows{gainNote}."
+            : $"Swept '{elementId}' over {rows.Count} values; {failed} could not solve{gainNote}.";
+        StatusText = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values"
+            : $"Swept '{elementId}': {failed} value(s) failed.";
+        return failed == 0;
+    }
+
+    /// <summary>
+    /// The DC sweep as CSV, written by the same writer as <c>radix dc --sweep --csv</c>, so a
+    /// table copied from the panel and one produced by a script describe the same study.
+    /// </summary>
+    public bool TryBuildElectricalDcSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalDcSweepResult is not { Count: > 0 } rows || _electricalDcSweepNetlist is not { } netlist)
+        {
+            return false;
+        }
+
+        csv = DcSweepReport.ToCsv(netlist, rows);
+        return true;
+    }
+
+    /// <summary>
+    /// Turns the sweep into one series per node for the plot. A row that could not solve
+    /// contributes no point rather than a zero, so a gap in the curve matches the row that says
+    /// what failed. Palette slots come from the netlist's node order, so hiding nothing and
+    /// editing nothing keeps a node's colour stable.
+    /// </summary>
+    private void RebuildElectricalDcSweepPlot(
+        IReadOnlyList<DcSweepRow> rows,
+        DcNetlist netlist,
+        IReadOnlyDictionary<string, (string Scope, string Name)> nodeLabels)
+    {
+        IReadOnlyList<string> nodes = netlist.Nodes;
+        var series = new List<TransientPlotSeries>();
+        for (int index = 0; index < nodes.Count; index++)
+        {
+            string nodeId = nodes[index];
+            if (string.Equals(nodeId, netlist.GroundNodeId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var points = new List<TransientPlotPoint>(rows.Count);
+            foreach (DcSweepRow row in rows)
+            {
+                if (row.Solution is { } solution &&
+                    solution.NodeVoltages.TryGetValue(nodeId, out double volts))
+                {
+                    points.Add(new TransientPlotPoint(row.Value, volts));
+                }
+            }
+
+            if (points.Count > 0)
+            {
+                series.Add(new TransientPlotSeries(
+                    nodeId,
+                    points,
+                    index,
+                    FormatElectricalHierarchyLabel(nodeLabels[nodeId])));
+            }
+        }
+
+        ElectricalDcSweepPlot = series.Count == 0 ? null : TransientPlot.Create(series);
+    }
+
+    /// <summary>
+    /// The sweep curve as a standalone SVG, so a transfer characteristic can be shared without a
+    /// screenshot. It uses the same geometry and renderer as the transient plot; the title names
+    /// the circuit and the swept component, because a curve of an unnamed study is not evidence.
+    /// </summary>
+    public bool TryBuildElectricalDcSweepSvg(out string svg)
+    {
+        svg = string.Empty;
+        if (ElectricalDcSweepPlot is not { IsEmpty: false } plot)
+        {
+            return false;
+        }
+
+        string circuitId = SelectedElectricalCircuitModel?.Id ?? "circuit";
+        svg = TransientPlotSvg.Render(
+            plot,
+            markerTime: null,
+            title: $"DC sweep: {circuitId} {_electricalDcSweepElementId}");
+        return true;
+    }
+
+    /// <summary>
+    /// The input windows each node holds, from the same measured slopes the table shows. A node
+    /// whose curve never crosses unity gain reports one window covering the sweep, which is the
+    /// honest answer for a circuit that only attenuates.
+    /// </summary>
+    private void RebuildElectricalDcSweepWindows(
+        IReadOnlyList<(string NodeId, string Scope, string Name)> nodes,
+        Dictionary<string, IReadOnlyList<DcSweepGainPoint>> slopes)
+    {
+        ElectricalDcSweepWindows.Clear();
+        foreach ((string nodeId, string scope, string name) in nodes)
+        {
+            if (slopes.TryGetValue(nodeId, out IReadOnlyList<DcSweepGainPoint>? points))
+            {
+                ElectricalDcSweepWindows.Add(new ElectricalDcSweepWindowItem(
+                    nodeId, DcSweepMargins.Windows(points), scope, name));
+            }
+        }
+
+        RaisePropertyChanged(nameof(HasElectricalDcSweepWindows));
+    }
+
+    private void ClearElectricalDcSweep(string summary)
+    {
+        ElectricalDcSweepRows.Clear();
+        ElectricalDcSweepWindows.Clear();
+        RaisePropertyChanged(nameof(HasElectricalDcSweepWindows));
+        ElectricalDcSweepPlot = null;
+        _electricalDcSweepResult = null;
+        _electricalDcSweepNetlist = null;
+        _electricalDcSweepElementId = string.Empty;
+        ElectricalDcSweepSummary = summary;
+        RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
+    }
+
+    /// <summary>
+    /// Measures a small-signal frequency response from the panel, using the same
+    /// <see cref="AcAnalysis"/> the <c>radix ac</c> command runs. The circuit is linearized at the
+    /// operating point a transient run would start from, so the response describes the circuit as
+    /// authored rather than a separate small-signal copy of it.
+    /// </summary>
+    public bool RunElectricalAcSweep()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ClearElectricalAcSweep("Select an authored circuit before sweeping.");
+            StatusText = "No electrical circuit selected.";
+            return false;
+        }
+
+        string drive = (ElectricalAcSweepDriveText ?? string.Empty).Trim();
+        if (drive.Length == 0)
+        {
+            ClearElectricalAcSweep("Enter the id of a voltage source to drive, for example VIN.");
+            StatusText = "No AC drive source given.";
+            return false;
+        }
+
+        ElectricalComponent? source = circuit.FindComponent(drive);
+        if (source is null)
+        {
+            ClearElectricalAcSweep($"Circuit '{circuit.Id}' has no component '{drive}'.");
+            StatusText = "Unknown AC drive source.";
+            return false;
+        }
+
+        if (source.Kind != ElectricalComponentKind.VoltageSource)
+        {
+            ClearElectricalAcSweep(
+                $"'{drive}' is a {source.Kind}; a transfer function is measured from a voltage source.");
+            StatusText = "AC drive is not a voltage source.";
+            return false;
+        }
+
+        if (!TryParseElectricalAcRange(
+                ElectricalAcSweepRangeText, out double from, out double to, out int points, out string error))
+        {
+            ClearElectricalAcSweep(error);
+            StatusText = "Invalid frequency range.";
+            return false;
+        }
+
+        TransientNetlist netlist;
+        try
+        {
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
+            if (validation.HasErrors)
+            {
+                ClearElectricalAcSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
+                    "Fix the validation messages above.");
+                StatusText = "AC sweep blocked by structural errors.";
+                return false;
+            }
+
+            netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
+        }
+        catch (Exception exception) when (
+            exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
+        {
+            ClearElectricalAcSweep("Cannot build the electrical netlist: " + exception.Message);
+            StatusText = "Electrical netlist construction failed.";
+            return false;
+        }
+
+        if ((ElectricalAcSweepBiasText ?? string.Empty).Trim() is { Length: > 0 } biasText)
+        {
+            if (!TryApplyElectricalAcBias(
+                    netlist, biasText, out TransientNetlist biased, out string biasError))
+            {
+                ClearElectricalAcSweep(biasError);
+                StatusText = "Invalid operating-point override.";
+                return false;
+            }
+
+            netlist = biased;
+        }
+
+        AcResponse response;
+        try
+        {
+            response = AcAnalysis.Run(netlist, drive, AcFrequencySweep.Logarithmic(from, to, points));
+        }
+        catch (Exception exception) when (exception is DcSolveException or ArgumentException)
+        {
+            ClearElectricalAcSweep("Cannot solve the frequency response: " + exception.Message);
+            StatusText = "AC solve failed.";
+            return false;
+        }
+
+        IReadOnlyList<string> nodes = response.Nodes;
+        var acNodeLabels = nodes.ToDictionary(
+            node => node,
+            node => DescribeElectricalNode(node, circuit),
+            StringComparer.Ordinal);
+        ElectricalAcSweepRows.Clear();
+        foreach (AcPoint point in response.Points)
+        {
+            bool first = true;
+            foreach (string node in nodes)
+            {
+                double magnitude = point.NodeVoltages[node].Magnitude;
+                var label = acNodeLabels[node];
+                ElectricalAcSweepRows.Add(new ElectricalAcSweepRowItem(
+                    point.FrequencyHertz,
+                    node,
+                    magnitude <= 0 ? null : 20 * Math.Log10(magnitude),
+                    magnitude <= 0 ? null : AcResponse.PhaseDegrees(point.NodeVoltages[node]),
+                    first,
+                    label.Scope,
+                    label.Name));
+                first = false;
+            }
+        }
+
+        // Keep the study, not the formatted table: the export must describe what the solver
+        // produced, so it is built from the response and not from the display strings.
+        _electricalAcSweepReport = AcReport.From(response, null, circuit.Id);
+        RebuildElectricalAcSweepPlot(response, nodes, from, to, acNodeLabels);
+        RaisePropertyChanged(nameof(HasElectricalAcSweepResult));
+
+        // Name the loudest responding node and where it starts rolling off: a response is judged
+        // by its gain and its corner, and both come from the numbers just solved.
+        string? loudest = null;
+        double loudestDb = double.NegativeInfinity;
+        foreach (string node in nodes)
+        {
+            double magnitude = response.Points[0].NodeVoltages[node].Magnitude;
+            if (magnitude <= 0)
+            {
+                continue;
+            }
+
+            double db = Math.Abs(20 * Math.Log10(magnitude));
+            if (db > loudestDb)
+            {
+                loudestDb = db;
+                loudest = node;
+            }
+        }
+
+        if (loudest is null)
+        {
+            ElectricalAcSweepSummary =
+                $"{circuit.Id}: drove '{drive}' over {response.Points.Count} frequencies; no node responds.";
+            StatusText = "AC sweep found no response.";
+            return false;
+        }
+
+        double referenceDb = 20 * Math.Log10(response.Points[0].NodeVoltages[loudest].Magnitude);
+        double cornerDb = referenceDb - 3;
+        double? corner = null;
+        foreach (AcPoint point in response.Points)
+        {
+            double magnitude = point.NodeVoltages[loudest].Magnitude;
+            if (magnitude > 0 && 20 * Math.Log10(magnitude) <= cornerDb)
+            {
+                corner = point.FrequencyHertz;
+                break;
+            }
+        }
+
+        string cornerNote = corner is double frequency
+            ? $"3 dB down by {frequency.ToString("G4", CultureInfo.InvariantCulture)} Hz"
+            : "no 3 dB point inside the sweep";
+        ElectricalAcSweepSummary =
+            $"{circuit.Id}: drove '{drive}' over {response.Points.Count} frequencies · " +
+            $"{loudest} {referenceDb.ToString("G4", CultureInfo.InvariantCulture)} dB at " +
+            $"{from.ToString("G4", CultureInfo.InvariantCulture)} Hz, {cornerNote} · " +
+            $"{ElectricalAcSweepRows.Count} rows.";
+        StatusText = $"Swept '{drive}' over {response.Points.Count} frequencies";
+        return true;
+    }
+
+    /// <summary>
+    /// The response as CSV, written by the same writer as <c>radix ac --csv</c>, so a table copied
+    /// from the panel and one produced by a script describe the same study.
+    /// </summary>
+    public bool TryBuildElectricalAcSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalAcSweepReport is not { Points.Count: > 0 } report)
+        {
+            return false;
+        }
+
+        csv = report.ToCsv();
+        return true;
+    }
+
+    /// <summary>
+    /// Steps the chosen voltage source across the range and measures every transistor at each
+    /// value, using the same <see cref="MosfetBiasSweep"/> the command line prints. The source is
+    /// held at each bias rather than left to its waveform, which would pin every point to the rest
+    /// state and report one operating point eleven times.
+    /// </summary>
+    public bool RunElectricalBiasSweep()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ClearElectricalBiasSweep("Select an authored circuit before sweeping.");
+            StatusText = "No electrical circuit selected.";
+            return false;
+        }
+
+        string drive = (ElectricalAcSweepDriveText ?? string.Empty).Trim();
+        if (drive.Length == 0)
+        {
+            ClearElectricalBiasSweep("Enter the id of a voltage source to step, for example VIN.");
+            StatusText = "No bias source given.";
+            return false;
+        }
+
+        ElectricalComponent? source = circuit.FindComponent(drive);
+        if (source is null || source.Kind != ElectricalComponentKind.VoltageSource)
+        {
+            ClearElectricalBiasSweep(source is null
+                ? $"Circuit '{circuit.Id}' has no component '{drive}'."
+                : $"'{drive}' is a {source.Kind}; a bias sweep steps a voltage source.");
+            StatusText = "Bias source is not a voltage source.";
+            return false;
+        }
+
+        if (!TryParseBiasRange(
+                ElectricalBiasSweepRangeText, out double from, out double to, out int count, out string error))
+        {
+            ClearElectricalBiasSweep(error);
+            StatusText = "Invalid bias range.";
+            return false;
+        }
+
+        TransientNetlist netlist;
+        try
+        {
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
+            if (validation.HasErrors)
+            {
+                ClearElectricalBiasSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
+                    "Fix the validation messages above.");
+                StatusText = "Bias sweep blocked by structural errors.";
+                return false;
+            }
+
+            netlist = circuit.ToTransientNetlist(_project.FindElectricalCircuit);
+        }
+        catch (Exception exception) when (
+            exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
+        {
+            ClearElectricalBiasSweep("Cannot build the electrical netlist: " + exception.Message);
+            StatusText = "Electrical netlist construction failed.";
+            return false;
+        }
+
+        IReadOnlyList<MosfetBiasPoint> points;
+        try
+        {
+            points = MosfetBiasSweep.Run(netlist, drive, MosfetBiasSweep.Linear(from, to, count));
+        }
+        catch (Exception exception) when (exception is ArgumentException or DcSolveException)
+        {
+            ClearElectricalBiasSweep("Cannot sweep the bias: " + exception.Message);
+            StatusText = "Bias sweep failed.";
+            return false;
+        }
+
+        if (points.Count == 0 || points[0].Devices.Count == 0)
+        {
+            ClearElectricalBiasSweep($"Circuit '{circuit.Id}' has no MOSFETs to sweep.");
+            StatusText = "Bias sweep found no devices.";
+            return false;
+        }
+
+        var biasDeviceLabels = points[0].Devices.ToDictionary(
+            device => device.Id,
+            device => DescribeElectricalElement(device.Id, circuit),
+            StringComparer.Ordinal);
+        _electricalBiasSweepPoints = points;
+        RebuildElectricalBiasSweepPlot(points, biasDeviceLabels);
+        RaisePropertyChanged(nameof(HasElectricalBiasSweepResult));
+
+        // Name the device that reaches the largest transconductance and the bias where it does: the
+        // peak is the bias at which that device conducts hardest, which is what the curve shows.
+        AcDeviceReport? peakDevice = null;
+        double peakBias = 0;
+        double peakGm = double.NegativeInfinity;
+        foreach (MosfetBiasPoint point in points)
+        {
+            foreach (AcDeviceReport device in point.Devices)
+            {
+                if (device.Transconductance > peakGm)
+                {
+                    peakGm = device.Transconductance;
+                    peakBias = point.BiasVolts;
+                    peakDevice = device;
+                }
+            }
+        }
+
+        string peakNote = peakDevice is null
+            ? "no device conducts in this range"
+            : $"{FormatElectricalHierarchyLabel(biasDeviceLabels[peakDevice.Id])} peaks at " +
+              $"{Number(peakBias)} V with {Number(peakGm)} S";
+        ElectricalBiasSweepSummary =
+            $"{circuit.Id}: stepped '{drive}' over {points.Count} values · " +
+            $"{points[0].Devices.Count} devices · {peakNote}.";
+        StatusText = $"Swept '{drive}' over {points.Count} bias values";
+        return true;
+
+        static string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G4", CultureInfo.InvariantCulture)
+                : "inf";
+    }
+
+    /// <summary>
+    /// The bias sweep as CSV, one row per device per bias, so a table copied from the panel
+    /// describes the same study the command line prints.
+    /// </summary>
+    public bool TryBuildElectricalBiasSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalBiasSweepPoints is not { Count: > 0 } points)
+        {
+            return false;
+        }
+
+        var builder = new System.Text.StringBuilder();
+        builder.Append("# format: radix-mosfet-bias-sweep\n");
+        builder.Append("# version: 1\n");
+        builder.Append("# device_count: ").Append(points[0].Devices.Count).Append('\n');
+        builder.Append("bias_v,device,region,vgs_v,vds_v,id_a,gm_s,gds_s,cgs_fraction,cgd_fraction\n");
+        foreach (MosfetBiasPoint point in points)
+        {
+            foreach (AcDeviceReport device in point.Devices)
+            {
+                builder.Append(Number(point.BiasVolts)).Append(',')
+                    .Append(device.Id).Append(',')
+                    .Append(device.Region).Append(',')
+                    .Append(Number(device.GateSourceVolts)).Append(',')
+                    .Append(Number(device.DrainSourceVolts)).Append(',')
+                    .Append(Number(device.CurrentAmperes)).Append(',')
+                    .Append(Number(device.Transconductance)).Append(',')
+                    .Append(Number(device.DrainConductance)).Append(',')
+                    .Append(Number(device.GateSourceFraction)).Append(',')
+                    .Append(Number(device.GateDrainFraction)).Append('\n');
+            }
+        }
+
+        csv = builder.ToString();
+        return true;
+
+        static string Number(double value) =>
+            double.IsFinite(value)
+                ? value.ToString("G6", CultureInfo.InvariantCulture)
+                : "inf";
+    }
+
+    private void RebuildElectricalBiasSweepPlot(
+        IReadOnlyList<MosfetBiasPoint> points,
+        IReadOnlyDictionary<string, (string Scope, string Name)> deviceLabels)
+    {
+        IReadOnlyList<AcDeviceReport> devices = points[0].Devices;
+        var series = new List<TransientPlotSeries>();
+        for (int index = 0; index < devices.Count; index++)
+        {
+            string deviceId = devices[index].Id;
+            var samples = new List<TransientPlotPoint>(points.Count);
+            foreach (MosfetBiasPoint point in points)
+            {
+                AcDeviceReport? device = point.Devices
+                    .FirstOrDefault(candidate => string.Equals(candidate.Id, deviceId, StringComparison.Ordinal));
+                if (device is not null)
+                {
+                    samples.Add(new TransientPlotPoint(point.BiasVolts, device.Transconductance));
+                }
+            }
+
+            if (samples.Count > 1)
+            {
+                series.Add(new TransientPlotSeries(
+                    deviceId,
+                    samples,
+                    index,
+                    FormatElectricalHierarchyLabel(deviceLabels[deviceId])));
+            }
+        }
+
+        ElectricalBiasSweepPlot = series.Count == 0
+            ? null
+            : TransientPlot.Create(
+                series,
+                TransientPlot.DefaultMaximumPointsPerSeries,
+                null,
+                null,
+                "V",
+                "S");
+    }
+
+    private void ClearElectricalBiasSweep(string summary)
+    {
+        _electricalBiasSweepPoints = null;
+        ElectricalBiasSweepPlot = null;
+        ElectricalBiasSweepSummary = summary;
+        RaisePropertyChanged(nameof(HasElectricalBiasSweepResult));
+    }
+
+    private static bool TryParseBiasRange(
+        string? text,
+        out double from,
+        out double to,
+        out int count,
+        out string error)
+    {
+        from = 0;
+        to = 0;
+        count = 0;
+        error = string.Empty;
+
+        string[] parts = (text ?? string.Empty).Split(':');
+        if (parts.Length != 3)
+        {
+            error = "Enter a bias range as from:to:count, for example 0:5:11.";
+            return false;
+        }
+
+        if (!TryParseElectricalNumber(parts[0], out from) ||
+            !TryParseElectricalNumber(parts[1], out to))
+        {
+            error = "Both ends of the bias range must be finite numbers of volts.";
+            return false;
+        }
+
+        if (!int.TryParse(parts[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out count) ||
+            count < 2 ||
+            count > MosfetBiasSweep.MaximumCount)
+        {
+            error = $"The bias count must be from 2 to {MosfetBiasSweep.MaximumCount}.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The gain and phase curves as one standalone SVG: two stacked panels sharing a
+    /// decade-labelled axis, so a response can be shared as a file rather than a screenshot.
+    /// </summary>
+    public bool TryBuildElectricalAcSweepSvg(out string svg)
+    {
+        svg = string.Empty;
+        if (ElectricalAcSweepPlot is not { IsEmpty: false } gain ||
+            ElectricalAcSweepPhasePlot is not { IsEmpty: false } phase ||
+            _electricalAcSweepReport is not { } report)
+        {
+            return false;
+        }
+
+        svg = TransientPlotSvg.RenderBode(
+            gain,
+            phase,
+            $"AC analysis: {report.Circuit ?? "circuit"} {report.Drive}");
+        return true;
+    }
+
+    private void RebuildElectricalAcSweepPlot(
+        AcResponse response,
+        IReadOnlyList<string> nodes,
+        double from,
+        double to,
+        IReadOnlyDictionary<string, (string Scope, string Name)> nodeLabels)
+    {
+        var gainSeries = new List<TransientPlotSeries>();
+        var phaseSeries = new List<TransientPlotSeries>();
+        for (int index = 0; index < nodes.Count; index++)
+        {
+            string nodeId = nodes[index];
+            var gain = new List<TransientPlotPoint>(response.Points.Count);
+            var phase = new List<TransientPlotPoint>(response.Points.Count);
+            foreach (AcPoint point in response.Points)
+            {
+                double magnitude = point.NodeVoltages[nodeId].Magnitude;
+                if (magnitude <= 0)
+                {
+                    continue;
+                }
+
+                double decades = Math.Log10(point.FrequencyHertz);
+                gain.Add(new TransientPlotPoint(decades, 20 * Math.Log10(magnitude)));
+                phase.Add(new TransientPlotPoint(
+                    decades, AcResponse.PhaseDegrees(point.NodeVoltages[nodeId])));
+            }
+
+            // A node with no response anywhere would flatten the vertical range to its floor.
+            if (gain.Count > 1)
+            {
+                string legend = FormatElectricalHierarchyLabel(nodeLabels[nodeId]);
+                gainSeries.Add(new TransientPlotSeries(nodeId, gain, index, legend));
+                phaseSeries.Add(new TransientPlotSeries(nodeId, phase, index, legend));
+            }
+        }
+
+        (IReadOnlyList<double> ticks, IReadOnlyList<string> labels) = AcDecadeAxis(from, to);
+        bool labelled = ticks.Count >= 2;
+        ElectricalAcSweepPlot = gainSeries.Count == 0
+            ? null
+            : TransientPlot.Create(
+                gainSeries,
+                TransientPlot.DefaultMaximumPointsPerSeries,
+                labelled ? ticks : null,
+                labelled ? labels : null,
+                "Hz",
+                "dB");
+        ElectricalAcSweepPhasePlot = phaseSeries.Count == 0
+            ? null
+            : TransientPlot.Create(
+                phaseSeries,
+                TransientPlot.DefaultMaximumPointsPerSeries,
+                labelled ? ticks : null,
+                labelled ? labels : null,
+                "Hz",
+                "°");
+    }
+
+    /// <summary>
+    /// Decade ticks for a log-frequency axis: the horizontal values are exponents, so the labels
+    /// say 1k, 10k, 100k rather than 3, 4, 5. A sweep narrower than a decade has no exposed
+    /// decade boundaries and falls back to evenly spaced numeric ticks.
+    /// </summary>
+    private static (IReadOnlyList<double> Ticks, IReadOnlyList<string> Labels) AcDecadeAxis(
+        double fromHertz,
+        double toHertz)
+    {
+        int first = (int)Math.Ceiling(Math.Log10(fromHertz) - 1e-9);
+        int last = (int)Math.Floor(Math.Log10(toHertz) + 1e-9);
+        var ticks = new List<double>();
+        var labels = new List<string>();
+        for (int exponent = first; exponent <= last && ticks.Count < 12; exponent++)
+        {
+            ticks.Add(exponent);
+            labels.Add(DecadeLabel(exponent));
+        }
+
+        return (ticks, labels);
+    }
+
+    private static string DecadeLabel(int exponent)
+    {
+        double hertz = Math.Pow(10, exponent);
+        if (hertz >= 1e9)
+        {
+            return (hertz / 1e9).ToString("G0", CultureInfo.InvariantCulture) + "G";
+        }
+
+        if (hertz >= 1e6)
+        {
+            return (hertz / 1e6).ToString("G0", CultureInfo.InvariantCulture) + "M";
+        }
+
+        if (hertz >= 1e3)
+        {
+            return (hertz / 1e3).ToString("G0", CultureInfo.InvariantCulture) + "k";
+        }
+
+        return hertz.ToString("G0", CultureInfo.InvariantCulture);
+    }
+
+    private void ClearElectricalAcSweep(string summary)
+    {
+        ElectricalAcSweepRows.Clear();
+        ElectricalAcSweepPlot = null;
+        ElectricalAcSweepPhasePlot = null;
+        _electricalAcSweepReport = null;
+        ElectricalAcSweepSummary = summary;
+        RaisePropertyChanged(nameof(HasElectricalAcSweepResult));
+    }
+
+    /// <summary>
+    /// Applies an <c>id=volts</c> override for the operating point. A waveform biases its source at
+    /// its value at t = 0, which is the rest state, so a gate is only analysed on a transition when
+    /// the drive is held there explicitly.
+    /// </summary>
+    private static bool TryApplyElectricalAcBias(
+        TransientNetlist netlist,
+        string text,
+        out TransientNetlist biasedNetlist,
+        out string error)
+    {
+        biasedNetlist = netlist;
+        error = string.Empty;
+        int equals = text.IndexOf('=');
+        if (equals <= 0 ||
+            !TryParseEngineeringValue(text[(equals + 1)..], out double volts))
+        {
+            error = "Enter the bias as source=volts, for example VIN=1.3.";
+            return false;
+        }
+
+        string id = text[..equals].Trim();
+        if (!netlist.Elements.Any(element => string.Equals(element.Id, id, StringComparison.Ordinal)))
+        {
+            error = $"The circuit has no component '{id}' to bias.";
+            return false;
+        }
+
+        TransientNetlist biased = netlist.Clone().WithElementValue(id, volts);
+        biased.SetWaveform(id, [new TransientWaveformPoint(0, volts)]);
+        biasedNetlist = biased;
+        return true;
+    }
+
+    /// <summary>
+    /// Sets the voltage boundaries this circuit's nodes are read as levels against. Blank clears
+    /// them, which returns the reader to equal thirds of the rail; a descending or non-numeric list
+    /// is refused rather than stored in a shape no reading could use.
+    /// </summary>
+    private bool SetElectricalCircuitLevelThresholds(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            StatusText = $"No circuit '{circuitId}' to edit.";
+            return false;
+        }
+
+        List<double> thresholds = [];
+        foreach (string part in value.Split([',', ' ', ';', '·'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!TryParseEngineeringValue(part, out double threshold) || !double.IsFinite(threshold))
+            {
+                StatusText = $"'{part}' is not a number of volts.";
+                return false;
+            }
+
+            if (thresholds.Count > 0 && threshold <= thresholds[^1])
+            {
+                StatusText = "Level thresholds must ascend.";
+                return false;
+            }
+
+            thresholds.Add(threshold);
+        }
+
+        if (circuit.LevelThresholds.SequenceEqual(thresholds))
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.LevelThresholds.Clear();
+        circuit.LevelThresholds.AddRange(thresholds);
+        AfterElectricalMutation(thresholds.Count == 0
+            ? "Level boundaries cleared; readings fall back to the rail"
+            : $"Level boundaries at {string.Join(", ", thresholds.Select(threshold => threshold.ToString("G6", CultureInfo.InvariantCulture)))} V");
+        return true;
+    }
+
+    private static string FormatDriveBindings(ElectricalCircuit circuit) =>
+        string.Join(
+            "; ",
+            circuit.DriveBindings.Select(binding =>
+                $"{binding.NodeId}:{binding.PinId}@{binding.TicksPerSecond.ToString("G6", CultureInfo.InvariantCulture)}{(binding.Checks ? "?" : string.Empty)}"));
+
+    /// <summary>
+    /// Replaces the circuit's drive bindings from one line of text. The compact form exists because a
+    /// binding is three short facts, and a table for three facts takes more panel than it is worth;
+    /// the trailing <c>?</c> is what distinguishes a claim about an output from a drive, and it is
+    /// easy to see and hard to type by accident.
+    /// </summary>
+    private bool SetElectricalCircuitDriveBindings(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            StatusText = $"No circuit '{circuitId}' to edit.";
+            return false;
+        }
+
+        List<ElectricalDriveBinding> bindings = [];
+        foreach (string part in value.Split([';', ','], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string text = part.Trim();
+            bool checks = text.EndsWith('?');
+            if (checks)
+            {
+                text = text[..^1].Trim();
+            }
+
+            string[] sides = text.Split(':');
+            if (sides.Length != 2)
+            {
+                StatusText = $"'{part}' is not node:pin@rate.";
+                return false;
+            }
+
+            string nodeId = sides[0].Trim();
+            if (circuit.FindNode(nodeId) is null)
+            {
+                StatusText = $"'{nodeId}' is not a node of this circuit.";
+                return false;
+            }
+
+            int at = sides[1].IndexOf('@');
+            string pinId = at < 0 ? string.Empty : sides[1][..at].Trim();
+            if (pinId.Length == 0)
+            {
+                StatusText = $"'{part}' needs a pin and a rate, as in out:a@1e9.";
+                return false;
+            }
+
+            if (!TryParseEngineeringValue(sides[1][(at + 1)..], out double rate) ||
+                !double.IsFinite(rate) || rate <= 0)
+            {
+                StatusText = $"'{part}' needs a positive tick rate after @.";
+                return false;
+            }
+
+            bindings.Add(new ElectricalDriveBinding
+            {
+                NodeId = nodeId,
+                PinId = pinId,
+                TicksPerSecond = rate,
+                Checks = checks,
+            });
+        }
+
+        // A circuit does not know the digital side, so a mistyped pin would otherwise survive until a
+        // simulation tried to apply it. Checking against the project's declarations turns that into
+        // a refusal while the author is still looking at the field.
+        string[] unknown = [.. bindings.Select(binding => binding.PinId)
+            .Distinct(StringComparer.Ordinal)
+            .Where(pin => !_project.Definitions.Any(definition =>
+                definition.Pins.Any(declaration =>
+                    string.Equals(declaration.Id, pin, StringComparison.Ordinal))))];
+        if (unknown.Length > 0)
+        {
+            StatusText =
+                $"No definition declares pin(s) {string.Join(", ", unknown)}, so a binding could not be applied.";
+            return false;
+        }
+
+        bool unchanged = circuit.DriveBindings.Count == bindings.Count &&
+            circuit.DriveBindings.Zip(bindings).All(pair =>
+                pair.First.NodeId == pair.Second.NodeId &&
+                pair.First.PinId == pair.Second.PinId &&
+                pair.First.TicksPerSecond == pair.Second.TicksPerSecond &&
+                pair.First.Checks == pair.Second.Checks);
+        if (unchanged)
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.DriveBindings.Clear();
+        circuit.DriveBindings.AddRange(bindings);
+        AfterElectricalMutation(bindings.Count == 0
+            ? "Drive bindings cleared"
+            : $"{bindings.Count} drive binding(s): {FormatDriveBindings(circuit)}");
+        return true;
+    }
+
+    /// <summary>
+    /// Turns the bias-dependent capacitance model on or off for a device, from the inspector's
+    /// yes/no field. The solver applies it per circuit, which the field's hint says.
+    /// </summary>
+    private bool SetElectricalComponentBiasDependentCapacitance(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        ElectricalComponent? component = circuit?.FindComponent(componentId);
+        if (circuit is null || component is null)
+        {
+            StatusText = $"No component '{componentId}' to edit.";
+            return false;
+        }
+
+        bool? enabled = value?.Trim().ToLowerInvariant() switch
+        {
+            "yes" or "true" or "on" or "1" => true,
+            "no" or "false" or "off" or "0" or "" => false,
+            _ => null,
+        };
+
+        if (enabled is not bool biasDependent)
+        {
+            StatusText = "Bias-dependent capacitance takes yes or no.";
+            return false;
+        }
+
+        if (component.BiasDependentCapacitance == biasDependent)
+        {
+            return true;
+        }
+
+        PushUndo();
+        component.BiasDependentCapacitance = biasDependent;
+        AfterElectricalMutation(
+            biasDependent
+                ? $"'{componentId}' follows its bias for gate capacitance"
+                : $"'{componentId}' holds its authored gate capacitance");
+        return true;
+    }
+
+    private static bool TryParseElectricalAcRange(
+        string? text,
+        out double from,
+        out double to,
+        out int points,
+        out string error)
+    {
+        from = 0;
+        to = 0;
+        points = 0;
+        error = string.Empty;
+
+        string[] parts = (text ?? string.Empty).Split(':');
+        if (parts.Length != 3)
+        {
+            error = "Enter a frequency range as from:to:points, for example 10:1e6:21.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(parts[0], out from) || from <= 0)
+        {
+            error = "The start frequency must be a finite value greater than zero.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(parts[1], out to) || to < from)
+        {
+            error = "The stop frequency must be at least the start frequency.";
+            return false;
+        }
+
+        if (!int.TryParse(parts[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out points) ||
+            points < 2 ||
+            points > AcFrequencySweep.MaximumCount)
+        {
+            error = $"The point count must be from 2 to {AcFrequencySweep.MaximumCount}.";
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -7017,6 +9161,30 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Reads each probed voltage as a level against the circuit's own rail, taken as the highest
+    /// source value and split into equal thirds. A circuit with no positive source has no rail to
+    /// read against, so it reports no levels instead of inventing one.
+    /// </summary>
+    private IReadOnlyDictionary<string, int> ProbeLevels(IReadOnlyDictionary<string, double> values)
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            return new SortedDictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit);
+        if (sampler is null)
+        {
+            return new SortedDictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        return new SortedDictionary<string, int>(
+            values.ToDictionary(pair => pair.Key, pair => sampler.LevelFor(pair.Value)),
+            StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// Reads every node voltage at a chosen time, interpolating between the two solved
     /// points that bracket it. The readout names the bracketing points when the time is
     /// not itself a solved sample, so an interpolated value cannot be mistaken for one
@@ -7079,17 +9247,23 @@ public sealed class EditorViewModel : ObservableObject
             values[node] = from + (weight * (to - from));
         }
 
+        IReadOnlyDictionary<string, int> levels = ProbeLevels(values);
         ElectricalTransientProbeValues = values;
+        ElectricalTransientProbeLevels = levels;
         ElectricalTransientProbeTime = time;
         string source = solved
             ? "solved point"
             : $"interpolated {FormatElectricalValue(left.Time)}..{FormatElectricalValue(right.Time)} s";
+        // The level is what the digital side would read, so it travels with the voltage it came
+        // from rather than being a separate readout a reader has to compute from thresholds.
+        static string Read(KeyValuePair<string, double> pair, IReadOnlyDictionary<string, int> levels) =>
+            levels.TryGetValue(pair.Key, out int level)
+                ? $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V (L{level})"
+                : $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V";
+
         ElectricalTransientProbeText =
             $"At t={FormatElectricalValue(time)} s ({source}): " +
-            string.Join(
-                " · ",
-                values.Select(pair =>
-                    $"{pair.Key} {pair.Value.ToString("G6", CultureInfo.InvariantCulture)} V"));
+            string.Join(" · ", values.Select(pair => Read(pair, levels)));
         StatusText = $"Probed transient values at t={FormatElectricalValue(time)} s";
         return true;
     }
@@ -7396,8 +9570,12 @@ public sealed class EditorViewModel : ObservableObject
 
     private void ClearElectricalSolveResult()
     {
+        ClearElectricalDcSweep(DefaultElectricalDcSweepSummary);
+        ClearElectricalAcSweep(DefaultElectricalAcSweepSummary);
+        ClearElectricalBiasSweep(DefaultElectricalBiasSweepSummary);
         ElectricalNodeResults.Clear();
         ElectricalElementResults.Clear();
+        InvalidateElectricalDeviceOperatingPoint();
         HasElectricalSolveResult = false;
         HasElectricalSolveError = false;
         ElectricalSolveSummary = "Choose Solve to compute the DC operating point.";
@@ -7408,6 +9586,485 @@ public sealed class EditorViewModel : ObservableObject
     /// Drops the transient preview. It describes the circuit as it was when the run
     /// started, so any edit invalidates it rather than leaving stale numbers on screen.
     /// </summary>
+    /// <summary>
+    /// Runs the selected circuit twice, once with every device holding its authored gate
+    /// capacitances and once with the bias-dependent model on, and plots the node the runs
+    /// disagree on most. The devices' authored flags are restored afterwards: this compares the
+    /// two models on one circuit, it does not change what the circuit says about itself.
+    /// </summary>
+    public bool CompareElectricalCapacitanceModels()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ElectricalTransientComparisonText = "Select an authored circuit to compare models.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(_electricalTransientStopText, out double stop) || stop <= 0)
+        {
+            ElectricalTransientComparisonText = "Comparison needs a positive stop time.";
+            return false;
+        }
+
+        if (!int.TryParse(
+                _electricalTransientStepsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            ElectricalTransientComparisonText = "Comparison needs 2 to 20000 steps.";
+            return false;
+        }
+
+        if (!TryParseElectricalTransientMethod(_electricalTransientMethodName, out TransientMethod method))
+        {
+            ElectricalTransientComparisonText =
+                "Comparison needs 'backward-euler' or 'trapezoidal'.";
+            return false;
+        }
+
+        var options = new TransientOptions
+        {
+            StartTime = 0,
+            StopTime = stop,
+            Steps = steps,
+            Method = method,
+            // Both runs share the grid, so a point-by-point difference is meaningful.
+            MaximumStepCount = 100_000,
+        };
+
+        bool[] authored = [.. circuit.Components.Select(component => component.BiasDependentCapacitance)];
+        try
+        {
+            foreach (ElectricalComponent component in circuit.Components)
+            {
+                component.BiasDependentCapacitance = false;
+            }
+
+            TransientResult constant = circuit.ToTransientNetlist(_project.FindElectricalCircuit).Run(options);
+
+            foreach (ElectricalComponent component in circuit.Components
+                         .Where(component => component.Kind == ElectricalComponentKind.Mosfet))
+            {
+                component.BiasDependentCapacitance = true;
+            }
+
+            TransientResult biasDependent = circuit.ToTransientNetlist(_project.FindElectricalCircuit).Run(options);
+            ShowCapacitanceComparison(constant, biasDependent);
+            return true;
+        }
+        catch (ElectricalCircuitValidationException exception)
+        {
+            ElectricalTransientComparisonText =
+                $"Comparison blocked by {exception.Diagnostics.ErrorCount} structural error(s).";
+            return false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ElectricalTransientComparisonText = "Comparison failed: " + exception.Message;
+            return false;
+        }
+        finally
+        {
+            for (int index = 0; index < authored.Length; index++)
+            {
+                circuit.Components[index].BiasDependentCapacitance = authored[index];
+            }
+        }
+    }
+
+    /// <summary>
+    /// Puts the plot back on the last single run. The comparison's sentence stays, because the
+    /// numbers it reports are still true of the circuit; only the picture changes. Touching a node
+    /// checkbox does the same thing through the rebuild it already calls.
+    /// </summary>
+    /// <summary>
+    /// Chooses the definition the bindings are applied to. The choice is view state rather than part
+    /// of the project, because which definition a reader wants to exercise is a question about the
+    /// session, not about the circuit - the bindings themselves are the circuit's claim.
+    /// </summary>
+    /// <summary>
+    /// Marks output pins as supplied from outside. Only an output can be supplied - an input is
+    /// already written from outside, so the flag would say nothing there and would blur the one
+    /// distinction that makes the exception legible in the file.
+    /// </summary>
+    private bool SetExternallySuppliedPins(string definitionId, string value)
+    {
+        CircuitDefinition? definition = _project.FindDefinition(definitionId);
+        if (definition is null)
+        {
+            return false;
+        }
+
+        var requested = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string token in value.Split(
+                     [',', ';', ' '],
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            requested.Add(token);
+        }
+
+        foreach (string pinId in requested)
+        {
+            PinDeclaration? pin = definition.FindPin(pinId);
+            if (pin is null)
+            {
+                StatusText = $"Definition '{definitionId}' has no pin '{pinId}'.";
+                return false;
+            }
+
+            if (pin.Direction != PinDirection.Output)
+            {
+                StatusText =
+                    $"Pin '{pinId}' is an input, which is already supplied from outside; only an output can be declared.";
+                return false;
+            }
+        }
+
+        bool changed = definition.Pins.Any(pin => pin.ExternalSupply != requested.Contains(pin.Id));
+        if (!changed)
+        {
+            return true;
+        }
+
+        PushUndo();
+        foreach (PinDeclaration pin in definition.Pins)
+        {
+            pin.ExternalSupply = pin.Direction == PinDirection.Output && requested.Contains(pin.Id);
+        }
+
+        AfterMutation(structural: true, invalidateSimulation: false);
+        StatusText = requested.Count == 0
+            ? $"No pin in '{definitionId}' is supplied from outside."
+            : $"'{definitionId}' takes {requested.Count} pin(s) from outside.";
+        return true;
+    }
+
+    /// <summary>
+    /// Sets how far a measured delay may differ from the declared one. The tolerance is the only way
+    /// to say "this network is asymmetric" without lying in the declared number, so it is authored
+    /// beside the circuit rather than hidden in the check.
+    /// </summary>
+    private static string FormatDelayTolerances(ElectricalCircuit circuit) =>
+        string.Join(
+            "; ",
+            circuit.DelayTolerances.Select(tolerance => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{(string.IsNullOrEmpty(tolerance.PinId) ? string.Empty : tolerance.PinId + ":")}{tolerance.FromLevel}>{tolerance.ToLevel}={tolerance.Ticks}")));
+
+    /// <summary>
+    /// Authors per-transition tolerances. On success the whole list is replaced, so the field always
+    /// shows the circuit's state, and a malformed token refuses the edit instead of dropping silently.
+    /// </summary>
+    private bool SetElectricalCircuitDelayTolerances(string circuitId, string value)
+    {
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            return false;
+        }
+
+        var parsed = new List<ElectricalDelayTolerance>();
+        foreach (string token in value.Split(
+                     [';', ','],
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string[] halves = token.Split('>');
+            int equals = halves.Length == 2 ? halves[1].IndexOf('=') : -1;
+            string left = halves.Length == 2 ? halves[0].Trim() : string.Empty;
+            int colon = left.IndexOf(':');
+            string? pin = colon > 0 ? left[..colon].Trim() : null;
+            string fromText = colon > 0 ? left[(colon + 1)..].Trim() : left;
+            if (halves.Length != 2 ||
+                equals <= 0 ||
+                (pin is not null && pin.Length == 0) ||
+                !int.TryParse(fromText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int from) ||
+                !int.TryParse(halves[1][..equals].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int to) ||
+                !int.TryParse(halves[1][(equals + 1)..].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int ticks) ||
+                ticks < 0)
+            {
+                StatusText = $"'{token}' is not a transition; write [pin:]from>to=ticks with a tolerance of 0 or more.";
+                return false;
+            }
+
+            parsed.Add(new ElectricalDelayTolerance(pin, from, to, ticks));
+        }
+
+        bool changed = parsed.Count != circuit.DelayTolerances.Count ||
+                       parsed.Where((tolerance, index) => !tolerance.Equals(circuit.DelayTolerances[index])).Any();
+        if (!changed)
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.DelayTolerances.Clear();
+        circuit.DelayTolerances.AddRange(parsed);
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = parsed.Count == 0
+            ? "No transition carries its own tolerance."
+            : $"{parsed.Count} transition(s) carry their own tolerance.";
+        return true;
+    }
+
+    private bool SetElectricalCircuitDelayTolerance(string circuitId, string value)
+    {
+        if (!int.TryParse(
+                value,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int ticks) || ticks < 0)
+        {
+            StatusText = "Delay tolerance must be a whole number of ticks, 0 or more.";
+            return false;
+        }
+
+        ElectricalCircuit? circuit = _project.FindElectricalCircuit(circuitId);
+        if (circuit is null)
+        {
+            return false;
+        }
+
+        if (circuit.DelayToleranceTicks == ticks)
+        {
+            return true;
+        }
+
+        PushUndo();
+        circuit.DelayToleranceTicks = ticks;
+        AfterMutation(structural: false, invalidateSimulation: false);
+        StatusText = $"A measured delay may differ by up to {ticks} tick(s).";
+        return true;
+    }
+
+    private bool SetElectricalDriveDefinition(string value)
+    {
+        string id = value.Trim();
+        if (id.Length > 0 &&
+            !_project.Definitions.Any(definition =>
+                string.Equals(definition.Id, id, StringComparison.Ordinal)))
+        {
+            StatusText = $"No definition '{id}' in this project.";
+            return false;
+        }
+
+        // The target is stated even when the value did not change: applying a blank line to an
+        // already-blank field should tell the reader where the bindings will go, not stay silent.
+        _electricalDriveDefinitionId = id;
+        ElectricalDriveRows.Clear();
+        ElectricalDriveSummary = id.Length == 0
+            ? "Bindings apply to the root definition."
+            : $"Bindings apply to '{id}'.";
+        return true;
+    }
+
+    /// <summary>
+    /// Solves the selected circuit and applies its drive bindings, reporting each change and whether
+    /// the root definition agreed. This is the command line's drive table inside the panel, so a
+    /// reader who authored a binding does not have to leave the editor to find out what it does.
+    /// </summary>
+    public bool RunElectricalDriveBindings()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ElectricalDriveSummary = "Select an authored circuit to run its bindings.";
+            return false;
+        }
+
+        if (circuit.DriveBindings.Count == 0)
+        {
+            ElectricalDriveRows.Clear();
+            ElectricalDriveSummary = "This circuit declares no drive bindings.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(_electricalTransientStopText, out double stop) || stop <= 0)
+        {
+            ElectricalDriveSummary = "Bindings need a positive stop time.";
+            return false;
+        }
+
+        if (!int.TryParse(
+                _electricalTransientStepsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            ElectricalDriveSummary = "Bindings need 2 to 20000 steps.";
+            return false;
+        }
+
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit);
+        if (sampler is null)
+        {
+            ElectricalDriveSummary =
+                "This circuit has no level thresholds and no positive rail, so a level cannot be read.";
+            return false;
+        }
+
+        TransientResult result;
+        try
+        {
+            result = circuit.ToTransientNetlist(_project.FindElectricalCircuit).Run(new TransientOptions
+            {
+                StartTime = 0,
+                StopTime = stop,
+                Steps = steps,
+                MaximumStepCount = 100_000,
+            });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ElectricalDriveSummary = "Bindings could not be solved: " + exception.Message;
+            return false;
+        }
+
+        ElectricalDrivePlan plan = ElectricalDriveSimulation.Plan(circuit, result, sampler);
+        var simulation = ElectricalDriveSimulation.Run(
+            _project,
+            plan,
+            _electricalDriveDefinitionId.Length == 0 ? null : _electricalDriveDefinitionId);
+
+        ElectricalDriveRows.Clear();
+        foreach (ElectricalDriveBinding binding in circuit.DriveBindings)
+        {
+            foreach ((ElectricalDriveStep step, long at) in binding.Steps(result, sampler))
+            {
+                ElectricalDriveRows.Add(new ElectricalDriveRowItem(binding, step, at));
+            }
+        }
+
+        string verdict = simulation.Passed
+            ? $"'{simulation.DefinitionId}' agreed on {plan.Claims.Count} claim tick(s) across {plan.ClaimedPins} pin(s); {ElectricalDriveRows.Count} change(s) shown."
+            : $"'{simulation.DefinitionId}' disagreed: " +
+              string.Join("; ", simulation.Failures.Take(3).Select(failure => failure.Message));
+
+        // A supplied output is masked while it is driven, so what the definition would have computed
+        // for it comes from a second run - the same audit the command line reports.
+        ElectricalDriveAudit? audit = ElectricalDriveSimulation.Audit(
+            _project,
+            circuit,
+            result,
+            sampler,
+            _electricalDriveDefinitionId.Length == 0 ? null : _electricalDriveDefinitionId);
+        verdict += audit switch
+        {
+            null => string.Empty,
+            { Passed: true } =>
+                $" It would have produced the same levels on {audit.AuditedPins} supplied pin(s) over {audit.CheckedTicks} tick(s).",
+            _ =>
+                $" It would have answered differently on {audit.AuditedPins} supplied pin(s): {audit.Result.Failures[0].Message}.",
+        };
+
+        // The audit says the levels are right; the timing says when they arrive, which the panel could
+        // not see at all while it reported only claims and the supplied-pin audit.
+        ElectricalPropagationReport? timing = ElectricalDriveSimulation.Propagation(
+            _project,
+            circuit,
+            result,
+            sampler,
+            _electricalDriveDefinitionId.Length == 0 ? null : _electricalDriveDefinitionId);
+        if (timing is not null && timing.Steps.Count > 0)
+        {
+            string measured = string.Join(
+                ", ",
+                timing.Steps.Select(step => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{step.PreviousOutputLevel}->{step.OutputLevel} in {step.Ticks} tick(s) ({step.Seconds:E2} s)")));
+            string declared = timing.DeclaredTicks is int ticks
+                ? ticks.ToString(CultureInfo.InvariantCulture)
+                : "no";
+            string perTransition = timing.Overrides.Count == 0
+                ? string.Empty
+                : " (" + string.Join(
+                    ", ",
+                    timing.Overrides.Select(tolerance => string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{tolerance.FromLevel}->{tolerance.ToLevel} within {tolerance.Ticks}"))) + ")";
+            verdict +=
+                $" Timing: {measured}; the definition declares {declared} tick(s) within {timing.ToleranceTicks} tick(s){perTransition}.";
+
+            // The two silences are different mistakes: one may apply to a longer run, the other never.
+            if (timing.UnknownPinTolerances.Count > 0)
+            {
+                verdict +=
+                    $" {timing.UnknownPinTolerances.Count} tolerance(s) name a pin this definition does not declare as an output.";
+            }
+
+            if (timing.UnusedTolerances.Count > 0)
+            {
+                verdict +=
+                    $" {timing.UnusedTolerances.Count} tolerance(s) were not exercised by this run.";
+            }
+        }
+
+        ElectricalDriveSummary = verdict;
+        return simulation.Passed &&
+               (audit?.Passed ?? true) &&
+               (timing?.Agrees ?? true) &&
+               (timing is null || timing.UnknownPinTolerances.Count == 0);
+    }
+
+    public bool ShowElectricalTransientRun()
+    {
+        if (_electricalTransientSeries.Length == 0)
+        {
+            ElectricalTransientComparisonText = "No run to show yet; run a transient first.";
+            return false;
+        }
+
+        RebuildElectricalTransientPlot();
+        return true;
+    }
+
+    private void ShowCapacitanceComparison(TransientResult constant, TransientResult biasDependent)
+    {
+        string[] nodes = [.. constant.Points
+            .SelectMany(point => point.NodeVoltages.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+
+        string node = nodes[0];
+        double largest = -1;
+        double largestTime = 0;
+        int shared = Math.Min(constant.Points.Count, biasDependent.Points.Count);
+        for (int index = 0; index < shared; index++)
+        {
+            foreach (string candidate in nodes)
+            {
+                double difference = Math.Abs(
+                    constant.Points[index].NodeVoltages[candidate] -
+                    biasDependent.Points[index].NodeVoltages[candidate]);
+                if (difference > largest)
+                {
+                    largest = difference;
+                    node = candidate;
+                    largestTime = constant.Points[index].Time;
+                }
+            }
+        }
+
+        ElectricalTransientPlot = TransientPlot.Create(
+        [
+            new TransientPlotSeries(
+                $"{node} · authored C",
+                [.. constant.Points.Select(point => new TransientPlotPoint(
+                    point.Time, point.NodeVoltages[node]))],
+                0),
+            new TransientPlotSeries(
+                $"{node} · bias-dependent C",
+                [.. biasDependent.Points.Select(point => new TransientPlotPoint(
+                    point.Time, point.NodeVoltages[node]))],
+                1),
+        ]);
+        ElectricalTransientComparisonText =
+            $"'{node}' separates the two models most: {largest:0.###} V apart at {largestTime:E3} s.";
+    }
+
     private void ClearElectricalTransientResult()
     {
         ElectricalTransientResults.Clear();
@@ -7425,8 +10082,11 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientNotesText = string.Empty;
         ElectricalTransientAccuracyText = string.Empty;
         ElectricalTransientProbeText = string.Empty;
+        ElectricalDriveRows.Clear();
+        ElectricalDriveSummary = "Run the bindings to see what this circuit would drive.";
         ElectricalTransientProbeTime = null;
         ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        ElectricalTransientProbeLevels = new SortedDictionary<string, int>(StringComparer.Ordinal);
         _electricalTransientRefinement = null;
         ClearElectricalTransientRefinement();
         ClearElectricalSweep();
@@ -7506,11 +10166,13 @@ public sealed class EditorViewModel : ObservableObject
 
     private void RefreshElectricalDiagnostics(ElectricalCircuit circuit)
     {
-        DiagnosticBag report = ElectricalCircuitValidator.Validate(circuit);
+        DiagnosticBag report = ElectricalCircuitValidator.Validate(circuit, _project.FindElectricalCircuit);
         ElectricalDiagnostics.Clear();
         foreach (Diagnostic diagnostic in report)
         {
-            ElectricalDiagnostics.Add(new ElectricalDiagnosticItem(diagnostic));
+            ElectricalDiagnostics.Add(new ElectricalDiagnosticItem(
+                diagnostic,
+                new RelayCommand(() => NavigateToDiagnostic(diagnostic))));
         }
 
         ElectricalValidationSummary = report.Count == 0
@@ -7620,6 +10282,172 @@ public sealed class EditorViewModel : ObservableObject
         component.Value = parsed;
         AfterElectricalMutation($"Updated '{component.Id}' value to {FormatElectricalValue(parsed)} {component.Unit}");
         return true;
+    }
+
+    private bool SetElectricalComponentChannel(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        if (!TryParseMosfetChannel(value, out DcMosfetChannel channel))
+        {
+            StatusText = "MOSFET channel must be 'n' or 'p'.";
+            return false;
+        }
+
+        if (component.Channel == channel)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.Channel = channel;
+        AfterElectricalMutation(
+            $"'{component.Id}' is now {ElectricalComponentMetadata.ChannelName(channel)}-channel");
+        return true;
+    }
+
+    private bool SetElectricalComponentThresholdVoltage(string circuitId, string componentId, string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(value, out double parsed))
+        {
+            StatusText = "Threshold voltage must be a finite number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+            return false;
+        }
+
+        if (Math.Abs(component.ThresholdVoltage - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.ThresholdVoltage = parsed;
+        AfterElectricalMutation(
+            $"Updated '{component.Id}' threshold to {FormatElectricalValue(parsed)} V");
+        return true;
+    }
+
+    private bool SetElectricalComponentChannelLengthModulation(
+        string circuitId,
+        string componentId,
+        string value)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        // A negative or non-finite lambda would make the model's gain fall with drain voltage in
+        // a direction no device has, so it is refused rather than solved.
+        if (!TryParseEngineeringValue(value, out double parsed) || parsed < 0)
+        {
+            StatusText = "Channel-length modulation must be a finite, non-negative number, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+            return false;
+        }
+
+        if (Math.Abs(component.ChannelLengthModulation - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        component.ChannelLengthModulation = parsed;
+        AfterElectricalMutation(
+            $"Updated '{component.Id}' channel-length modulation to {FormatElectricalValue(parsed)} 1/V");
+        return true;
+    }
+
+    /// <summary>Which of a device's capacitances an inspector field edits.</summary>
+    private enum DeviceCapacitance
+    {
+        GateSource,
+        GateDrain,
+        DrainSource,
+    }
+
+    /// <summary>
+    /// Sets one of a MOSFET's device capacitances, in farads. All three are refused when negative
+    /// or non-finite: the solver would otherwise be asked to integrate a circuit that gains energy
+    /// from a capacitor, which no device does.
+    /// </summary>
+    private bool SetElectricalComponentCapacitance(
+        string circuitId,
+        string componentId,
+        string value,
+        DeviceCapacitance which)
+    {
+        ElectricalComponent? component = _project.FindElectricalCircuit(circuitId)?.FindComponent(componentId);
+        if (component is null || !ElectricalComponentMetadata.IsMosfet(component.Kind))
+        {
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(value, out double parsed) || parsed < 0)
+        {
+            StatusText = "Device capacitance must be a finite, non-negative number of farads, optionally followed by an SI suffix (p, n, u, m, k, M, or G).";
+            return false;
+        }
+
+        double current = which switch
+        {
+            DeviceCapacitance.GateSource => component.GateSourceCapacitance,
+            DeviceCapacitance.GateDrain => component.GateDrainCapacitance,
+            _ => component.DrainSourceCapacitance,
+        };
+        if (Math.Abs(current - parsed) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        PushUndo();
+        switch (which)
+        {
+            case DeviceCapacitance.GateSource:
+                component.GateSourceCapacitance = parsed;
+                break;
+            case DeviceCapacitance.GateDrain:
+                component.GateDrainCapacitance = parsed;
+                break;
+            default:
+                component.DrainSourceCapacitance = parsed;
+                break;
+        }
+
+        string name = which switch
+        {
+            DeviceCapacitance.GateSource => "gate-source",
+            DeviceCapacitance.GateDrain => "gate-drain",
+            _ => "drain-source",
+        };
+        AfterElectricalMutation(
+            $"Updated '{component.Id}' {name} capacitance to {FormatElectricalValue(parsed)} F");
+        return true;
+    }
+
+    private static bool TryParseMosfetChannel(string value, out DcMosfetChannel channel)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "n" or "n-channel" or "nchannel":
+                channel = DcMosfetChannel.NChannel;
+                return true;
+            case "p" or "p-channel" or "pchannel":
+                channel = DcMosfetChannel.PChannel;
+                return true;
+            default:
+                channel = DcMosfetChannel.NChannel;
+                return false;
+        }
     }
 
     private bool SetElectricalComponentInitialValue(string circuitId, string componentId, string value)
@@ -7794,16 +10622,51 @@ public sealed class EditorViewModel : ObservableObject
     private void AddElectricalTerminals(ElectricalComponent component, string nodeA, string nodeB)
     {
         component.Terminals.Clear();
-        foreach (ElectricalTerminalTemplate template in ElectricalComponentMetadata.Terminals(component.Kind))
+        foreach (ElectricalTerminalTemplate template in ElectricalTerminalTemplates(component))
         {
             component.Terminals.Add(new ElectricalTerminal
             {
                 Id = template.Id,
                 Name = template.Name,
                 Polarity = template.Polarity,
-                NodeId = string.Equals(template.Id, "a", StringComparison.Ordinal) ? nodeA : nodeB,
+                NodeId = DefaultElectricalTerminalNode(template.Id, nodeA, nodeB),
             });
         }
+    }
+
+    /// <summary>
+    /// Where a newly created terminal binds. A two-terminal part splits the reference and
+    /// free node by position; a MOSFET binds its drain to the free node and its gate and
+    /// source to the reference node, which is a valid off device the designer then rewires.
+    /// </summary>
+    private static string DefaultElectricalTerminalNode(string terminalId, string nodeA, string nodeB) =>
+        terminalId switch
+        {
+            "b" or "drain" => nodeB,
+            _ => nodeA,
+        };
+
+    /// <summary>
+    /// The node a terminal keeps when its component changes kind: the same terminal ID if
+    /// the new kind has one, otherwise the node that terminal position held before.
+    /// </summary>
+    private static string ResolveElectricalTerminalNode(
+        IReadOnlyDictionary<string, string> bindings,
+        IReadOnlyList<ElectricalTerminal> previous,
+        int position)
+    {
+        string preferredId = position == 0 ? "a" : "b";
+        if (bindings.TryGetValue(preferredId, out string? bound) && !string.IsNullOrWhiteSpace(bound))
+        {
+            return bound;
+        }
+
+        if (position < previous.Count && !string.IsNullOrWhiteSpace(previous[position].NodeId))
+        {
+            return previous[position].NodeId;
+        }
+
+        return previous.FirstOrDefault()?.NodeId ?? string.Empty;
     }
 
     private string UniqueElectricalCircuitId()
@@ -7839,6 +10702,7 @@ public sealed class EditorViewModel : ObservableObject
             ElectricalComponentKind.CurrentSource => "i",
             ElectricalComponentKind.Capacitor => "c",
             ElectricalComponentKind.Inductor => "l",
+            ElectricalComponentKind.Mosfet => "m",
             _ => "x",
         };
         for (int index = 1; ; index++)
@@ -7858,6 +10722,9 @@ public sealed class EditorViewModel : ObservableObject
             ElectricalComponentKind.VoltageSource => 5,
             ElectricalComponentKind.Capacitor => 1e-6,
             ElectricalComponentKind.Inductor => 1e-3,
+            // 1 mA/V^2 with a 1 V threshold is a usable teaching device: strong enough
+            // to switch a kilo-ohm load from a 5 V rail, weak enough to keep currents sane.
+            ElectricalComponentKind.Mosfet => 1e-3,
             _ => 0.001,
         };
 
@@ -8007,6 +10874,15 @@ public sealed class EditorViewModel : ObservableObject
             Fields.Add(new EditableField("Instances", Definition.Instances.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
             Fields.Add(new EditableField("Nets", Definition.Nets.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
             Fields.Add(new EditableField("Pins", Definition.Pins.Count.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
+            Fields.Add(new EditableField(
+                "Externally supplied pins",
+                string.Join(
+                    ", ",
+                    Definition.Pins
+                        .Where(pin => pin.ExternalSupply)
+                        .Select(pin => pin.Id)),
+                hint: "output pins whose value the outside world writes, comma separated; every other output stays the model's to decide",
+                apply: value => SetExternallySuppliedPins(definitionId, value)));
             Fields.Add(new EditableField(
                 "Root",
                 _project.RootDefinitionId == definitionId ? "yes" : "no",
@@ -8427,6 +11303,11 @@ public sealed class EditorViewModel : ObservableObject
     private void RefreshDiagnosticsFromValidator()
     {
         DiagnosticBag bag = CircuitValidator.Validate(_project);
+        foreach (Diagnostic diagnostic in ElectricalCircuitValidator.ValidateProject(_project))
+        {
+            bag.AddUnique(diagnostic);
+        }
+
         Diagnostics.Clear();
         foreach (Diagnostic diagnostic in bag.Take(250))
         {

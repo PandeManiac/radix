@@ -1,0 +1,138 @@
+{
+  "format": "radix-project",
+  "version": 11,
+  "name": "Ternary inverter from authored MOSFETs",
+  "root": "main",
+  "domains": [
+    {
+      "id": "binary",
+      "name": "Binary",
+      "values": ["0", "1"],
+      "drivers": { "kind": "single" }
+    }
+  ],
+  "definitions": [
+    {
+      "id": "main",
+      "name": "Main",
+      "pins": [],
+      "instances": [],
+      "nets": [],
+      "ports": []
+    }
+  ],
+  "electricalCircuits": [
+    {
+      "id": "ternary",
+      "name": "Resistor-summed ternary inverter",
+      "description": "Two CMOS inverters with opposing strength ratios summing through 100 kOhm resistors. Authored in the inspector-compatible format, with no channel-length modulation, unlike examples/dc-ternary-inverter.json.",
+      "ground": "gnd",
+      "nodes": [
+        { "id": "gnd", "name": "Ground" },
+        { "id": "vdd", "name": "5 V rail" },
+        { "id": "in", "name": "Input" },
+        { "id": "out_low", "name": "Low-threshold inverter output" },
+        { "id": "out_high", "name": "High-threshold inverter output" },
+        { "id": "out", "name": "Summed output" }
+      ],
+      "components": [
+        {
+          "id": "VDD",
+          "name": "Rail",
+          "kind": "voltage-source",
+          "value": 5,
+          "terminals": [
+            { "id": "a", "name": "Positive", "polarity": "positive", "node": "vdd" },
+            { "id": "b", "name": "Negative", "polarity": "negative", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "VIN",
+          "name": "Input drive",
+          "kind": "voltage-source",
+          "value": 0,
+          "terminals": [
+            { "id": "a", "name": "Positive", "polarity": "positive", "node": "in" },
+            { "id": "b", "name": "Negative", "polarity": "negative", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "MPL",
+          "name": "Weak p-channel pull-up",
+          "kind": "mosfet",
+          "value": 1e-05,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_low" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "vdd" }
+          ]
+        },
+        {
+          "id": "MNL",
+          "name": "Strong n-channel pull-down",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_low" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "MPH",
+          "name": "Strong p-channel pull-up",
+          "kind": "mosfet",
+          "value": 0.00121,
+          "channel": "p",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_high" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "vdd" }
+          ]
+        },
+        {
+          "id": "MNH",
+          "name": "Weak n-channel pull-down",
+          "kind": "mosfet",
+          "value": 1e-05,
+          "channel": "n",
+          "thresholdVoltage": 1,
+          "channelLengthModulation": 0.02,
+          "terminals": [
+            { "id": "drain", "name": "Drain", "polarity": "passive", "node": "out_high" },
+            { "id": "gate", "name": "Gate", "polarity": "passive", "node": "in" },
+            { "id": "source", "name": "Source", "polarity": "passive", "node": "gnd" }
+          ]
+        },
+        {
+          "id": "RSUM1",
+          "name": "Summing resistor",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "out_low" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+          ]
+        },
+        {
+          "id": "RSUM2",
+          "name": "Summing resistor",
+          "kind": "resistor",
+          "value": 100000,
+          "terminals": [
+            { "id": "a", "name": "A", "polarity": "passive", "node": "out_high" },
+            { "id": "b", "name": "B", "polarity": "passive", "node": "out" }
+          ]
+        }
+      ]
+    }
+  ]
+}
