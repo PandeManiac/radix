@@ -507,6 +507,13 @@ public sealed class TransientNetlist
     public IReadOnlyList<TransientCapacitor> Capacitors =>
         _capacitors.Where(capacitor => !IsInternal(capacitor.Id)).ToArray();
 
+    /// <summary>
+    /// Every capacitor the solver integrates, device parasitics included. Frequency-domain analysis
+    /// needs all of them: a transistor's own capacitance is exactly what its bandwidth depends on,
+    /// even though element tables hide it.
+    /// </summary>
+    public IReadOnlyList<TransientCapacitor> CapacitorsIncludingDevices => _capacitors;
+
     public IReadOnlyList<TransientInductor> Inductors => _inductors;
 
     /// <summary>All referenced nodes, including ground, in ordinal order.</summary>
@@ -974,6 +981,13 @@ public sealed class TransientNetlist
         _initialInductorAmperes[id] = amperes;
         return this;
     }
+
+    /// <summary>
+    /// The DC operating point this netlist starts from: capacitors open, inductors ideal shorts,
+    /// and every source at its value at <paramref name="time"/>. This is also the bias point a
+    /// frequency-domain analysis linearizes around.
+    /// </summary>
+    public DcSolution SolveDc(double time = 0) => SolveOperatingPoint(time);
 
     /// <summary>
     /// Runs a fixed-step transient analysis from the DC operating point. The

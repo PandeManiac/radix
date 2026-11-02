@@ -480,6 +480,34 @@ compares, so the effect measures the feedback path and not the step size.
 delivered, because 1 ns is a fiftieth of the transition; at 0.25 ns it closes to 1.5 × 10⁻³. The
 model is fixed-step, so the figure is quoted with the grid that produced it.
 
+### Frequency-domain analysis
+
+`AcAnalysis` linearizes a circuit at its DC operating point and solves the complex network
+frequency by frequency. A capacitor becomes `jωC`, an inductor `1/(jωL)`, a diode its junction
+conductance and a MOSFET its drain conductance with its gate transconductance; independent sources
+are set to zero except the one named as the drive, whose branch is imposed at unit amplitude. Each
+node's phasor is therefore the transfer function from that source to that node, phase included.
+
+```csharp
+AcResponse response = AcAnalysis.Run(
+    circuit.ToTransientNetlist(),
+    driveSourceId: "V1",
+    AcFrequencySweep.Logarithmic(1, 1e6, 61));
+Console.Write(response.ToText());
+```
+
+The device capacitances take part, so a transistor's own charge appears in its bandwidth: a
+common-source stage with 1 mA/V of transconductance, a 1 kΩ drain resistor and 1 pF of drain-source
+capacitance has unity gain at low frequency, inverts (180°), and halves at
+`1/(2π · 1 kΩ · 1 pF)`. That case, the RC corner where the magnitude is `1/√2` and the phase −45°,
+an RL corner at `R/(2πL)`, a tank resonance at `1/(2π√(LC))` and a resistive divider that must be
+flat at its DC ratio are the tests, so an error in the assembly or in the complex arithmetic cannot
+hide behind a plausible curve.
+
+This is a small-signal linearization, not a large-signal answer: it describes how a small
+disturbance travels around the operating point, which is what a gain, a corner frequency or a phase
+margin is about.
+
 **Gate charge.** `TransientNetlist.AddMosfet` also accepts `gateSourceFarads` and `gateDrainFarads`,
 or `cgs`/`cgd` in a transient JSON netlist, both defaulting to zero so an existing netlist keeps its
 behaviour. Given, they are stamped between gate and source and between gate and drain on every step,
@@ -1259,10 +1287,10 @@ Not supported:
 
 - transformers, op-amps, switches, relays, fuses, or transmission lines;
 - dependent sources other than the MOSFET's gate-controlled channel;
-- frequency-domain/AC analysis or small-signal extraction;
 - op-amps, regulators, LEDs, or temperature-dependent models;
-- a production transistor model: the MOSFET is a charge-free square-law level-1
-  compact model, not a SPICE device with capacitances or subthreshold conduction;
+- a production transistor model: the MOSFET is a square-law level-1 compact model with
+  optional gate and drain capacitances, not a SPICE device with subthreshold
+  conduction, a body effect, or geometry-derived parameters;
 - junction capacitance, carrier storage, high-injection, self-heating, or noise;
 - gmin continuation, or SPICE-style built-in source functions beyond
   piecewise-linear tables;
