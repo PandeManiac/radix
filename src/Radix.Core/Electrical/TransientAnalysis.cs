@@ -538,6 +538,17 @@ public sealed class TransientNetlist
                         diode.BreakdownVoltage,
                         diode.BreakdownCurrent);
                     break;
+                case DcMosfet mosfet:
+                    copy.AddMosfet(
+                        mosfet.Id,
+                        mosfet.Drain,
+                        mosfet.Gate,
+                        mosfet.Source,
+                        mosfet.Channel,
+                        mosfet.ThresholdVoltage,
+                        mosfet.Transconductance,
+                        mosfet.ChannelLengthModulation);
+                    break;
                 default:
                     throw new InvalidOperationException(
                         $"Element '{element.Id}' has an unknown type and cannot be copied.");
@@ -598,6 +609,7 @@ public sealed class TransientNetlist
                 DcDiode => throw new ArgumentException(
                     $"Element '{id}' is a diode; its diode parameters cannot be swept as one value, so sweep a resistor, source, capacitor or inductor instead.",
                     nameof(id)),
+                DcMosfet mosfet => mosfet with { Transconductance = RequireSweptPositive(value, id) },
                 _ => throw new ArgumentException($"Element '{id}' cannot be swept.", nameof(id)),
             };
             return copy;
@@ -733,6 +745,67 @@ public sealed class TransientNetlist
             seriesResistance,
             breakdownVoltage,
             breakdownCurrent));
+    }
+
+    /// <summary>
+    /// Adds a three-terminal MOSFET with the same parameters as
+    /// <see cref="DcNetlist.AddMosfet"/>. Like the diode it is time-invariant here:
+    /// there is no gate or junction capacitance, so a switching transition is limited
+    /// only by the surrounding circuit and the integration step.
+    /// </summary>
+    public TransientNetlist AddMosfet(
+        string id,
+        string drain,
+        string gate,
+        string source,
+        DcMosfetChannel channel,
+        double thresholdVoltage,
+        double transconductance,
+        double channelLengthModulation = 0)
+    {
+        ValidateElement(id, drain, source);
+        if (string.IsNullOrWhiteSpace(gate))
+        {
+            throw new ArgumentException("The MOSFET gate node ID must not be empty.", nameof(gate));
+        }
+
+        if (!Enum.IsDefined(channel))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(channel), channel, "Channel must be an n-channel or p-channel device.");
+        }
+
+        if (!double.IsFinite(thresholdVoltage))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(thresholdVoltage), thresholdVoltage, "Threshold voltage must be finite.");
+        }
+
+        if (!double.IsFinite(transconductance) || transconductance <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(transconductance),
+                transconductance,
+                "The transconductance parameter must be finite and greater than zero.");
+        }
+
+        if (!double.IsFinite(channelLengthModulation) || channelLengthModulation < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(channelLengthModulation),
+                channelLengthModulation,
+                "Channel-length modulation must be finite and non-negative.");
+        }
+
+        return AddStatic(new DcMosfet(
+            id,
+            drain,
+            gate,
+            source,
+            channel,
+            thresholdVoltage,
+            transconductance,
+            channelLengthModulation));
     }
 
     public TransientNetlist AddCapacitor(string id, string nodeA, string nodeB, double farads)
@@ -1973,6 +2046,17 @@ public sealed class TransientNetlist
                     diode.BreakdownVoltage,
                     diode.BreakdownCurrent);
                 break;
+            case DcMosfet mosfet:
+                target.AddMosfet(
+                    mosfet.Id,
+                    mosfet.Drain,
+                    mosfet.Gate,
+                    mosfet.Source,
+                    mosfet.Channel,
+                    mosfet.ThresholdVoltage,
+                    mosfet.Transconductance,
+                    mosfet.ChannelLengthModulation);
+                break;
             default:
                 throw new InvalidOperationException(
                     $"Unsupported transient element '{element.Id}' ({element.Kind}).");
@@ -1984,6 +2068,13 @@ public sealed class TransientNetlist
         _ids.Add(element.Id);
         _nodes.Add(element.NodeA);
         _nodes.Add(element.NodeB);
+        if (element is DcMosfet mosfet)
+        {
+            // The gate is solved and reported as a node, but it conducts nothing, so
+            // the floating-network analysis does not treat it as a connection.
+            _nodes.Add(mosfet.Gate);
+        }
+
         _elements.Add(element);
         return this;
     }

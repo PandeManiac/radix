@@ -316,6 +316,28 @@ public static class TransientNetlistJson
                         element.BreakdownVoltage,
                         element.BreakdownCurrent);
                     break;
+                case "mosfet":
+                    RejectUnused(
+                        element,
+                        id,
+                        type,
+                        "drain",
+                        "gate",
+                        "source",
+                        "channel",
+                        "thresholdVoltage",
+                        "transconductance",
+                        "channelLengthModulation");
+                    netlist.AddMosfet(
+                        id,
+                        RequireNode(element.Drain, id, "drain"),
+                        RequireNode(element.Gate, id, "gate"),
+                        RequireNode(element.Source, id, "source"),
+                        ParseChannel(element.Channel, id),
+                        RequireValue(element.ThresholdVoltage, id, "thresholdVoltage"),
+                        RequireValue(element.Transconductance, id, "transconductance"),
+                        element.ChannelLengthModulation ?? 0);
+                    break;
                 case "capacitor":
                     RejectUnused(element, id, type, "farads", "initialVolts");
                     netlist.AddCapacitor(id, nodeA, nodeB, RequireValue(element.Farads, id, "farads"));
@@ -337,7 +359,7 @@ public static class TransientNetlistJson
                     break;
                 default:
                     throw new ProjectFormatException(
-                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, current-source, diode, capacitor, or inductor.");
+                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, current-source, diode, mosfet, capacitor, or inductor.");
             }
         }
         catch (ArgumentException exception)
@@ -345,6 +367,17 @@ public static class TransientNetlistJson
             throw new ProjectFormatException($"Element '{id}' is invalid: {exception.Message}", exception);
         }
     }
+
+    private static DcMosfetChannel ParseChannel(string? value, string id) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "n" or "n-channel" or "nchannel" => DcMosfetChannel.NChannel,
+            "p" or "p-channel" or "pchannel" => DcMosfetChannel.PChannel,
+            null => throw new ProjectFormatException(
+                $"Element '{id}' field 'channel' is required for a mosfet ('n' or 'p')."),
+            _ => throw new ProjectFormatException(
+                $"Element '{id}' has unknown channel '{value}'; expected 'n' or 'p'."),
+        };
 
     private static void ApplyWaveform(TransientNetlist netlist, ElementDto element, string id)
     {
@@ -457,6 +490,41 @@ public static class TransientNetlistJson
             present.Add("waveform");
         }
 
+        if (element.Drain is not null)
+        {
+            present.Add("drain");
+        }
+
+        if (element.Gate is not null)
+        {
+            present.Add("gate");
+        }
+
+        if (element.Source is not null)
+        {
+            present.Add("source");
+        }
+
+        if (element.Channel is not null)
+        {
+            present.Add("channel");
+        }
+
+        if (element.ThresholdVoltage is not null)
+        {
+            present.Add("thresholdVoltage");
+        }
+
+        if (element.Transconductance is not null)
+        {
+            present.Add("transconductance");
+        }
+
+        if (element.ChannelLengthModulation is not null)
+        {
+            present.Add("channelLengthModulation");
+        }
+
         foreach (string property in present)
         {
             if (!allowed.Contains(property, StringComparer.Ordinal))
@@ -534,7 +602,14 @@ public static class TransientNetlistJson
         double? Henries,
         double? InitialVolts,
         double? InitialAmperes,
-        IReadOnlyList<WaveformPointDto>? Waveform);
+        IReadOnlyList<WaveformPointDto>? Waveform,
+        string? Drain,
+        string? Gate,
+        string? Source,
+        string? Channel,
+        double? ThresholdVoltage,
+        double? Transconductance,
+        double? ChannelLengthModulation);
 
     private sealed record WaveformPointDto(double? Time, double? Value);
 

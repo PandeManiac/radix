@@ -109,6 +109,9 @@ internal static class Program
               dc <netlist.json|project.radix>
                                              Solve a DC linear electrical circuit
                   [--circuit <id>]           Choose an authored circuit in a project
+                  [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>]
+                                             Solve once per value of one element parameter
+                  [--csv]                    Emit the sweep as a wide CSV table
                   [--json]                   Emit one machine-readable DC report
               transient <netlist.json|project.radix>
                                              Solve a time-domain electrical circuit
@@ -262,14 +265,17 @@ internal static class Program
 
     private static int DcCommand(string[] args)
     {
-        (var positional, var options) = Parse(args, ["circuit"], ["json"]);
+        (var positional, var options) = Parse(args, ["circuit", "sweep"], ["json", "csv"]);
         if (positional.Count != 1)
         {
-            Console.Error.WriteLine("usage: radix dc <netlist.json|project.radix> [--circuit <id>] [--json]");
+            Console.Error.WriteLine(
+                "usage: radix dc <netlist.json|project.radix> [--circuit <id>] [--sweep <id>=<v1,v2,...>|<from>:<to>:<count>] [--csv] [--json]");
             return 2;
         }
 
         bool json = options.ContainsKey("json");
+        bool csv = options.ContainsKey("csv");
+        string? sweepSpec = GetOption(options, "sweep");
         string? requestedCircuit = GetOption(options, "circuit");
         string source = positional[0];
         string? circuitId = null;
@@ -303,6 +309,36 @@ internal static class Program
         {
             Console.Error.WriteLine($"DC input error: {exception.Message}");
             return 2;
+        }
+
+        if (sweepSpec is not null)
+        {
+            if (!TryParseSweep(sweepSpec, out string sweptElement, out double[] sweptValues, out string? sweepError))
+            {
+                Console.Error.WriteLine(sweepError);
+                return 2;
+            }
+
+            if (json)
+            {
+                Console.Error.WriteLine(
+                    "--json reports a single operating point; use the table or --csv with --sweep.");
+                return 2;
+            }
+
+            try
+            {
+                IReadOnlyList<DcSweepRow> rows = DcSweep.Run(netlist, sweptElement, sweptValues);
+                Console.Write(csv
+                    ? DcSweepReport.ToCsv(netlist, rows)
+                    : DcSweepReport.ToText(netlist, sweptElement, rows));
+                return rows.All(row => row.Solved) ? 0 : 1;
+            }
+            catch (ArgumentException exception)
+            {
+                Console.Error.WriteLine($"DC sweep failed: {exception.Message}");
+                return 2;
+            }
         }
 
         try

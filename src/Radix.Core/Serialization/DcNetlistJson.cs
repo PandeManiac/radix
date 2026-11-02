@@ -115,6 +115,7 @@ public static class DcNetlistJson
             .Select(element =>
             {
                 DcDiode? diode = element as DcDiode;
+                DcMosfet? mosfet = element as DcMosfet;
                 return new ElementResultDto(
                     element.Id,
                     KindName(element),
@@ -129,7 +130,12 @@ public static class DcNetlistJson
                     diode?.ThermalVoltage,
                     diode?.SeriesResistance,
                     diode?.BreakdownVoltage,
-                    diode?.BreakdownCurrent);
+                    diode?.BreakdownCurrent,
+                    mosfet is null ? null : (mosfet.IsPChannel ? "p" : "n"),
+                    mosfet?.Gate,
+                    mosfet?.ThresholdVoltage,
+                    mosfet?.Transconductance,
+                    mosfet?.ChannelLengthModulation);
             })
             .ToArray();
 
@@ -175,6 +181,7 @@ public static class DcNetlistJson
             DcElementKind.VoltageSource => "voltage-source",
             DcElementKind.CurrentSource => "current-source",
             DcElementKind.Diode => "diode",
+            DcElementKind.Mosfet => "mosfet",
             _ => throw new ArgumentOutOfRangeException(nameof(element)),
         };
 
@@ -203,43 +210,52 @@ public static class DcNetlistJson
         }
 
         string id = element.Id;
-        string nodeA = RequireNode(element.NodeA, id, "nodeA");
-        string nodeB = RequireNode(element.NodeB, id, "nodeB");
         string type = element.Type?.Trim().ToLowerInvariant() ?? string.Empty;
         try
         {
             switch (type)
             {
                 case "resistor":
-                    RejectUnused(
-                        element,
+                    RejectFieldsOutside(element, id, type, "nodeA", "nodeB", "ohms");
+                    netlist.AddResistor(
                         id,
-                        "resistor",
-                        ["volts", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
-                    netlist.AddResistor(id, nodeA, nodeB, RequireValue(element.Ohms, id, "ohms"));
+                        RequireNode(element.NodeA, id, "nodeA"),
+                        RequireNode(element.NodeB, id, "nodeB"),
+                        RequireValue(element.Ohms, id, "ohms"));
                     break;
                 case "voltage-source":
-                    RejectUnused(
-                        element,
+                    RejectFieldsOutside(element, id, type, "nodeA", "nodeB", "volts");
+                    netlist.AddVoltageSource(
                         id,
-                        "voltage-source",
-                        ["ohms", "amperes", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
-                    netlist.AddVoltageSource(id, nodeA, nodeB, RequireValue(element.Volts, id, "volts"));
+                        RequireNode(element.NodeA, id, "nodeA"),
+                        RequireNode(element.NodeB, id, "nodeB"),
+                        RequireValue(element.Volts, id, "volts"));
                     break;
                 case "current-source":
-                    RejectUnused(
-                        element,
+                    RejectFieldsOutside(element, id, type, "nodeA", "nodeB", "amperes");
+                    netlist.AddCurrentSource(
                         id,
-                        "current-source",
-                        ["ohms", "volts", "saturationCurrent", "emissionCoefficient", "thermalVoltage", "seriesResistance", "breakdownVoltage", "breakdownCurrent"]);
-                    netlist.AddCurrentSource(id, nodeA, nodeB, RequireValue(element.Amperes, id, "amperes"));
+                        RequireNode(element.NodeA, id, "nodeA"),
+                        RequireNode(element.NodeB, id, "nodeB"),
+                        RequireValue(element.Amperes, id, "amperes"));
                     break;
                 case "diode":
-                    RejectUnused(element, id, "diode", ["ohms", "volts", "amperes"]);
+                    RejectFieldsOutside(
+                        element,
+                        id,
+                        type,
+                        "nodeA",
+                        "nodeB",
+                        "saturationCurrent",
+                        "emissionCoefficient",
+                        "thermalVoltage",
+                        "seriesResistance",
+                        "breakdownVoltage",
+                        "breakdownCurrent");
                     netlist.AddDiode(
                         id,
-                        nodeA,
-                        nodeB,
+                        RequireNode(element.NodeA, id, "nodeA"),
+                        RequireNode(element.NodeB, id, "nodeB"),
                         RequireValue(element.SaturationCurrent, id, "saturationCurrent"),
                         element.EmissionCoefficient ?? 1.0,
                         element.ThermalVoltage ?? DcDiode.DefaultThermalVoltage,
@@ -247,9 +263,31 @@ public static class DcNetlistJson
                         element.BreakdownVoltage,
                         element.BreakdownCurrent);
                     break;
+                case "mosfet":
+                    RejectFieldsOutside(
+                        element,
+                        id,
+                        type,
+                        "drain",
+                        "gate",
+                        "source",
+                        "channel",
+                        "thresholdVoltage",
+                        "transconductance",
+                        "channelLengthModulation");
+                    netlist.AddMosfet(
+                        id,
+                        RequireNode(element.Drain, id, "drain"),
+                        RequireNode(element.Gate, id, "gate"),
+                        RequireNode(element.Source, id, "source"),
+                        ParseChannel(element.Channel, id),
+                        RequireValue(element.ThresholdVoltage, id, "thresholdVoltage"),
+                        RequireValue(element.Transconductance, id, "transconductance"),
+                        element.ChannelLengthModulation ?? 0);
+                    break;
                 default:
                     throw new ProjectFormatException(
-                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, current-source, or diode.");
+                        $"Element '{id}' has unsupported type '{element.Type ?? "<missing>"}'. Expected resistor, voltage-source, current-source, diode, or mosfet.");
             }
         }
         catch (ArgumentException exception)
@@ -257,6 +295,17 @@ public static class DcNetlistJson
             throw new ProjectFormatException($"Element '{id}' is invalid: {exception.Message}", exception);
         }
     }
+
+    private static DcMosfetChannel ParseChannel(string? value, string id) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "n" or "n-channel" or "nchannel" => DcMosfetChannel.NChannel,
+            "p" or "p-channel" or "pchannel" => DcMosfetChannel.PChannel,
+            null => throw new ProjectFormatException(
+                $"Element '{id}' field 'channel' is required for a mosfet ('n' or 'p')."),
+            _ => throw new ProjectFormatException(
+                $"Element '{id}' has unknown channel '{value}'; expected 'n' or 'p'."),
+        };
 
     private static string RequireNode(string? node, string id, string property)
     {
@@ -278,31 +327,46 @@ public static class DcNetlistJson
         return number;
     }
 
-    private static void RejectUnused(
+    private static void RejectFieldsOutside(
         ElementDto element,
         string id,
         string type,
-        string[] unusedProperties)
+        params string[] allowed)
     {
-        foreach (string property in unusedProperties)
+        var present = new List<string>();
+        AddIfPresent("nodeA", element.NodeA);
+        AddIfPresent("nodeB", element.NodeB);
+        AddIfPresent("ohms", element.Ohms);
+        AddIfPresent("volts", element.Volts);
+        AddIfPresent("amperes", element.Amperes);
+        AddIfPresent("saturationCurrent", element.SaturationCurrent);
+        AddIfPresent("emissionCoefficient", element.EmissionCoefficient);
+        AddIfPresent("thermalVoltage", element.ThermalVoltage);
+        AddIfPresent("seriesResistance", element.SeriesResistance);
+        AddIfPresent("breakdownVoltage", element.BreakdownVoltage);
+        AddIfPresent("breakdownCurrent", element.BreakdownCurrent);
+        AddIfPresent("drain", element.Drain);
+        AddIfPresent("gate", element.Gate);
+        AddIfPresent("source", element.Source);
+        AddIfPresent("channel", element.Channel);
+        AddIfPresent("thresholdVoltage", element.ThresholdVoltage);
+        AddIfPresent("transconductance", element.Transconductance);
+        AddIfPresent("channelLengthModulation", element.ChannelLengthModulation);
+
+        foreach (string property in present)
         {
-            bool present = property switch
-            {
-                "ohms" => element.Ohms is not null,
-                "volts" => element.Volts is not null,
-                "amperes" => element.Amperes is not null,
-                "saturationCurrent" => element.SaturationCurrent is not null,
-                "emissionCoefficient" => element.EmissionCoefficient is not null,
-                "thermalVoltage" => element.ThermalVoltage is not null,
-                "seriesResistance" => element.SeriesResistance is not null,
-                "breakdownVoltage" => element.BreakdownVoltage is not null,
-                "breakdownCurrent" => element.BreakdownCurrent is not null,
-                _ => false,
-            };
-            if (present)
+            if (!allowed.Contains(property, StringComparer.Ordinal))
             {
                 throw new ProjectFormatException(
                     $"Element '{id}' is a {type} and must not set '{property}'.");
+            }
+        }
+
+        void AddIfPresent(string property, object? value)
+        {
+            if (value is not null)
+            {
+                present.Add(property);
             }
         }
     }
@@ -326,7 +390,14 @@ public static class DcNetlistJson
         double? ThermalVoltage,
         double? SeriesResistance,
         double? BreakdownVoltage,
-        double? BreakdownCurrent);
+        double? BreakdownCurrent,
+        string? Drain,
+        string? Gate,
+        string? Source,
+        string? Channel,
+        double? ThresholdVoltage,
+        double? Transconductance,
+        double? ChannelLengthModulation);
 
     private sealed record ReportDto(
         string Format,
@@ -356,5 +427,10 @@ public static class DcNetlistJson
         double? ThermalVoltage,
         double? SeriesResistance,
         double? BreakdownVoltage,
-        double? BreakdownCurrent);
+        double? BreakdownCurrent,
+        string? Channel,
+        string? Gate,
+        double? ThresholdVoltage,
+        double? Transconductance,
+        double? ChannelLengthModulation);
 }
