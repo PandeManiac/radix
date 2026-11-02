@@ -1218,3 +1218,9 @@ summary and full local verification results; see the PR for the latest CI state.
      to infinity, returning `DcSolveFailure.NonFiniteResult` with the element ID.
      The new overflow regression and the DC linear plus transient-energy focused
      suites pass (23/23); broader verification remains pending.
+
+133. Verified the finite-power guard end to end: Release solution build passed
+     with 0 warnings/errors, Core passed 661/661, and headless Editor passed
+     242/242 with `.local-native`. The Zener CLI solves at -5.108295403806094 V;
+     the divider CLI returns the expected 5 V midpoint. The new non-finite-power
+     regression and all prior Core coverage pass.
