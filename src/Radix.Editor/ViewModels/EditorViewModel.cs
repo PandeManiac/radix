@@ -190,6 +190,14 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalSweepElementId = string.Empty;
     private string _electricalSweepElementText = string.Empty;
     private string _electricalSweepValuesText = string.Empty;
+    private const string DefaultElectricalDcSweepSummary =
+        "Enter a component id and values, then Sweep to measure a transfer curve.";
+    private string _electricalDcSweepElementText = string.Empty;
+    private string _electricalDcSweepValuesText = string.Empty;
+    private string _electricalDcSweepSummary = DefaultElectricalDcSweepSummary;
+    private IReadOnlyList<DcSweepRow>? _electricalDcSweepResult;
+    private DcNetlist? _electricalDcSweepNetlist;
+    private string _electricalDcSweepElementId = string.Empty;
     private string _electricalSweepSummary =
         "Run a transient, then sweep one element to compare its values.";
     private TransientNetlist? _electricalTransientNetlist;
@@ -310,6 +318,7 @@ public sealed class EditorViewModel : ObservableObject
             new RelayCommand(() => CheckElectricalTransientAccuracy());
         ProbeElectricalTransientCommand = new RelayCommand(() => ProbeElectricalTransient());
         RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
+        RunElectricalDcSweepCommand = new RelayCommand(() => RunElectricalDcSweep());
         OpenSearchCommand = new RelayCommand(OpenSearch);
         CloseSearchCommand = new RelayCommand(CloseSearch);
 
@@ -477,6 +486,33 @@ public sealed class EditorViewModel : ObservableObject
     {
         get => _electricalSweepSummary;
         private set => SetField(ref _electricalSweepSummary, value);
+    }
+
+    /// <summary>Rows of the last DC sweep: one per swept value and non-ground node.</summary>
+    public ObservableCollection<ElectricalDcSweepRowItem> ElectricalDcSweepRows { get; } = [];
+
+    /// <summary>Whether the DC sweep table has rows to show.</summary>
+    public bool HasElectricalDcSweepResult => ElectricalDcSweepRows.Count > 0;
+
+    /// <summary>Id of the component the DC sweep varies, as typed.</summary>
+    public string ElectricalDcSweepElementText
+    {
+        get => _electricalDcSweepElementText;
+        set => SetField(ref _electricalDcSweepElementText, value ?? string.Empty);
+    }
+
+    /// <summary>DC sweep values as typed: a comma list, or <c>from:to:count</c>.</summary>
+    public string ElectricalDcSweepValuesText
+    {
+        get => _electricalDcSweepValuesText;
+        set => SetField(ref _electricalDcSweepValuesText, value ?? string.Empty);
+    }
+
+    /// <summary>One line describing the DC sweep, or why it could not run.</summary>
+    public string ElectricalDcSweepSummary
+    {
+        get => _electricalDcSweepSummary;
+        private set => SetField(ref _electricalDcSweepSummary, value);
     }
 
     /// <summary>Whether the refinement table has rows to show.</summary>
@@ -1208,6 +1244,8 @@ public sealed class EditorViewModel : ObservableObject
     public ICommand ProbeElectricalTransientCommand { get; }
 
     public ICommand RunElectricalSweepCommand { get; }
+
+    public ICommand RunElectricalDcSweepCommand { get; }
 
     public bool IsEditingFormat => _editingFormatId is not null;
 
@@ -6715,6 +6753,148 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Measures a DC transfer characteristic from the panel: one real operating point per value
+    /// of a single component, using the same <see cref="DcSweep"/> the <c>radix dc --sweep</c>
+    /// command runs. Nothing is mutated, because each point solves a fresh copy of the netlist.
+    /// </summary>
+    public bool RunElectricalDcSweep()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ClearElectricalDcSweep("Select an authored circuit before sweeping.");
+            StatusText = "No electrical circuit selected.";
+            return false;
+        }
+
+        string elementId = (ElectricalDcSweepElementText ?? string.Empty).Trim();
+        if (elementId.Length == 0)
+        {
+            ClearElectricalDcSweep("Enter the id of one component to vary, for example VIN.");
+            StatusText = "No sweep component given.";
+            return false;
+        }
+
+        if (circuit.FindComponent(elementId) is null)
+        {
+            ClearElectricalDcSweep($"Circuit '{circuit.Id}' has no component '{elementId}'.");
+            StatusText = "Unknown sweep component.";
+            return false;
+        }
+
+        if (!TryParseSweepValues(ElectricalDcSweepValuesText, out double[] values, out string error))
+        {
+            ClearElectricalDcSweep(error);
+            StatusText = "Invalid sweep values.";
+            return false;
+        }
+
+        DcNetlist netlist;
+        try
+        {
+            DiagnosticBag validation = ElectricalCircuitValidator.Validate(circuit);
+            if (validation.HasErrors)
+            {
+                ClearElectricalDcSweep($"Cannot sweep: {validation.ErrorCount} structural error(s). " +
+                    "Fix the validation messages above.");
+                StatusText = "DC sweep blocked by structural errors.";
+                return false;
+            }
+
+            netlist = circuit.ToDcNetlist();
+        }
+        catch (Exception exception) when (
+            exception is ElectricalCircuitValidationException or ArgumentException or InvalidOperationException)
+        {
+            ClearElectricalDcSweep("Cannot build the DC netlist: " + exception.Message);
+            StatusText = "DC netlist construction failed.";
+            return false;
+        }
+
+        IReadOnlyList<DcSweepRow> rows;
+        try
+        {
+            rows = DcSweep.Run(netlist, elementId, values);
+        }
+        catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException)
+        {
+            ClearElectricalDcSweep(exception.Message);
+            StatusText = "DC sweep rejected.";
+            return false;
+        }
+
+        ElectricalDcSweepRows.Clear();
+        int failed = 0;
+        foreach (DcSweepRow row in rows)
+        {
+            if (row.Solution is not DcSolution solution)
+            {
+                failed++;
+                ElectricalDcSweepRows.Add(new ElectricalDcSweepRowItem(
+                    row.Value,
+                    $"failed: {FailureLabel(row.Failure ?? DcSolveFailure.NonConvergent)}",
+                    null,
+                    showValue: true));
+                continue;
+            }
+
+            bool first = true;
+            foreach (ElectricalNode node in circuit.Nodes)
+            {
+                // Ground is the reference by definition, so its 0 V row carries no information.
+                if (string.Equals(node.Id, netlist.GroundNodeId, StringComparison.Ordinal) ||
+                    !solution.NodeVoltages.TryGetValue(node.Id, out double volts))
+                {
+                    continue;
+                }
+
+                ElectricalDcSweepRows.Add(new ElectricalDcSweepRowItem(row.Value, node.Id, volts, first));
+                first = false;
+            }
+        }
+
+        // Keep the study itself rather than the formatted table: the export must describe the
+        // numbers the solver produced, so it reads the rows instead of the display strings.
+        _electricalDcSweepResult = rows;
+        _electricalDcSweepNetlist = netlist;
+        _electricalDcSweepElementId = elementId;
+        RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
+        ElectricalDcSweepSummary = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values · {ElectricalDcSweepRows.Count} rows."
+            : $"Swept '{elementId}' over {rows.Count} values; {failed} could not solve.";
+        StatusText = failed == 0
+            ? $"Swept '{elementId}' over {rows.Count} values"
+            : $"Swept '{elementId}': {failed} value(s) failed.";
+        return failed == 0;
+    }
+
+    /// <summary>
+    /// The DC sweep as CSV, written by the same writer as <c>radix dc --sweep --csv</c>, so a
+    /// table copied from the panel and one produced by a script describe the same study.
+    /// </summary>
+    public bool TryBuildElectricalDcSweepCsv(out string csv)
+    {
+        csv = string.Empty;
+        if (_electricalDcSweepResult is not { Count: > 0 } rows || _electricalDcSweepNetlist is not { } netlist)
+        {
+            return false;
+        }
+
+        csv = DcSweepReport.ToCsv(netlist, rows);
+        return true;
+    }
+
+    private void ClearElectricalDcSweep(string summary)
+    {
+        ElectricalDcSweepRows.Clear();
+        _electricalDcSweepResult = null;
+        _electricalDcSweepNetlist = null;
+        _electricalDcSweepElementId = string.Empty;
+        ElectricalDcSweepSummary = summary;
+        RaisePropertyChanged(nameof(HasElectricalDcSweepResult));
+    }
+
+    /// <summary>
     /// The sweep table as CSV, written by the same writer as <c>radix transient --sweep --csv</c>.
     /// Returning false rather than an empty document keeps "nothing to export" distinct from a
     /// study that legitimately has no rows.
@@ -7421,6 +7601,7 @@ public sealed class EditorViewModel : ObservableObject
 
     private void ClearElectricalSolveResult()
     {
+        ClearElectricalDcSweep(DefaultElectricalDcSweepSummary);
         ElectricalNodeResults.Clear();
         ElectricalElementResults.Clear();
         HasElectricalSolveResult = false;

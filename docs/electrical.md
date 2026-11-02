@@ -978,6 +978,24 @@ If a project has exactly one electrical circuit, `--circuit` may be omitted. A
 project with several circuits requires it. Standalone JSON netlists remain
 supported for tools that do not author a project.
 
+## Editor DC sweep
+
+One operating point does not show a transfer characteristic, so the panel has its own
+**DC SWEEP**: name one component and give either a comma list (`0,2.5,5`) or
+`from:to:count` (`0:5:21`), and the circuit is solved once per value by the same
+`DcSweep` that `radix dc --sweep` runs. Each point is a real operating point of a fresh
+copy with that one value changed, so a difference between rows belongs to the value
+rather than to how the circuit was rebuilt.
+
+The table prints the swept value once per value and one row per non-ground node, because
+ground is the reference by definition and a 0 V row is not information. A value that
+cannot solve keeps a row saying which failure it hit instead of vanishing, so a transfer
+curve with a missing point is visible as such. **Copy sweep CSV** / **Save sweep CSV…**
+write the table through `DcSweepReport.ToCsv`, the same writer the CLI uses, so a file
+saved from the panel and one produced by `radix dc --sweep --csv` describe the same
+study. Any edit invalidates the sweep along with the DC preview, because a curve of an
+older circuit would be worse than no curve.
+
 ## Editor result export
 
 After **Solve**, **Copy JSON** and **Copy CSV** place the displayed result on the

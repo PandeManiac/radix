@@ -1136,6 +1136,40 @@
                     <Button x:Name="ElectricalSaveJsonButton" Content="Save JSON…" Click="ElectricalSaveJson_Click" ToolTip.Tip="Save the displayed DC solve result as JSON" />
                     <Button x:Name="ElectricalSaveCsvButton" Content="Save CSV…" Click="ElectricalSaveCsv_Click" ToolTip.Tip="Save the displayed DC solve result as CSV" />
                   </StackPanel>
+
+                  <TextBlock Text="DC SWEEP" Classes="section" />
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                    <TextBox x:Name="ElectricalDcSweepElementBox" Text="{Binding ElectricalDcSweepElementText, Mode=TwoWay}" Width="58" FontSize="9.5" Watermark="VIN" ToolTip.Tip="Id of the one component to vary; the sweep solves the circuit once per value" />
+                    <TextBox Grid.Column="1" Text="{Binding ElectricalDcSweepValuesText, Mode=TwoWay}" FontSize="9.5" Watermark="0:5:21" ToolTip.Tip="A comma list of values or from:to:count; SI suffixes p, n, u, m, k, M, and G are supported" />
+                    <Button Grid.Column="2" Content="Sweep" Command="{Binding RunElectricalDcSweepCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Solve the selected circuit once per value and list every node voltage" />
+                  </Grid>
+                  <TextBlock Text="{Binding ElectricalDcSweepSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" Margin="0,0,0,4" />
+                  <Border
+                      IsVisible="{Binding HasElectricalDcSweepResult}"
+                      Background="{DynamicResource App.PanelAltBackground}"
+                      BorderBrush="{DynamicResource App.Border}"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="7,5"
+                      Margin="0,0,0,4">
+                    <StackPanel Spacing="3">
+                      <ItemsControl ItemsSource="{Binding ElectricalDcSweepRows}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ElectricalDcSweepRowItem">
+                            <Grid ColumnDefinitions="62,*,Auto" ColumnSpacing="8" Margin="0,1">
+                              <TextBlock Text="{Binding ValueText}" FontFamily="monospace" FontSize="9.5" />
+                              <TextBlock Grid.Column="1" Text="{Binding NodeId}" FontSize="9.5" />
+                              <TextBlock Grid.Column="2" Text="{Binding VoltsText}" FontFamily="monospace" FontSize="9.5" Foreground="{DynamicResource App.Accent}" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
+                        <Button x:Name="ElectricalDcSweepCopyCsvButton" Content="Copy sweep CSV" Click="ElectricalDcSweepCopyCsv_Click" ToolTip.Tip="Copy the sweep as the same CSV table radix dc --sweep --csv writes" />
+                        <Button x:Name="ElectricalDcSweepSaveCsvButton" Content="Save sweep CSV…" Click="ElectricalDcSweepSaveCsv_Click" ToolTip.Tip="Save the sweep as CSV" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
                   <Border
                       IsVisible="{Binding HasElectricalSolveResult}"
                       Background="{DynamicResource App.PanelAltBackground}"
