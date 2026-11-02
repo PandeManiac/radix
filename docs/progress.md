@@ -1324,3 +1324,8 @@ summary and full local verification results; see the PR for the latest CI state.
      regression for finite deviations whose ratio exceeds `double.MaxValue`; all
      12 `TransientRefinementTests` pass. Full solution and Editor verification is
      pending.
+
+150. Verified overflow-safe refinement order calculation: Release solution build
+     passed with 0 warnings/errors, Core passed 666/666, and headless Editor passed
+     242/242 with `.local-native`. The regression confirms a finite order for a
+     deviation ratio near 1e328; the checkpoint is pushed and PR/CI update pending.
