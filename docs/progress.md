@@ -7,13 +7,16 @@ humans; update it at each milestone instead of relying on chat history.
 
 - Remote: `origin` = https://github.com/PandeManiac/radix (write access verified).
 - Current continuation branch: `agent/radix-20261102-electrical-audit`, pushed to origin.
-- Latest verified branch commit: `ee5e4e383f6f6412f89207f8cc58151fedb0ba07`.
-- Draft PR #6 is open against `main`: per-equation nonlinear DC convergence scaling.
+- Latest verified feature commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
+- Draft PR #6 is open against `main`: nonlinear DC convergence scaling and
+  engineering-suffix entry for authored electrical values.
 - Latest local verification: Release solution build clean (0 warnings/errors), Core
-  tests 632/632, and the DC divider CLI example reports the expected 5 V midpoint.
-  GitHub CI passed on Ubuntu and Windows for the latest commit.
-- This VM's full local solution test run still has 25 Editor tests unable to start
-  Skia because `libfontconfig.so.1` is missing; Core tests are unaffected.
+  tests 632/632, Editor tests 234/234, and the DC divider CLI example reports the
+  expected 5 V midpoint. GitHub CI has passed on Ubuntu for the latest feature
+  commit; Windows is still running.
+- Editor tests require fontconfig on Linux. This VM has no system `libfontconfig`,
+  but the tests pass when Ubuntu native packages are extracted under ignored
+  `.local-native` and `LD_LIBRARY_PATH`/`FONTCONFIG_FILE` are set.
 - Recovery: the previous session's work (branch tip `be9ba54`) was merged in after
   preserving the earlier worktree as commit `7188d5f`. The merged tree matched
   `be9ba54` exactly.
@@ -327,14 +330,12 @@ dotnet run -c Release --project src/Radix.Cli -- bench --gates 10000 --ticks 50
 
 ## Next meaningful steps
 
-1. For stronger hierarchy scalability data, compare the seven-sample run on a
-   quieter host, or install/use `dotnet-trace` to capture a bounded CPU profile;
-   this VM has no profiler tool installed and the repeated runs remain noisy.
-2. Continue the roadmap: large-definition scalability, richer hierarchy/library
-   workflows, and the electrical-solver integration boundary. Authored circuits,
-   explicit terminals, and a read-only DC solve preview are now available in the
-   workbench; the next electrical step is a sparse/transient solver or richer
-   result visualization, not an implicit interpretation of digital values.
+1. After CI completes for the engineering-suffix change, continue the electrical
+   authoring flow by accepting SI suffixes in unit-bearing initial-state and source
+   waveform fields, with tests for time/value units and unchanged serialized numbers.
+2. For stronger hierarchy scalability data, compare the seven-sample run on a
+   quieter host, or use `dotnet-trace` for a bounded CPU profile; the shared-VM
+   benchmark ranges are exploratory.
 
 ## Session 2026-10-31 (agent/radix-dc-numerics)
 
@@ -825,6 +826,18 @@ Verification: Release solution build clean (0 warnings/0 errors); Core tests 632
 the `radix dc` divider JSON example reports the expected 5 V; Ubuntu and Windows CI
 passed on commit `ee5e4e383f6f6412f89207f8cc58151fedb0ba07`. The local Editor suite's
 25 native Skia startup failures are environmental (`libfontconfig.so.1` absent), not
-code failures; 199 Editor tests did pass in that run. The current next task is an
-isolated engineering-suffix parser for authored electrical component values, with
-headless view-model tests and no change to the serialized numeric representation.
+code failures; 199 Editor tests did pass in that run.
+
+77. Added invariant-culture SI suffix parsing to the Electrical inspector's component
+    value field: `p`, `n`, `u`/`µ`, `m`, `k`, `M`, `G`, and `meg`. `m` and `M` retain
+    their standard milli/mega distinction; results must remain finite. Unknown and
+    overflowing values leave the component unchanged. The editor stores the scaled
+    numeric value in the existing project format; no unit strings or schema changes
+    were introduced. Added headless tests for eight valid suffix forms and rejection
+    of an unknown suffix and overflow; documented the syntax in `docs/electrical.md`.
+
+Verification for this feature commit: Release solution build clean (0 warnings/0
+errors); focused Electrical editor tests 40/40; full Editor tests 234/234 and Core
+tests 632/632 passed after extracting the existing Ubuntu native test libraries into
+the ignored `.local-native` directory. Ubuntu CI passed; Windows CI was still running
+when this note was written. Feature commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
