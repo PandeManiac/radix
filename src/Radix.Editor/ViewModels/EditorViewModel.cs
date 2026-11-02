@@ -179,6 +179,8 @@ public sealed class EditorViewModel : ObservableObject
     private string _electricalTransientRefineLevelsText = "3";
     private string _electricalTransientProbeText = string.Empty;
     private string _electricalTransientComparisonText = string.Empty;
+    private string _electricalDriveSummary =
+        "Run the bindings to see what this circuit would drive.";
     private double? _electricalTransientProbeTime;
     private IReadOnlyDictionary<string, double> _electricalTransientProbeValues =
         new SortedDictionary<string, double>(StringComparer.Ordinal);
@@ -342,6 +344,8 @@ public sealed class EditorViewModel : ObservableObject
             new RelayCommand(() => CompareElectricalCapacitanceModels());
         ShowElectricalTransientRunCommand =
             new RelayCommand(() => ShowElectricalTransientRun());
+        RunElectricalDriveBindingsCommand =
+            new RelayCommand(() => RunElectricalDriveBindings());
         RunElectricalSweepCommand = new RelayCommand(() => RunElectricalSweep());
         RunElectricalDcSweepCommand = new RelayCommand(() => RunElectricalDcSweep());
         RunElectricalAcSweepCommand = new RelayCommand(() => RunElectricalAcSweep());
@@ -467,6 +471,16 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Per-level rows of the last step-refinement check, empty until one is taken.</summary>
     public ObservableCollection<ElectricalTransientRefinementItem> ElectricalTransientRefinementLevels { get; } = [];
+
+    /// <summary>Rows of the last drive-binding run: one per change, drives and claims together.</summary>
+    public ObservableCollection<ElectricalDriveRowItem> ElectricalDriveRows { get; } = [];
+
+    /// <summary>What the last binding run did, empty until one is taken.</summary>
+    public string ElectricalDriveSummary
+    {
+        get => _electricalDriveSummary;
+        private set => SetField(ref _electricalDriveSummary, value);
+    }
 
     /// <summary>Rows of the last parameter sweep: one per swept value and node.</summary>
     public ObservableCollection<ElectricalSweepRowItem> ElectricalSweepRows { get; } = [];
@@ -1531,6 +1545,9 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Returns the plot to the last single run after a comparison replaced it.</summary>
     public ICommand ShowElectricalTransientRunCommand { get; }
+
+    /// <summary>Solves the circuit and applies its drive bindings to the project's root definition.</summary>
+    public ICommand RunElectricalDriveBindingsCommand { get; }
 
     public ICommand RunElectricalSweepCommand { get; }
 
@@ -9041,6 +9058,88 @@ public sealed class EditorViewModel : ObservableObject
     /// numbers it reports are still true of the circuit; only the picture changes. Touching a node
     /// checkbox does the same thing through the rebuild it already calls.
     /// </summary>
+    /// <summary>
+    /// Solves the selected circuit and applies its drive bindings, reporting each change and whether
+    /// the root definition agreed. This is the command line's drive table inside the panel, so a
+    /// reader who authored a binding does not have to leave the editor to find out what it does.
+    /// </summary>
+    public bool RunElectricalDriveBindings()
+    {
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null)
+        {
+            ElectricalDriveSummary = "Select an authored circuit to run its bindings.";
+            return false;
+        }
+
+        if (circuit.DriveBindings.Count == 0)
+        {
+            ElectricalDriveRows.Clear();
+            ElectricalDriveSummary = "This circuit declares no drive bindings.";
+            return false;
+        }
+
+        if (!TryParseEngineeringValue(_electricalTransientStopText, out double stop) || stop <= 0)
+        {
+            ElectricalDriveSummary = "Bindings need a positive stop time.";
+            return false;
+        }
+
+        if (!int.TryParse(
+                _electricalTransientStepsText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int steps) ||
+            steps is < 2 or > 20_000)
+        {
+            ElectricalDriveSummary = "Bindings need 2 to 20000 steps.";
+            return false;
+        }
+
+        ElectricalLevelSampler? sampler = ElectricalLevelSampler.ForCircuit(circuit);
+        if (sampler is null)
+        {
+            ElectricalDriveSummary =
+                "This circuit has no level thresholds and no positive rail, so a level cannot be read.";
+            return false;
+        }
+
+        TransientResult result;
+        try
+        {
+            result = circuit.ToTransientNetlist().Run(new TransientOptions
+            {
+                StartTime = 0,
+                StopTime = stop,
+                Steps = steps,
+                MaximumStepCount = 100_000,
+            });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ElectricalDriveSummary = "Bindings could not be solved: " + exception.Message;
+            return false;
+        }
+
+        ElectricalDrivePlan plan = ElectricalDriveSimulation.Plan(circuit, result, sampler);
+        var simulation = ElectricalDriveSimulation.Run(_project, plan);
+
+        ElectricalDriveRows.Clear();
+        foreach (ElectricalDriveBinding binding in circuit.DriveBindings)
+        {
+            foreach ((ElectricalDriveStep step, long at) in binding.Steps(result, sampler))
+            {
+                ElectricalDriveRows.Add(new ElectricalDriveRowItem(binding, step, at));
+            }
+        }
+
+        ElectricalDriveSummary = simulation.Passed
+            ? $"'{simulation.DefinitionId}' agreed on {plan.Claims.Count} claim tick(s) across {plan.ClaimedPins} pin(s); {ElectricalDriveRows.Count} change(s) shown."
+            : $"'{simulation.DefinitionId}' disagreed: " +
+              string.Join("; ", simulation.Failures.Take(3).Select(failure => failure.Message));
+        return simulation.Passed;
+    }
+
     public bool ShowElectricalTransientRun()
     {
         if (_electricalTransientSeries.Length == 0)
@@ -9114,6 +9213,8 @@ public sealed class EditorViewModel : ObservableObject
         ElectricalTransientNotesText = string.Empty;
         ElectricalTransientAccuracyText = string.Empty;
         ElectricalTransientProbeText = string.Empty;
+        ElectricalDriveRows.Clear();
+        ElectricalDriveSummary = "Run the bindings to see what this circuit would drive.";
         ElectricalTransientProbeTime = null;
         ElectricalTransientProbeValues = new SortedDictionary<string, double>(StringComparer.Ordinal);
         ElectricalTransientProbeLevels = new SortedDictionary<string, int>(StringComparer.Ordinal);

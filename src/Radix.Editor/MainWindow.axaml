@@ -1331,6 +1331,17 @@
                     <Button Grid.Column="1" Content="Show run" Command="{Binding ShowElectricalTransientRunCommand}" IsEnabled="{Binding HasElectricalTransientResult}" ToolTip.Tip="Put the plot back on the last single run; the comparison's numbers stay in the message" />
                     <TextBlock Grid.Column="2" Text="{Binding ElectricalTransientComparisonText}" Classes="muted" FontSize="9" TextWrapping="Wrap" VerticalAlignment="Center" />
                   </Grid>
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
+                    <Button Content="Run bindings" Command="{Binding RunElectricalDriveBindingsCommand}" IsEnabled="{Binding HasSelectedElectricalCircuit}" ToolTip.Tip="Solve this circuit, read its bound nodes as levels, and apply them to the project's root definition" />
+                    <TextBlock Grid.Column="1" Text="{Binding ElectricalDriveSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding ElectricalDriveRows}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ElectricalDriveRowItem">
+                        <TextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="9" Classes="muted" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                   <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6" Margin="0,0,0,4">
                     <TextBlock Text="Probe at (s)" Classes="muted" FontSize="9.5" VerticalAlignment="Center" />
                     <TextBox Grid.Column="1" Text="{Binding ElectricalTransientProbeInput, Mode=TwoWay}" Width="84" FontSize="9.5" Watermark="time in s" ToolTip.Tip="Time in seconds; SI suffixes p, n, u, m, k, M, and G are supported; values at a non-solved time are interpolated between the bracketing points" />
