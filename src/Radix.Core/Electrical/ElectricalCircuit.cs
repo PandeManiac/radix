@@ -444,6 +444,25 @@ public sealed class ElectricalCircuit
         return ElectricalCircuitNetlist.BuildDc(this, resolve);
     }
 
+    /// <summary>Builds a DC netlist while sharing structural validation across a project pass.</summary>
+    internal DcNetlist ToDcNetlist(
+        Func<string, ElectricalCircuit?>? resolve,
+        Dictionary<ElectricalCircuit, DiagnosticBag> ownCache,
+        Dictionary<ElectricalComponent, DiagnosticBag> referenceCache)
+    {
+        DiagnosticBag diagnostics = ElectricalCircuitValidator.Validate(
+            this,
+            resolve,
+            ownCache,
+            referenceCache);
+        if (diagnostics.HasErrors)
+        {
+            throw new ElectricalCircuitValidationException(diagnostics);
+        }
+
+        return ElectricalCircuitNetlist.BuildDc(this, resolve);
+    }
+
     /// <summary>
     /// Whether any component stores energy, so a transient run can do more than a DC solve. A
     /// subcircuit is counted conservatively: its internals are not followed without a project
@@ -541,7 +560,7 @@ public static class ElectricalCircuitValidator
         Func<string, ElectricalCircuit?>? resolve) =>
         Validate(circuit, resolve, ownCache: null, referenceCache: null);
 
-    private static DiagnosticBag Validate(
+    internal static DiagnosticBag Validate(
         ElectricalCircuit circuit,
         Func<string, ElectricalCircuit?>? resolve,
         Dictionary<ElectricalCircuit, DiagnosticBag>? ownCache,

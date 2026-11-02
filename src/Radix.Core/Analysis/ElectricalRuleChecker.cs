@@ -135,12 +135,17 @@ public static class ElectricalRuleChecker
 
     private static void CheckElectricalCircuits(CircuitProject project, DiagnosticBag diagnostics)
     {
+        var ownCache = new Dictionary<ElectricalCircuit, DiagnosticBag>();
+        var referenceCache = new Dictionary<ElectricalComponent, DiagnosticBag>();
         foreach (ElectricalCircuit circuit in project.ElectricalCircuits)
         {
             DcNetlist netlist;
             try
             {
-                netlist = circuit.ToDcNetlist(project.FindElectricalCircuit);
+                netlist = circuit.ToDcNetlist(
+                    project.FindElectricalCircuit,
+                    ownCache,
+                    referenceCache);
             }
             catch (ElectricalCircuitValidationException)
             {

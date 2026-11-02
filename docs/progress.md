@@ -111,6 +111,17 @@ humans; update it at each milestone instead of relying on chat history.
 - Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
   Editor 313/313; focused navigation/rendering checks 6/6.
 
+## Session 2026-11-02 (ERC expansion validation cache)
+
+- Shared the circuit own/reference validation cache across the ERC circuit loop via
+  an internal `ToDcNetlist` overload. Public netlist construction and diagnostics
+  are unchanged; the cache only avoids repeating structural checks before expansion.
+- The 65-circuit maximum-depth benchmark's full `CircuitValidator.Validate` path
+  fell from 8.86 ms to 4.51, 2.28, and 4.86 ms across three runs (median 4.51 ms).
+  Expansion and topology analysis remain the dominant cost.
+- Verification: Release build clean (0 warnings/errors); Core 836/836, CLI 3/3,
+  Editor 313/313.
+
 ## Session 2026-11-02 (hierarchical operating-point nodes)
 
 - The Electrical tab's solved NODES table now includes unported internal nodes from
