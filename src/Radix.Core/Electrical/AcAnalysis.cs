@@ -64,6 +64,15 @@ public sealed record AcDeviceReport(
     double Transconductance,
     double DrainConductance)
 {
+    /// <summary>
+    /// Fraction of the authored gate-source capacitance the channel presents in this region. The
+    /// authored value is the zero-bias reference; this says how much of it the bias leaves.
+    /// </summary>
+    public double GateSourceFraction { get; init; }
+
+    /// <summary>Fraction of the authored gate-drain capacitance, zero in saturation.</summary>
+    public double GateDrainFraction { get; init; }
+
     /// <summary>|gm/gds|: the largest voltage gain this device could give with an ideal load.</summary>
     public double IntrinsicGain =>
         DrainConductance > 0

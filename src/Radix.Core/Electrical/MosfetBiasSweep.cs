@@ -30,7 +30,11 @@ public static class MosfetReports
                 drainSource,
                 point.Current,
                 point.GateTransconductance,
-                point.DrainConductance));
+                point.DrainConductance)
+            {
+                GateSourceFraction = MosfetCapacitance.GateSourceFraction(point.Region),
+                GateDrainFraction = MosfetCapacitance.GateDrainFraction(point.Region),
+            });
         }
 
         return reports;

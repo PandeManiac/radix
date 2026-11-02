@@ -1427,6 +1427,27 @@ message. Malformed input exits 2 before a report is emitted; a solve failure
 exits 1. Successful solves exit 0. The command never writes project or netlist
 state.
 
+## What the bias does to the gate charge
+
+A gate capacitance is not a constant. `MosfetCapacitance` gives the fraction of the authored value
+the channel presents at a bias point, by the Meyer charge split: nothing in cut-off (there is no
+channel), one half towards each terminal in triode (the channel connects both), and two thirds
+towards the source with nothing towards the drain in saturation, where the channel is pinched off.
+The last of those is why a saturated stage stops feeding its output back into its own gate, and it
+is why the authored `Cgd` is a zero-bias reference rather than a fixed coupling.
+
+`radix ac --devices` prints the fractions as `cgs×` and `cgd×` beside `gm` and `gds`, so one table
+shows the region, the gain the region allows, and the charge it presents. On the ternary inverter at
+1.3 V the two saturated output devices read 0.667 and 0, while MPH in triode reads 0.5 and 0.5.
+
+The constants are exact in the model — ⅔ and ½ — so the tests compare against the algebra rather
+than a tolerance.
+
+The transient solver still stamps the capacitance values it is authored with: the fractions above
+are the bias dependence the model predicts and reports, not yet a capacitance the time-domain
+integration re-evaluates as a device changes region. That wiring is the next step, and until it
+lands a switching measurement does not depend on the voltage the gate is switching through.
+
 ## Analytical validation
 
 `DcLinearSolverTests` checks the solver against closed-form results:

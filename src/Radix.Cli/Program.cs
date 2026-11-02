@@ -144,7 +144,8 @@ internal static class Program
                                              (a waveform would otherwise bias at its start value)
                   [--compare <archive>]      Compare with a recorded sweep and report deviations
                   [--compare-tolerance <db>]  Gain deviation tolerated before exiting 1 (default 0)
-                  [--devices]                Also print each MOSFET's region, gm and gds at the bias
+                  [--devices]                Also print each MOSFET's region, gm, gds and the gate-charge
+                                             fractions its region presents (cgs×, cgd× of the authored value)
                   [--bias-sweep <from:to:count>]
                                              Step the drive and report every device at each value
                   [--csv]                    Emit one row per node per frequency
@@ -791,7 +792,8 @@ internal static class Program
                 : "inf";
 
         Console.WriteLine("Devices at the operating point:");
-        Console.WriteLine("  id    region      Vgs         Vds         Id          gm          gds         gm/gds");
+        Console.WriteLine(
+            "  id    region      Vgs         Vds         Id          gm          gds         gm/gds      cgs×    cgd×");
         foreach (AcDeviceReport device in response.Devices)
         {
             Console.WriteLine(
@@ -800,9 +802,10 @@ internal static class Program
                 Number(device.GateSourceVolts).PadRight(12) +
                 Number(device.DrainSourceVolts).PadRight(12) +
                 Number(device.CurrentAmperes).PadRight(12) +
-                Number(device.Transconductance).PadRight(12) +
-                Number(device.DrainConductance).PadRight(12) +
-                Number(device.IntrinsicGain));
+                Number(device.Transconductance).PadRight(12) +                    Number(device.DrainConductance).PadRight(12) +
+                    Number(device.IntrinsicGain).PadRight(12) +
+                    Number(device.GateSourceFraction).PadRight(8) +
+                    Number(device.GateDrainFraction));
         }
     }
 
