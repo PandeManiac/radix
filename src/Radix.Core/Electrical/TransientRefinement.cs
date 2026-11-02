@@ -245,7 +245,12 @@ public sealed record TransientRefinement(
         }
 
         double weight = (time - points[low].Time) / span;
-        return ValueAt(points[low]) + (weight * (ValueAt(points[high]) - ValueAt(points[low])));
+        double left = ValueAt(points[low]);
+        double right = ValueAt(points[high]);
+        double delta = right - left;
+        return double.IsFinite(delta)
+            ? left + (weight * delta)
+            : (left * (1 - weight)) + (right * weight);
     }
 
     /// <summary>Human description of the estimate for reports and the CLI.</summary>

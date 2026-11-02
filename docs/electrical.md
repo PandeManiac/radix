@@ -560,7 +560,9 @@ The energy residual and the metrics describe one run; neither says whether halvi
 step would still change the answer. `radix transient --refine` answers that by solving
 the same circuit at the requested step count and at each doubled count (three levels by
 default), comparing every finer run against the coarser one sampled at the finer run's
-times, with the coarse trace interpolated between its own points.
+times, with the coarse trace interpolated between its own points. When subtracting
+opposite-sign extreme endpoints would overflow, interpolation uses a weighted sum
+of the endpoints instead.
 
 The comparison is reported per level, with the order implied by the ratio of successive
 deviations: `p = log2(d_prev / d_now)`. A first-order scheme at `h/τ = 0.125` measures

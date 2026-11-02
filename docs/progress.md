@@ -1307,3 +1307,9 @@ summary and full local verification results; see the PR for the latest CI state.
      interpolator overflows its opposite-sign endpoint delta, and the study reports
      an infinite deviation instead of zero. Focused execution and stable convex
      interpolation are pending.
+
+147. Made transient refinement interpolate opposite-sign extreme node values with
+     a weighted endpoint sum if their direct delta overflows. The complete focused
+     `TransientRefinementTests` suite passes 11/11; the linear extreme-scale trace
+     now reports zero deviation at the refined samples. Broader verification is
+     pending.
