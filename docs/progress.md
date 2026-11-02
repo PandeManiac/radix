@@ -983,3 +983,11 @@ summary and full local verification results; see the PR for the latest CI state.
     disconnected 1e12 A ideal-source branch beside an ultra-low-current diode; the
     old solver stopped at 0.974 V instead of the independent scalar reference
     0.573 V. The regression demonstrated the bug before the fix.
+
+
+95. Verified the dimensional stopping-criterion correction: the focused electrical
+    numerical tests pass 44/44; the Release solution build passes with 0 warnings and
+    errors; Core passes 642/642; and headless Editor passes 242/242 using the
+    pre-extracted `.local-native` libraries. The native package download helper could
+    not resolve packages from this VM's apt sources, but the existing extracted files
+    were sufficient for the full Editor run.
