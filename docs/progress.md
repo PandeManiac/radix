@@ -1026,3 +1026,10 @@ summary and full local verification results; see the PR for the latest CI state.
      the tangent continuation above exponent 80 is unchanged. The seeded 96-case
      terminal-equation sweep and all 20 diode solver tests pass. Broader verification
      remains pending.
+
+101. Verified cancellation-safe Shockley evaluation and the seeded series equation
+     sweep: focused diode/DC/transient tests passed 73/73; Release build passed with
+     0 warnings/errors; Core passed 644/644; headless Editor passed 242/242 using
+     the existing `.local-native` extraction. The Zener CLI still reports -5.1083 V
+     with near-zero total element power, and the divider reports 5 V. GitHub CI for
+     the latest code checkpoint is pending.
