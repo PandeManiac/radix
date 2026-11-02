@@ -6315,7 +6315,7 @@ public sealed class EditorViewModel : ObservableObject
                         component.InitialValue is double initial
                             ? FormatElectricalValue(initial)
                             : string.Empty,
-                        hint: "Blank uses the DC operating point; applied only by a transient run",
+                        hint: "Blank uses the DC operating point; finite values accept SI suffixes p, n, u, m, k, M, and G; applied only by a transient run",
                         apply: value => SetElectricalComponentInitialValue(circuit.Id, component.Id, value)));
                 }
 
@@ -6324,7 +6324,7 @@ public sealed class EditorViewModel : ObservableObject
                     ElectricalComponentFields.Add(new EditableField(
                         "Waveform",
                         FormatElectricalWaveform(component),
-                        hint: $"Comma-separated time={component.Unit} breakpoints in seconds; blank keeps the source constant, and a DC solve always uses the value",
+                        hint: $"Comma-separated time={component.Unit} breakpoints in seconds; both fields accept SI suffixes p, n, u, m, k, M, and G; blank keeps the source constant, and a DC solve always uses the value",
                         apply: value => SetElectricalComponentWaveform(circuit.Id, component.Id, value)));
                 }
             }
@@ -7639,10 +7639,9 @@ public sealed class EditorViewModel : ObservableObject
             return true;
         }
 
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ||
-            !double.IsFinite(parsed))
+        if (!TryParseEngineeringValue(value, out double parsed))
         {
-            StatusText = "Initial value must be a finite number, or blank for the DC operating point.";
+            StatusText = "Initial value must be finite, optionally followed by an SI suffix, or blank for the DC operating point.";
             return false;
         }
 
@@ -7687,8 +7686,8 @@ public sealed class EditorViewModel : ObservableObject
             int separator = entry.IndexOf('=', StringComparison.Ordinal);
             if (separator <= 0 ||
                 separator == entry.Length - 1 ||
-                !TryParseElectricalNumber(entry[..separator], out double time) ||
-                !TryParseElectricalNumber(entry[(separator + 1)..], out double pointValue))
+                !TryParseEngineeringValue(entry[..separator], out double time) ||
+                !TryParseEngineeringValue(entry[(separator + 1)..], out double pointValue))
             {
                 StatusText = $"Waveform entry '{entry}' is not a finite time=value pair.";
                 return false;

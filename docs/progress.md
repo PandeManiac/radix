@@ -841,3 +841,14 @@ errors); focused Electrical editor tests 40/40; full Editor tests 234/234 and Co
 tests 632/632 passed after extracting the existing Ubuntu native test libraries into
 the ignored `.local-native` directory. Ubuntu and Windows CI both passed. Feature
 commit: `649444659bfd6d0d351217fa5aff3af4566c36a6`.
+
+78. Extended the SI parser to capacitor/inductor initial voltage/current and both
+    time and value fields in independent-source waveform breakpoints. Existing
+    numeric `.radix` representation is preserved: the headless test saves a
+    capacitor's suffixed initial voltage and a three-point waveform, then verifies
+    that values and times are JSON numbers with the scaled SI magnitudes. Invalid
+    and overflowing suffixes leave initial state and waveform unchanged. Hints now
+    describe the accepted units and suffixes.
+
+Verification: focused `ElectricalEditorTests` passed 43/43. Full solution build and
+Core/Editor suites are pending.

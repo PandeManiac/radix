@@ -73,6 +73,83 @@ public sealed class ElectricalEditorTests
     }
 
     [Fact]
+    public void TransientInitialConditionsAndWaveformsAcceptEngineeringSuffixesAndSerializeAsNumbers()
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Capacitor);
+        ElectricalComponent capacitor = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+
+        EditableField initial = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        initial.Value = "2.5m";
+        Assert.True(viewModel.ApplyField(initial));
+        Assert.Equal(0.0025, capacitor.InitialValue);
+
+        viewModel.AddElectricalComponent();
+        ElectricalComponent source = viewModel.SelectedElectricalCircuitModel!.Components
+            .Single(component => component.Id != capacitor.Id);
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.VoltageSource);
+        EditableField waveform = viewModel.ElectricalComponentFields.Single(field => field.Label == "Waveform");
+        waveform.Value = "0=0, 250u=2.5, 1m=5";
+        Assert.True(viewModel.ApplyField(waveform));
+        Assert.Equal([0d, 250e-6, 1e-3], source.Waveform.Select(point => point.Time));
+        Assert.Equal([0d, 2.5, 5d], source.Waveform.Select(point => point.Value));
+
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".radix");
+        try
+        {
+            Assert.True(viewModel.SaveProject(path));
+            using JsonDocument project = JsonDocument.Parse(File.ReadAllText(path));
+            JsonElement components = project.RootElement.GetProperty("electricalCircuits")[0]
+                .GetProperty("components");
+            JsonElement savedCapacitor = components.EnumerateArray()
+                .Single(component => component.GetProperty("id").GetString() == capacitor.Id);
+            Assert.Equal(JsonValueKind.Number, savedCapacitor.GetProperty("initialValue").ValueKind);
+            Assert.Equal(0.0025, savedCapacitor.GetProperty("initialValue").GetDouble());
+            JsonElement savedSource = components.EnumerateArray()
+                .Single(component => component.GetProperty("id").GetString() == source.Id);
+            JsonElement points = savedSource.GetProperty("waveform");
+            Assert.Equal(JsonValueKind.Number, points[1].GetProperty("time").ValueKind);
+            Assert.Equal(250e-6, points[1].GetProperty("time").GetDouble());
+            Assert.Equal(2.5, points[1].GetProperty("value").GetDouble());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData("2.5x")]
+    [InlineData("1e308G")]
+    public void InvalidEngineeringSuffixesAreRejectedForInitialConditionsAndWaveforms(string text)
+    {
+        EditorViewModel viewModel = CreateEmptyEditor();
+        viewModel.AddElectricalCircuit();
+        viewModel.AddElectricalComponent();
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.Capacitor);
+        ElectricalComponent capacitor = Assert.Single(viewModel.SelectedElectricalCircuitModel!.Components);
+        EditableField initial = viewModel.ElectricalComponentFields
+            .Single(field => field.Label == "Initial voltage (V)");
+        initial.Value = text;
+        Assert.False(viewModel.ApplyField(initial));
+        Assert.Null(capacitor.InitialValue);
+
+        viewModel.SelectedElectricalComponentKind = viewModel.ElectricalComponentKinds
+            .Single(choice => choice.Kind == ElectricalComponentKind.VoltageSource);
+        ElectricalComponent source = Assert.Single(viewModel.SelectedElectricalCircuitModel.Components);
+        EditableField waveform = viewModel.ElectricalComponentFields.Single(field => field.Label == "Waveform");
+        waveform.Value = $"0=0, {text}=5";
+        Assert.False(viewModel.ApplyField(waveform));
+        Assert.Empty(source.Waveform);
+    }
+
+    [Fact]
     public void EditingAValuePreservesAnAuthoredWaveform()
     {
         EditorViewModel viewModel = CreateEmptyEditor();
