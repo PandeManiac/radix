@@ -945,4 +945,9 @@ summary and full local verification results; see the PR for the latest CI state.
     threshold, with the matching constant derivative. Documented the continuation's
     numerical purpose and physical limitation. A finite-difference regression checks
     both branches at and above the threshold; focused diode and Zener transient tests
-    pass 19/19. Full suites are pending.
+    pass 19/19. Broader results are recorded in item 88.
+
+88. Verified the exponential-continuation fix end to end: Release solution build
+    completed with 0 warnings/errors; Core passed 641/641; headless Editor passed
+    242/242 with the documented Linux native-library setup. The DC Zener CLI example
+    still solves to -5.108295403806094 V with balanced branch current and power.
