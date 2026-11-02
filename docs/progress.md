@@ -924,3 +924,8 @@ summary and full local verification results; see the PR for the latest CI state.
     boundary, observes discharge, then verifies the final voltage and branch-current
     balance are in the Zener clamp region. Focused test passes 1/1; the full Core
     suite passes 639/639.
+
+85. Reverified the current branch after the transient regression: Release solution
+    build completed with 0 warnings/errors, Core tests passed 639/639, and headless
+    Editor tests passed 242/242 with the Linux native-library setup. GitHub CI for
+    `580006aeb7e05e49f25e3f6e86068800489c4089` was still running when checked.
