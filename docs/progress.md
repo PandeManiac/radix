@@ -1033,3 +1033,9 @@ summary and full local verification results; see the PR for the latest CI state.
      the existing `.local-native` extraction. The Zener CLI still reports -5.1083 V
      with near-zero total element power, and the divider reports 5 V. GitHub CI for
      the latest code checkpoint is pending.
+
+102. WIP: added a regression showing that individually finite positive diode
+     emission coefficient and thermal voltage can multiply to zero or infinity.
+     `DcNetlist.AddDiode` currently accepts both, leaving an unusable junction
+     voltage in the Shockley model. Focused test fails in both cases as expected;
+     implementation and broader verification remain pending.

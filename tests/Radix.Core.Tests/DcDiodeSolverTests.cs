@@ -181,6 +181,23 @@ public sealed class DcDiodeSolverTests
             netlist.AddDiode("D1", "a", "gnd", DefaultIs, breakdownVoltage: 5.1, breakdownCurrent: double.NaN));
     }
 
+    [Theory]
+    [InlineData(1e308, 1e308)]
+    [InlineData(1e-308, 1e-308)]
+    public void DiodeJunctionVoltageMustBeRepresentable(double emissionCoefficient, double thermalVoltage)
+    {
+        var netlist = new DcNetlist("gnd");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            netlist.AddDiode(
+                "D1",
+                "a",
+                "gnd",
+                DefaultIs,
+                emissionCoefficient: emissionCoefficient,
+                thermalVoltage: thermalVoltage));
+    }
+
     [Fact]
     public void ReverseBreakdownWithSeriesResistanceMatchesIndependentScalarBisection()
     {
