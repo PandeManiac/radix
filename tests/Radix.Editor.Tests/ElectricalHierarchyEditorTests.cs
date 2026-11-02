@@ -168,6 +168,15 @@ public sealed class ElectricalHierarchyEditorTests
             biasPlot.Series,
             series => viewModel.ElectricalBiasSweepSummary.Contains(
                 series.Label + " peaks at", StringComparison.Ordinal));
+
+        viewModel.ElectricalSweepElementText = "X1/RSUM1";
+        viewModel.ElectricalSweepValuesText = "90k,110k";
+        Assert.True(viewModel.RunElectricalSweep(), viewModel.ElectricalSweepSummary);
+        ElectricalSweepRowItem sweepRow = viewModel.ElectricalSweepRows
+            .First(item => item.NodeId == "X1/out_low");
+        Assert.Equal("X1", sweepRow.Scope);
+        Assert.Equal("Low-threshold inverter output", sweepRow.Name);
+        Assert.Contains("X1", sweepRow.DisplayName, StringComparison.Ordinal);
     }
 
     [Fact]

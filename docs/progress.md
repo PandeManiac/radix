@@ -49,6 +49,8 @@ humans; update it at each milestone instead of relying on chat history.
   windows silently omitted them.
 - Bias-sweep curves and the peak-device summary use the resolved child element
   name and instance scope. CSV exports keep stable netlist device IDs.
+- Transient parameter-sweep rows use the resolved child node name and scope; the
+  sweep can target a child element and still reports stable IDs in its exports.
 - Added a regression that loads `examples/electrical-ternary-hierarchy.radix`, solves
   `chain`, and checks that `X1/out_low` appears with scope `X1`, its authored name,
   and no duplicate `X1/out` row.

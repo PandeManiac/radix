@@ -7515,7 +7515,9 @@ public sealed class EditorViewModel : ObservableObject
     /// </summary>
     public bool RunElectricalSweep()
     {
-        if (_electricalTransientNetlist is not { } netlist ||
+        ElectricalCircuit? circuit = SelectedElectricalCircuitModel;
+        if (circuit is null ||
+            _electricalTransientNetlist is not { } netlist ||
             _electricalTransientResult is not { } baseline ||
             !HasElectricalTransientResult)
         {
@@ -7581,7 +7583,9 @@ public sealed class EditorViewModel : ObservableObject
                     continue;
                 }
 
-                ElectricalSweepRows.Add(new ElectricalSweepRowItem(row.Value, node.NodeId, node, first));
+                (string scope, string name) = DescribeElectricalNode(node.NodeId, circuit);
+                ElectricalSweepRows.Add(new ElectricalSweepRowItem(
+                    row.Value, node.NodeId, node, first, scope, name));
                 first = false;
             }
         }
