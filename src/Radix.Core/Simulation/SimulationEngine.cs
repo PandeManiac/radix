@@ -166,7 +166,7 @@ public sealed class SimulationEngine
         }
     }
 
-    /// <summary>Processes exactly one scheduled event. Returns false when nothing remains.</summary>
+    /// <summary>Processes exactly one scheduled event. Returns false when no event is processed.</summary>
     public bool Step()
     {
         if (_halted || !_queue.TryPeek(out _))

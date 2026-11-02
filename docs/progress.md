@@ -1134,3 +1134,13 @@ summary and full local verification results; see the PR for the latest CI state.
      counts consumed events. Consumed stale wake events still count as processed.
      All six focused `EventBudgetTests` pass, including both regressions; broader
      verification remains pending.
+
+119. Verified budget-limited stepping end to end: Release solution build passed
+     with 0 warnings/errors, Core passed 656/656, and headless Editor passed
+     242/242 with `.local-native`. The new `Step` and `StepTimestamp` budget
+     regressions and all prior event-budget coverage pass.
+
+120. GitHub Actions verified both Ubuntu and Windows checks successfully for
+     `8a995ca78ce7a9ca9fb050ca20f6811c47d61c55` (two completed runs per platform,
+     all successful). Updated the `Step` API comment to describe its false result
+     in terms of whether an event was processed, including budget-limited halt.
